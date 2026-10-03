@@ -3,6 +3,7 @@ import { ORG_ROLES, type RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { newToken } from '@pii/platform';
 import { audit } from './audit.ts';
+import { hasAcceptedFirstLogin } from './routes-consent.ts';
 import { forbidden, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 
@@ -25,7 +26,9 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
 
   app.get('/v1/me', async (req) => {
     const { ctx, user } = await deps.authenticate(req);
+    const consented = await run(ctx, (tx) => hasAcceptedFirstLogin(tx, ctx));
     return {
+      needsConsent: !consented,
       user: { id: user.userId, email: user.email, displayName: user.displayName, locale: user.locale },
       tenant: { id: user.tenantId, name: user.tenantName },
       region: deps.config.region,

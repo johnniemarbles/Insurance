@@ -1,18 +1,35 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Config } from '@pii/platform';
 import { assertDeployment, type Db } from '@pii/db';
-import type { Authenticator } from './auth.ts';
+import type { Authenticator, Identity } from './auth.ts';
+import type { GoogleClient } from './google.ts';
 import { HttpError, mapDbError } from './errors.ts';
 import { registerOrgRoutes } from './routes-org.ts';
 import { registerPeopleRoutes } from './routes-people.ts';
+import { registerAuthRoutes, originGuard } from './routes-auth.ts';
+import { registerConsentRoutes, hasAcceptedFirstLogin } from './routes-consent.ts';
+import { withRequestTx } from '@pii/db';
 
 export interface AppDeps {
   config: Config;
   appPool: Db;
   authenticate: Authenticator;
+  /** Pool for the narrow auth role (sessions, login lookup, invitation acceptance). */
+  authPool: Db;
+  google?: GoogleClient;
 }
 
-export function buildApp(deps: AppDeps): FastifyInstance {
+export function buildApp(input: AppDeps): FastifyInstance {
+  // Authenticate once per request, however many times handlers and hooks ask.
+  const memo = new WeakMap<object, Promise<Identity>>();
+  const deps: AppDeps = {
+    ...input,
+    authenticate: (req) => {
+      let p = memo.get(req);
+      if (!p) { p = input.authenticate(req); memo.set(req, p); }
+      return p;
+    },
+  };
   const app = Fastify({
     logger: deps.config.appEnv === 'test' ? false : { level: deps.config.logLevel, redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-dev-user-email"]'] },
   });
@@ -36,6 +53,18 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     }
   });
 
+  app.addHook('preHandler', originGuard(deps));
+  // People must accept the first-login notice before using anything else (Law 25 / PIPEDA).
+  app.addHook('preHandler', async (req) => {
+    const path = req.url.split('?')[0]!;
+    if (!path.startsWith('/v1/') || path === '/v1/me' || path.startsWith('/v1/consent/')) return;
+    const id = await deps.authenticate(req);
+    const ok = await withRequestTx(deps.appPool, id.ctx, (tx) => hasAcceptedFirstLogin(tx, id.ctx));
+    if (!ok) throw new HttpError(403, 'consent_required', 'Please review and accept the privacy notice first');
+  });
+
+  registerAuthRoutes(app, deps);
+  registerConsentRoutes(app, deps);
   registerOrgRoutes(app, deps);
   registerPeopleRoutes(app, deps);
   return app;

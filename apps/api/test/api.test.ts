@@ -24,6 +24,7 @@ async function seedUser(email: string, home: string, role: string) {
   const u = (await o.query(`INSERT INTO app_users (tenant_id,email,home_node_id,status) VALUES ($1,$2,$3,'active') RETURNING id`, [tenant.tenantId, email, home])).rows[0].id;
   await o.query(`INSERT INTO user_node_roles (tenant_id,user_id,node_id,role) VALUES ($1,$2,$3,$4)`, [tenant.tenantId, u, home, role]);
   await o.end();
+  await call(email, 'POST', '/v1/consent/first-login');
 }
 
 const ADMIN = 'admin@pii.test';
@@ -35,7 +36,7 @@ before(async () => {
   const authPool = createPool(db.authUrl, 2);
   pools = [appPool, authPool];
   const config = loadConfig({ APP_ENV: 'test', REGION: 'ca-qc', DATABASE_URL: db.ownerUrl, APP_DATABASE_URL: db.appUrl, AUTH_DATABASE_URL: db.authUrl, DEV_AUTH: 'true' });
-  app = buildApp({ config, appPool, authenticate: devAuthenticator(authPool) });
+  app = buildApp({ config, appPool, authPool, authenticate: devAuthenticator(authPool) });
   tenant = await bootstrapTenant(db.ownerUrl, { name: 'PII Test Co', countryCode: 'CA', adminEmail: ADMIN });
 });
 after(async () => {
@@ -62,6 +63,10 @@ test('first sign-in activates the invited admin', async () => {
   assert.equal(me.json.isTenantAdmin, true);
   assert.equal(me.json.region, 'ca-qc');
   assert.equal(me.json.tenant.name, 'PII Test Co');
+  assert.equal(me.json.needsConsent, true);
+  assert.equal((await call(ADMIN, 'GET', '/v1/org/nodes')).status, 403); // consent first
+  assert.equal((await call(ADMIN, 'POST', '/v1/consent/first-login')).status, 204);
+  assert.equal((await call(ADMIN, 'GET', '/v1/me')).json.needsConsent, false);
 });
 
 test('tenant admin builds locations and partners', async () => {

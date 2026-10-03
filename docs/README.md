@@ -32,8 +32,17 @@ Tests: `npm test` (needs `TEST_ADMIN_URL`, a superuser URL; default `postgres://
 - Siblings cannot see each other's nodes, users, roles, invitations or CRM/LMS rows. Only tenant admins read the audit log.
 - Partner admins add sub-partners beneath themselves (depth cap 5, loops rejected). Linking an existing partner to another location is a tenant-admin action.
 
+## Sign-in (ticket 1.1)
+- Google OpenID Connect, authorization code with PKCE; scopes `openid email profile` only. Gmail access is a separate, later consent.
+- Redirect URI to register in Google Cloud: `https://app.punjabinsurance.net/auth/google/callback` (add `http://localhost:3000/auth/google/callback` for local use).
+- Invite-only: an unknown Google account is refused. `/auth/google/start?invite=<token>` accepts an invitation (single use, expires in 7 days, must match the invited email).
+- The Google account id is bound on first sign-in; a different Google account for the same user is refused.
+- Sessions: random token in an HttpOnly, Secure, SameSite=Lax cookie; only its hash is stored, in a table the application role cannot read. 14 days.
+- Writes with a cookie must carry an allowed `Origin` header (CSRF guard).
+- The first-login privacy notice (EN / fr-CA, states the data region) must be accepted before any other `/v1` call works; the acceptance is recorded with the notice version.
+
 ## Not built yet (in ticket order)
-Google sign-in (1.1), invitation acceptance, CRM/LMS endpoints, Chrome extension (0.5), Gmail sync, email, video, SCORM, French UI strings, KMS key provider. See the architecture doc.
+CRM/LMS endpoints, Chrome extension (0.5), Gmail sync, email, video, SCORM, French UI strings, KMS key provider. See the architecture doc.
 
 ## Ops notes
 - `app_auth` needs `BYPASSRLS` (login lookup runs before a tenant exists) but is granted read access to six identity tables only. If your managed Postgres will not create a BYPASSRLS role, tell us: the alternative is a `SECURITY DEFINER` lookup function.

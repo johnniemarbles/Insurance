@@ -16,6 +16,13 @@ export interface Config {
   devAuth: boolean;
   localKeys: boolean;
   currentKeyId: string;
+  googleClientId?: string;
+  googleClientSecret?: string;
+  cookieSecret?: string;
+  privacyEmail: string;
+  /** Extra origins allowed to make cookie-authenticated writes, e.g. chrome-extension://<id>. */
+  extensionOrigins: string[];
+  policyUrl: string;
 }
 
 function req(env: Record<string, string | undefined>, name: string): string {
@@ -35,12 +42,25 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if ((appEnv === 'prod' || appEnv === 'staging') && (devAuth || localKeys)) {
     throw new Error('DEV_AUTH and LOCAL_KEYS are not allowed when APP_ENV is staging or prod');
   }
+  const googleClientId = env.GOOGLE_CLIENT_ID || undefined;
+  const googleClientSecret = env.GOOGLE_CLIENT_SECRET || undefined;
+  const cookieSecret = env.COOKIE_SECRET || undefined;
+  if (googleClientId && (!googleClientSecret || !cookieSecret || cookieSecret.length < 32)) {
+    throw new Error('GOOGLE_CLIENT_SECRET and a COOKIE_SECRET of at least 32 characters are required with GOOGLE_CLIENT_ID');
+  }
+  const appOrigin = env.APP_ORIGIN ?? 'https://app.punjabinsurance.net';
   return {
+    extensionOrigins: (env.EXTENSION_ORIGINS ?? '').split(',').map((x) => x.trim()).filter(Boolean),
+    googleClientId,
+    googleClientSecret,
+    cookieSecret,
+    privacyEmail: env.PRIVACY_EMAIL ?? 'privacy-officer@punjabinsurance.com',
+    policyUrl: env.POLICY_URL ?? `${appOrigin}/privacy`,
     appEnv,
     region,
     productName: env.PRODUCT_NAME ?? 'PII',
     productDisplayName: env.PRODUCT_DISPLAY_NAME ?? 'PII by Punjab Insurance',
-    appOrigin: env.APP_ORIGIN ?? 'https://app.punjabinsurance.net',
+    appOrigin,
     port: Number(env.PORT ?? 3000),
     logLevel: env.LOG_LEVEL ?? 'info',
     databaseUrl: req(env, 'DATABASE_URL'),

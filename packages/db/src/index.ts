@@ -92,3 +92,4 @@ export async function markLogin(authPool: Db, userId: string): Promise<void> {
 
 export * from './migrate.ts';
 export * from './bootstrap.ts';
+export * from './auth.ts';

@@ -1,0 +1,128 @@
+import { createHash, randomBytes } from 'node:crypto';
+import type { Db } from './index.ts';
+import { findLoginCandidates, type LoginCandidate } from './index.ts';
+
+export const SESSION_DAYS = 14;
+const hash = (t: string) => createHash('sha256').update(t).digest();
+
+export async function createSession(authPool: Db, tenantId: string, userId: string): Promise<string> {
+  const token = randomBytes(32).toString('base64url');
+  await authPool.query(
+    `INSERT INTO sessions (tenant_id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + make_interval(days => $4))`,
+    [tenantId, userId, hash(token), SESSION_DAYS],
+  );
+  return token;
+}
+
+/** Returns the signed-in user for a session token, or null if missing, expired or the user is disabled. */
+export async function findSessionUser(authPool: Db, token: string): Promise<LoginCandidate | null> {
+  const { rows } = await authPool.query<{ email: string; tenant_id: string; user_id: string }>(
+    `UPDATE sessions s SET last_seen_at = now()
+       FROM app_users u
+      WHERE s.token_hash = $1 AND s.expires_at > now() AND u.id = s.user_id AND u.status <> 'disabled'
+      RETURNING u.email::text AS email, s.tenant_id, s.user_id`,
+    [hash(token)],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const candidates = await findLoginCandidates(authPool, r.email);
+  return candidates.find((c) => c.userId === r.user_id) ?? null;
+}
+
+export async function deleteSession(authPool: Db, token: string): Promise<void> {
+  await authPool.query('DELETE FROM sessions WHERE token_hash = $1', [hash(token)]);
+}
+
+export type SignInResult =
+  | { ok: true; user: LoginCandidate; accepted: boolean }
+  | { ok: false; reason: 'unknown_user' | 'tenant_required' | 'invitation_invalid' | 'email_mismatch' | 'identity_conflict' | 'disabled' };
+
+export interface GoogleIdentity {
+  sub: string;
+  email: string;
+  name?: string;
+}
+
+/**
+ * Turns a verified Google identity into a local user.
+ * - With an invitation token: validates it (unexpired, unused, same email), creates or extends the user, marks it used.
+ * - Without: the email must already belong to a user (invite-only; there is no self-registration).
+ * - The Google account id is bound to the user on first sign-in; a different Google id for the same user is refused.
+ */
+export async function signInWithGoogle(
+  authPool: Db,
+  id: GoogleIdentity,
+  opts: { inviteToken?: string; tenantId?: string; locale?: 'en' | 'fr-CA' } = {},
+): Promise<SignInResult> {
+  const email = id.email.trim().toLowerCase();
+  const client = await authPool.connect();
+  try {
+    await client.query('BEGIN');
+    let accepted = false;
+    if (opts.inviteToken) {
+      const inv = (
+        await client.query<{ id: string; tenant_id: string; node_id: string; role: string; email: string; locale: string }>(
+          `SELECT id, tenant_id, node_id, role::text AS role, email::text AS email, locale::text AS locale FROM invitations
+            WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > now() FOR UPDATE`,
+          [hash(opts.inviteToken)],
+        )
+      ).rows[0];
+      if (!inv) {
+        await client.query('ROLLBACK');
+        return { ok: false, reason: 'invitation_invalid' };
+      }
+      if (inv.email.toLowerCase() !== email) {
+        await client.query('ROLLBACK');
+        return { ok: false, reason: 'email_mismatch' };
+      }
+      let userId = (await client.query<{ id: string; status: string }>(`SELECT id, status::text AS status FROM app_users WHERE tenant_id = $1 AND email = $2`, [inv.tenant_id, email])).rows[0];
+      if (userId?.status === 'disabled') {
+        await client.query('ROLLBACK');
+        return { ok: false, reason: 'disabled' };
+      }
+      let uid = userId?.id;
+      if (!uid) {
+        uid = (
+          await client.query<{ id: string }>(
+            `INSERT INTO app_users (tenant_id, email, display_name, google_sub, locale, status, home_node_id)
+             VALUES ($1, $2, $3, $4, $5, 'active', $6) RETURNING id`,
+            [inv.tenant_id, email, id.name ?? null, id.sub, inv.locale, inv.node_id],
+          )
+        ).rows[0]!.id;
+      }
+      await client.query(`INSERT INTO user_node_roles (tenant_id, user_id, node_id, role) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`, [inv.tenant_id, uid, inv.node_id, inv.role]);
+      await client.query('UPDATE invitations SET accepted_at = now() WHERE id = $1', [inv.id]);
+      await client.query(
+        `INSERT INTO audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, detail) VALUES ($1, $2, 'invitation_accepted', 'invitation', $3, $4)`,
+        [inv.tenant_id, uid, inv.id, JSON.stringify({ nodeId: inv.node_id, role: inv.role })],
+      );
+      accepted = true;
+      opts = { ...opts, tenantId: inv.tenant_id };
+    }
+    await client.query('COMMIT');
+
+    const candidates = await findLoginCandidates(authPool, email);
+    const list = opts.tenantId ? candidates.filter((c) => c.tenantId === opts.tenantId) : candidates;
+    if (list.length === 0) return { ok: false, reason: 'unknown_user' };
+    if (list.length > 1) return { ok: false, reason: 'tenant_required' };
+    const user = list[0]!;
+
+    // Bind the Google account on first sign-in; refuse a different one afterwards.
+    const bound = await authPool.query<{ google_sub: string | null }>('SELECT google_sub FROM app_users WHERE id = $1', [user.userId]);
+    const existingSub = bound.rows[0]?.google_sub;
+    if (existingSub && existingSub !== id.sub) return { ok: false, reason: 'identity_conflict' };
+    await authPool.query(
+      `UPDATE app_users SET google_sub = $2, last_login_at = now(),
+              display_name = coalesce(display_name, $3),
+              status = CASE WHEN status = 'invited' THEN 'active'::user_status ELSE status END
+        WHERE id = $1`,
+      [user.userId, id.sub, id.name ?? null],
+    );
+    return { ok: true, user: { ...user, status: user.status === 'invited' ? 'active' : user.status }, accepted };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}

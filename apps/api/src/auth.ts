@@ -1,6 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import { buildRequestContext, type RequestContext } from '@pii/domain';
-import { findLoginCandidates, markLogin, type Db, type LoginCandidate } from '@pii/db';
+import { findLoginCandidates, findSessionUser, markLogin, type Db, type LoginCandidate } from '@pii/db';
+import { parseCookies } from '@pii/platform';
 import { HttpError, unauthorized } from './errors.ts';
 
 export interface Identity {
@@ -41,5 +42,34 @@ export function devAuthenticator(authPool: Db): Authenticator {
     const user = pickCandidate(candidates, typeof tenantHeader === 'string' ? tenantHeader : undefined);
     if (user.status === 'invited') await markLogin(authPool, user.userId);
     return candidateToIdentity(user);
+  };
+}
+
+export const SESSION_COOKIE_NAME = 'pii_session';
+
+/** Cookie session created by Google sign-in. */
+export function sessionAuthenticator(authPool: Db): Authenticator {
+  return async (req) => {
+    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME];
+    if (!token) throw unauthorized();
+    const user = await findSessionUser(authPool, token);
+    if (!user) throw unauthorized();
+    return candidateToIdentity(user);
+  };
+}
+
+/** Try each authenticator in turn; the first that does not answer 401 wins. */
+export function firstOf(...list: Authenticator[]): Authenticator {
+  return async (req) => {
+    let last: unknown = unauthorized();
+    for (const a of list) {
+      try {
+        return await a(req);
+      } catch (err) {
+        if (err instanceof HttpError && err.status === 401) { last = err; continue; }
+        throw err;
+      }
+    }
+    throw last;
   };
 }
