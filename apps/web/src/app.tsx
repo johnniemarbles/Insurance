@@ -105,6 +105,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
   const [teamViews, setTeamViews] = useState<{ id: string; name: string; config: any; shared: boolean; mine: boolean; author: string | null }[]>([]);
   useEffect(() => { if (pid) call('GET', `/v1/pipelines/${pid}/views`).then((r) => setTeamViews(r.views), () => setTeamViews([])); }, [call, pid, tick]);
   useEffect(() => { call('GET', '/v1/org/contexts').then((r) => { const l = (r.locations ?? []) as { id: string; name: string }[]; setQuickLocs(l); if (l.length === 1) setQuickLoc(l[0]!.id); }, () => undefined); }, [call]);
+  useEffect(() => { if (pid) call('GET', `/v1/pipelines/${pid}/at-risk`).then((r) => setRiskCount((r.risks ?? []).length), () => setRiskCount(0)); }, [call, pid, boxes]);
   useEffect(() => { call('GET', '/v1/users').then((r) => setPeople(r.users), () => undefined); }, [call]);
   useEffect(() => {
     try {
@@ -131,6 +132,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
   const [viz, setViz] = useState<Viz>(() => { try { const v = localStorage.getItem('pii.viz'); return v === 'pie' || v === 'column' || v === 'line' ? v : 'none'; } catch { return 'none'; } });
   const [reportsOpen, setReportsOpen] = useState(false);
   const [attentionOpen, setAttentionOpen] = useState(false);
+  const [riskCount, setRiskCount] = useState(0);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [mergeIds, setMergeIds] = useState<string[] | null>(null);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
@@ -324,6 +326,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
           <button aria-pressed={view === 'board'} onClick={() => setViewSaved('board')}>{t.board}</button>
         </div>
         <span class="spacer" />
+        <button class="btn quiet" onClick={() => setAttentionOpen(true)}>⚠ {t.attention}{riskCount > 0 && <span class="badge">{riskCount}</span>}</button>
         <button class="btn quiet" onClick={openTasks}>{t.myTasks}{dueCount > 0 && <span class="badge">{dueCount}</span>}</button>
         <ColumnPicker all={allCols} visible={colIds ?? []} t={t} onChange={(ids) => { setColIds(ids); saveColumns(pid, ids); }} onReset={() => { saveColumns(pid, null); setColIds(loadColumns(pid, allCols)); }} />
         <div class="menuwrap">
