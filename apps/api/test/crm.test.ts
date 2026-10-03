@@ -402,3 +402,18 @@ test('filters: group totals per stage and per owner', async () => {
   assert.equal(o.groups.reduce((n: number, g: any) => n + g.count, 0), 3);
   assert.equal((await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Flt&groupBy=stage&offset=50`)).json.groups, undefined);
 });
+
+test('automatic columns: task, note and email counts per record', async () => {
+  const stages = (await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).stages.map((s: any) => s.id) as string[];
+  const id = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'Magic box', contextNodeId: X, stageId: stages[0], custom: { policy_no: 'M-1' } })).json.id as string;
+  await call(P1U, 'POST', `/v1/boxes/${id}/tasks`, { title: 'Overdue one', dueAt: '2020-01-01T00:00:00Z' });
+  await call(P1U, 'POST', `/v1/boxes/${id}/tasks`, { title: 'Later', dueAt: '2099-01-01T00:00:00Z' });
+  await call(P1U, 'POST', `/v1/boxes/${id}/notes`, { body: 'hello' });
+  const row = (await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Magic&sorts=openTasks:desc`)).json.boxes[0];
+  assert.equal(row.openTasks, 2);
+  assert.equal(row.overdueTasks, 1);
+  assert.equal(row.noteCount, 1);
+  assert.equal(row.emailCount, 0);
+  assert.ok(row.nextTaskDue && row.lastNoteAt);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&sorts=lastInteraction:desc`)).status, 200);
+});

@@ -48,7 +48,7 @@ a partner serving several locations must say which location a record is for; eve
 ## Pipeline plan v2 (Streak parity + trends)
 Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 - [x] Phase A: unified filter/sort/group bar, chips, multi-stage and owner filters, email-age filters, stacked sorts, group-by sections with totals, quick add, first-run checklist, kebab menu, Alt+R
-- [ ] Phase B: column picker, magic columns, avatars, inline edit
+- [x] Phase B: column picker and order, automatic columns (freshness, last interaction, email, task and note counts), owner avatars, inline editing with undo, frozen name column
 - [ ] Phase C: visualisations, reports, newsfeed, command palette
 - [ ] Phase D: automations, data validation, share, snippets, send later, mail merge
 - [ ] Phase E: AI and opt-in tracking

@@ -6,6 +6,7 @@ import { NewPipeline, PipelineEditor } from './editor.tsx';
 import { TrainingView } from './training.tsx';
 import { ContactsView } from './contacts.tsx';
 import { FilterBar } from './filterbar.tsx';
+import { buildColumns, Cell, ColumnPicker, loadColumns, saveColumns, type Ctx } from './columns.tsx';
 import { defaultSorts, emptyFilters, filterParams, hasFilters, migrateView, sortParam, type Filters, type GroupBy, type SortSpec } from './filters.ts';
 import { strings, type Strings } from './i18n.ts';
 import { ink, money, stageColor } from './theme.ts';
@@ -119,6 +120,11 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
   const openTasks = async () => { try { setMyTasks((await call('GET', '/v1/tasks?mine=true&open=true&limit=200')).tasks); } catch (e) { setError((e as Error).message); } };
 
   const pipeline = useMemo(() => pipelines?.find((p) => p.id === pid), [pipelines, pid]);
+  const allCols = useMemo(() => (pipeline ? buildColumns(pipeline, t, locale) : []), [pipeline, t, locale]);
+  const [colIds, setColIds] = useState<string[] | null>(null);
+  useEffect(() => { if (allCols.length) setColIds(loadColumns(pid, allCols)); }, [pid, allCols.length]);
+  const [toast, setToast] = useState<{ msg: string; undo: () => void } | null>(null);
+  useEffect(() => { if (!toast) return; const h = setTimeout(() => setToast(null), 7000); return () => clearTimeout(h); }, [toast]);
 
   const query = useCallback((offset: number) => {
     const p = new URLSearchParams(view === 'board'
@@ -149,6 +155,13 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
     try { const b = await call('GET', query(boxes.length)); setBoxes((cur) => [...cur, ...b.boxes]); } catch (e) { setError((e as Error).message); }
   };
   const refresh = () => setTick((n) => n + 1);
+  const commit: Ctx['commit'] = async (box, forward, undo, what) => {
+    try {
+      await call('PATCH', `/v1/boxes/${box.id}`, forward);
+      setToast({ msg: t.updatedMsg(what), undo: async () => { setToast(null); try { await call('PATCH', `/v1/boxes/${box.id}`, undo); refresh(); } catch (e) { setError((e as Error).message); } } });
+      refresh();
+    } catch (e) { setError((e as Error).message); refresh(); }
+  };
   const storeViews = (v: SavedView[]) => { setViews(v); try { localStorage.setItem(`pii.views.${pid}`, JSON.stringify(v)); } catch { /* private window */ } };
   const saveView = () => {
     const name = prompt(t.viewName)?.trim();
@@ -209,6 +222,8 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
   const ariaSort = (key: SortSpec['key']) => { const f = sorts[0]?.key === key ? sorts[0] : undefined; return f ? (f.dir === 'asc' ? 'ascending' : 'descending') : 'none'; };
   const cur = boxes[0]?.currency ?? 'CAD';
   const opened = boxes.find((b) => b.id === openId);
+  const cols = (colIds ?? []).map((id) => allCols.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => !!c);
+  const cellCtx: Ctx = { t, locale, stages, stageColor: (id) => stageById.get(id)?.color ?? '#6b7280', people, open: setOpenId, commit };
   const filtering = hasFilters(filters);
   const onlyStage = filters.stageIds.length === 1 ? filters.stageIds[0] : '';
   const toggleStage = (id: string) => setFilters((f) => ({ ...f, stageIds: f.stageIds.length === 1 && f.stageIds[0] === id ? [] : [id] }));
@@ -224,7 +239,6 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
   };
   const quickStageId = quickStage || onlyStage || stages[0]?.id || '';
   const showStart = !hideStart && total === 0 && !filtering && boxes.length === 0;
-  const colCount = 9 + pipeline.fields.length;
 
   return (
     <div class="pii" tabIndex={-1} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()} onKeyDown={(e) => {
@@ -255,6 +269,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
         </div>
         <span class="spacer" />
         <button class="btn quiet" onClick={openTasks}>{t.myTasks}{dueCount > 0 && <span class="badge">{dueCount}</span>}</button>
+        <ColumnPicker all={allCols} visible={colIds ?? []} t={t} onChange={(ids) => { setColIds(ids); saveColumns(pid, ids); }} onReset={() => { saveColumns(pid, null); setColIds(loadColumns(pid, allCols)); }} />
         <div class="menuwrap">
           <button class="btn quiet" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>⋯ {t.moreActions}</button>
           {menuOpen && (
@@ -305,6 +320,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
         </div>
       )}
       {error && <div class="err" role="alert">{error}</div>}
+      {toast && <div class="toast" role="status">{toast.msg} <button onClick={toast.undo}>{t.undo}</button></div>}
 
       <div class="root">
         {view === 'board' ? (
@@ -330,21 +346,16 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
             <table>
               <thead>
                 <tr>
-                  <th><input type="checkbox" aria-label={t.selectAll} checked={boxes.length > 0 && picked.size === boxes.length} onChange={(e) => setPicked((e.target as HTMLInputElement).checked ? new Set(boxes.map((b) => b.id)) : new Set())} /></th>
-                  <th aria-sort={ariaSort('name')}><button onClick={() => headSort('name')}>{t.name}{arrow('name')}</button></th>
-                  <th>{t.stage}</th>
-                  <th>{t.owner}</th>
-                  <th aria-sort={ariaSort('value')}><button onClick={() => headSort('value')}>{t.value}{arrow('value')}</button></th>
-                  <th aria-sort={ariaSort('closeDate')}><button onClick={() => headSort('closeDate')}>{t.closeDate}{arrow('closeDate')}</button></th>
-                  <th aria-sort={ariaSort('daysInStage')}><button onClick={() => headSort('daysInStage')}>{t.inStage}{arrow('daysInStage')}</button></th>
-                  <th aria-sort={ariaSort('lastEmail')}><button onClick={() => headSort('lastEmail')}>{t.lastEmail}{arrow('lastEmail')}</button></th>
-                  <th>{t.lastEmailFrom}</th>
-                  {pipeline!.fields.map((f) => <th>{label(f, locale)}</th>)}
+                  <th class="sticky1"><input type="checkbox" aria-label={t.selectAll} checked={boxes.length > 0 && picked.size === boxes.length} onChange={(e) => setPicked((e.target as HTMLInputElement).checked ? new Set(boxes.map((b) => b.id)) : new Set())} /></th>
+                  {cols.map((c) => (
+                    <th class={c.id === 'name' ? 'sticky2' : undefined} aria-sort={c.sort ? ariaSort(c.sort) : undefined}>
+                      {c.sort ? <button onClick={() => headSort(c.sort!)}>{c.label}{arrow(c.sort)}</button> : c.label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {boxes.map((b, i) => {
-                  const st = stageById.get(b.stageId);
                   const gk = groupKey(b);
                   const header = groupBy !== 'none' && (i === 0 || groupKey(boxes[i - 1]!) !== gk);
                   const g = groups[gk];
@@ -355,7 +366,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
                     <>
                       {header && (
                         <tr class="ghead" key={`h-${gk}`}>
-                          <td colSpan={colCount}>
+                          <td colSpan={cols.length + 1}>
                             <button class="gtoggle" aria-expanded={!collapsed.has(gk)} onClick={() => setCollapsed((c) => { const n = new Set(c); if (n.has(gk)) n.delete(gk); else n.add(gk); return n; })}>
                               <i style={{ background: gColor }} />{collapsed.has(gk) ? '▸' : '▾'} <b>{gName}</b>
                               <span class="muted"> {g ? t.rows(g.count) : ''}{g && g.value > 0 ? ` · ${money(g.value, cur, locale)}` : ''}</span>
@@ -365,18 +376,10 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
                         </tr>
                       )}
                       {!hidden && (
-                    <tr class="row" tabIndex={0} key={b.id} onClick={() => setOpenId(b.id)} onKeyDown={(e) => { if (e.key === 'Enter') setOpenId(b.id); else if (e.key === ' ' && e.target === e.currentTarget) { e.preventDefault(); togglePick(b.id); } }}>
-                      <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={b.name} checked={picked.has(b.id)} onChange={() => togglePick(b.id)} /></td>
-                      <td class="name">{b.name}</td>
-                      <td>{st && <span class="pill" style={{ background: st.color, color: ink(st.color) }}>{st.s.name}</span>}</td>
-                      <td>{b.ownerName ?? ''}</td>
-                      <td>{money(b.valueAmount, b.currency, locale)}</td>
-                      <td>{b.closeDate ?? ''}</td>
-                      <td><span class={`age${b.daysInStage >= 30 ? ' bad' : b.daysInStage >= 14 ? ' warn' : ''}`}>{b.daysInStage === 0 ? t.today : t.days(b.daysInStage)}</span></td>
-                      <td>{b.lastEmailAt ? new Date(b.lastEmailAt).toLocaleDateString(locale) : ''}</td>
-                      <td>{b.lastEmailFrom ?? ''}</td>
-                      {pipeline!.fields.map((f) => <td>{cell(b.custom[f.key])}</td>)}
-                    </tr>
+                        <tr class="row" tabIndex={0} key={b.id} onClick={() => setOpenId(b.id)} onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter') setOpenId(b.id); else if (e.key === ' ') { e.preventDefault(); togglePick(b.id); } }}>
+                          <td class="sticky1" onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={b.name} checked={picked.has(b.id)} onChange={() => togglePick(b.id)} /></td>
+                          {cols.map((c) => <Cell key={c.id} box={b} col={c} x={cellCtx} />)}
+                        </tr>
                       )}
                     </>
                   );

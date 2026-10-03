@@ -32,6 +32,7 @@ export function FilterBar({ t, pipeline, people, meEmail, filters, onFilters, so
   const me = people.find((u) => u.email.toLowerCase() === meEmail.toLowerCase());
   const sortLabels: Record<SortField, string> = {
     name: t.name, value: t.value, closeDate: t.closeDate, daysInStage: t.inStage, lastEmail: t.lastEmail, updated: t.sUpdated, created: t.sCreated, stage: t.stage, owner: t.owner,
+    openTasks: t.cOpenTasks, nextTaskDue: t.cNextTask, emailCount: t.cEmails, lastInteraction: t.cLastInteraction,
   };
   const groupLabels: Record<GroupBy, string> = { none: t.gNone, stage: t.stage, owner: t.owner };
 
@@ -48,7 +49,7 @@ export function FilterBar({ t, pipeline, people, meEmail, filters, onFilters, so
     { id: 'f-email', section: 'filter', label: t.fLastEmail, run: () => setEdit('email') },
     { id: 'f-stuck', section: 'filter', label: t.fInStage, run: () => setEdit('stuck') },
     { id: 'f-value', section: 'filter', label: t.fValue, run: () => setEdit('value') },
-    ...(['name', 'value', 'closeDate', 'daysInStage', 'lastEmail', 'updated', 'created'] as SortField[]).map((k): Item => ({ id: `s-${k}`, section: 'sort', label: sortLabels[k], run: () => addSort(k) })),
+    ...(['name', 'value', 'closeDate', 'daysInStage', 'lastEmail', 'lastInteraction', 'openTasks', 'updated', 'created'] as SortField[]).map((k): Item => ({ id: `s-${k}`, section: 'sort', label: sortLabels[k], run: () => addSort(k) })),
     ...(['stage', 'owner', 'none'] as GroupBy[]).map((g): Item => ({ id: `g-${g}`, section: 'group', label: groupLabels[g], run: () => onGroupBy(g) })),
   ];
   const needle = text.trim().toLowerCase();

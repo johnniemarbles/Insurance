@@ -1,6 +1,6 @@
 import type { SortKey } from './types.ts';
 
-export type SortField = SortKey | 'stage' | 'owner';
+export type SortField = SortKey | 'stage' | 'owner' | 'openTasks' | 'nextTaskDue' | 'emailCount' | 'lastInteraction';
 export type GroupBy = 'none' | 'stage' | 'owner';
 export interface SortSpec { key: SortField; dir: 'asc' | 'desc' }
 

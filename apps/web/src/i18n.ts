@@ -44,6 +44,9 @@ const en = {
   quickAdd: 'Quick add: type a name and press Enter', addHere: 'Add', addToGroup: (g: string) => `Add a record to ${g}`, noOwner: 'No owner', activeFilters: (n: number) => (n === 1 ? '1 filter' : `${n} filters`),
   gsTitle: 'Get started', gsStages: 'Set up your stages and columns', gsImport: 'Import from Streak or a spreadsheet', gsAdd: 'Add your first record', gsDone: 'Skip',
   stageName: 'Stage',
+  cLastInteraction: 'Last interaction', cFreshness: 'Freshness', fresh: 'Fresh', aging: 'Aging', stale: 'Stale', cEmails: 'Emails', cOpenTasks: 'Open tasks', cOverdue: 'Overdue tasks', cNextTask: 'Next task due',
+  cTaskProgress: 'Tasks done', cNotes: 'Notes', cUpdated: 'Last updated', cCreated: 'Created', columnsBtn: 'Columns', colsReset: 'Reset columns', undo: 'Undo', updatedMsg: (w: string) => `${w} updated`, colsHelp: 'Choose and order the columns you see. Name always stays.',
+  colGroupCore: 'Core', colGroupMagic: 'Automatic', colGroupCustom: 'Your columns',
 };
 const frCA: typeof en = {
   needConsent: 'Ouvrez le panneau PII sur un courriel dans Gmail pour lire et accepter l’avis de confidentialité.', reloadNeeded: 'PII a été mis à jour. Actualisez cet onglet Gmail (Ctrl/Cmd+R) pour continuer.', loading: 'Chargement…', retry: 'Réessayer', signedOut: 'Connectez-vous pour utiliser PII.', signIn: 'Se connecter avec Google', offline: 'Impossible de joindre le serveur.',
@@ -89,6 +92,9 @@ const frCA: typeof en = {
   quickAdd: 'Ajout rapide : tapez un nom puis Entrée', addHere: 'Ajouter', addToGroup: (g) => `Ajouter un dossier à ${g}`, noOwner: 'Sans responsable', activeFilters: (n) => (n === 1 ? '1 filtre' : `${n} filtres`),
   gsTitle: 'Pour commencer', gsStages: 'Configurer les étapes et les colonnes', gsImport: 'Importer depuis Streak ou un tableur', gsAdd: 'Ajouter votre premier dossier', gsDone: 'Passer',
   stageName: 'Étape',
+  cLastInteraction: 'Dernière interaction', cFreshness: 'Fraîcheur', fresh: 'Récent', aging: 'À relancer', stale: 'Inactif', cEmails: 'Courriels', cOpenTasks: 'Tâches ouvertes', cOverdue: 'Tâches en retard', cNextTask: 'Prochaine tâche',
+  cTaskProgress: 'Tâches faites', cNotes: 'Notes', cUpdated: 'Dernière modification', cCreated: 'Création', columnsBtn: 'Colonnes', colsReset: 'Réinitialiser les colonnes', undo: 'Annuler', updatedMsg: (w) => `${w} : modifié`, colsHelp: 'Choisissez et ordonnez les colonnes. Le nom reste toujours.',
+  colGroupCore: 'De base', colGroupMagic: 'Automatiques', colGroupCustom: 'Vos colonnes',
 };
 export type Strings = typeof en;
 export const strings = (l: Locale): Strings => (l === 'fr-CA' ? frCA : en);

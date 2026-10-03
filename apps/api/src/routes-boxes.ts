@@ -14,6 +14,14 @@ const BOX_COLS = `b.id, b.pipeline_id AS "pipelineId", b.stage_id AS "stageId", 
   (SELECT coalesce(u.display_name, u.email::text) FROM app_users u WHERE u.id = b.owner_user_id) AS "ownerName",
   (SELECT m.sent_at FROM linked_thread_messages m JOIN box_threads bt ON bt.thread_id = m.thread_id WHERE bt.box_id = b.id ORDER BY m.sent_at DESC NULLS LAST LIMIT 1) AS "lastEmailAt",
   (SELECT m.from_addr FROM linked_thread_messages m JOIN box_threads bt ON bt.thread_id = m.thread_id WHERE bt.box_id = b.id ORDER BY m.sent_at DESC NULLS LAST LIMIT 1) AS "lastEmailFrom",
+  (SELECT count(*)::int FROM box_threads bt WHERE bt.box_id = b.id) AS "threadCount",
+  (SELECT count(*)::int FROM linked_thread_messages m JOIN box_threads bt ON bt.thread_id = m.thread_id WHERE bt.box_id = b.id) AS "emailCount",
+  (SELECT count(*)::int FROM tasks k WHERE k.box_id = b.id AND k.done_at IS NULL) AS "openTasks",
+  (SELECT count(*)::int FROM tasks k WHERE k.box_id = b.id AND k.done_at IS NULL AND k.due_at < now()) AS "overdueTasks",
+  (SELECT count(*)::int FROM tasks k WHERE k.box_id = b.id AND k.done_at IS NOT NULL) AS "doneTasks",
+  (SELECT min(k.due_at) FROM tasks k WHERE k.box_id = b.id AND k.done_at IS NULL AND k.due_at IS NOT NULL) AS "nextTaskDue",
+  (SELECT count(*)::int FROM notes n WHERE n.box_id = b.id) AS "noteCount",
+  (SELECT max(n.created_at) FROM notes n WHERE n.box_id = b.id) AS "lastNoteAt",
   GREATEST(0, floor(extract(epoch FROM (now() - b.stage_entered_at)) / 86400))::int AS "daysInStage"`;
 
 const idParams = { type: 'object', properties: { id: uuid } } as const;
@@ -162,6 +170,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
         updated: 'x."updatedAt"', created: 'x."createdAt"', name: 'lower(x.name)', value: 'x."valueAmount"',
         closeDate: 'x."closeDate"', lastEmail: 'x."lastEmailAt"', daysInStage: 'x.stage_entered_at_raw', position: 'x.position',
         stage: 'x.stage_pos', owner: 'lower(x."ownerName")',
+        openTasks: 'x."openTasks"', nextTaskDue: 'x."nextTaskDue"', emailCount: 'x."emailCount"', lastInteraction: 'GREATEST(x."lastEmailAt", x."lastNoteAt")',
       };
       // "sorts" is a stack like "stage:asc,value:desc"; the older sort/dir pair is still accepted
       const wanted = q.sorts ? q.sorts.split(',').map((x) => x.split(':')) : [[q.sort ?? 'updated', q.dir ?? '']];
