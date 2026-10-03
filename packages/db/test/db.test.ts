@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
 import { buildRequestContext } from '@pii/domain';
-import { assertDeployment, bootstrapTenant, createPool, migrate, withRequestTx, findLoginCandidates, type Db } from '../src/index.ts';
+import { ensureRoles, assertDeployment, bootstrapTenant, createPool, migrate, withRequestTx, findLoginCandidates, type Db } from '../src/index.ts';
 import { createTestDb, type TestDb } from '../src/testing.ts';
 
 let db: TestDb;
@@ -115,4 +115,14 @@ test('identity tables are branch-scoped: siblings cannot see each other', async 
 
   assert.equal((await names(adminCtx(), 'SELECT email::text AS v FROM app_users')).length, 4);
   assert.ok((await names(adminCtx(), 'SELECT action AS v FROM audit_log')).includes('tenant_created'));
+});
+
+test('ensureRoles sets login passwords and rejects weak ones', async () => {
+  await assert.rejects(ensureRoles(db.ownerUrl, { appRuntime: 'short', appAuth: 'short' }), /at least 16/);
+  await ensureRoles(db.ownerUrl, { appRuntime: 'pw', appAuth: 'pw' }).catch(() => undefined);
+  await ensureRoles(db.ownerUrl, { appRuntime: 'a-long-test-password-1', appAuth: 'a-long-test-password-2' });
+  const u = new URL(db.appUrl); u.password = 'a-long-test-password-1';
+  const c = new pg.Client({ connectionString: u.toString() });
+  await c.connect(); await c.end();
+  await ensureRoles(db.ownerUrl, { appRuntime: 'pwpwpwpwpwpwpwpwpw', appAuth: 'pwpwpwpwpwpwpwpwpw' });
 });

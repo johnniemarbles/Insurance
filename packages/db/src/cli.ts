@@ -1,4 +1,4 @@
-import { bootstrapDeployment, bootstrapTenant, migrate } from './index.ts';
+import { bootstrapDeployment, bootstrapTenant, ensureRoles, migrate } from './index.ts';
 
 const [cmd, ...args] = process.argv.slice(2);
 const url = process.env.DATABASE_URL;
@@ -16,6 +16,18 @@ try {
   if (cmd === 'migrate') {
     const r = await migrate(url);
     console.log(`applied: ${r.applied.join(', ') || '(none)'}; already applied: ${r.skipped.length}`);
+  } else if (cmd === 'release') {
+    // Run on every deploy before the API starts: roles, migrations, deployment identity. All idempotent.
+    const region = process.env.REGION as 'ca-qc' | 'us' | undefined;
+    const environment = (process.env.APP_ENV === 'prod' ? 'prod' : process.env.APP_ENV === 'staging' ? 'staging' : 'dev') as 'dev' | 'staging' | 'prod';
+    if (region !== 'ca-qc' && region !== 'us') throw new Error('REGION must be ca-qc or us');
+    const appRuntime = process.env.APP_DB_PASSWORD;
+    const appAuth = process.env.AUTH_DB_PASSWORD;
+    if (!appRuntime || !appAuth) throw new Error('APP_DB_PASSWORD and AUTH_DB_PASSWORD are required');
+    await ensureRoles(url, { appRuntime, appAuth });
+    const r = await migrate(url);
+    await bootstrapDeployment(url, { region, environment, physicalRegionVerified: process.env.PHYSICAL_REGION_VERIFIED === 'true' });
+    console.log(`release ok: ${region}/${environment}; applied ${r.applied.length}, existing ${r.skipped.length}`);
   } else if (cmd === 'bootstrap-deployment') {
     const region = flag('region') as 'ca-qc' | 'us' | undefined;
     const environment = (flag('environment') ?? 'dev') as 'dev' | 'staging' | 'prod';

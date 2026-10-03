@@ -89,3 +89,23 @@ export async function bootstrapTenant(databaseUrl: string, init: TenantInit): Pr
   }
   return { tenantId, rootNodeId, adminUserId };
 }
+
+/** Creates or updates the two runtime login roles with the given passwords (run as the database owner/superuser). */
+export async function ensureRoles(databaseUrl: string, passwords: { appRuntime: string; appAuth: string }): Promise<void> {
+  if (passwords.appRuntime.length < 16 || passwords.appAuth.length < 16) throw new Error('Role passwords must be at least 16 characters');
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    for (const [role, pw, attr] of [
+      ['app_runtime', passwords.appRuntime, 'NOBYPASSRLS'],
+      ['app_auth', passwords.appAuth, 'BYPASSRLS'],
+    ] as const) {
+      const exists = (await client.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [role])).rowCount === 1;
+      const verb = exists ? 'ALTER' : 'CREATE';
+      const { rows } = await client.query<{ sql: string }>(`SELECT format('%s ROLE %I LOGIN PASSWORD %L ${attr}', $1::text, $2::text, $3::text) AS sql`, [verb, role, pw]);
+      await client.query(rows[0]!.sql);
+    }
+  } finally {
+    await client.end();
+  }
+}

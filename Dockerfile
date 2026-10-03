@@ -8,4 +8,4 @@ RUN npm ci --omit=dev --workspaces --include-workspace-root
 USER node
 EXPOSE 3000
 # Node 22 strips TypeScript types natively: there is no build step.
-CMD ["node", "apps/api/src/main.ts"]
+CMD ["sh", "-c", "node packages/db/src/cli.ts release && node apps/api/src/main.ts"]
