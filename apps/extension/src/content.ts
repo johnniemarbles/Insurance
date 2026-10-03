@@ -1,10 +1,26 @@
 import * as InboxSDK from '@inboxsdk/core';
 import { mountSidebar, type CapturedMessage } from './sidebar';
+import { mountPii } from '../../web/src/mount';
+import type { Transport } from '../../web/src/types';
+
+const transport: Transport = async (method, path, body) => {
+  const r = (await chrome.runtime.sendMessage({ type: 'pii:api', method, path, body }).catch(() => undefined)) as { status: number; json: any } | undefined;
+  return r ?? { status: 0, json: null };
+};
 
 // Gmail page side. Reads only what is on screen for the open conversation, and only sends it after the person accepts the notice.
 console.info('[PII] content script running');
 InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
   console.info('[PII] InboxSDK loaded');
+  // Full-page view: a PII item in Gmail's left menu opens the pipeline screen in place of the mailbox.
+  sdk.Router.handleCustomRoute('pii/:page', (view) => {
+    const host = document.createElement('div');
+    host.style.cssText = 'height:calc(100vh - 130px);min-height:480px;background:#fff';
+    view.getElement().appendChild(host);
+    const unmount = mountPii(host, { transport, onSignIn: () => void chrome.runtime.sendMessage({ type: 'pii:signin' }) });
+    view.on('destroy', unmount);
+  });
+  sdk.NavMenu.addNavItem({ name: 'PII', iconUrl: chrome.runtime.getURL('icon-32.png'), routeID: 'pii/:page', routeParams: { page: 'pipelines' } });
   sdk.Conversations.registerThreadViewHandler((threadView) => {
     console.info('[PII] conversation opened');
     const el = document.createElement('div');

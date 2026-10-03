@@ -10,7 +10,7 @@ cpSync('public', 'dist', { recursive: true });
 cpSync('../../node_modules/@inboxsdk/core/pageWorld.js', 'dist/pageWorld.js');
 await build({
   entryPoints: { background: 'src/background.ts', content: 'src/content.ts', options: 'src/options.ts' },
-  outdir: 'dist', bundle: true, format: 'iife', target: 'chrome120', minify: true, sourcemap: false,
+  outdir: 'dist', bundle: true, format: 'iife', target: 'chrome120', minify: true, jsx: 'automatic', jsxImportSource: 'preact', sourcemap: false,
   define: { __API_BASE__: JSON.stringify(API_BASE), __INBOXSDK_APP_ID__: JSON.stringify(INBOXSDK_APP_ID) },
   logLevel: 'info',
 });

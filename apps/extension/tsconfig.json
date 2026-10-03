@@ -1,8 +1,25 @@
 {
   "compilerOptions": {
-    "target": "ES2022", "lib": ["ES2022", "DOM"], "module": "esnext", "moduleResolution": "bundler",
-    "strict": true, "noEmit": true, "skipLibCheck": true, "noUncheckedIndexedAccess": true,
-    "types": ["chrome"]
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
+    "types": [
+      "chrome"
+    ],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "allowImportingTsExtensions": true
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "../web/src"
+  ]
 }
