@@ -147,6 +147,7 @@ th.sticky1,th.sticky2{background:#f9fafb;z-index:3}tr.row:hover td.sticky1,tr.ro
 .rbadge{font-style:normal;font-size:11px;font-weight:600;border-radius:6px;padding:2px 7px;background:#d1fae5;color:#065f46;vertical-align:middle}.rcard .rbadge{position:absolute;right:12px;top:12px}.rbadge.zapier{background:#e5e7eb;color:#374151}.rbadge.script{background:#fef3c7;color:#92400e}
 .isteps{padding-left:20px;line-height:1.55}.isteps li{margin:6px 0}.linkbtn{border:0;background:none;color:#1d4ed8;padding:0;cursor:pointer;font:inherit;text-decoration:underline}.linkbtn.pill{background:#eef2ff;border-radius:999px;padding:2px 9px;margin:3px 4px 0 0;text-decoration:none;font-size:13px}.bad{color:#b91c1c}
 .wrap2 select,.wrap2 input:not([type=checkbox]){min-width:140px;flex:1 1 140px}
+.aibox{border-top:1px solid #e5e7eb;margin-top:12px}.ev.ai{background:#f5f3ff;border-radius:8px;padding:8px}.riskrow{display:block;width:100%;text-align:left;cursor:pointer;background:none;border:1px solid #e5e7eb;border-radius:8px;padding:8px;margin:6px 0}.riskrow .chip{display:inline-block;background:#fef3c7;border-radius:10px;padding:1px 8px;margin:4px 4px 0 0;font-size:12px}.check{display:block;margin:6px 0}
 .pvbody{border-top:1px solid #e5e7eb;margin-top:8px;padding-top:4px}.pvbody p{margin:6px 0}
 @media (max-width:640px){.bar{padding:10px 12px}.stages,.meta,.wrap,.fbar{padding-left:12px;padding-right:12px}.fmenu,.fpop{left:12px}}
 `;

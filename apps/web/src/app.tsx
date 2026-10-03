@@ -9,6 +9,7 @@ import { IntegrationsPanel } from './integrations.tsx';
 import { MergePanel } from './merge.tsx';
 import { SnippetsPanel } from './snippets.tsx';
 import { FilterBar } from './filterbar.tsx';
+import { AiBox, AttentionPanel } from './ai.tsx';
 import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
 import { buildColumns, Cell, ColumnPicker, loadColumns, saveColumns, type Ctx } from './columns.tsx';
 import { defaultSorts, emptyFilters, filterParams, hasFilters, migrateView, sortParam, type Filters, type GroupBy, type SortSpec } from './filters.ts';
@@ -129,6 +130,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
   const allCols = useMemo(() => (pipeline ? buildColumns(pipeline, t, locale) : []), [pipeline, t, locale]);
   const [viz, setViz] = useState<Viz>(() => { try { const v = localStorage.getItem('pii.viz'); return v === 'pie' || v === 'column' || v === 'line' ? v : 'none'; } catch { return 'none'; } });
   const [reportsOpen, setReportsOpen] = useState(false);
+  const [attentionOpen, setAttentionOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [mergeIds, setMergeIds] = useState<string[] | null>(null);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
@@ -262,6 +264,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
     { id: 'new', label: t.newBox, hint: 'N', run: () => setCreating(true) },
     { id: 'follow', label: t.myTasks, run: () => void openTasks() },
     { id: 'integrations', label: t.integrations, run: () => setIntegrationsOpen(true) },
+    { id: 'attention', label: t.attention, run: () => setAttentionOpen(true) },
     { id: 'reports', label: t.reports, run: () => setReportsOpen(true) },
     { id: 'feed', label: t.newsfeed, run: () => setFeedOpen(true) },
     { id: 'import', label: t.import, run: () => setImporting(true) },
@@ -298,7 +301,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
       e.stopPropagation();
       const el = e.target as HTMLElement;
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
-      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); setMenuOpen(false); setReportsOpen(false); setFeedOpen(false); setPaletteOpen(false); setIntegrationsOpen(false); setMergeIds(null); setSnippetsOpen(false); return; }
+      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); setMenuOpen(false); setReportsOpen(false); setFeedOpen(false); setPaletteOpen(false); setIntegrationsOpen(false); setMergeIds(null); setSnippetsOpen(false); setAttentionOpen(false); return; }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen(true); return; }
       if (e.altKey && e.key.toLowerCase() === 'r') { e.preventDefault(); refresh(); return; }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -328,6 +331,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
           {menuOpen && (
             <div class="kebab" role="menu" onClick={() => setMenuOpen(false)}>
               <button role="menuitem" onClick={refresh}>{t.refresh} <small>Alt+R</small></button>
+              <button role="menuitem" onClick={() => setAttentionOpen(true)}>{t.attention}</button>
               <button role="menuitem" onClick={() => setReportsOpen(true)}>{t.reports}</button>
               <button role="menuitem" onClick={() => setFeedOpen(true)}>{t.newsfeed}</button>
               <button role="menuitem" onClick={() => setIntegrationsOpen(true)}>{t.integrations}</button>
@@ -465,6 +469,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
         {mergeIds && <MergePanel call={call} locale={locale} compose={compose} boxIds={mergeIds} onClose={() => setMergeIds(null)} onOpenBox={(id) => { if (id) { setMergeIds(null); void openById(id); } }} />}
         {snippetsOpen && <SnippetsPanel call={call} locale={locale} onClose={() => setSnippetsOpen(false)} />}
         {integrationsOpen && pipeline && <IntegrationsPanel pipeline={pipeline} call={call} t={t} locale={locale} onAutomations={() => { setIntegrationsOpen(false); setEditing(true); }} onExport={() => void exportCsv()} onImport={() => { setIntegrationsOpen(false); setImporting(true); }} onOpenBox={(id) => { setIntegrationsOpen(false); void openById(id); }} onClose={() => setIntegrationsOpen(false)} />}
+        {attentionOpen && pipeline && <AttentionPanel pipelineId={pid} call={call} locale={locale} onOpenBox={(id) => { setAttentionOpen(false); void openById(id); }} onClose={() => setAttentionOpen(false)} />}
         {reportsOpen && pipeline && <ReportsPanel pipelineId={pid} scope={scope} call={call} t={t} locale={locale} colorOf={(id) => stageById.get(id)?.color ?? '#6b7280'} onClose={() => setReportsOpen(false)} />}
         {feedOpen && pipeline && <FeedPanel pipelineId={pid} scope={scope} call={call} t={t} locale={locale} onOpen={(id) => { setFeedOpen(false); void openById(id); }} onClose={() => setFeedOpen(false)} />}
         {paletteOpen && <Palette actions={paletteActions} call={call} pipelineId={pid} t={t} onPickBox={(b) => { setExtraBox(b); setOpenId(b.id); }} onClose={() => setPaletteOpen(false)} />}
@@ -553,6 +558,7 @@ function Drawer({ box, pipeline, call, t, locale, onClose, onChanged }: { box: B
         <input type="date" aria-label={t.dueDate} value={taskDue} onInput={(e) => setTaskDue((e.target as HTMLInputElement).value)} style={{ flex: '0 0 140px' }} />
         <button class="btn quiet" disabled={!taskText.trim()}>+</button>
       </form>
+      <AiBox boxId={box.id} call={call} locale={locale} />
       <h3>{t.notes}</h3>
       <form onSubmit={addNote}>
         <textarea rows={3} placeholder={t.addNote} aria-label={t.addNote} value={noteText} onInput={(e) => setNoteText((e.target as HTMLTextAreaElement).value)} />

@@ -70,3 +70,10 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 - Mail merge: token templates with fallbacks, mandatory {{unsubscribe}} (CASL), public /u/:token opt-out, 400/day cap, 6–12 s pacing, sends through the user's own Gmail compose window; Gmail tab must stay open.
 - Automation action "add to mail merge" (works with forms/Calendly intake).
 - Deferred: send later (needs gmail.send OAuth); reply/view-based merge automations and open tracking (Phase E, need thread sync).
+
+## Phase E1 — Assistant (done)
+- Off by default; a company admin switches it on (and separately allows linked email text). Every use is audited.
+- Per record: summary, next step, reply draft (en / fr-CA), saved with the record; visible only to people who can see the record.
+- "Needs attention" panel: stalled, overdue, past close date, no next step, unowned (plain rules, no AI).
+- Needs ANTHROPIC_API_KEY (optional AI_MODEL) on the server. Data goes to Anthropic's API (outside Quebec): get privacy counsel sign-off before real Canadian users.
+- Not yet: open tracking, auto-generated alerts by email, thread sync.

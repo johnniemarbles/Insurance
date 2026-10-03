@@ -3,6 +3,7 @@ import { assertDeployment, createPool } from '@pii/db';
 import { buildApp } from './app.ts';
 import { devAuthenticator, firstOf, sessionAuthenticator } from './auth.ts';
 import { realGoogleClient } from './google.ts';
+import { anthropicClient } from './ai.ts';
 import { startBackgroundJobs } from './background.ts';
 
 const config = loadConfig();
@@ -20,6 +21,7 @@ if (!google && !config.devAuth) {
 const authenticate = config.devAuth ? firstOf(sessionAuthenticator(authPool), devAuthenticator(authPool)) : sessionAuthenticator(authPool);
 const keys = config.localKeys && config.localKeySecret ? localKeyProvider(config.localKeySecret, config.currentKeyId) : undefined;
 if (!keys) console.warn('No encryption keys configured: linking email conversations is disabled.');
-const app = buildApp({ config, appPool, authPool, authenticate, google, keys });
+const ai = process.env.ANTHROPIC_API_KEY ? anthropicClient(process.env.ANTHROPIC_API_KEY, process.env.AI_MODEL ?? 'claude-sonnet-5-5') : undefined;
+const app = buildApp({ config, appPool, authPool, authenticate, google, keys, ai });
 await app.listen({ port: config.port, host: '0.0.0.0' });
 startBackgroundJobs({ config, appPool, authPool, authenticate, google, keys });

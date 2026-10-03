@@ -1,3 +1,4 @@
+import type { AiClient } from './ai.ts';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Config } from '@pii/platform';
 import { assertDeployment, type Db } from '@pii/db';
@@ -18,6 +19,7 @@ import { registerInsightRoutes } from './routes-insights.ts';
 import { registerAutomationRoutes } from './routes-automation.ts';
 import { registerIntegrationRoutes } from './routes-integrations.ts';
 import { registerMergeRoutes } from './routes-merge.ts';
+import { registerAiRoutes } from './routes-ai.ts';
 import { registerAuthRoutes, originGuard } from './routes-auth.ts';
 import { registerConsentRoutes, hasAcceptedFirstLogin } from './routes-consent.ts';
 import { withRequestTx } from '@pii/db';
@@ -31,6 +33,8 @@ export interface AppDeps {
   google?: GoogleClient;
   /** Encryption keys for linked email content. Absent: linking is refused (503). */
   keys?: KeyProvider;
+  /** AI text service. Absent: AI features answer 503. */
+  ai?: AiClient;
 }
 
 export function buildApp(input: AppDeps): FastifyInstance {
@@ -104,5 +108,6 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerAutomationRoutes(app, deps);
   registerIntegrationRoutes(app, deps);
   registerMergeRoutes(app, deps);
+  registerAiRoutes(app, deps);
   return app;
 }

@@ -785,3 +785,34 @@ test('mail merge: recipients, opt-out, unsubscribe link, one message at a time, 
   assert.ok(await settle(async () => (await call(P1U, 'GET', `/v1/merges/${target}`)).json.total === 1));
 });
 const randomUUIDLike = () => '00000000-0000-4000-8000-000000000001';
+
+test('AI assist: off until an admin enables it, stays inside what you can see, and at-risk flags use plain rules', async () => {
+  const seen: string[] = [];
+  const fake = { model: 'fake-1', complete: async (i: { system: string; user: string }) => { seen.push(i.user); return 'Call them today.'; } };
+  const saved = sweepDeps.ai;
+  // buildApp copies deps, so a fresh app with the fake client is needed.
+  const app2 = buildApp({ ...sweepDeps, ai: fake });
+  const call2 = async (email: string, method: 'GET' | 'POST' | 'PUT', url: string, body?: unknown) => {
+    const r = await app2.inject({ method, url, headers: { 'x-dev-user-email': email }, ...(body !== undefined ? { payload: body as object } : {}) });
+    return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null };
+  };
+  const box = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'AiBox', contextNodeId: X, custom: { policy_no: 'AiBox' } })).json.id as string;
+  assert.equal((await call2(P1U, 'POST', `/v1/boxes/${box}/ai`, { kind: 'summary' })).status, 403, 'off by default');
+  assert.equal((await call2(S1U, 'PUT', '/v1/ai/settings', { enabled: true })).status, 403, 'admins only');
+  const on = await call2(ADMIN, 'PUT', '/v1/ai/settings', { enabled: true, includeEmail: false });
+  assert.equal(on.json.enabled, true);
+  assert.equal((await call2(P2U, 'POST', `/v1/boxes/${box}/ai`, { kind: 'summary' })).status, 404, 'a sibling cannot see the record');
+  const r = await call2(P1U, 'POST', `/v1/boxes/${box}/ai`, { kind: 'next_action' });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.body, 'Call them today.');
+  assert.match(seen[0]!, /<record>[\s\S]*AiBox/);
+  assert.equal((await call2(P1U, 'GET', `/v1/boxes/${box}/ai`)).json.insights.length, 1);
+  assert.equal((await call2(P2U, 'GET', `/v1/boxes/${box}/ai`)).json.insights.length, 0);
+  await ownerSql(`UPDATE boxes SET stage_entered_at = now() - interval '30 days' WHERE id = $1`, [box]);
+  const risk = await call2(P1U, 'GET', `/v1/pipelines/${pipe1}/at-risk`);
+  assert.equal(risk.status, 200);
+  const mine = risk.json.risks.find((x: { id: string }) => x.id === box);
+  assert.ok(mine && mine.reasons.includes('stalled') && mine.reasons.includes('no_next_step'));
+  await app2.close();
+  void saved;
+});
