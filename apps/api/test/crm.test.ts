@@ -369,3 +369,36 @@ test('import: contacts are created once, matched to their record, and reused on 
   assert.equal(detail.contacts[0].email, 'ann@example.com');
   assert.equal((await call(P1U, 'POST', `/v1/pipelines/${pipe1}/import`, body)).json.contactsCreated, 0);
 });
+
+test('filters: several stages, owners, value range, email age, stacked sorts', async () => {
+  const stages = (await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).stages.map((s: any) => s.id) as string[];
+  const [a, b] = stages;
+  const mk = async (name: string, stageId: string, value: number) =>
+    (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name, contextNodeId: X, stageId, valueAmount: value, custom: { policy_no: name } })).json.id as string;
+  await mk('Flt A', a!, 100); await mk('Flt B', b!, 300); await mk('Flt C', a!, 200);
+  const list = async (qs: string) => (await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Flt&${qs}`)).json;
+  assert.equal((await list(`stageIds=${a},${b}`)).total, 3);
+  assert.equal((await list(`stageIds=${b}`)).total, 1);
+  assert.equal((await list('valueMin=150&valueMax=250')).boxes[0].name, 'Flt C');
+  assert.equal((await list('noEmail=true')).total, 3);
+  assert.equal((await list('emailOlderThanDays=7')).total, 3, 'no email counts as older than 7 days');
+  assert.equal((await list('emailWithinDays=7')).total, 0);
+  assert.equal((await list('unassigned=true&assigneeIds=' + s1UserId)).total, 0, 'these boxes belong to their creator, not to the sub-partner and not unassigned');
+  assert.equal((await list('assigneeIds=' + s1UserId)).total, 0);
+  const stacked = (await list('sorts=stage:asc,value:desc')).boxes.map((x: any) => x.name);
+  assert.deepEqual(stacked, ['Flt C', 'Flt A', 'Flt B']);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&stageIds=nope`)).status, 422);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&sorts=password:asc`)).status, 422);
+  assert.equal((await call(P2U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Flt&stageIds=${a}`)).json.total, 0, 'siblings still see nothing');
+});
+
+test('filters: group totals per stage and per owner', async () => {
+  const stages = (await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).stages.map((s: any) => s.id) as string[];
+  const r = (await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Flt&groupBy=stage&sorts=stage:asc`)).json;
+  const byStage = Object.fromEntries(r.groups.map((g: any) => [g.key, g]));
+  assert.equal(byStage[stages[0]!].count, 2);
+  assert.equal(byStage[stages[0]!].value, 300);
+  const o = (await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Flt&groupBy=owner&sorts=owner:asc`)).json;
+  assert.equal(o.groups.reduce((n: number, g: any) => n + g.count, 0), 3);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Flt&groupBy=stage&offset=50`)).json.groups, undefined);
+});

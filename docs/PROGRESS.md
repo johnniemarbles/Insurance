@@ -43,3 +43,12 @@ a partner serving several locations must say which location a record is for; eve
 - [ ] Move the Canadian stack to a Montréal region (AWS / Azure / GCP)
 - [ ] Counsel review of privacy notice; Google OAuth verification package
 - [ ] KMS-backed encryption keys
+
+
+## Pipeline plan v2 (Streak parity + trends)
+Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
+- [x] Phase A: unified filter/sort/group bar, chips, multi-stage and owner filters, email-age filters, stacked sorts, group-by sections with totals, quick add, first-run checklist, kebab menu, Alt+R
+- [ ] Phase B: column picker, magic columns, avatars, inline edit
+- [ ] Phase C: visualisations, reports, newsfeed, command palette
+- [ ] Phase D: automations, data validation, share, snippets, send later, mail merge
+- [ ] Phase E: AI and opt-in tracking

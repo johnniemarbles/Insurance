@@ -125,6 +125,13 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
             pipelineId: uuid, stageId: uuid, q: { type: 'string', maxLength: 100 },
             scope: { type: 'string', enum: ['all', 'mine', 'below'] },
             assignee: uuid, minDaysInStage: { type: 'integer', minimum: 0, maximum: 3650 },
+            stageIds: { type: 'string', maxLength: 800 }, assigneeIds: { type: 'string', maxLength: 800 },
+            unassigned: { type: 'boolean' },
+            emailOlderThanDays: { type: 'integer', minimum: 0, maximum: 3650 }, emailWithinDays: { type: 'integer', minimum: 0, maximum: 3650 },
+            noEmail: { type: 'boolean' },
+            valueMin: { type: 'number' }, valueMax: { type: 'number' },
+            closeBefore: { type: 'string', format: 'date' }, closeAfter: { type: 'string', format: 'date' },
+            sorts: { type: 'string', maxLength: 200 }, groupBy: { type: 'string', enum: ['stage', 'owner'] },
             sort: { type: 'string', enum: ['updated', 'created', 'name', 'value', 'closeDate', 'daysInStage', 'position', 'lastEmail'] },
             dir: { type: 'string', enum: ['asc', 'desc'] },
             ...pageQuery,
@@ -138,32 +145,75 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
       const q = req.query as {
         pipelineId?: string; stageId?: string; q?: string; scope?: string; assignee?: string; minDaysInStage?: number;
         sort?: string; dir?: string; limit?: number; offset?: number;
+        stageIds?: string; assigneeIds?: string; unassigned?: boolean; emailOlderThanDays?: number; emailWithinDays?: number; noEmail?: boolean;
+        valueMin?: number; valueMax?: number; closeBefore?: string; closeAfter?: string; sorts?: string; groupBy?: string;
       };
+      const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const uuids = (v?: string): string[] | null => {
+        if (!v) return null;
+        const list = v.split(',').map((x) => x.trim()).filter(Boolean);
+        if (list.length === 0 || list.some((x) => !UUID.test(x))) throw invalid('Filter lists must contain ids');
+        return list;
+      };
+      const stageList = uuids(q.stageIds);
+      const assigneeList = uuids(q.assigneeIds);
       const { limit, offset } = page(q);
       const sortCol: Record<string, string> = {
-        updated: 'b.updated_at', created: 'b.created_at', name: 'lower(b.name)', value: 'b.value_amount',
-        closeDate: 'b.close_date', lastEmail: '"lastEmailAt"', daysInStage: 'b.stage_entered_at', position: 'b.position',
+        updated: 'x."updatedAt"', created: 'x."createdAt"', name: 'lower(x.name)', value: 'x."valueAmount"',
+        closeDate: 'x."closeDate"', lastEmail: 'x."lastEmailAt"', daysInStage: 'x.stage_entered_at_raw', position: 'x.position',
+        stage: 'x.stage_pos', owner: 'lower(x."ownerName")',
       };
-      // daysInStage ascending means entered most recently, so flip the direction for that column
-      const sortKey = q.sort ?? 'updated';
-      let dir = q.dir === 'asc' ? 'ASC' : 'DESC';
-      if (sortKey === 'daysInStage') dir = dir === 'ASC' ? 'DESC' : 'ASC';
-      if (sortKey === 'position' && !q.dir) dir = 'ASC';
+      // "sorts" is a stack like "stage:asc,value:desc"; the older sort/dir pair is still accepted
+      const wanted = q.sorts ? q.sorts.split(',').map((x) => x.split(':')) : [[q.sort ?? 'updated', q.dir ?? '']];
+      const orderBy = wanted.slice(0, 4).map(([key, d]) => {
+        if (!sortCol[key!]) throw invalid(`Cannot sort by ${key}`);
+        let dir = d === 'asc' ? 'ASC' : 'DESC';
+        // days in stage ascending means entered most recently, so flip the direction for that column
+        if (key === 'daysInStage') dir = dir === 'ASC' ? 'DESC' : 'ASC';
+        if ((key === 'position' || key === 'stage' || key === 'owner') && !d) dir = 'ASC';
+        return `${sortCol[key!]} ${dir} NULLS LAST`;
+      }).join(', ');
       return run(ctx, async (tx) => {
+        const filtered = `FROM (
+               SELECT ${BOX_COLS}, b.stage_entered_at AS stage_entered_at_raw,
+                      (SELECT s.position FROM stages s WHERE s.id = b.stage_id) AS stage_pos
+                 FROM boxes b
+                WHERE ($1::uuid IS NULL OR b.pipeline_id = $1) AND ($2::uuid IS NULL OR b.stage_id = $2)
+                  AND ($3::text IS NULL OR b.name ILIKE '%' || $3 || '%')
+                  AND ${scopeSql(4)}
+                  AND ($6::uuid IS NULL OR b.owner_user_id = $6)
+                  AND ($7::int IS NULL OR b.stage_entered_at <= now() - ($7::int * interval '1 day'))
+                  AND ($10::uuid[] IS NULL OR b.stage_id = ANY($10))
+                  AND ($11::uuid[] IS NULL OR b.owner_user_id = ANY($11) OR ($12::boolean AND b.owner_user_id IS NULL))
+                  AND ($13::numeric IS NULL OR b.value_amount >= $13) AND ($14::numeric IS NULL OR b.value_amount <= $14)
+                  AND ($15::date IS NULL OR b.close_date < $15) AND ($16::date IS NULL OR b.close_date > $16)
+             ) x
+             WHERE ($17::int IS NULL OR x."lastEmailAt" IS NULL OR x."lastEmailAt" < now() - ($17::int * interval '1 day'))
+               AND ($18::int IS NULL OR x."lastEmailAt" >= now() - ($18::int * interval '1 day'))
+               AND ($19::boolean IS NOT TRUE OR x."lastEmailAt" IS NULL)`;
+        const params = [q.pipelineId ?? null, q.stageId ?? null, q.q ?? null, q.scope ?? 'all', ctx.nodeIds, q.assignee ?? null, q.minDaysInStage ?? null, limit, offset,
+          stageList, assigneeList, q.unassigned ?? false, q.valueMin ?? null, q.valueMax ?? null, q.closeBefore ?? null, q.closeAfter ?? null,
+          q.emailOlderThanDays ?? null, q.emailWithinDays ?? null, q.noEmail ?? false];
         const rows = (
           await tx.query(
-            `SELECT ${BOX_COLS}, count(*) OVER ()::int AS "total" FROM boxes b
-              WHERE ($1::uuid IS NULL OR b.pipeline_id = $1) AND ($2::uuid IS NULL OR b.stage_id = $2)
-                AND ($3::text IS NULL OR b.name ILIKE '%' || $3 || '%')
-                AND ${scopeSql(4)}
-                AND ($6::uuid IS NULL OR b.owner_user_id = $6)
-                AND ($7::int IS NULL OR b.stage_entered_at <= now() - ($7::int * interval '1 day'))
-              ORDER BY ${sortCol[sortKey]} ${dir} NULLS LAST, b.id LIMIT $8 OFFSET $9`,
-            [q.pipelineId ?? null, q.stageId ?? null, q.q ?? null, q.scope ?? 'all', ctx.nodeIds, q.assignee ?? null, q.minDaysInStage ?? null, limit, offset],
+            `SELECT x.*, count(*) OVER ()::int AS "total" ${filtered} ORDER BY ${orderBy}, x.id LIMIT $8 OFFSET $9`,
+            params,
           )
         ).rows as Array<{ total: number }>;
+        // counts and value totals per group, for the section headers (first page only)
+        let groups: { key: string | null; count: number; value: number }[] | undefined;
+        if (q.groupBy && offset === 0) {
+          const keyCol = q.groupBy === 'owner' ? 'x."ownerUserId"' : 'x."stageId"';
+          groups = (
+            await tx.query(
+              `SELECT ${keyCol} AS key, count(*)::int AS count, coalesce(sum(x."valueAmount"), 0)::float8 AS value ${filtered}
+                GROUP BY 1 HAVING $8::int IS NOT NULL AND $9::int IS NOT NULL`,
+              params,
+            )
+          ).rows as typeof groups;
+        }
         const total = rows[0]?.total ?? 0;
-        return { boxes: rows.map(({ total: _t, ...r }) => r), total, limit, offset };
+        return { boxes: rows.map(({ total: _t, stage_pos: _p, stage_entered_at_raw: _e, ...r }: any) => r), total, limit, offset, ...(groups ? { groups } : {}) };
       });
     },
   );

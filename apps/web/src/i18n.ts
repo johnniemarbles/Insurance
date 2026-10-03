@@ -35,6 +35,15 @@ const en = {
   owner: 'Owner', views: 'Views', saveView: 'Save view', viewName: 'Name for this view', removeView: 'Delete a view', removeViewName: 'Name of the view to delete', exportCsv: 'Export CSV',
   phone: 'Phone', jobTitle: 'Title',
   sortBy: 'Sort by', newPlaceholder: 'Name of the record', stalledOnly: 'Stuck 14+ days', rows: (n: number) => (n === 1 ? '1 record' : `${n} records`),
+  fbPlaceholder: 'Type to add a filter, sort, or group…', fbFilter: 'Filter by', fbSort: 'Sort by', fbGroup: 'Group by', fbSearchFor: (q: string) => `Search names for “${q}”`,
+  fAssigned: 'Assigned to', fLastEmail: 'Last email', fInStage: 'Days in stage', fValue: 'Value', sUpdated: 'Last updated', sCreated: 'Created', gNone: 'No grouping',
+  me: 'Me', unassigned: 'Unassigned', noEmailYet: 'No email yet', emailOlderChip: (n: number) => `Last email over ${n} days ago`, emailWithinChip: (n: number) => `Last email within ${n} days`,
+  stuckChip: (n: number) => `${n}+ days in stage`, valueChip: (a: number | null, b: number | null) => (a != null && b != null ? `Value ${a}–${b}` : a != null ? `Value ≥ ${a}` : `Value ≤ ${b}`),
+  isAnyOf: (names: string) => `is any of ${names}`, sortChip: (l: string, d: string) => `Sort: ${l} ${d === 'asc' ? '▲' : '▼'}`, groupChip: (l: string) => `Group: ${l}`, clearAll: 'Clear all', done: 'Done',
+  olderThan: 'Older than', withinLast: 'Within the last', daysWord: 'days', noEmailAtAll: 'No linked email at all', minimum: 'Minimum', maximum: 'Maximum', moreActions: 'More', refresh: 'Refresh',
+  quickAdd: 'Quick add: type a name and press Enter', addHere: 'Add', addToGroup: (g: string) => `Add a record to ${g}`, noOwner: 'No owner', activeFilters: (n: number) => (n === 1 ? '1 filter' : `${n} filters`),
+  gsTitle: 'Get started', gsStages: 'Set up your stages and columns', gsImport: 'Import from Streak or a spreadsheet', gsAdd: 'Add your first record', gsDone: 'Skip',
+  stageName: 'Stage',
 };
 const frCA: typeof en = {
   needConsent: 'Ouvrez le panneau PII sur un courriel dans Gmail pour lire et accepter l’avis de confidentialité.', reloadNeeded: 'PII a été mis à jour. Actualisez cet onglet Gmail (Ctrl/Cmd+R) pour continuer.', loading: 'Chargement…', retry: 'Réessayer', signedOut: 'Connectez-vous pour utiliser PII.', signIn: 'Se connecter avec Google', offline: 'Impossible de joindre le serveur.',
@@ -71,6 +80,15 @@ const frCA: typeof en = {
   owner: 'Responsable', views: 'Vues', saveView: 'Enregistrer la vue', viewName: 'Nom de cette vue', removeView: 'Supprimer une vue', removeViewName: 'Nom de la vue à supprimer', exportCsv: 'Exporter en CSV',
   phone: 'Téléphone', jobTitle: 'Titre',
   sortBy: 'Trier par', newPlaceholder: 'Nom du dossier', stalledOnly: 'Bloqués 14 jours et +', rows: (n) => (n === 1 ? '1 dossier' : `${n} dossiers`),
+  fbPlaceholder: 'Tapez pour ajouter un filtre, un tri ou un regroupement…', fbFilter: 'Filtrer par', fbSort: 'Trier par', fbGroup: 'Regrouper par', fbSearchFor: (q) => `Chercher « ${q} » dans les noms`,
+  fAssigned: 'Assigné à', fLastEmail: 'Dernier courriel', fInStage: 'Jours à l’étape', fValue: 'Valeur', sUpdated: 'Dernière modification', sCreated: 'Création', gNone: 'Aucun regroupement',
+  me: 'Moi', unassigned: 'Non assigné', noEmailYet: 'Aucun courriel', emailOlderChip: (n) => `Dernier courriel il y a plus de ${n} jours`, emailWithinChip: (n) => `Dernier courriel dans les ${n} jours`,
+  stuckChip: (n) => `${n} jours et + à l’étape`, valueChip: (a, b) => (a != null && b != null ? `Valeur ${a}–${b}` : a != null ? `Valeur ≥ ${a}` : `Valeur ≤ ${b}`),
+  isAnyOf: (names) => `parmi ${names}`, sortChip: (l, d) => `Tri : ${l} ${d === 'asc' ? '▲' : '▼'}`, groupChip: (l) => `Groupe : ${l}`, clearAll: 'Tout effacer', done: 'Terminé',
+  olderThan: 'Plus de', withinLast: 'Dans les', daysWord: 'jours', noEmailAtAll: 'Aucun courriel lié', minimum: 'Minimum', maximum: 'Maximum', moreActions: 'Plus', refresh: 'Actualiser',
+  quickAdd: 'Ajout rapide : tapez un nom puis Entrée', addHere: 'Ajouter', addToGroup: (g) => `Ajouter un dossier à ${g}`, noOwner: 'Sans responsable', activeFilters: (n) => (n === 1 ? '1 filtre' : `${n} filtres`),
+  gsTitle: 'Pour commencer', gsStages: 'Configurer les étapes et les colonnes', gsImport: 'Importer depuis Streak ou un tableur', gsAdd: 'Ajouter votre premier dossier', gsDone: 'Passer',
+  stageName: 'Étape',
 };
 export type Strings = typeof en;
 export const strings = (l: Locale): Strings => (l === 'fr-CA' ? frCA : en);

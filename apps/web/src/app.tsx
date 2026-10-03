@@ -5,9 +5,11 @@ import { ImportDialog } from './import.tsx';
 import { NewPipeline, PipelineEditor } from './editor.tsx';
 import { TrainingView } from './training.tsx';
 import { ContactsView } from './contacts.tsx';
+import { FilterBar } from './filterbar.tsx';
+import { defaultSorts, emptyFilters, filterParams, hasFilters, migrateView, sortParam, type Filters, type GroupBy, type SortSpec } from './filters.ts';
 import { strings, type Strings } from './i18n.ts';
 import { ink, money, stageColor } from './theme.ts';
-import type { Box, BoxEvent, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, SortKey, Stage } from './types.ts';
+import type { Box, BoxEvent, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, Stage } from './types.ts';
 
 const PAGE = 100;
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -42,10 +44,10 @@ export function App({ host }: { host: HostOptions }) {
   if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><button class="btn" onClick={host.onSignIn}>{t.signIn}</button></div></div>;
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
-  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} />;
+  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} />;
 }
 
-function Shell({ call, t, locale, canAuthor }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean }) {
+function Shell({ call, t, locale, canAuthor, meEmail }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string }) {
   const [tab, setTab] = useState<'crm' | 'contacts' | 'training'>(() => { try { const v = localStorage.getItem('pii.tab'); return v === 'training' || v === 'contacts' ? v : 'crm'; } catch { return 'crm'; } });
   const pick = (v: 'crm' | 'contacts' | 'training') => { setTab(v); try { localStorage.setItem('pii.tab', v); } catch { /* private window */ } };
   return (
@@ -55,19 +57,27 @@ function Shell({ call, t, locale, canAuthor }: { call: Call; t: Strings; locale:
         <button role="tab" aria-selected={tab === 'contacts'} onClick={() => pick('contacts')}>{t.contacts}</button>
         <button role="tab" aria-selected={tab === 'training'} onClick={() => pick('training')}>{t.training}</button>
       </div>
-      {tab === 'crm' ? <PipelineView call={call} t={t} locale={locale} /> : tab === 'contacts' ? <ContactsView call={call} t={t} /> : <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />}
+      {tab === 'crm' ? <PipelineView call={call} t={t} locale={locale} meEmail={meEmail} /> : tab === 'contacts' ? <ContactsView call={call} t={t} /> : <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />}
     </div>
   );
 }
 
-function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Locale }) {
+function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; locale: Locale; meEmail: string }) {
   const [pipelines, setPipelines] = useState<Pipeline[] | null>(null);
   const [pid, setPid] = useState('');
   const [scope, setScope] = useState<Scope>('all');
-  const [stageFilter, setStageFilter] = useState('');
-  const [q, setQ] = useState('');
-  const [debouncedQ, setDebouncedQ] = useState('');
-  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'updated', dir: 'desc' });
+  const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [sorts, setSorts] = useState<SortSpec[]>(defaultSorts);
+  const [groupBy, setGroupBy] = useState<GroupBy>('none');
+  const [groups, setGroups] = useState<Record<string, { count: number; value: number }>>({});
+  const [quickName, setQuickName] = useState('');
+  const [quickStage, setQuickStage] = useState('');
+  const [quickBusy, setQuickBusy] = useState(false);
+  const [quickLocs, setQuickLocs] = useState<{ id: string; name: string }[]>([]);
+  const [quickLoc, setQuickLoc] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [hideStart, setHideStart] = useState(() => { try { return localStorage.getItem('pii.start') === 'off'; } catch { return false; } });
   const [boxes, setBoxes] = useState<Box[]>([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<Record<string, { count: number; value: number }>>({});
@@ -83,13 +93,17 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   const [view, setView] = useState<'table' | 'board'>(() => { try { return localStorage.getItem('pii.view') === 'board' ? 'board' : 'table'; } catch { return 'table'; } });
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [bulkStage, setBulkStage] = useState('');
-  const [stuck, setStuck] = useState(false);
-  const [assignee, setAssignee] = useState('');
   const [people, setPeople] = useState<{ id: string; displayName: string | null; email: string }[]>([]);
-  interface SavedView { name: string; scope: Scope; stageFilter: string; q: string; stuck: boolean; assignee: string; view: 'table' | 'board'; sort: { key: SortKey; dir: 'asc' | 'desc' } }
+  interface SavedView { name: string; scope: Scope; filters: Filters; sorts: SortSpec[]; groupBy: GroupBy; view: 'table' | 'board' }
   const [views, setViews] = useState<SavedView[]>([]);
+  useEffect(() => { call('GET', '/v1/org/contexts').then((r) => { const l = (r.locations ?? []) as { id: string; name: string }[]; setQuickLocs(l); if (l.length === 1) setQuickLoc(l[0]!.id); }, () => undefined); }, [call]);
   useEffect(() => { call('GET', '/v1/users').then((r) => setPeople(r.users), () => undefined); }, [call]);
-  useEffect(() => { try { setViews(JSON.parse(localStorage.getItem(`pii.views.${pid}`) ?? '[]')); } catch { setViews([]); } }, [pid]);
+  useEffect(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(`pii.views.${pid}`) ?? '[]') as any[];
+      setViews(raw.map((v) => ({ name: v.name, scope: v.scope ?? 'all', view: v.view ?? 'table', ...migrateView(v) })));
+    } catch { setViews([]); }
+  }, [pid]);
 
   useEffect(() => {
     call('GET', '/v1/pipelines').then((r) => {
@@ -103,20 +117,17 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
     call('GET', '/v1/tasks?mine=true&open=true&limit=200').then((r) => setDueCount((r.tasks as TaskRow[]).filter((k) => k.dueAt && new Date(k.dueAt) <= new Date()).length), () => undefined);
   }, [call, tick]);
   const openTasks = async () => { try { setMyTasks((await call('GET', '/v1/tasks?mine=true&open=true&limit=200')).tasks); } catch (e) { setError((e as Error).message); } };
-  useEffect(() => { const h = setTimeout(() => setDebouncedQ(q), 250); return () => clearTimeout(h); }, [q]);
 
   const pipeline = useMemo(() => pipelines?.find((p) => p.id === pid), [pipelines, pid]);
 
   const query = useCallback((offset: number) => {
     const p = new URLSearchParams(view === 'board'
       ? { pipelineId: pid, scope, sort: 'position', dir: 'asc', limit: '200', offset: String(offset) }
-      : { pipelineId: pid, scope, sort: sort.key, dir: sort.dir, limit: String(PAGE), offset: String(offset) });
-    if (stageFilter) p.set('stageId', stageFilter);
-    if (debouncedQ) p.set('q', debouncedQ);
-    if (stuck) p.set('minDaysInStage', '14');
-    if (assignee) p.set('assignee', assignee);
+      : { pipelineId: pid, scope, sorts: sortParam(sorts, groupBy), limit: String(PAGE), offset: String(offset) });
+    if (view === 'table' && groupBy !== 'none') p.set('groupBy', groupBy);
+    filterParams(filters, p);
     return `/v1/boxes?${p}`;
-  }, [pid, scope, sort, stageFilter, debouncedQ, view, stuck, assignee]);
+  }, [pid, scope, sorts, groupBy, filters, view]);
 
   useEffect(() => {
     if (!pid) return;
@@ -126,6 +137,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
       ([b, s]) => {
         if (!live) return;
         setBoxes(b.boxes); setTotal(b.total);
+        if (b.groups) setGroups(Object.fromEntries((b.groups as { key: string | null; count: number; value: number }[]).map((g) => [g.key ?? '', g])));
         setSummary(Object.fromEntries((s.stages as { stageId: string; count: number; value: number }[]).map((x) => [x.stageId, x])));
       },
       (e) => live && setError((e as Error).message),
@@ -141,22 +153,18 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   const saveView = () => {
     const name = prompt(t.viewName)?.trim();
     if (!name) return;
-    storeViews([...views.filter((v) => v.name !== name), { name, scope, stageFilter, q, stuck, assignee, view, sort }]);
+    storeViews([...views.filter((v) => v.name !== name), { name, scope, filters, sorts, groupBy, view }]);
   };
   const applyView = (name: string) => {
     const v = views.find((x) => x.name === name);
     if (!v) return;
-    setScope(v.scope); setStageFilter(v.stageFilter); setQ(v.q); setStuck(v.stuck); setAssignee(v.assignee); setView(v.view); setSort(v.sort);
+    setScope(v.scope); setFilters(v.filters); setSorts(v.sorts); setGroupBy(v.groupBy); setView(v.view);
   };
   const exportCsv = async () => {
     try {
       const all: Box[] = [];
       for (let off = 0; off < 20000; off += 200) {
-        const p = new URLSearchParams({ pipelineId: pid, scope, sort: 'name', dir: 'asc', limit: '200', offset: String(off) });
-        if (stageFilter) p.set('stageId', stageFilter);
-        if (debouncedQ) p.set('q', debouncedQ);
-        if (stuck) p.set('minDaysInStage', '14');
-        if (assignee) p.set('assignee', assignee);
+        const p = filterParams(filters, new URLSearchParams({ pipelineId: pid, scope, sorts: 'name:asc', limit: '200', offset: String(off) }));
         const r = await call('GET', `/v1/boxes?${p}`);
         all.push(...r.boxes);
         if (all.length >= r.total || r.boxes.length === 0) break;
@@ -193,11 +201,30 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   if (!pipeline) return <div class="pii"><div class="msg">{t.loading}</div></div>;
   const stages = pipeline.stages;
   const stageById = new Map(stages.map((s, i) => [s.id, { s, color: stageColor(pipeline!.colorTheme, s, i) }]));
-  const sortBy = (key: SortKey) => setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'name' ? 'asc' : 'desc' }));
-  const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '');
-  const ariaSort = (key: SortKey) => (sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+  const headSort = (key: SortSpec['key']) => setSorts((cur) => {
+    const f = cur.find((x) => x.key === key);
+    return f ? [{ key, dir: f.dir === 'asc' ? 'desc' : 'asc' }] : [{ key, dir: key === 'name' ? 'asc' : 'desc' }];
+  });
+  const arrow = (key: SortSpec['key']) => { const f = sorts[0]?.key === key ? sorts[0] : undefined; return f ? (f.dir === 'asc' ? ' ▲' : ' ▼') : ''; };
+  const ariaSort = (key: SortSpec['key']) => { const f = sorts[0]?.key === key ? sorts[0] : undefined; return f ? (f.dir === 'asc' ? 'ascending' : 'descending') : 'none'; };
   const cur = boxes[0]?.currency ?? 'CAD';
   const opened = boxes.find((b) => b.id === openId);
+  const filtering = hasFilters(filters);
+  const onlyStage = filters.stageIds.length === 1 ? filters.stageIds[0] : '';
+  const toggleStage = (id: string) => setFilters((f) => ({ ...f, stageIds: f.stageIds.length === 1 && f.stageIds[0] === id ? [] : [id] }));
+  const groupKey = (b: Box) => (groupBy === 'stage' ? b.stageId : groupBy === 'owner' ? (b.ownerUserId ?? '') : '');
+  const quickAdd = async (stageId: string, name: string) => {
+    if (!name.trim()) return;
+    setQuickBusy(true); setError('');
+    try {
+      await call('POST', '/v1/boxes', { pipelineId: pid, name: name.trim(), stageId, ...(quickLoc ? { contextNodeId: quickLoc } : {}) });
+      setQuickName(''); refresh();
+    } catch (e) { setError((e as Error).message); }
+    setQuickBusy(false);
+  };
+  const quickStageId = quickStage || onlyStage || stages[0]?.id || '';
+  const showStart = !hideStart && total === 0 && !filtering && boxes.length === 0;
+  const colCount = 9 + pipeline.fields.length;
 
   return (
     <div class="pii" tabIndex={-1} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()} onKeyDown={(e) => {
@@ -205,42 +232,53 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
       e.stopPropagation();
       const el = e.target as HTMLElement;
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
-      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); return; }
+      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); setMenuOpen(false); return; }
+      if (e.altKey && e.key.toLowerCase() === 'r') { e.preventDefault(); refresh(); return; }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === '/') { e.preventDefault(); (e.currentTarget as HTMLElement).querySelector<HTMLInputElement>('.search')?.focus(); }
+      if (e.key === '/') { e.preventDefault(); (e.currentTarget as HTMLElement).querySelector<HTMLInputElement>('.fin')?.focus(); }
       else if (e.key === 'n') { e.preventDefault(); setCreating(true); }
       else if (e.key === 'v') setViewSaved(view === 'table' ? 'board' : 'table');
     }}>
       <div class="bar">
         <h1>{pipeline?.name}</h1>
         {pipelines.length > 1 && (
-          <select class="sel" aria-label={t.pipeline} value={pid} onChange={(e) => { setPid((e.target as HTMLSelectElement).value); setStageFilter(''); }}>
+          <select class="sel" aria-label={t.pipeline} value={pid} onChange={(e) => { setPid((e.target as HTMLSelectElement).value); setFilters(emptyFilters); setGroupBy('none'); }}>
             {pipelines.map((p) => <option value={p.id}>{p.name}</option>)}
           </select>
         )}
         <div class="seg" role="group" aria-label="Scope">
           {(['all', 'mine', 'below'] as Scope[]).map((s) => <button aria-pressed={scope === s} onClick={() => setScope(s)}>{t[s]}</button>)}
         </div>
-        <input class="search" type="search" placeholder={t.search} aria-label={t.search} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
         <div class="seg" role="group" aria-label="View">
           <button aria-pressed={view === 'table'} onClick={() => setViewSaved('table')}>{t.table}</button>
           <button aria-pressed={view === 'board'} onClick={() => setViewSaved('board')}>{t.board}</button>
         </div>
         <span class="spacer" />
         <button class="btn quiet" onClick={openTasks}>{t.myTasks}{dueCount > 0 && <span class="badge">{dueCount}</span>}</button>
-        <button class="btn quiet" onClick={() => setEditing(true)}>{t.edit}</button>
-        <button class="btn quiet" onClick={() => setNewPipe(true)}>{t.newPipeline}</button>
-        <button class="btn quiet" onClick={() => setImporting(true)}>{t.import}</button>
+        <div class="menuwrap">
+          <button class="btn quiet" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>⋯ {t.moreActions}</button>
+          {menuOpen && (
+            <div class="kebab" role="menu" onClick={() => setMenuOpen(false)}>
+              <button role="menuitem" onClick={refresh}>{t.refresh} <small>Alt+R</small></button>
+              <button role="menuitem" onClick={() => setEditing(true)}>{t.editPipeline}</button>
+              <button role="menuitem" onClick={() => setNewPipe(true)}>{t.newPipeline}</button>
+              <button role="menuitem" onClick={() => setImporting(true)}>{t.import}</button>
+              <button role="menuitem" onClick={exportCsv}>{t.exportCsv}</button>
+            </div>
+          )}
+        </div>
         <button class="btn" onClick={() => setCreating(true)}>+ {t.newBox}</button>
       </div>
+
+      <FilterBar t={t} pipeline={pipeline} people={people} meEmail={meEmail} filters={filters} onFilters={setFilters} sorts={sorts} onSorts={setSorts} groupBy={groupBy} onGroupBy={setGroupBy} />
 
       <div class="stages" role="group" aria-label={t.stage}>
         {stages.map((s, i) => {
           const sum = summary[s.id];
-          const on = stageFilter === s.id;
+          const on = filters.stageIds.includes(s.id);
           return (
-            <button class={`stagebtn${stageFilter && !on ? ' dim' : ''}`} style={{ background: stageById.get(s.id)!.color, color: ink(stageById.get(s.id)!.color) }} aria-pressed={on}
-              onClick={() => setStageFilter(on ? '' : s.id)} key={s.id}>
+            <button class={`stagebtn${filters.stageIds.length && !on ? ' dim' : ''}`} style={{ background: stageById.get(s.id)!.color, color: ink(stageById.get(s.id)!.color) }} aria-pressed={on}
+              onClick={() => toggleStage(s.id)} key={s.id}>
               <b>{s.name}</b>
               <span>{sum?.count ?? 0}{sum && sum.value > 0 ? ` · ${money(sum.value, cur, locale)}` : ''}</span>
             </button>
@@ -248,19 +286,13 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
         })}
       </div>
       <div class="meta">
-        <span>{t.rows(total)}</span>
-        <label class="chk"><input type="checkbox" checked={stuck} onChange={(e) => setStuck((e.target as HTMLInputElement).checked)} /> {t.stalledOnly}</label>
-        <select class="sel small" aria-label={t.owner} value={assignee} onChange={(e) => setAssignee((e.target as HTMLSelectElement).value)}>
-          <option value="">{t.owner}: {t.all}</option>{people.map((u) => <option value={u.id}>{u.displayName ?? u.email}</option>)}
-        </select>
+        <span aria-live="polite">{t.rows(total)}</span>
         <select class="sel small" aria-label={t.views} value="" onChange={(e) => applyView((e.target as HTMLSelectElement).value)}>
           <option value="">{t.views}…</option>{views.map((v) => <option value={v.name}>{v.name}</option>)}
         </select>
         <button onClick={saveView}>{t.saveView}</button>
         {views.length > 0 && <button onClick={() => { const n = prompt(t.removeViewName)?.trim(); if (n) storeViews(views.filter((v) => v.name !== n)); }}>{t.removeView}</button>}
-        <button onClick={exportCsv}>{t.exportCsv}</button>
         <span class="spacer" /><small title={t.shortcuts}>⌨ {t.shortcuts}</small>
-        {stageFilter && <button onClick={() => setStageFilter('')}>{t.clearFilter}</button>}
       </div>
       {picked.size > 0 && (
         <div class="bulk" role="region" aria-label={t.selected(picked.size)}>
@@ -279,24 +311,60 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
           <div class="wrap"><Board pipeline={pipeline!} boxes={boxes} summary={summary} t={t} locale={locale} onOpen={setOpenId} onMove={move} /></div>
         ) : (
         <div class="wrap">
-          {boxes.length === 0 ? <div class="msg">{t.empty}</div> : (
+          {showStart && (
+            <div class="start" role="region" aria-label={t.gsTitle}>
+              <h2>{t.gsTitle}</h2>
+              <button onClick={() => setEditing(true)}><b>1</b> {t.gsStages}</button>
+              <button onClick={() => setImporting(true)}><b>2</b> {t.gsImport}</button>
+              <button onClick={() => setCreating(true)}><b>3</b> {t.gsAdd}</button>
+              <button class="link" onClick={() => { setHideStart(true); try { localStorage.setItem('pii.start', 'off'); } catch { /* private window */ } }}>{t.gsDone}</button>
+            </div>
+          )}
+          <form class="quick" onSubmit={(e) => { e.preventDefault(); void quickAdd(quickStageId, quickName); }}>
+            <input aria-label={t.quickAdd} placeholder={t.quickAdd} maxLength={200} value={quickName} disabled={quickBusy} onInput={(e) => setQuickName((e.target as HTMLInputElement).value)} />
+            <select aria-label={t.stage} value={quickStageId} onChange={(e) => setQuickStage((e.target as HTMLSelectElement).value)}>{stages.map((s) => <option value={s.id}>{s.name}</option>)}</select>
+            {quickLocs.length > 1 && <select aria-label={t.location} value={quickLoc} onChange={(e) => setQuickLoc((e.target as HTMLSelectElement).value)}><option value="">{t.chooseLocation}</option>{quickLocs.map((l) => <option value={l.id}>{l.name}</option>)}</select>}
+            <button class="btn" disabled={quickBusy || !quickName.trim() || (quickLocs.length > 1 && !quickLoc)}>{t.addHere}</button>
+          </form>
+          {boxes.length === 0 ? (!showStart && <div class="msg">{t.empty}</div>) : (
             <table>
               <thead>
                 <tr>
                   <th><input type="checkbox" aria-label={t.selectAll} checked={boxes.length > 0 && picked.size === boxes.length} onChange={(e) => setPicked((e.target as HTMLInputElement).checked ? new Set(boxes.map((b) => b.id)) : new Set())} /></th>
-                  <th aria-sort={ariaSort('name')}><button onClick={() => sortBy('name')}>{t.name}{arrow('name')}</button></th>
+                  <th aria-sort={ariaSort('name')}><button onClick={() => headSort('name')}>{t.name}{arrow('name')}</button></th>
                   <th>{t.stage}</th>
                   <th>{t.owner}</th>
-                  <th aria-sort={ariaSort('value')}><button onClick={() => sortBy('value')}>{t.value}{arrow('value')}</button></th>
-                  <th aria-sort={ariaSort('closeDate')}><button onClick={() => sortBy('closeDate')}>{t.closeDate}{arrow('closeDate')}</button></th>
-                  <th aria-sort={ariaSort('daysInStage')}><button onClick={() => sortBy('daysInStage')}>{t.inStage}{arrow('daysInStage')}</button></th>
+                  <th aria-sort={ariaSort('value')}><button onClick={() => headSort('value')}>{t.value}{arrow('value')}</button></th>
+                  <th aria-sort={ariaSort('closeDate')}><button onClick={() => headSort('closeDate')}>{t.closeDate}{arrow('closeDate')}</button></th>
+                  <th aria-sort={ariaSort('daysInStage')}><button onClick={() => headSort('daysInStage')}>{t.inStage}{arrow('daysInStage')}</button></th>
+                  <th aria-sort={ariaSort('lastEmail')}><button onClick={() => headSort('lastEmail')}>{t.lastEmail}{arrow('lastEmail')}</button></th>
+                  <th>{t.lastEmailFrom}</th>
                   {pipeline!.fields.map((f) => <th>{label(f, locale)}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {boxes.map((b) => {
+                {boxes.map((b, i) => {
                   const st = stageById.get(b.stageId);
+                  const gk = groupKey(b);
+                  const header = groupBy !== 'none' && (i === 0 || groupKey(boxes[i - 1]!) !== gk);
+                  const g = groups[gk];
+                  const gColor = groupBy === 'stage' ? stageById.get(gk)?.color : '#6b7280';
+                  const gName = groupBy === 'stage' ? (stageById.get(gk)?.s.name ?? '') : (b.ownerName ?? t.noOwner);
+                  const hidden = groupBy !== 'none' && collapsed.has(gk);
                   return (
+                    <>
+                      {header && (
+                        <tr class="ghead" key={`h-${gk}`}>
+                          <td colSpan={colCount}>
+                            <button class="gtoggle" aria-expanded={!collapsed.has(gk)} onClick={() => setCollapsed((c) => { const n = new Set(c); if (n.has(gk)) n.delete(gk); else n.add(gk); return n; })}>
+                              <i style={{ background: gColor }} />{collapsed.has(gk) ? '▸' : '▾'} <b>{gName}</b>
+                              <span class="muted"> {g ? t.rows(g.count) : ''}{g && g.value > 0 ? ` · ${money(g.value, cur, locale)}` : ''}</span>
+                            </button>
+                            {groupBy === 'stage' && <button class="gadd" aria-label={t.addToGroup(gName)} onClick={(e) => { setQuickStage(gk); ((e.currentTarget as HTMLElement).closest('.wrap')?.querySelector('.quick input') as HTMLInputElement | null)?.focus(); }}>+ {t.addHere}</button>}
+                          </td>
+                        </tr>
+                      )}
+                      {!hidden && (
                     <tr class="row" tabIndex={0} key={b.id} onClick={() => setOpenId(b.id)} onKeyDown={(e) => { if (e.key === 'Enter') setOpenId(b.id); else if (e.key === ' ' && e.target === e.currentTarget) { e.preventDefault(); togglePick(b.id); } }}>
                       <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={b.name} checked={picked.has(b.id)} onChange={() => togglePick(b.id)} /></td>
                       <td class="name">{b.name}</td>
@@ -309,6 +377,8 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
                       <td>{b.lastEmailFrom ?? ''}</td>
                       {pipeline!.fields.map((f) => <td>{cell(b.custom[f.key])}</td>)}
                     </tr>
+                      )}
+                    </>
                   );
                 })}
               </tbody>
@@ -332,7 +402,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
           </aside>
         )}
         {editing && pipeline && <PipelineEditor pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setEditing(false)} onChanged={refresh} />}
-        {newPipe && <NewPipeline call={call} t={t} locale={locale} onClose={() => setNewPipe(false)} onCreated={(id) => { setNewPipe(false); setPid(id); setStageFilter(''); refresh(); }} />}
+        {newPipe && <NewPipeline call={call} t={t} locale={locale} onClose={() => setNewPipe(false)} onCreated={(id) => { setNewPipe(false); setPid(id); setFilters(emptyFilters); refresh(); }} />}
         {importing && pipeline && <ImportDialog pipeline={pipeline} call={call} t={t} onClose={() => setImporting(false)} onDone={refresh} />}
         {creating && pipeline && <Create pipeline={pipeline} call={call} t={t} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); refresh(); }} />}
       </div>
