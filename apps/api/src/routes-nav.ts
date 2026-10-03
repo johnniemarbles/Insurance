@@ -3,11 +3,13 @@ import { withRequestTx } from '@pii/db';
 import { NAV_ITEMS, type NavLayout } from '@pii/domain';
 import { requireCrm } from './crm-helpers.ts';
 import { listRisks } from './risk.ts';
+import { unreadCount } from './routes-notifications.ts';
 import { resolveSettings } from './settings.ts';
 import type { AppDeps } from './app.ts';
 
 const NAMES: Record<string, Record<'en' | 'fr-CA', string>> = {
   home: { en: 'Home', 'fr-CA': 'Accueil' },
+  notifications: { en: 'Notifications', 'fr-CA': 'Notifications' },
   pipelines: { en: 'Pipelines', 'fr-CA': 'Pipelines' },
   contacts: { en: 'Contacts', 'fr-CA': 'Contacts' },
   merges: { en: 'Mail merges', 'fr-CA': 'Publipostages' },
@@ -25,10 +27,12 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const layout = (await resolveSettings(tx, ctx.userId, ['nav.layout']))['nav.layout']!.value as NavLayout;
       const hidden = new Set(layout.hidden);
       const order = layout.order.filter((id) => (NAV_ITEMS as readonly string[]).includes(id));
+      for (const id of NAV_ITEMS) if (!order.includes(id)) order.push(id); // items added since the layout was saved
       const ids = order.filter((id) => !hidden.has(id));
       if (!ids.includes('settings')) ids.push('settings'); // there is always a way back to Settings
       let tasksDue = 0;
       let pipelines: { id: string; name: string; count: number }[] = [];
+      const unread = await unreadCount(tx, ctx.userId);
       if (ctx.canUseCrm) {
         tasksDue = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM tasks WHERE assignee_id = $1 AND done_at IS NULL AND due_at < (date_trunc('day', now()) + interval '1 day')`, [ctx.userId])).rows[0]!.n;
         if (ids.includes('pipelines')) {
@@ -38,7 +42,7 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
         }
       }
       return {
-        items: ids.map((id) => ({ id, name: NAMES[id]![loc], count: id === 'home' ? tasksDue : 0 })),
+        items: ids.map((id) => ({ id, name: NAMES[id]![loc], count: id === 'home' ? tasksDue : id === 'notifications' ? unread : 0 })),
         pipelines,
       };
     });

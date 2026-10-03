@@ -11,6 +11,7 @@ import { SnippetsPanel } from './snippets.tsx';
 import { FilterBar } from './filterbar.tsx';
 import { AiBox, AttentionPanel } from './ai.tsx';
 import { HomePage } from './home.tsx';
+import { NotificationsPage } from './notifications.tsx';
 import { SettingsPage, useSettings, type SettingsApi } from './settings.tsx';
 import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
 import { buildColumns, Cell, ColumnPicker, loadColumns, saveColumns, type Ctx } from './columns.tsx';
@@ -55,8 +56,8 @@ export function App({ host }: { host: HostOptions }) {
   return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} compose={host.compose} host={host} />;
 }
 
-type PageId = 'home' | 'pipelines' | 'contacts' | 'merges' | 'training' | 'settings';
-const PAGES: PageId[] = ['home', 'pipelines', 'contacts', 'merges', 'training', 'settings'];
+type PageId = 'home' | 'notifications' | 'pipelines' | 'contacts' | 'merges' | 'training' | 'settings';
+const PAGES: PageId[] = ['home', 'notifications', 'pipelines', 'contacts', 'merges', 'training', 'settings'];
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
 function Shell({ call, t, locale, canAuthor, meEmail, compose, host }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; compose?: ComposeApi; host: HostOptions }) {
@@ -74,7 +75,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, compose, host }: { call: C
     const next = pageOf(p); setPage(next); setRouteId(id);
     try { localStorage.setItem('pii.page', next); } catch { /* private window */ }
   };
-  const label: Record<PageId, string> = { home: t.home, pipelines: t.tabPipelines, contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
+  const label: Record<PageId, string> = { home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
     <div class="pii" onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
@@ -84,6 +85,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, compose, host }: { call: C
         </div>
       )}
       {page === 'home' ? <HomePage call={call} locale={locale} go={go} />
+        : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'contacts' ? <ContactsView call={call} t={t} />
         : page === 'training' ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />
         : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} /> : <div class="msg">{t.loading}</div>)

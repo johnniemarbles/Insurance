@@ -856,7 +856,7 @@ test('settings: layered values, locks held by the database, and nothing leaks si
   // Nav layout is cleaned: unknown items are refused, missing ones are appended.
   assert.equal((await call(S1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['bogus'], hidden: [] } })).status, 422);
   const lay = await call(S1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['training', 'home'], hidden: ['contacts'] } });
-  assert.deepEqual(lay.json.settings['nav.layout'].value.order, ['training', 'home', 'pipelines', 'contacts', 'merges', 'settings']);
+  assert.deepEqual(lay.json.settings['nav.layout'].value.order, ['training', 'home', 'notifications', 'pipelines', 'contacts', 'merges', 'settings']);
   const hist = (await call(S1U, 'GET', '/v1/settings/history')).json.history;
   assert.ok(hist.some((h: { key: string }) => h.key === 'merge.dailyCap'));
   assert.ok(!hist.some((h: { scopeType: string; changedBy: string }) => h.scopeType === 'user' && /p1@|admin@/.test(h.changedBy)), "others' personal history is not visible");
@@ -865,15 +865,40 @@ test('settings: layered values, locks held by the database, and nothing leaks si
 test('left panel and home: layout drives the items, the layout is per person, counts are live', async () => {
   const nav = async (u: string) => (await call(u, 'GET', '/v1/nav')).json;
   const base = await nav(P1U);
-  assert.deepEqual(base.items.map((i: { id: string }) => i.id), ['home', 'pipelines', 'contacts', 'merges', 'training', 'settings']);
+  assert.deepEqual(base.items.map((i: { id: string }) => i.id), ['home', 'notifications', 'pipelines', 'contacts', 'merges', 'training', 'settings']);
   assert.ok(base.pipelines.some((p: { id: string }) => p.id === pipe1));
   assert.equal((await call(P1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['training', 'home'], hidden: ['merges', 'settings'] } })).status, 200);
   const mine = await nav(P1U);
-  assert.deepEqual(mine.items.map((i: { id: string }) => i.id), ['training', 'home', 'pipelines', 'contacts', 'settings'], 'settings can never be hidden');
-  assert.equal((await nav(LRN)).items.length, 6, 'everyone is a partner, learners included');
+  assert.deepEqual(mine.items.map((i: { id: string }) => i.id), ['training', 'home', 'notifications', 'pipelines', 'contacts', 'settings'], 'settings can never be hidden');
+  assert.equal((await nav(LRN)).items.length, 7, 'everyone is a partner, learners included');
   const home = (await call(P1U, 'GET', '/v1/home')).json;
   assert.ok(Array.isArray(home.tasks) && Array.isArray(home.risks) && Array.isArray(home.merges) && Array.isArray(home.recent));
   assert.ok(home.recent.length > 0);
   assert.equal((await call(P2U, 'GET', '/v1/home')).json.recent.every((r: { id: string }) => !home.recent.some((x: { id: string }) => x.id === r.id)), true, 'a sibling sees none of the same records');
   await call(P1U, 'DELETE', '/v1/settings/nav.layout?scope=user');
+});
+
+test('notifications: told only about others, private to the person, filtered by their own settings', async () => {
+  const box = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'NotifyBox', contextNodeId: X, custom: { policy_no: 'N1' } })).json.id as string;
+  assert.equal((await call(P1U, 'POST', `/v1/boxes/${box}/tasks`, { title: 'Call back', assigneeId: s1UserId })).status, 201);
+  assert.equal((await call(P1U, 'POST', `/v1/boxes/${box}/tasks`, { title: 'Own task' })).status, 201, 'a task for yourself tells nobody');
+  assert.equal((await call(P1U, 'POST', `/v1/boxes/${box}/notes`, { body: 'Please see this', mentions: [s1UserId] })).status, 201);
+  const list = async (u: string) => (await call(u, 'GET', '/v1/notifications')).json;
+  const mine = await list(S1U);
+  assert.deepEqual(mine.notifications.map((n: { kind: string }) => n.kind).sort(), ['mention', 'task_assigned']);
+  assert.equal(mine.unread, 2);
+  assert.equal(mine.notifications[0].data.boxName, 'NotifyBox');
+  assert.ok(!(await list(P1U)).notifications.some((n: { data: { boxName?: string } }) => n.data.boxName === 'NotifyBox'), 'the actor is not told about their own actions');
+  assert.ok(!(await list(P2U)).notifications.some((n: { data: { boxName?: string } }) => n.data.boxName === 'NotifyBox'), 'private to the person');
+  // The person's own switch hides a kind everywhere, including the count.
+  assert.equal((await call(S1U, 'PUT', '/v1/settings/notify.mention', { scope: 'user', value: false })).status, 200);
+  const filtered = await list(S1U);
+  assert.deepEqual(filtered.notifications.map((n: { kind: string }) => n.kind), ['task_assigned']);
+  assert.equal(filtered.unread, 1);
+  assert.equal((await call(S1U, 'GET', '/v1/nav')).json.items.find((i: { id: string }) => i.id === 'notifications').count, 1);
+  assert.equal((await call(P2U, 'POST', '/v1/notifications/read', { all: true })).status, 204);
+  assert.equal((await list(S1U)).unread, 1, 'someone else clearing theirs changes nothing here');
+  assert.equal((await call(S1U, 'POST', '/v1/notifications/read', { all: true })).status, 204);
+  assert.equal((await list(S1U)).unread, 0);
+  await call(S1U, 'DELETE', '/v1/settings/notify.mention?scope=user');
 });

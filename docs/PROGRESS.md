@@ -84,3 +84,7 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 - Gmail left panel: collapsible PII section built from the person's layout (Home, Pipelines with each pipeline, Contacts, Mail merges, Training, Settings), counts, redrawn when settings change.
 - Home ("My day"): tasks due, needs attention, merges in progress, recently updated.
 - Not yet: notifications grid, privacy centre, impact line on shared changes, role presets, saved views under each pipeline, Gmail Settings tab injection.
+
+## Phase N1 — Notifications (done)
+- In-app notifications (assigned, task, mention, note, stage change, capture, merge done, unsubscribed); per-person filters in Settings > Notifications; unread count in left panel.
+- Deferred: email delivery, morning digest, quiet hours (need mail provider), browser notifications.

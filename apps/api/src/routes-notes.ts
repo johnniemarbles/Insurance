@@ -5,6 +5,7 @@ import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { forbidden, invalid, notFound } from './errors.ts';
 import { page, pageQuery, requireCrm, uuid } from './crm-helpers.ts';
+import { notify } from './notify.ts';
 import type { AppDeps } from './app.ts';
 
 const idParams = { type: 'object', properties: { id: uuid } } as const;
@@ -37,6 +38,12 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
         }
         const noteId = randomUUID();
         await tx.query('INSERT INTO notes (id, tenant_id, box_id, owner_node_id, context_node_id, author_id, body, mentions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [noteId, ctx.tenantId, id, s.owner_node_id, s.context_node_id, ctx.userId, b.body, b.mentions ?? []]);
+        {
+          const bx = (await tx.query<{ name: string; owner_user_id: string | null }>('SELECT name, owner_user_id FROM boxes WHERE id = $1', [id])).rows[0];
+          const mentioned = [...new Set(b.mentions ?? [])];
+          for (const u of mentioned) await notify(tx, { tenantId: ctx.tenantId, userId: u, actorId: ctx.userId, kind: 'mention', boxId: id, data: { boxName: bx?.name, text: b.body.slice(0, 160) } });
+          if (bx?.owner_user_id && !mentioned.includes(bx.owner_user_id)) await notify(tx, { tenantId: ctx.tenantId, userId: bx.owner_user_id, actorId: ctx.userId, kind: 'note', boxId: id, data: { boxName: bx.name, text: b.body.slice(0, 160) } });
+        }
         await audit(tx, ctx, 'note_added', 'note', noteId, { boxId: id });
         return { id: noteId };
       });
@@ -84,6 +91,10 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
         if (a.rowCount === 0) throw invalid('That assignee is not visible to you');
         const taskId = randomUUID();
         await tx.query('INSERT INTO tasks (id, tenant_id, box_id, owner_node_id, context_node_id, assignee_id, title, due_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [taskId, ctx.tenantId, id, s.owner_node_id, s.context_node_id, assignee, b.title.trim(), b.dueAt ?? null]);
+        if (assignee !== ctx.userId) {
+          const bx = (await tx.query<{ name: string }>('SELECT name FROM boxes WHERE id = $1', [id])).rows[0];
+          await notify(tx, { tenantId: ctx.tenantId, userId: assignee, actorId: ctx.userId, kind: 'task_assigned', boxId: id, data: { boxName: bx?.name, title: b.title.slice(0, 160) } });
+        }
         await audit(tx, ctx, 'task_created', 'task', taskId, { boxId: id });
         return { id: taskId };
       });

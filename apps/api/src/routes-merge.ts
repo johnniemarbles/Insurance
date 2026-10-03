@@ -7,6 +7,7 @@ import { forbidden, HttpError, invalid, notFound } from './errors.ts';
 import { managerNodeIds, requireCrm, uuid } from './crm-helpers.ts';
 import { actingAs } from './effects.ts';
 import { BASE_TOKENS, escapeHtml, renderBody, renderSubject, tokensIn } from './merge-render.ts';
+import { notify } from './notify.ts';
 import { effectiveSetting } from './settings.ts';
 import type { AppDeps } from './app.ts';
 
@@ -245,7 +246,11 @@ export function registerMergeRoutes(app: FastifyInstance, deps: AppDeps): void {
         )).rows[0];
         if (!r) {
           const left = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM mail_merge_recipients WHERE merge_id = $1 AND status = 'sending'`, [id])).rows[0]!.n;
-          if (left === 0) { await tx.query(`UPDATE mail_merges SET status = 'done', finished_at = now() WHERE id = $1`, [id]); return { done: true }; }
+          if (left === 0) {
+            await tx.query(`UPDATE mail_merges SET status = 'done', finished_at = now() WHERE id = $1`, [id]);
+            await notify(tx, { tenantId: ctx.tenantId, userId: ctx.userId, kind: 'merge_done', data: { name: m.name, mergeId: id } });
+            return { done: true };
+          }
           return { wait: true };
         }
         if (r.opted) { await tx.query(`UPDATE mail_merge_recipients SET status = 'skipped', error = 'unsubscribed' WHERE id = $1`, [r.id]); continue; }
@@ -291,8 +296,8 @@ export function registerMergeRoutes(app: FastifyInstance, deps: AppDeps): void {
   const hits = new Map<string, number[]>();
   const limited = (ip: string) => { const now = Date.now(); const l = (hits.get(ip) ?? []).filter((t) => now - t < 600_000); l.push(now); hits.set(ip, l); if (hits.size > 5000) hits.clear(); return l.length > 40; };
   async function recipientFor(token: string) {
-    const r = (await deps.authPool.query<{ id: string; tenant_id: string; user_id: string; owner_node_id: string; contact_id: string | null; email: string; unsubscribed_at: string | null }>(
-      'SELECT id, tenant_id, user_id, owner_node_id, contact_id, email, unsubscribed_at FROM mail_merge_recipients WHERE unsub_hash = $1', [sha(token)],
+    const r = (await deps.authPool.query<{ id: string; tenant_id: string; user_id: string; owner_node_id: string; contact_id: string | null; box_id: string | null; email: string; unsubscribed_at: string | null }>(
+      'SELECT id, tenant_id, user_id, owner_node_id, contact_id, box_id, email, unsubscribed_at FROM mail_merge_recipients WHERE unsub_hash = $1', [sha(token)],
     )).rows[0];
     if (!r) throw notFound('This link is not valid');
     return r;
@@ -317,6 +322,7 @@ export function registerMergeRoutes(app: FastifyInstance, deps: AppDeps): void {
       await tx.query(`UPDATE contacts SET email_opt_out_at = coalesce(email_opt_out_at, now()) WHERE lower(email::text) = lower($1)`, [r.email]);
       await tx.query(`UPDATE mail_merge_recipients SET unsubscribed_at = coalesce(unsubscribed_at, now()) WHERE id = $1`, [r.id]);
       await tx.query(`UPDATE mail_merge_recipients SET status = 'skipped', error = 'unsubscribed' WHERE lower(email) = lower($1) AND status IN ('pending', 'sending')`, [r.email]);
+      await notify(tx, { tenantId: r.tenant_id, userId: r.user_id, kind: 'unsubscribed', boxId: r.box_id, data: { email: r.email } });
     });
     return send(reply, page('Unsubscribed', `<h1>You are unsubscribed</h1><p>${escapeHtml(r.email)} will not receive these emails again.</p>`));
   });

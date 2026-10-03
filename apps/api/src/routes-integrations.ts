@@ -11,6 +11,7 @@ import { normalizeInbound } from './inbound.ts';
 import { buildDigest } from './digest.ts';
 import { fireAutomations } from './automation-engine.ts';
 import { flushEffects, type Effect } from './effects.ts';
+import { notify } from './notify.ts';
 import type { AppDeps } from './app.ts';
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -158,6 +159,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
       }
       if (note) await tx.query('INSERT INTO notes (id, tenant_id, box_id, owner_node_id, context_node_id, author_id, body) VALUES ($1,$2,$3,$4,$5,$6,$7)', [randomUUID(), e.tenant_id, boxId, e.owner_node_id, e.context_node_id, e.created_by, `${source ?? (e.kind === 'form' ? 'Web form' : 'Webhook')} “${e.name}”: ${note}`]);
       await fireAutomations(tx, ctx, boxId, e.stage_id, 'enter', effects);
+      await notify(tx, { tenantId: e.tenant_id, userId: e.owner_user_id ?? e.created_by, kind: 'capture', boxId, data: { boxName: name, source: source ?? (e.kind === 'form' ? 'Web form' : 'Webhook'), via: e.name } });
       await audit(tx, ctx, 'intake_received', 'box', boxId, { intakeId: e.id, kind: e.kind });
       return (await tx.query<{ stage: string }>('SELECT name AS stage FROM stages WHERE id = $1', [e.stage_id])).rows[0]!;
     });

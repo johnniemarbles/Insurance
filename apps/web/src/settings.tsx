@@ -45,11 +45,11 @@ export function useSettings(call: Call): SettingsApi | null {
 const X = {
   'en': {
     title: 'Settings', search: 'Search settings (for example “snippets” or “left panel”)', noMatch: 'No setting matches that.',
-    tabs: { me: 'Me', leftPanel: 'Left panel', email: 'Email and compose', team: 'Team and company' } as Record<SettingTab, string>,
+    tabs: { me: 'Me', leftPanel: 'Left panel', notifications: 'Notifications', email: 'Email and compose', team: 'Team and company' } as Record<SettingTab, string>,
     you: 'Set by you', company: 'Company setting', branch: (n: string) => `Set by ${n}`, def: 'Default', lockedBy: (n: string) => `Locked by ${n}`, useDefault: 'Use the default', useTeam: 'Use the team setting',
     saved: 'Saved', undo: 'Undo', failed: 'Could not save', history: 'Recent changes', noHistory: 'No changes yet.',
     layoutHelp: 'Choose what appears in Gmail’s left panel and drag to reorder. Settings always stays, so you can find your way back here.', preview: 'Preview', moveUp: 'Move up', moveDown: 'Move down', show: 'Show',
-    nav: { home: 'Home', pipelines: 'Pipelines', contacts: 'Contacts', merges: 'Mail merges', training: 'Training', settings: 'Settings' } as Record<string, string>,
+    nav: { home: 'Home', notifications: 'Notifications', pipelines: 'Pipelines', contacts: 'Contacts', merges: 'Mail merges', training: 'Training', settings: 'Settings' } as Record<string, string>,
     none: 'No default',
     teamHelp: 'Set a value for a whole branch or for the company. Everyone beneath it gets that value; lock it to stop people changing it.',
     current: 'Current team and company settings', nothingSet: 'Nothing is set at team or company level yet.', level: 'Applies to', wholeCompany: 'Whole company', setting: 'Setting', value: 'Value', lock: 'Lock', lockedWord: 'locked', remove: 'Remove', apply: 'Apply',
@@ -57,11 +57,11 @@ const X = {
   },
   'fr-CA': {
     title: 'Paramètres', search: 'Rechercher un paramètre (par exemple « extraits » ou « panneau »)', noMatch: 'Aucun paramètre ne correspond.',
-    tabs: { me: 'Moi', leftPanel: 'Panneau de gauche', email: 'Courriel et rédaction', team: 'Équipe et entreprise' } as Record<SettingTab, string>,
+    tabs: { me: 'Moi', leftPanel: 'Panneau de gauche', notifications: 'Notifications', email: 'Courriel et rédaction', team: 'Équipe et entreprise' } as Record<SettingTab, string>,
     you: 'Défini par vous', company: 'Paramètre de l’entreprise', branch: (n: string) => `Défini par ${n}`, def: 'Par défaut', lockedBy: (n: string) => `Verrouillé par ${n}`, useDefault: 'Utiliser la valeur par défaut', useTeam: 'Utiliser le paramètre de l’équipe',
     saved: 'Enregistré', undo: 'Annuler', failed: 'Enregistrement impossible', history: 'Changements récents', noHistory: 'Aucun changement.',
     layoutHelp: 'Choisissez ce qui s’affiche dans le panneau de gauche de Gmail et glissez pour réordonner. Paramètres reste toujours affiché.', preview: 'Aperçu', moveUp: 'Monter', moveDown: 'Descendre', show: 'Afficher',
-    nav: { home: 'Accueil', pipelines: 'Pipelines', contacts: 'Contacts', merges: 'Publipostages', training: 'Formation', settings: 'Paramètres' } as Record<string, string>,
+    nav: { home: 'Accueil', notifications: 'Notifications', pipelines: 'Pipelines', contacts: 'Contacts', merges: 'Publipostages', training: 'Formation', settings: 'Paramètres' } as Record<string, string>,
     none: 'Aucun par défaut',
     teamHelp: 'Définissez une valeur pour une succursale entière ou pour l’entreprise. Tous ceux en dessous la reçoivent; verrouillez-la pour empêcher les changements.',
     current: 'Paramètres actuels de l’équipe et de l’entreprise', nothingSet: 'Rien n’est défini au niveau de l’équipe ou de l’entreprise.', level: 'S’applique à', wholeCompany: 'Toute l’entreprise', setting: 'Paramètre', value: 'Valeur', lock: 'Verrouiller', lockedWord: 'verrouillé', remove: 'Retirer', apply: 'Appliquer',
@@ -121,7 +121,7 @@ function LayoutEditor({ layout, onChange, disabled, x }: { layout: NavLayout; on
 export function SettingsPage({ api, call, locale, initialTab, isManager, pipelines }: { api: SettingsApi; call: Call; locale: Locale; initialTab?: string; isManager: boolean; pipelines: { id: string; name: string }[] }) {
   const x = X[locale];
   const showTeam = api.canSet.tenant || api.canSet.node.length > 0;
-  const tabs = (['me', 'leftPanel', 'email', ...(showTeam ? ['team'] : [])] as SettingTab[]);
+  const tabs = (['me', 'leftPanel', 'notifications', 'email', ...(showTeam ? ['team'] : [])] as SettingTab[]);
   const [tab, setTab] = useState<SettingTab>(() => (tabs.includes(initialTab as SettingTab) ? (initialTab as SettingTab) : 'me'));
   const [q, setQ] = useState('');
   const [toast, setToast] = useState<{ text: string; undo?: () => Promise<void> } | null>(null);

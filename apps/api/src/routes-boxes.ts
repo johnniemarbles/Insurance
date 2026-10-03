@@ -8,6 +8,7 @@ import { allowedContexts, fieldDefsFor, page, pageQuery, requireCrm, requireEdit
 import { emitEvent } from './webhooks.ts';
 import { checkStageRules, fireAutomations } from './automation-engine.ts';
 import { flushEffects, type Effect } from './effects.ts';
+import { notify } from './notify.ts';
 import type { AppDeps } from './app.ts';
 
 const BOX_COLS = `b.id, b.pipeline_id AS "pipelineId", b.stage_id AS "stageId", b.owner_node_id AS "ownerNodeId",
@@ -310,6 +311,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
           }
         }
         const has = (k: string) => k in b;
+        const prevOwner = (await tx.query<{ owner_user_id: string | null }>('SELECT owner_user_id FROM boxes WHERE id = $1', [id])).rows[0]?.owner_user_id ?? null;
         await tx.query(
           `UPDATE boxes SET name = coalesce($2, name), stage_id = coalesce($3, stage_id),
              owner_user_id = CASE WHEN $4 THEN $5::uuid ELSE owner_user_id END,
@@ -328,6 +330,14 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
           );
           await checkStageRules(tx, b.stageId, id);
           await fireAutomations(tx, ctx, id, b.stageId, 'enter', effects);
+        }
+        {
+          const cur = (await tx.query<{ name: string; owner_user_id: string | null; stage: string }>('SELECT b.name, b.owner_user_id, s.name AS stage FROM boxes b JOIN stages s ON s.id = b.stage_id WHERE b.id = $1', [id])).rows[0];
+          if (cur) {
+            const newOwner = has('ownerUserId') && b.ownerUserId && b.ownerUserId !== prevOwner ? b.ownerUserId : null;
+            if (newOwner) await notify(tx, { tenantId: ctx.tenantId, userId: newOwner, actorId: ctx.userId, kind: 'assigned', boxId: id, data: { boxName: cur.name } });
+            if (b.stageId && b.stageId !== box.stageId && cur.owner_user_id !== newOwner) await notify(tx, { tenantId: ctx.tenantId, userId: cur.owner_user_id, actorId: ctx.userId, kind: 'stage_change', boxId: id, data: { boxName: cur.name, stage: cur.stage } });
+          }
         }
         await audit(tx, ctx, b.stageId && b.stageId !== box.stageId ? 'box_stage_moved' : 'box_updated', 'box', id, { fields: Object.keys(b) });
         if (!(b.stageId && b.stageId !== box.stageId)) return null;
