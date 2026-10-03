@@ -22,6 +22,16 @@ const en = {
   lastEmail: 'Last email', lastEmailFrom: 'Last email from',
   contacts: 'Contacts', tasks: 'Tasks', notes: 'Notes', addTask: 'Add a follow-up', dueDate: 'Due date', addNote: 'Add a note', myTasks: 'My follow-ups', noTasks: 'Nothing due. Nice work.',
   shortcuts: 'Shortcuts: / search · n new · v table/board · Esc close',
+  training: 'Training', newCourse: 'New course', courseTitle: 'Course title', noCourses: 'No courses yet.', myLearning: 'My learning', allCourses: 'Available courses', draft: 'Draft', completed: 'Completed', due: 'due',
+  lessons: (n: number) => (n === 1 ? '1 lesson' : `${n} lessons`), lessonsTitle: 'Lessons', noLessons: 'No lessons yet.', optional: 'optional', addLesson: 'Add a lesson', courseSettings: 'Course settings', description: 'Description',
+  publish: 'Publish', unpublish: 'Move back to draft', published: 'Published', assign: 'Assign', assignTo: 'Assign to', assigned: (n: number) => `Assigned. ${n} new learners enrolled.`, teamProgress: 'Team progress', showProgress: 'Show progress',
+  certificate: 'Certificate', langHint: 'Tip: switch the app language to fr-CA to add the French version of titles and lessons.', backToCourse: 'Back to the course', markDone: 'Mark as done', watchVideo: 'Watch the video',
+  passMark: (n: number) => `Pass mark ${n}%`, attemptsMax: (n: number) => `${n} attempt${n === 1 ? '' : 's'} allowed`, lastScore: 'Last score', noQuestions: 'No questions yet.', pickAll: 'pick all that apply', right: 'Correct', wrong: 'Not quite',
+  submitQuiz: 'Submit answers', passed: 'Passed', notPassed: 'Not passed yet. You can try again.', lessonText: 'Lesson text', saveBtn: 'Save', editQuiz: 'Edit quiz', question: 'Question', option: 'Option', single: 'One answer', multi: 'Several answers', trueFalse: 'True / false',
+  trueLabel: 'True', falseLabel: 'False', correctAnswer: 'Correct answer', confirmLesson: (n: string) => `Remove the lesson “${n}”?`,
+  lessonTypes: { richtext: 'Reading', link: 'Link', video: 'Video', quiz: 'Quiz' } as Record<string, string>,
+  enrollStatus: { assigned: 'Not started', in_progress: 'In progress', completed: 'Completed' } as Record<string, string>,
+  tabPipelines: 'Pipelines',
   sortBy: 'Sort by', newPlaceholder: 'Name of the record', stalledOnly: 'Stuck 14+ days', rows: (n: number) => (n === 1 ? '1 record' : `${n} records`),
 };
 const frCA: typeof en = {
@@ -46,6 +56,16 @@ const frCA: typeof en = {
   lastEmail: 'Dernier courriel', lastEmailFrom: 'Dernier courriel de',
   contacts: 'Contacts', tasks: 'Tâches', notes: 'Notes', addTask: 'Ajouter un suivi', dueDate: 'Échéance', addNote: 'Ajouter une note', myTasks: 'Mes suivis', noTasks: 'Rien à faire. Beau travail.',
   shortcuts: 'Raccourcis : / recherche · n nouveau · v tableau/Kanban · Échap fermer',
+  training: 'Formation', newCourse: 'Nouveau cours', courseTitle: 'Titre du cours', noCourses: 'Aucun cours pour l’instant.', myLearning: 'Ma formation', allCourses: 'Cours disponibles', draft: 'Brouillon', completed: 'Terminé', due: 'échéance',
+  lessons: (n) => (n === 1 ? '1 leçon' : `${n} leçons`), lessonsTitle: 'Leçons', noLessons: 'Aucune leçon pour l’instant.', optional: 'facultatif', addLesson: 'Ajouter une leçon', courseSettings: 'Paramètres du cours', description: 'Description',
+  publish: 'Publier', unpublish: 'Remettre en brouillon', published: 'Publié', assign: 'Assigner', assignTo: 'Assigner à', assigned: (n) => `Assigné. ${n} nouveaux apprenants inscrits.`, teamProgress: 'Progression de l’équipe', showProgress: 'Afficher la progression',
+  certificate: 'Certificat', langHint: 'Astuce : passez l’application en fr-CA pour ajouter la version française des titres et des leçons.', backToCourse: 'Retour au cours', markDone: 'Marquer comme terminé', watchVideo: 'Regarder la vidéo',
+  passMark: (n) => `Seuil de réussite ${n} %`, attemptsMax: (n) => `${n} tentative${n === 1 ? '' : 's'} permise${n === 1 ? '' : 's'}`, lastScore: 'Dernier résultat', noQuestions: 'Aucune question pour l’instant.', pickAll: 'cochez toutes les bonnes réponses', right: 'Exact', wrong: 'Pas tout à fait',
+  submitQuiz: 'Soumettre les réponses', passed: 'Réussi', notPassed: 'Pas encore réussi. Vous pouvez réessayer.', lessonText: 'Texte de la leçon', saveBtn: 'Enregistrer', editQuiz: 'Modifier le quiz', question: 'Question', option: 'Option', single: 'Une réponse', multi: 'Plusieurs réponses', trueFalse: 'Vrai / faux',
+  trueLabel: 'Vrai', falseLabel: 'Faux', correctAnswer: 'Bonne réponse', confirmLesson: (n) => `Retirer la leçon « ${n} »?`,
+  lessonTypes: { richtext: 'Lecture', link: 'Lien', video: 'Vidéo', quiz: 'Quiz' },
+  enrollStatus: { assigned: 'Non commencé', in_progress: 'En cours', completed: 'Terminé' },
+  tabPipelines: 'Pipelines',
   sortBy: 'Trier par', newPlaceholder: 'Nom du dossier', stalledOnly: 'Bloqués 14 jours et +', rows: (n) => (n === 1 ? '1 dossier' : `${n} dossiers`),
 };
 export type Strings = typeof en;

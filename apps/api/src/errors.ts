@@ -22,6 +22,7 @@ export function mapDbError(err: unknown): HttpError | null {
     if (msg.startsWith('Cycle rejected')) return conflict('That link would create a loop in the organization');
     if (msg.startsWith('Partner depth cap')) return invalid('That would exceed the maximum partner depth');
     if (msg.startsWith('location_link') || msg.startsWith('partner_link')) return invalid('Those two kinds of node cannot be linked');
+    if (msg.startsWith('Quebec-facing') || msg.startsWith('Every lesson needs')) return invalid(msg);
     if (msg.startsWith('Residency violation')) return new HttpError(500, 'residency', 'Residency check failed');
   }
   if (e.code === '23505') return conflict('That already exists');

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { Board } from './board.tsx';
 import { ImportDialog } from './import.tsx';
 import { NewPipeline, PipelineEditor } from './editor.tsx';
+import { TrainingView } from './training.tsx';
 import { strings, type Strings } from './i18n.ts';
 import { money, stageColor } from './theme.ts';
 import type { Box, BoxEvent, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, SortKey, Stage } from './types.ts';
@@ -38,7 +39,22 @@ export function App({ host }: { host: HostOptions }) {
   if (!me) return <div class="pii"><div class="msg">{t.loading}</div></div>;
   if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><button class="btn" onClick={host.onSignIn}>{t.signIn}</button></div></div>;
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
-  return <PipelineView call={call} t={t} locale={locale} />;
+  const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
+  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} />;
+}
+
+function Shell({ call, t, locale, canAuthor }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean }) {
+  const [tab, setTab] = useState<'crm' | 'training'>(() => { try { return localStorage.getItem('pii.tab') === 'training' ? 'training' : 'crm'; } catch { return 'crm'; } });
+  const pick = (v: 'crm' | 'training') => { setTab(v); try { localStorage.setItem('pii.tab', v); } catch { /* private window */ } };
+  return (
+    <div class="pii" onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected={tab === 'crm'} onClick={() => pick('crm')}>{t.tabPipelines}</button>
+        <button role="tab" aria-selected={tab === 'training'} onClick={() => pick('training')}>{t.training}</button>
+      </div>
+      {tab === 'crm' ? <PipelineView call={call} t={t} locale={locale} /> : <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />}
+    </div>
+  );
 }
 
 function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Locale }) {

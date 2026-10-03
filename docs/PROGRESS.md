@@ -20,12 +20,12 @@ Rules proven by tests: siblings never see each other; ancestors see downward but
 a partner serving several locations must say which location a record is for; every partner role (including learner and trainer) can use both CRM and LMS; only admins/managers define pipelines.
 
 ## Phase 1B — Pipeline UI (Streak-style, built better) — plan shared as a document
-- [ ] 1 Foundation: stage/column edit APIs, stage history, counts; web app; Gmail left-menu page
-- [ ] 2 Pipeline page: stage bar, table, filters, hierarchy switch, box page
-- [ ] 3 Board view, bulk actions, saved views
-- [ ] 4 Edit-pipeline drawer, insurance templates, colour themes
-- [ ] 5 CSV import/export, contacts page, reminders, last-email columns
-- [ ] 6 Keyboard, fr-CA, accessibility, speed test, partner usability test
+- [x] 1 Foundation: stage/column edit APIs, stage history, counts; web app; Gmail left-menu page
+- [x] 2 Pipeline page: stage bar, table, filters, hierarchy switch, record panel
+- [x] 3 Board view (drag and drop), bulk move  · [ ] saved views
+- [x] 4 Edit-pipeline drawer, insurance templates (4), colour themes
+- [x] 5 Streak/spreadsheet import (records + contacts), reminders, notes, last-email columns  · [ ] export, contacts page
+- [~] 6 Keyboard shortcuts and fr-CA done  · [ ] accessibility pass, speed test, partner usability test
 
 ## Phase 2 — Gmail side
 - [x] Chrome extension scaffold (InboxSDK, Manifest V3): sign-in, privacy notice, create box + contact from an email, move stages (EN / fr-CA) — needs a real-Chrome check
@@ -34,7 +34,8 @@ a partner serving several locations must say which location a record is for; eve
 - [ ] Gmail API connection (only if we later want reminders, sync of new replies, send-later)
 
 ## Phase 3 — Learner portal / LMS
-- [ ] Courses, modules, lessons, assignments by node, progress, quizzes, certificates
+- [x] Courses, lessons (reading, link, video link, quiz), assignment to a node and everyone beneath, progress, quizzes (answer key server-side), certificate codes, Quebec French-before-publish rule, learner + author screens
+- [ ] Certificate PDF, reminders by email, SCORM, modules UI
 - [ ] Self-hosted video, captions
 
 ## Go-live gates (before any real Canadian user)

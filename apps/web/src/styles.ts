@@ -70,6 +70,23 @@ td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px}
 .strike{text-decoration:line-through;color:#6b7280}.overdue{color:#b91c1c;font-weight:600}
 .badge{background:#b91c1c;color:#fff;border-radius:999px;font-size:11px;padding:1px 7px;margin-left:6px}
 .drawer textarea{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font:inherit;resize:vertical}
+.pii .pii{flex:1;min-height:0;overflow:hidden}
+.tabs{display:flex;gap:4px;padding:0 20px;border-bottom:1px solid #e5e7eb}
+.tabs button{border:0;background:none;padding:10px 14px;color:#4b5563;border-bottom:3px solid transparent;font-weight:500}
+.tabs button[aria-selected=true]{color:#1d4ed8;border-bottom-color:#1d4ed8}
+.train{flex:1;overflow:auto}.tpad{padding:16px 20px 40px;max-width:980px}.tpad.narrow{max-width:720px}
+.tpad h1{font-size:20px;margin:6px 0}.tpad h3{margin:22px 0 8px;font-size:14px}
+.link{border:0;background:none;color:#1d4ed8;padding:0}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.ccard{text-align:left;border:1px solid #e5e7eb;background:#fff;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px}.ccard:hover{border-color:#1d4ed8}
+.pbar{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:6px 0}.pbar i{display:block;height:100%;background:#16a34a}
+.lrow{display:flex;gap:6px;align-items:center;margin:6px 0}.lbtn{flex:1;display:flex;gap:10px;align-items:center;text-align:left;border:1px solid #e5e7eb;background:#fff;border-radius:10px;padding:10px 12px}.lbtn:hover{border-color:#1d4ed8}
+.dot{width:26px;height:26px;border-radius:50%;background:#f3f4f6;display:inline-grid;place-items:center;font-size:12px;color:#4b5563}.dot.on{background:#16a34a;color:#fff}
+.prose p{line-height:1.6;margin:0 0 12px}
+.q{border:1px solid #e5e7eb;border-radius:10px;margin:12px 0;padding:10px 14px}.q legend{font-weight:500;padding:0 6px}
+.opt{display:flex;gap:8px;align-items:center;margin:6px 0}
+.wide{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font:inherit;display:block}
+.tpad label{display:block;margin:10px 0 4px;color:#4b5563;font-size:12px}
 .root{position:relative;flex:1;display:flex;flex-direction:column;min-height:0}
 @media (max-width:640px){.bar{padding:10px 12px}.stages,.meta,.wrap{padding-left:12px;padding-right:12px}}
 `;
