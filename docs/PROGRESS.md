@@ -19,7 +19,15 @@ Legend: [x] done · [~] in progress · [ ] not started
 Rules proven by tests: siblings never see each other; ancestors see downward but cannot edit;
 a partner serving several locations must say which location a record is for; every partner role (including learner and trainer) can use both CRM and LMS; only admins/managers define pipelines.
 
-## Phase 2 — Gmail side (next)
+## Phase 1B — Pipeline UI (Streak-style, built better) — plan shared as a document
+- [ ] 1 Foundation: stage/column edit APIs, stage history, counts; web app; Gmail left-menu page
+- [ ] 2 Pipeline page: stage bar, table, filters, hierarchy switch, box page
+- [ ] 3 Board view, bulk actions, saved views
+- [ ] 4 Edit-pipeline drawer, insurance templates, colour themes
+- [ ] 5 CSV import/export, contacts page, reminders, last-email columns
+- [ ] 6 Keyboard, fr-CA, accessibility, speed test, partner usability test
+
+## Phase 2 — Gmail side
 - [x] Chrome extension scaffold (InboxSDK, Manifest V3): sign-in, privacy notice, create box + contact from an email, move stages (EN / fr-CA) — needs a real-Chrome check
 - [x] Sidebar: shows the box for a thread, stage, notes and tasks (needs real-Chrome check)
 - [x] Link a conversation to a box: notice accepted first, content captured from the person's own Gmail tab, encrypted, deleted on unlink (no Gmail API scopes needed)
