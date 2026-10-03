@@ -40,6 +40,18 @@ export function registerPageRoutes(app: FastifyInstance, deps: AppDeps): void {
     ),
   );
 
+  // The full-page PII app. The same bundle is also built into the Gmail extension.
+  app.get('/app', async (_req, reply) =>
+    reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(product)}</title>
+<style>html,body{height:100%;margin:0}#pii-root{height:100%}</style></head><body><div id="pii-root"></div><script src="/app/app.js"></script></body></html>`,
+    ),
+  );
+  app.get('/app/app.js', async (_req, reply) => {
+    const data = await readFile(new URL('../public/app/app.js', import.meta.url));
+    return reply.type('application/javascript; charset=utf-8').header('cache-control', 'no-cache').send(data);
+  });
+
   for (const file of ['logo.png', 'icon-128.png']) {
     app.get(`/brand/${file}`, async (_req, reply) => {
       const data = await readFile(new URL(`../public/brand/${file}`, import.meta.url));

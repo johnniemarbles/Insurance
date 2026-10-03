@@ -1,0 +1,12 @@
+{
+  "name": "@pii/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": { "preact": "^10.24.0" },
+  "devDependencies": { "esbuild": "^0.25.0", "typescript": "^5.9.0" }
+}

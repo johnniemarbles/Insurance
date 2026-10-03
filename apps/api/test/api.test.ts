@@ -190,3 +190,9 @@ test('landing pages exist for sign-in return, errors and privacy', async () => {
   assert.equal(logo.statusCode, 200);
   assert.equal(logo.headers['content-type'], 'image/png');
 });
+
+test('the full-page app shell is served', async () => {
+  const r = await app.inject({ method: 'GET', url: '/app' });
+  assert.equal(r.statusCode, 200);
+  assert.match(r.body, /pii-root/);
+});
