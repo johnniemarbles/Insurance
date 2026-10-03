@@ -141,5 +141,11 @@ th.sticky1,th.sticky2{background:#f9fafb;z-index:3}tr.row:hover td.sticky1,tr.ro
 .icard{border:1px solid #e5e7eb;border-radius:12px;padding:4px 14px 12px;margin:14px 0}.icard h3{margin:10px 0 2px!important}.icard.soon{background:#f9fafb}
 .secretbox{border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;padding:12px;margin:10px 0}.secretbox code{display:block;word-break:break-all;background:#fff;border:1px solid #dbeafe;border-radius:6px;padding:8px;margin:8px 0;user-select:all}
 .sample{background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-all}
+.itabs{display:flex;margin:12px 0}.itabs button{flex:1;padding:8px 6px;font-size:13px}.itabs button[aria-selected=true]{background:#1d4ed8;color:#fff}
+.gchips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}.gchip{border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:5px 12px;font-size:13px;color:#374151;cursor:pointer}.gchip[aria-pressed=true]{background:#1e3a8a;border-color:#1e3a8a;color:#fff}
+.rcard{display:block;position:relative;width:100%;text-align:left;border:1px solid #e5e7eb;background:#fff;border-radius:12px;padding:12px 78px 12px 14px;margin:8px 0;cursor:pointer;font:inherit}.rcard:hover,.rcard:focus-visible{border-color:#93c5fd;box-shadow:0 2px 10px rgba(29,78,216,.1)}.rcard b{display:block;color:#111827}.rcard span{display:block;color:#6b7280;font-size:13px;margin-top:2px}
+.rbadge{font-style:normal;font-size:11px;font-weight:600;border-radius:6px;padding:2px 7px;background:#d1fae5;color:#065f46;vertical-align:middle}.rcard .rbadge{position:absolute;right:12px;top:12px}.rbadge.zapier{background:#e5e7eb;color:#374151}.rbadge.script{background:#fef3c7;color:#92400e}
+.isteps{padding-left:20px;line-height:1.55}.isteps li{margin:6px 0}.linkbtn{border:0;background:none;color:#1d4ed8;padding:0;cursor:pointer;font:inherit;text-decoration:underline}.linkbtn.pill{background:#eef2ff;border-radius:999px;padding:2px 9px;margin:3px 4px 0 0;text-decoration:none;font-size:13px}.bad{color:#b91c1c}
+.wrap2 select,.wrap2 input:not([type=checkbox]){min-width:140px;flex:1 1 140px}
 @media (max-width:640px){.bar{padding:10px 12px}.stages,.meta,.wrap,.fbar{padding-left:12px;padding-right:12px}.fmenu,.fpop{left:12px}}
 `;

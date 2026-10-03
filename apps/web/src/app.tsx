@@ -453,7 +453,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
         </div>
         )}
         {opened && pipeline && <Drawer key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setOpenId('')} onChanged={refresh} />}
-        {integrationsOpen && pipeline && <IntegrationsPanel pipeline={pipeline} call={call} t={t} locale={locale} onAutomations={() => { setIntegrationsOpen(false); setEditing(true); }} onClose={() => setIntegrationsOpen(false)} />}
+        {integrationsOpen && pipeline && <IntegrationsPanel pipeline={pipeline} call={call} t={t} locale={locale} onAutomations={() => { setIntegrationsOpen(false); setEditing(true); }} onExport={() => void exportCsv()} onImport={() => { setIntegrationsOpen(false); setImporting(true); }} onOpenBox={(id) => { setIntegrationsOpen(false); void openById(id); }} onClose={() => setIntegrationsOpen(false)} />}
         {reportsOpen && pipeline && <ReportsPanel pipelineId={pid} scope={scope} call={call} t={t} locale={locale} colorOf={(id) => stageById.get(id)?.color ?? '#6b7280'} onClose={() => setReportsOpen(false)} />}
         {feedOpen && pipeline && <FeedPanel pipelineId={pid} scope={scope} call={call} t={t} locale={locale} onOpen={(id) => { setFeedOpen(false); void openById(id); }} onClose={() => setFeedOpen(false)} />}
         {paletteOpen && <Palette actions={paletteActions} call={call} pipelineId={pid} t={t} onPickBox={(b) => { setExtraBox(b); setOpenId(b.id); }} onClose={() => setPaletteOpen(false)} />}

@@ -7,6 +7,8 @@ import { audit } from './audit.ts';
 import { HttpError, notFound } from './errors.ts';
 import { requireCrm, requireEdit, uuid } from './crm-helpers.ts';
 import { currentNoticeVersion } from './routes-consent.ts';
+import { fireAutomations, type Effect } from './automation-engine.ts';
+import { emitEvent } from './webhooks.ts';
 import type { AppDeps } from './app.ts';
 
 const idParams = { type: 'object', properties: { id: uuid } } as const;
@@ -94,6 +96,7 @@ export function registerThreadRoutes(app: FastifyInstance, deps: AppDeps): void 
         gmailThreadId: string; subject?: string;
         messages: { gmailMessageId: string; sentAt?: string; from?: string; to?: { email: string; name?: string }[]; subject?: string; body: string; attachments?: { name: string; size?: number }[] }[];
       };
+      const effects: Effect[] = [];
       const out = await run(ctx, async (tx) => {
         const box = await loadBox(tx, id);
         requireEdit(ctx, box.owner_node_id);
@@ -134,8 +137,15 @@ export function registerThreadRoutes(app: FastifyInstance, deps: AppDeps): void 
           [threadId, snippet, JSON.stringify([...people.values()].slice(0, 50)), b.subject ?? null],
         );
         await audit(tx, ctx, 'thread_linked', 'box', id, { threadId, messages: b.messages.length });
+        // "When a record gets its first received email": anything in the conversation that is not from the person linking it
+        const me = identity.user.email.toLowerCase();
+        if (b.messages.some((m) => m.from && !m.from.toLowerCase().includes(me))) {
+          const st = (await tx.query<{ stage_id: string }>('SELECT stage_id FROM boxes WHERE id = $1', [id])).rows[0];
+          if (st) await fireAutomations(tx, ctx, id, st.stage_id, 'email', effects);
+        }
         return { threadId };
       });
+      for (const f of effects) emitEvent(deps, ctx.tenantId, f.pipelineId, f.event, f.data);
       return reply.code(201).send(out);
     },
   );

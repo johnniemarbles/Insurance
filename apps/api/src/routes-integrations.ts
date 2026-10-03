@@ -6,7 +6,10 @@ import { seal } from '@pii/platform';
 import { audit } from './audit.ts';
 import { forbidden, HttpError, invalid, notFound } from './errors.ts';
 import { fieldDefsFor, managerNodeIds, requireCrm, resolveOwnerAndContext, uuid } from './crm-helpers.ts';
-import { emitEvent, safeTarget } from './webhooks.ts';
+import { emitEvent, emitEventNow, safeTarget } from './webhooks.ts';
+import { normalizeInbound } from './inbound.ts';
+import { buildDigest } from './digest.ts';
+import { fireAutomations, type Effect } from './automation-engine.ts';
 import type { AppDeps } from './app.ts';
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -106,12 +109,12 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
 
   // ---------- public entry points ----------
   const hits = new Map<string, number[]>();
-  const limited = (key: string): boolean => {
+  const limited = (key: string, max = 30): boolean => {
     const now = Date.now();
     const list = (hits.get(key) ?? []).filter((t) => now - t < 10 * 60_000);
     list.push(now); hits.set(key, list);
     if (hits.size > 5000) hits.clear();
-    return list.length > 30;
+    return list.length > max;
   };
   async function endpointFor(token: string, kind: 'form' | 'webhook'): Promise<Endpoint> {
     const e = (await deps.authPool.query<Endpoint>('SELECT * FROM intake_endpoints WHERE token_hash = $1 AND kind = $2', [sha(token), kind])).rows[0];
@@ -119,12 +122,12 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
     return e;
   }
 
-  async function receive(e: Endpoint, body: Record<string, unknown>): Promise<{ boxId: string } | null> {
-    if (typeof body.website === 'string' && body.website.trim() !== '') return null; // hidden field only bots fill in
+  async function receive(e: Endpoint, body: Record<string, unknown>, source: string | null = null): Promise<{ boxId: string } | null> {
+    if (e.kind === 'form' && typeof body.website === 'string' && body.website.trim() !== '') return null; // hidden field only bots fill in
     const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
-    const name = str(body.name, 200);
-    if (!name) throw invalid('Please enter a name');
     const email = str(body.email, 200).toLowerCase();
+    const name = str(body.name, 200) || (e.kind === 'webhook' ? email.split('@')[0]! : '');
+    if (!name) throw invalid(e.kind === 'webhook' ? 'Could not find a name or an email address in that message' : 'Please enter a name');
     if (email && !EMAIL.test(email)) throw invalid('That email address does not look right');
     const phone = str(body.phone, 40);
     const note = str(body.note ?? body.message, 2000);
@@ -132,6 +135,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
     if (value != null && (!Number.isFinite(value) || value < 0 || value > 999_999_999)) throw invalid('Value must be a positive number');
     const ctx: RequestContext = { tenantId: e.tenant_id, userId: e.created_by, nodeIds: [e.owner_node_id], adminNodeIds: [], isTenantAdmin: false, canWrite: true, canUseCrm: true, roles: [] };
     const boxId = randomUUID();
+    const effects: Effect[] = [];
     const info = await withRequestTx(deps.appPool, ctx, async (tx) => {
       let custom: Record<string, unknown> = {};
       if (e.kind === 'webhook' && body.custom && typeof body.custom === 'object') {
@@ -151,12 +155,14 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
         if (!existing) await tx.query('INSERT INTO contacts (id, tenant_id, owner_node_id, context_node_id, email, full_name, phone, custom) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [cid, e.tenant_id, e.owner_node_id, e.context_node_id, email || null, name, phone || null, '{}']);
         await tx.query('INSERT INTO box_contacts (box_id, contact_id, tenant_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [boxId, cid, e.tenant_id]);
       }
-      if (note) await tx.query('INSERT INTO notes (id, tenant_id, box_id, owner_node_id, context_node_id, author_id, body) VALUES ($1,$2,$3,$4,$5,$6,$7)', [randomUUID(), e.tenant_id, boxId, e.owner_node_id, e.context_node_id, e.created_by, `${e.kind === 'form' ? 'Web form' : 'Webhook'} “${e.name}”: ${note}`]);
+      if (note) await tx.query('INSERT INTO notes (id, tenant_id, box_id, owner_node_id, context_node_id, author_id, body) VALUES ($1,$2,$3,$4,$5,$6,$7)', [randomUUID(), e.tenant_id, boxId, e.owner_node_id, e.context_node_id, e.created_by, `${source ?? (e.kind === 'form' ? 'Web form' : 'Webhook')} “${e.name}”: ${note}`]);
+      await fireAutomations(tx, ctx, boxId, e.stage_id, 'enter', effects);
       await audit(tx, ctx, 'intake_received', 'box', boxId, { intakeId: e.id, kind: e.kind });
       return (await tx.query<{ stage: string }>('SELECT name AS stage FROM stages WHERE id = $1', [e.stage_id])).rows[0]!;
     });
     await deps.authPool.query('UPDATE intake_endpoints SET uses = uses + 1, last_used_at = now() WHERE id = $1', [e.id]).catch(() => undefined);
     emitEvent(deps, e.tenant_id, e.pipeline_id, 'box.created', { box: { id: boxId, name, stageId: e.stage_id, stageName: info.stage, valueAmount: value }, source: e.kind });
+    for (const f of effects) emitEvent(deps, e.tenant_id, f.pipelineId, f.event, f.data);
     return { boxId };
   }
 
@@ -164,9 +170,11 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
 
   app.post('/v1/hooks/:token', { bodyLimit: 20_000 }, async (req, reply) => {
     const { token } = req.params as { token: string };
-    if (limited(rateKey(req, token))) throw new HttpError(429, 'rate_limited', 'Too many requests');
+    if (limited(rateKey(req, token), 300)) throw new HttpError(429, 'rate_limited', 'Too many requests'); // spreadsheets and tools send in bursts; people filling a public form do not
     const e = await endpointFor(token, 'webhook');
-    const r = await receive(e, (req.body ?? {}) as Record<string, unknown>);
+    const n = normalizeInbound((req.body ?? {}) as Record<string, unknown>);
+    if (n.ignore) return reply.code(200).send({ ok: true, ignored: true });
+    const r = await receive(e, { name: n.name, email: n.email, phone: n.phone, note: n.note, value: n.value, custom: n.custom }, n.source);
     return reply.code(201).send({ ok: true, id: r?.boxId ?? null });
   });
 
@@ -211,7 +219,7 @@ if(r.ok){f.reset();m.textContent='Thank you. We received your details.';}else{va
   });
   app.post(
     '/v1/pipelines/:id/webhooks',
-    { schema: { params: pid, body: { type: 'object', required: ['url'], additionalProperties: false, properties: { url: { type: 'string', maxLength: 500 }, events: { type: 'array', minItems: 1, items: { enum: ['box.created', 'box.stage_changed'] } } } } } },
+    { schema: { params: pid, body: { type: 'object', required: ['url'], additionalProperties: false, properties: { url: { type: 'string', maxLength: 500 }, events: { type: 'array', minItems: 1, items: { enum: ['box.created', 'box.stage_changed', 'digest.weekly'] } } } } } },
     async (req, reply) => {
       const { ctx } = await deps.authenticate(req);
       requireCrm(ctx);
@@ -242,5 +250,34 @@ if(r.ok){f.reset();m.textContent='Thank you. We received your details.';}else{va
       if ((await tx.query('DELETE FROM webhook_subscriptions WHERE id = $1 AND pipeline_id = $2', [itemId, id])).rowCount === 0) throw notFound('Not found');
     });
     return reply.code(204).send();
+  });
+  // A real message to the subscriber, so tools like Zapier can learn the shape of the data.
+  app.post('/v1/pipelines/:id/webhooks/:itemId/test', { schema: { params: iid, body: { type: 'object', additionalProperties: false, properties: { event: { enum: ['box.created', 'box.stage_changed', 'digest.weekly'] } } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    const { id, itemId } = req.params as { id: string; itemId: string };
+    const event = ((req.body ?? {}) as { event?: 'box.created' | 'box.stage_changed' | 'digest.weekly' }).event ?? 'box.created';
+    const data = await run(ctx, async (tx) => {
+      await manage(tx, ctx, id);
+      if ((await tx.query('SELECT 1 FROM webhook_subscriptions WHERE id = $1 AND pipeline_id = $2', [itemId, id])).rowCount === 0) throw notFound('Not found');
+      if (event === 'digest.weekly') return { digest: await buildDigest(tx, id, 7, null), test: true };
+      const st = (await tx.query<{ id: string; name: string }>('SELECT id, name FROM stages WHERE pipeline_id = $1 ORDER BY position LIMIT 2', [id])).rows;
+      const box = { id: randomUUID(), name: 'Sample record', stageId: st[st.length - 1]?.id ?? null, stageName: st[st.length - 1]?.name ?? null, valueAmount: 1000 };
+      return event === 'box.created' ? { box, source: 'test', test: true } : { box, from: { stageId: st[0]?.id ?? null, stageName: st[0]?.name ?? null }, source: 'test', test: true };
+    });
+    const [status] = await emitEventNow(deps, ctx.tenantId, id, event, data, [itemId]);
+    return { status: status ?? 0 };
+  });
+
+  // The "Get notified" summary shown in the app: what is new, what moved, what is due.
+  app.get('/v1/pipelines/:id/digest', { schema: { params: pid, querystring: { type: 'object', properties: { days: { type: 'integer', minimum: 1, maximum: 90 }, tasks: { enum: ['mine', 'all'] } } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    const { id } = req.params as { id: string };
+    const q = req.query as { days?: number; tasks?: 'mine' | 'all' };
+    return run(ctx, async (tx) => {
+      if ((await tx.query('SELECT 1 FROM pipelines WHERE id = $1', [id])).rowCount === 0) throw notFound('Pipeline not found');
+      return buildDigest(tx, id, q.days ?? 7, q.tasks === 'all' ? null : ctx.userId);
+    });
   });
 }

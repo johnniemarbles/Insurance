@@ -97,36 +97,66 @@ export function PipelineEditor({ pipeline, call, t, locale, onClose, onChanged }
         <button class="btn quiet" disabled={!colLabel.trim()}>+</button>
       </form>
 
-      <Automations pipeline={pipeline} call={call} t={t} act={act} />
+      <Automations pipeline={pipeline} call={call} t={t} locale={locale} act={act} />
 
       <div class="actions"><button class="btn quiet" onClick={onClose}>{t.close}</button></div>
     </aside>
   );
 }
 
-interface Auto { id: string; stageId: string; action: 'create_task' | 'assign_owner'; title: string | null; dueInDays: number | null; assigneeName: string | null; active: boolean }
-function Automations({ pipeline, call, t, act }: { pipeline: Pipeline; call: Call; t: Strings; act: (fn: () => Promise<unknown>) => Promise<void> }) {
+interface Auto {
+  id: string; stageId: string; trigger: 'enter' | 'stale' | 'email'; staleDays: number | null; action: 'create_task' | 'assign_owner' | 'add_note' | 'move_stage' | 'copy_to_pipeline';
+  title: string | null; dueInDays: number | null; body: string | null; assigneeName: string | null; targetStageName: string | null; targetPipelineName: string | null; active: boolean;
+}
+type Act = Auto['action'];
+const AX = {
+  'en': {
+    trig: { enter: 'enters the stage', stale: 'sits in the stage for', email: 'gets its first received email in the stage' }, days: 'days', actions: { create_task: 'Create a task', assign_owner: 'Assign to', add_note: 'Add a note', move_stage: 'Move to stage', copy_to_pipeline: 'Copy to pipeline' },
+    note: 'Note text', stage2: 'Stage', pipe: 'Pipeline', firstStage: 'First stage', staleDays: 'Days',
+    when: (k: Auto['trigger'], s: string, n: number | null) => (k === 'enter' ? `When a record enters ${s}` : k === 'stale' ? `When a record has sat in ${s} for ${n} days` : `When a record in ${s} gets its first received email`),
+    does: (a: Auto) => (a.action === 'create_task' ? `create task “${a.title}”${a.dueInDays == null ? '' : ` due in ${a.dueInDays} days`}` : a.action === 'assign_owner' ? `assign to ${a.assigneeName ?? '…'}` : a.action === 'add_note' ? `add the note “${a.body}”` : a.action === 'move_stage' ? `move it to ${a.targetStageName ?? '…'}` : `copy it to ${a.targetPipelineName ?? '…'}${a.targetStageName ? ` → ${a.targetStageName}` : ''}`),
+    helpMore: 'Each automation acts once each time a record is in the stage. If a move is blocked by a stage’s required fields, it is skipped and your own change still goes through.',
+  },
+  'fr-CA': {
+    trig: { enter: 'entre à l’étape', stale: 'reste à l’étape pendant', email: 'reçoit son premier courriel à l’étape' }, days: 'jours', actions: { create_task: 'Créer une tâche', assign_owner: 'Assigner à', add_note: 'Ajouter une note', move_stage: 'Déplacer à l’étape', copy_to_pipeline: 'Copier vers le pipeline' },
+    note: 'Texte de la note', stage2: 'Étape', pipe: 'Pipeline', firstStage: 'Première étape', staleDays: 'Jours',
+    when: (k: Auto['trigger'], s: string, n: number | null) => (k === 'enter' ? `Quand un dossier entre à ${s}` : k === 'stale' ? `Quand un dossier reste à ${s} pendant ${n} jours` : `Quand un dossier à ${s} reçoit son premier courriel`),
+    does: (a: Auto) => (a.action === 'create_task' ? `créer la tâche « ${a.title} »${a.dueInDays == null ? '' : ` due dans ${a.dueInDays} jours`}` : a.action === 'assign_owner' ? `assigner à ${a.assigneeName ?? '…'}` : a.action === 'add_note' ? `ajouter la note « ${a.body} »` : a.action === 'move_stage' ? `le déplacer à ${a.targetStageName ?? '…'}` : `le copier vers ${a.targetPipelineName ?? '…'}${a.targetStageName ? ` → ${a.targetStageName}` : ''}`),
+    helpMore: 'Chaque automatisation agit une fois par séjour à l’étape. Si un déplacement est bloqué par les champs requis d’une étape, il est ignoré et votre propre changement passe quand même.',
+  },
+};
+function Automations({ pipeline, call, t, locale, act }: { pipeline: Pipeline; call: Call; t: Strings; locale: Locale; act: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const x = AX[locale];
   const [list, setList] = useState<Auto[]>([]);
   const [people, setPeople] = useState<{ id: string; displayName: string | null; email: string }[]>([]);
+  const [pipes, setPipes] = useState<Pipeline[]>([]);
+  const [trigger, setTrigger] = useState<Auto['trigger']>('enter');
   const [stageId, setStageId] = useState(pipeline.stages[0]?.id ?? '');
-  const [action, setAction] = useState<'create_task' | 'assign_owner'>('create_task');
+  const [staleDays, setStaleDays] = useState('7');
+  const [action, setAction] = useState<Act>('create_task');
   const [title, setTitle] = useState('');
   const [days, setDays] = useState('');
   const [who, setWho] = useState('');
+  const [body, setBody] = useState('');
+  const [target, setTarget] = useState('');
+  const [targetPipe, setTargetPipe] = useState('');
   const [tick, setTick] = useState(0);
   const P = `/v1/pipelines/${pipeline.id}/automations`;
   useEffect(() => { call('GET', P).then((r) => setList(r.automations), () => undefined); }, [call, P, tick]);
-  useEffect(() => { call('GET', '/v1/users').then((r) => setPeople(r.users), () => undefined); }, [call]);
+  useEffect(() => { call('GET', '/v1/users').then((r) => setPeople(r.users), () => undefined); call('GET', '/v1/pipelines').then((r) => setPipes(r.pipelines), () => undefined); }, [call]);
   const stageName = (id: string) => pipeline.stages.find((s) => s.id === id)?.name ?? '…';
   const run = (fn: () => Promise<unknown>) => act(async () => { await fn(); setTick((n) => n + 1); });
-  const ready = action === 'create_task' ? title.trim() !== '' : who !== '';
+  const otherPipes = pipes.filter((p) => p.id !== pipeline.id);
+  const targetStages = action === 'copy_to_pipeline' ? (otherPipes.find((p) => p.id === targetPipe)?.stages ?? []) : pipeline.stages.filter((s) => s.id !== stageId);
+  const ready = (trigger !== 'stale' || Number(staleDays) >= 1) && (action === 'create_task' ? title.trim() !== '' : action === 'assign_owner' ? who !== '' : action === 'add_note' ? body.trim() !== '' : action === 'move_stage' ? target !== '' : targetPipe !== '');
+  const sel = (label: string, value: string, set: (v: string) => void, children: unknown) => <select aria-label={label} value={value} onChange={(e) => set((e.target as HTMLSelectElement).value)}>{children as never}</select>;
   return (
     <>
       <h3>{t.automations}</h3>
       <p class="muted">{t.automationsHelp}</p>
       {list.map((a) => (
         <div class="erow" key={a.id}>
-          <span class={a.active ? '' : 'strike'}>{t.whenEnters(stageName(a.stageId))}: {a.action === 'create_task' ? t.doTask(a.title ?? '', a.dueInDays) : t.doAssign(a.assigneeName ?? '…')}</span>
+          <span class={a.active ? '' : 'strike'}>{x.when(a.trigger, stageName(a.stageId), a.staleDays)}: {x.does(a)}</span>
           <span class="spacer" />
           <button class="ib" aria-label={a.active ? t.pause : t.resume} onClick={() => void run(() => call('PATCH', `${P}/${a.id}`, { active: !a.active }))}>{a.active ? '⏸' : '▶'}</button>
           <button class="ib danger" aria-label={t.remove} onClick={() => void run(() => call('DELETE', `${P}/${a.id}`))}>✕</button>
@@ -134,25 +164,35 @@ function Automations({ pipeline, call, t, act }: { pipeline: Pipeline; call: Cal
       ))}
       <form class="erow wrap2" onSubmit={(e) => {
         e.preventDefault(); if (!ready) return;
-        const body = action === 'create_task' ? { stageId, action, title: title.trim(), ...(days !== '' ? { dueInDays: Number(days) } : {}) } : { stageId, action, assigneeUserId: who };
-        setTitle(''); setDays('');
-        void run(() => call('POST', P, body));
+        const base = { stageId, trigger, ...(trigger === 'stale' ? { staleDays: Number(staleDays) } : {}), action };
+        const rest = action === 'create_task' ? { title: title.trim(), ...(days !== '' ? { dueInDays: Number(days) } : {}) } : action === 'assign_owner' ? { assigneeUserId: who }
+          : action === 'add_note' ? { body: body.trim() } : action === 'move_stage' ? { targetStageId: target } : { targetPipelineId: targetPipe, ...(target ? { targetStageId: target } : {}) };
+        setTitle(''); setDays(''); setBody('');
+        void run(() => call('POST', P, { ...base, ...rest }));
       }}>
-        <span>{t.whenEntersShort}</span>
-        <select aria-label={t.stage} value={stageId} onChange={(e) => setStageId((e.target as HTMLSelectElement).value)}>{pipeline.stages.map((s) => <option value={s.id}>{s.name}</option>)}</select>
-        <select aria-label={t.actionLabel} value={action} onChange={(e) => setAction((e.target as HTMLSelectElement).value as 'create_task' | 'assign_owner')}>
-          <option value="create_task">{t.actCreateTask}</option><option value="assign_owner">{t.actAssign}</option>
-        </select>
-        {action === 'create_task' ? (
+        <span>{locale === 'en' ? 'When a record' : 'Quand un dossier'}</span>
+        {sel(t.actionLabel, trigger, (v) => setTrigger(v as Auto['trigger']), (['enter', 'stale', 'email'] as const).map((k) => <option value={k}>{x.trig[k]}</option>))}
+        {trigger === 'stale' && <input type="number" min="1" aria-label={x.staleDays} placeholder={x.staleDays} value={staleDays} onInput={(e) => setStaleDays((e.target as HTMLInputElement).value)} />}
+        {sel(t.stage, stageId, (v) => { setStageId(v); setTarget(''); }, pipeline.stages.map((s) => <option value={s.id}>{s.name}</option>))}
+        {sel(t.actionLabel, action, (v) => { setAction(v as Act); setTarget(''); }, (Object.keys(x.actions) as Act[]).map((k) => <option value={k}>{x.actions[k]}</option>))}
+        {action === 'create_task' && (
           <>
             <input placeholder={t.taskTitle} aria-label={t.taskTitle} value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} />
             <input type="number" min="0" placeholder={t.dueInDays} aria-label={t.dueInDays} value={days} onInput={(e) => setDays((e.target as HTMLInputElement).value)} />
           </>
-        ) : (
-          <select aria-label={t.assignTo} value={who} onChange={(e) => setWho((e.target as HTMLSelectElement).value)}><option value="">{t.assignTo}…</option>{people.map((u) => <option value={u.id}>{u.displayName ?? u.email}</option>)}</select>
         )}
-        <button class="btn quiet" disabled={!ready}>+</button>
+        {action === 'assign_owner' && sel(t.assignTo, who, setWho, <><option value="">{t.assignTo}…</option>{people.map((u) => <option value={u.id}>{u.displayName ?? u.email}</option>)}</>)}
+        {action === 'add_note' && <input placeholder={x.note} aria-label={x.note} maxLength={1000} value={body} onInput={(e) => setBody((e.target as HTMLInputElement).value)} />}
+        {action === 'move_stage' && sel(x.stage2, target, setTarget, <><option value="">{x.stage2}…</option>{targetStages.map((s) => <option value={s.id}>{s.name}</option>)}</>)}
+        {action === 'copy_to_pipeline' && (
+          <>
+            {sel(x.pipe, targetPipe, (v) => { setTargetPipe(v); setTarget(''); }, <><option value="">{x.pipe}…</option>{otherPipes.map((p) => <option value={p.id}>{p.name}</option>)}</>)}
+            {targetPipe && sel(x.stage2, target, setTarget, <><option value="">{x.firstStage}</option>{targetStages.map((s) => <option value={s.id}>{s.name}</option>)}</>)}
+          </>
+        )}
+        <button class="btn quiet" disabled={!ready} aria-label="+">+</button>
       </form>
+      <p class="muted">{x.helpMore}</p>
     </>
   );
 }

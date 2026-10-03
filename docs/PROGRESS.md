@@ -59,4 +59,8 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 - [x] Capture from schedulers/Zapier: private inbound webhook link
 - [x] Send to other apps: signed outbound webhooks (HMAC-SHA256, SSRF guard, auto-pause after 10 failures)
 - [x] Automate repetitive tasks: stage automations
-- [ ] Get notified, mail-merge automation, native integrations, Transfer Data, API keys
+- [x] More automations: add note, move stage, copy to pipeline, "stale for N days", "first received email"; each acts once per stay
+- [x] Recipes catalog: Typeform, Google Forms, Jotform, Calendly (direct); Wufoo, Gravity, Webflow, Facebook, ScheduleOnce, SavvyCal, Calendar (Zapier); Sheets in/out (Apps Script)
+- [x] Get notified: in-app weekly summary + `digest.weekly` event + send-test-message for subscribers
+- [x] Transfer data: export records/contacts CSV, import, Open in Sheets
+- [ ] Mail merge and its automations (needs Gmail compose slice D2), create-box-from-every-new-email (needs Gmail sync), Slack (deferred by choice), API keys

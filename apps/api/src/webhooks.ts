@@ -39,14 +39,18 @@ function post(target: { url: URL; address: string }, body: string, headers: Reco
   });
 }
 
-export type WebhookEvent = 'box.created' | 'box.stage_changed';
+export type WebhookEvent = 'box.created' | 'box.stage_changed' | 'digest.weekly';
 
-/** Tell subscribers about an event. Never throws and never blocks the request that caused it. */
-export function emitEvent(deps: AppDeps, tenantId: string, pipelineId: string, event: WebhookEvent, data: Record<string, unknown>): void {
-  void (async () => {
+/** Send an event to subscribers and report each response status. */
+export async function emitEventNow(deps: AppDeps, tenantId: string, pipelineId: string, event: WebhookEvent, data: Record<string, unknown>, only?: string[]): Promise<number[]> {
+    // `only` is used for test messages and the weekly summary: it names the subscriptions to send to, whatever their event list says.
     const subs = (await deps.authPool.query<{ id: string; url: string; secret_enc: Buffer; key_id: string }>(
-      'SELECT id, url, secret_enc, key_id FROM webhook_subscriptions WHERE pipeline_id = $1 AND tenant_id = $2 AND active AND $3 = ANY(events)', [pipelineId, tenantId, event],
+      only
+        ? 'SELECT id, url, secret_enc, key_id FROM webhook_subscriptions WHERE pipeline_id = $1 AND tenant_id = $2 AND id = ANY($3::uuid[])'
+        : 'SELECT id, url, secret_enc, key_id FROM webhook_subscriptions WHERE pipeline_id = $1 AND tenant_id = $2 AND active AND $3 = ANY(events)',
+      [pipelineId, tenantId, only ?? event],
     )).rows;
+    const statuses: number[] = [];
     const at = new Date().toISOString();
     const body = JSON.stringify({ event, at, pipelineId, ...data });
     for (const s of subs) {
@@ -57,11 +61,18 @@ export function emitEvent(deps: AppDeps, tenantId: string, pipelineId: string, e
         const sig = createHmac('sha256', secret).update(`${ts}.${body}`).digest('hex');
         status = await post(await safeTarget(s.url, deps.config.appEnv === 'test'), body, { 'X-PII-Event': event, 'X-PII-Timestamp': ts, 'X-PII-Signature': `sha256=${sig}` });
       } catch { status = 0; }
-      const ok = status >= 200 && status < 300;
+      statuses.push(status);
+      const ok = status >= 200 && status < 400; // Google Apps Script answers a received post with a redirect
+      if (event === 'digest.weekly') await deps.authPool.query('UPDATE webhook_subscriptions SET last_digest_at = now() WHERE id = $1', [s.id]).catch(() => undefined);
       await deps.authPool.query(
         'UPDATE webhook_subscriptions SET last_status = $2, last_at = now(), failures = CASE WHEN $3 THEN 0 ELSE failures + 1 END, active = CASE WHEN $3 THEN active ELSE failures + 1 < 10 END WHERE id = $1',
         [s.id, status, ok],
       ).catch(() => undefined);
     }
-  })().catch(() => undefined);
+    return statuses;
+}
+
+/** Tell subscribers about an event. Never throws and never blocks the request that caused it. */
+export function emitEvent(deps: AppDeps, tenantId: string, pipelineId: string, event: WebhookEvent, data: Record<string, unknown>): void {
+  void emitEventNow(deps, tenantId, pipelineId, event, data).catch(() => undefined);
 }

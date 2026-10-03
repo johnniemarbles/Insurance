@@ -53,6 +53,12 @@ export function buildApp(input: AppDeps): FastifyInstance {
     },
   });
 
+  // Some tools (Jotform, Wufoo, plain HTML forms) post form-encoded data to a capture link; nothing else accepts it.
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 40_000 }, (req, body, done) => {
+    if (!req.url.startsWith('/v1/hooks/')) return done(new HttpError(415, 'unsupported_media_type', 'Send JSON'), undefined);
+    try { done(null, Object.fromEntries(new URLSearchParams(body as string))); } catch (e) { done(e as Error, undefined); }
+  });
+
   app.setErrorHandler((err, req, reply) => {
     const mapped = err instanceof HttpError ? err : mapDbError(err);
     if (mapped) return reply.code(mapped.status).send({ error: { code: mapped.code, message: mapped.message } });

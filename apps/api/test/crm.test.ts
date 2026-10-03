@@ -33,6 +33,7 @@ async function seedUser(email: string, home: string, role: string) {
 const ADMIN = 'admin@crm.test', P1U = 'p1@crm.test', P2U = 'p2@crm.test', S1U = 's1@crm.test', LRN = 'learner@crm.test';
 let X = '', Y = '', P1 = '', P2 = '', S1 = '', s1UserId = '';
 let pipe1 = '', pipe2 = '', stage1: string[] = [];
+let sweepDeps: import('../src/app.ts').AppDeps;
 
 before(async () => {
   db = await createTestDb('ca-qc');
@@ -40,7 +41,8 @@ before(async () => {
   const authPool = createPool(db.authUrl, 2);
   pools = [appPool, authPool];
   const config = loadConfig({ APP_ENV: 'test', REGION: 'ca-qc', DATABASE_URL: db.ownerUrl, APP_DATABASE_URL: db.appUrl, AUTH_DATABASE_URL: db.authUrl, DEV_AUTH: 'true' });
-  app = buildApp({ config, appPool, authPool, authenticate: devAuthenticator(authPool), keys: localKeyProvider('0123456789abcdef0123') });
+  sweepDeps = { config, appPool, authPool, authenticate: devAuthenticator(authPool), keys: localKeyProvider('0123456789abcdef0123') };
+  app = buildApp(sweepDeps);
   tenant = await bootstrapTenant(db.ownerUrl, { name: 'CRM Test Co', countryCode: 'CA', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   X = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
@@ -561,4 +563,144 @@ test('integrations: outbound webhooks are signed, sent on events, and refuse uns
     assert.ok(!JSON.stringify((await call(P1U, 'GET', `${P}/webhooks`)).json).includes(wh.secret), 'the secret is never shown again');
     assert.equal((await call(P1U, 'DELETE', `${P}/webhooks/${wh.id}`)).status, 204);
   } finally { srv.close(); }
+});
+
+async function ownerSql(sql: string, params: unknown[] = []) {
+  const o = new pg.Client({ connectionString: db.ownerUrl });
+  await o.connect();
+  try { return (await o.query(sql, params)).rows; } finally { await o.end(); }
+}
+const settle = async (fn: () => Promise<boolean>) => { for (let i = 0; i < 60; i++) { if (await fn()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+
+test('automations: note, move, copy, stale, and first-email; each acts once; failures never block the person', async () => {
+  const mk = async (name: string) => {
+    const r = (await call(P1U, 'POST', '/v1/pipelines', { name, sharedDown: true, stages: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }] })).json.id as string;
+    const st = (await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === r).stages.map((s: any) => s.id) as string[];
+    return { id: r, st };
+  };
+  const flow = await mk('Flow'), other = await mk('Other');
+  const P = `/v1/pipelines/${flow.id}`;
+  const bad = (b: object) => call(P1U, 'POST', `${P}/automations`, b);
+  assert.equal((await bad({ stageId: flow.st[0], action: 'add_note' })).status, 422);
+  assert.equal((await bad({ stageId: flow.st[0], action: 'move_stage', targetStageId: flow.st[0] })).status, 422);
+  assert.equal((await bad({ stageId: flow.st[0], action: 'move_stage', targetStageId: other.st[1] })).status, 422, 'target stage must be in this pipeline');
+  assert.equal((await bad({ stageId: flow.st[0], action: 'copy_to_pipeline', targetPipelineId: flow.id })).status, 422);
+  assert.equal((await bad({ stageId: flow.st[0], trigger: 'stale', action: 'add_note', body: 'x' })).status, 422, 'stale needs days');
+  assert.equal((await call(S1U, 'POST', `${P}/automations`, { stageId: flow.st[1], action: 'add_note', body: 'x' })).status, 403);
+
+  // entering B: note + copy to the other pipeline's stage C; entering C: move on to D
+  assert.equal((await bad({ stageId: flow.st[1], action: 'add_note', body: 'Welcome to B' })).status, 201);
+  assert.equal((await bad({ stageId: flow.st[1], action: 'copy_to_pipeline', targetPipelineId: other.id, targetStageId: other.st[2] })).status, 201);
+  assert.equal((await bad({ stageId: flow.st[2], action: 'move_stage', targetStageId: flow.st[3] })).status, 201);
+  const id = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: flow.id, name: 'Chain', contextNodeId: X })).json.id;
+  assert.equal((await call(P1U, 'PATCH', `/v1/boxes/${id}`, { stageId: flow.st[1] })).status, 204);
+  assert.match((await call(P1U, 'GET', `/v1/boxes/${id}/notes`)).json.notes[0].body, /Welcome to B/);
+  const copy = (await call(P1U, 'GET', `/v1/boxes?pipelineId=${other.id}&q=Chain`)).json.boxes;
+  assert.equal(copy.length, 1, 'copied to the other pipeline');
+  assert.equal(copy[0].stageId, other.st[2]);
+  assert.equal((await call(P1U, 'PATCH', `/v1/boxes/${id}`, { stageId: flow.st[2] })).status, 204);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes/${id}`)).json.stageId, flow.st[3], 'moved on automatically');
+  // entering B again later does not repeat for the same stay, but a new stay does
+  assert.equal((await call(P1U, 'PATCH', `/v1/boxes/${id}`, { stageId: flow.st[1] })).status, 204);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes?pipelineId=${other.id}&q=Chain`)).json.boxes.length, 2);
+
+  // a blocked automatic move is skipped and recorded, and the person's own move still succeeds
+  await call(P1U, 'PATCH', `${P}/stages/${flow.st[3]}`, { requiredFields: ['value'] });
+  const id2 = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: flow.id, name: 'NoValue', contextNodeId: X })).json.id;
+  assert.equal((await call(P1U, 'PATCH', `/v1/boxes/${id2}`, { stageId: flow.st[2] })).status, 204);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes/${id2}`)).json.stageId, flow.st[2], 'stayed put because D needs a value');
+  assert.equal((await ownerSql(`SELECT count(*)::int AS n FROM automation_runs WHERE box_id = $1 AND outcome = 'skipped'`, [id2]))[0].n, 1);
+
+  // stale: after 3 days in A, add a note, once
+  const stale = (await bad({ stageId: flow.st[0], trigger: 'stale', staleDays: 3, action: 'create_task', title: 'Chase', dueInDays: 1 })).json.id;
+  const id3 = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: flow.id, name: 'Dusty', contextNodeId: X })).json.id;
+  const { sweepStale } = await import('../src/background.ts');
+  assert.ok(stale);
+  await ownerSql(`UPDATE boxes SET stage_entered_at = now() - interval '4 days' WHERE id = $1`, [id3]);
+  const swept = await sweepStale(sweepDeps);
+  assert.ok(swept >= 1);
+  const tasks = (await call(P1U, 'GET', `/v1/tasks?boxId=${id3}`)).json.tasks;
+  assert.equal(tasks.length, 1);
+  await sweepStale(sweepDeps);
+  assert.equal((await call(P1U, 'GET', `/v1/tasks?boxId=${id3}`)).json.tasks.length, 1, 'acts once per stay');
+
+  // first received email while in the stage
+  await bad({ stageId: flow.st[0], trigger: 'email', action: 'move_stage', targetStageId: flow.st[1] });
+  const id4 = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: flow.id, name: 'Mailed', contextNodeId: X })).json.id;
+  const msg = (from: string, i: number) => ({ gmailMessageId: `m${i}`, sentAt: new Date(2026, 0, i).toISOString(), from, subject: 'Hi', body: 'Hello', to: [{ email: 'c@x.test' }] });
+  const link = (messages: object[]) => call(P1U, 'POST', `/v1/boxes/${id4}/threads`, { gmailThreadId: 'thr-auto-1', acceptedNotice: true, messages });
+  assert.equal((await link([msg(P1U, 1)])).status, 201);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes/${id4}`)).json.stageId, flow.st[0], 'only my own message: no change');
+  assert.equal((await link([msg(P1U, 1), msg('Client <c@x.test>', 2)])).status, 201);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes/${id4}`)).json.stageId, flow.st[1], 'a reply moves it');
+
+  // automations are listed with readable names
+  const listed = (await call(P1U, 'GET', `${P}/automations`)).json.automations;
+  assert.ok(listed.some((a: any) => a.action === 'copy_to_pipeline' && a.targetPipelineName === 'Other'));
+});
+
+test('weekly summary: in-app digest, test messages for subscribers, and the weekly event', async () => {
+  const P = `/v1/pipelines/${pipe1}`;
+  const d = (await call(P1U, 'GET', `${P}/digest?days=7&tasks=all`)).json;
+  assert.ok(d.newBoxes.length > 0);
+  assert.ok(Array.isArray(d.reachedStage) && Array.isArray(d.dueTasks));
+  assert.equal((await call(P2U, 'GET', `${P}/digest`)).status, 404);
+
+  const got: string[] = [];
+  const srv = http.createServer((rq, rs) => { let b = ''; rq.on('data', (c) => (b += c)); rq.on('end', () => { got.push(b); rs.end('ok'); }); });
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${(srv.address() as { port: number }).port}/w`;
+  try {
+    const wh = (await call(P1U, 'POST', `${P}/webhooks`, { url, events: ['digest.weekly'] })).json;
+    assert.equal((await call(S1U, 'POST', `${P}/webhooks/${wh.id}/test`, {})).status, 403);
+    const t = (await call(P1U, 'POST', `${P}/webhooks/${wh.id}/test`, { event: 'box.created' })).json;
+    assert.equal(t.status, 200);
+    assert.equal(JSON.parse(got[0]!).test, true);
+    assert.equal((await call(P1U, 'POST', `${P}/webhooks/${wh.id}/test`, { event: 'digest.weekly' })).json.status, 200);
+    assert.ok(JSON.parse(got[1]!).digest.newBoxes);
+    // due: a week has passed since the last one
+    const { sweepDigests } = await import('../src/background.ts');
+    assert.equal(await sweepDigests(sweepDeps), 0, 'sent just now: not due');
+    await ownerSql(`UPDATE webhook_subscriptions SET last_digest_at = now() - interval '8 days' WHERE id = $1`, [wh.id]);
+    assert.ok((await sweepDigests(sweepDeps)) >= 1);
+    assert.ok(await settle(async () => got.length >= 3));
+    assert.equal(JSON.parse(got[2]!).event, 'digest.weekly');
+  } finally { srv.close(); }
+});
+
+test('inbound adapters: Calendly, Typeform, Jotform, Google Forms and plain posts become records', async () => {
+  const P = `/v1/pipelines/${pipe1}`;
+  const hook = (await call(P1U, 'POST', `${P}/intakes`, { kind: 'webhook', name: 'Adapters', contextNodeId: X })).json;
+  const t = hook.url.split('/hooks/')[1];
+  const post = (b: unknown) => publicCall('POST', `/v1/hooks/${t}`, b);
+  const find = async (q: string) => (await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=${encodeURIComponent(q)}`)).json.boxes[0];
+  const noteOf = async (b: any) => (await call(P1U, 'GET', `/v1/boxes/${b.id}/notes`)).json.notes[0].body as string;
+
+  assert.equal((await post({ event: 'invitee.created', payload: { name: 'Cal Ender', email: 'cal@x.test', text_reminder_number: '555', scheduled_event: { name: '15 min intro', start_time: '2026-10-05T15:00:00Z' }, questions_and_answers: [{ question: 'Topic', answer: 'Home cover' }] } })).status, 201);
+  const cal = await find('Cal Ender');
+  assert.match(await noteOf(cal), /Calendly.*15 min intro.*Topic: Home cover/s);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes/${cal.id}`)).json.contacts[0].email, 'cal@x.test');
+  assert.equal((await post({ event: 'invitee.canceled', payload: { name: 'Cal Ender', email: 'cal@x.test' } })).json.ignored, true);
+
+  assert.equal((await post({ form_response: { definition: { fields: [{ id: 'a', title: 'Your name' }, { id: 'b', title: 'Budget' }] }, answers: [{ type: 'text', text: 'Type Form', field: { id: 'a' } }, { type: 'email', email: 'tf@x.test', field: { id: 'e' } }, { type: 'choice', choice: { label: '$500' }, field: { id: 'b' } }] } })).status, 201);
+  assert.match(await noteOf(await find('Type Form')), /Typeform.*Budget: \$500/s);
+
+  assert.equal((await post({ rawRequest: JSON.stringify({ q3_name: { first: 'Jot', last: 'Form' }, q4_email: 'jot@x.test', q5_phone: '555-1', q6_comments: 'Call me' }) })).status, 201);
+  const jot = await find('Jot Form');
+  assert.match(await noteOf(jot), /Jotform.*Call me/s);
+
+  assert.equal((await post({ namedValues: { Name: ['Goo Gle'], 'Email Address': ['goo@x.test'], 'What do you need?': ['Auto quote'] } })).status, 201);
+  assert.match(await noteOf(await find('Goo Gle')), /Google Forms.*What do you need\?: Auto quote/s);
+
+  assert.equal((await post({ email: 'only@x.test', Message: 'hi' })).status, 201);
+  assert.ok(await find('only'), 'name falls back to the email');
+  assert.equal((await post({ nothing: 'here' })).status, 422);
+  // a field called "website" on a webhook is a real answer, not a bot trap
+  assert.equal((await post({ name: 'Has Site', website: 'https://x.test' })).status, 201);
+  assert.ok(await find('Has Site'));
+  // form-encoded posts work on capture links only
+  const enc = await app.inject({ method: 'POST', url: `/v1/hooks/${t}`, headers: { 'content-type': 'application/x-www-form-urlencoded' }, payload: 'name=Url+Encoded&email=ue%40x.test' });
+  assert.equal(enc.statusCode, 201);
+  assert.ok(await find('Url Encoded'));
+  assert.equal((await app.inject({ method: 'POST', url: '/v1/boxes', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-dev-user-email': P1U }, payload: 'a=b' })).statusCode, 415);
 });

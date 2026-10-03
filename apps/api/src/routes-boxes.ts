@@ -6,6 +6,7 @@ import { audit } from './audit.ts';
 import { invalid, notFound } from './errors.ts';
 import { allowedContexts, fieldDefsFor, page, pageQuery, requireCrm, requireEdit, resolveOwnerAndContext, scopeSql, uuid } from './crm-helpers.ts';
 import { emitEvent } from './webhooks.ts';
+import { checkStageRules, fireAutomations, type Effect } from './automation-engine.ts';
 import type { AppDeps } from './app.ts';
 
 const BOX_COLS = `b.id, b.pipeline_id AS "pipelineId", b.stage_id AS "stageId", b.owner_node_id AS "ownerNodeId",
@@ -57,44 +58,6 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
   }
 
 
-  /** A record may enter a stage only when the fields that stage requires are filled in. */
-  async function checkStageRules(tx: Tx, stageId: string, id: string): Promise<void> {
-    const st = (await tx.query<{ name: string; required_fields: string[] }>('SELECT name, required_fields FROM stages WHERE id = $1', [stageId])).rows[0];
-    if (!st || st.required_fields.length === 0) return;
-    const b = (await loadBox(tx, id)) as unknown as { valueAmount: number | null; closeDate: string | null; ownerUserId: string | null; custom: Record<string, unknown>; pipelineId: string };
-    const labels = (await tx.query<{ key: string; labels: Record<string, string> }>('SELECT key, labels FROM field_defs WHERE pipeline_id = $1', [b.pipelineId])).rows;
-    const missing = st.required_fields.filter((k) => {
-      if (k === 'value') return b.valueAmount == null;
-      if (k === 'closeDate') return !b.closeDate;
-      if (k === 'owner') return !b.ownerUserId;
-      const v = b.custom[k];
-      return v == null || v === '' || v === false;
-    }).map((k) => (k === 'value' ? 'Value' : k === 'closeDate' ? 'Close date' : k === 'owner' ? 'Owner' : (labels.find((l) => l.key === k)?.labels.en ?? k)));
-    if (missing.length) throw invalid(`To move to “${st.name}”, fill in: ${missing.join(', ')}`);
-  }
-
-  /** Automations set up for a stage run when a record enters it. */
-  async function runAutomations(tx: Tx, ctx: RequestContext, id: string, stageId: string): Promise<void> {
-    const autos = (await tx.query<{ action: string; title: string | null; due_in_days: number | null; assignee_user_id: string | null }>(
-      'SELECT action, title, due_in_days, assignee_user_id FROM automations WHERE stage_id = $1 AND active ORDER BY created_at', [stageId],
-    )).rows;
-    if (autos.length === 0) return;
-    const b = (await tx.query<{ owner_node_id: string; context_node_id: string | null; owner_user_id: string | null }>('SELECT owner_node_id, context_node_id, owner_user_id FROM boxes WHERE id = $1', [id])).rows[0]!;
-    for (const a of autos) {
-      if (a.action === 'assign_owner' && a.assignee_user_id) {
-        const ok = await tx.query('SELECT 1 FROM user_node_roles WHERE user_id = $1 AND node_id = $2', [a.assignee_user_id, b.owner_node_id]);
-        if (ok.rowCount) { await tx.query('UPDATE boxes SET owner_user_id = $2 WHERE id = $1', [id, a.assignee_user_id]); b.owner_user_id = a.assignee_user_id; }
-      } else if (a.action === 'create_task' && a.title) {
-        const due = a.due_in_days == null ? null : new Date(Date.now() + a.due_in_days * 86_400_000).toISOString();
-        await tx.query(
-          'INSERT INTO tasks (id, tenant_id, box_id, owner_node_id, context_node_id, assignee_id, title, due_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-          [randomUUID(), ctx.tenantId, id, b.owner_node_id, b.context_node_id, b.owner_user_id ?? ctx.userId, a.title, due],
-        );
-      }
-    }
-    await audit(tx, ctx, 'automations_ran', 'box', id, { stageId, count: autos.length });
-  }
-
   app.get('/v1/org/contexts', { schema: { querystring: { type: 'object', properties: { ownerNodeId: uuid } } } }, async (req) => {
     const { ctx } = await deps.authenticate(req);
     requireCrm(ctx);
@@ -127,6 +90,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
         pipelineId: string; stageId?: string; name: string; ownerNodeId?: string; contextNodeId?: string; ownerUserId?: string;
         valueAmount?: number; currency?: string; closeDate?: string; custom?: Record<string, unknown>; contactIds?: string[];
       };
+      const effects: Effect[] = [];
       const out = await run(ctx, async (tx) => {
         const { ownerNodeId, contextNodeId } = await resolveOwnerAndContext(tx, ctx, b);
         await pipelineUsable(tx, b.pipelineId, ownerNodeId);
@@ -157,13 +121,14 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
           await tx.query('INSERT INTO box_contacts (box_id, contact_id, tenant_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [id, cid, ctx.tenantId]);
         }
         await checkStageRules(tx, stageId!, id);
-        await runAutomations(tx, ctx, id, stageId!);
+        await fireAutomations(tx, ctx, id, stageId!, 'enter', effects);
         await audit(tx, ctx, 'box_created', 'box', id, { pipelineId: b.pipelineId, ownerNodeId });
         const sn = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1', [stageId])).rows[0]?.name ?? null;
         return { id, ownerNodeId, contextNodeId, _hook: { id, name: b.name.trim(), stageId, stageName: sn, valueAmount: b.valueAmount ?? null } };
       });
       const { _hook, ...created } = out;
       emitEvent(deps, ctx.tenantId, b.pipelineId, 'box.created', { box: _hook, source: 'app' });
+      for (const f of effects) emitEvent(deps, ctx.tenantId, f.pipelineId, f.event, f.data);
       return reply.code(201).send(created);
     },
   );
@@ -327,6 +292,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
       requireCrm(ctx);
       const { id } = req.params as { id: string };
       const b = req.body as { position?: number; name?: string; stageId?: string; ownerUserId?: string | null; valueAmount?: number | null; currency?: string; closeDate?: string | null; custom?: Record<string, unknown> };
+      const effects: Effect[] = [];
       const moved = await run(ctx, async (tx) => {
         const box = await loadBox(tx, id);
         requireEdit(ctx, box.ownerNodeId);
@@ -360,7 +326,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
             [ctx.tenantId, id, box.stageId, b.stageId, ctx.userId],
           );
           await checkStageRules(tx, b.stageId, id);
-          await runAutomations(tx, ctx, id, b.stageId);
+          await fireAutomations(tx, ctx, id, b.stageId, 'enter', effects);
         }
         await audit(tx, ctx, b.stageId && b.stageId !== box.stageId ? 'box_stage_moved' : 'box_updated', 'box', id, { fields: Object.keys(b) });
         if (!(b.stageId && b.stageId !== box.stageId)) return null;
@@ -370,6 +336,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
         return { pipelineId: box.pipelineId, box: { id, name: now.name, stageId: b.stageId, stageName: nm(b.stageId), valueAmount: now.valueAmount }, from: { stageId: box.stageId, stageName: nm(box.stageId) } };
       });
       if (moved) emitEvent(deps, ctx.tenantId, moved.pipelineId, 'box.stage_changed', { box: moved.box, from: moved.from });
+      for (const f of effects) emitEvent(deps, ctx.tenantId, f.pipelineId, f.event, f.data);
       return reply.code(204).send();
     },
   );
