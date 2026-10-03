@@ -179,3 +179,14 @@ test('users list is branch-scoped', async () => {
   const all = (await call(ADMIN, 'GET', '/v1/users')).json.users.length;
   assert.equal(all, 3);
 });
+
+test('landing pages exist for sign-in return, errors and privacy', async () => {
+  const home = await app.inject({ method: 'GET', url: '/?signed_in=1' });
+  assert.equal(home.statusCode, 200);
+  assert.match(home.body, /You are signed in/);
+  assert.equal((await app.inject({ method: 'GET', url: '/privacy' })).statusCode, 200);
+  assert.equal((await app.inject({ method: 'GET', url: '/login?error=<script>' })).statusCode, 403);
+  const logo = await app.inject({ method: 'GET', url: '/brand/logo.png' });
+  assert.equal(logo.statusCode, 200);
+  assert.equal(logo.headers['content-type'], 'image/png');
+});

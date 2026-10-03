@@ -10,6 +10,7 @@ import { registerPipelineRoutes } from './routes-pipelines.ts';
 import { registerBoxRoutes } from './routes-boxes.ts';
 import { registerContactRoutes } from './routes-contacts.ts';
 import type { KeyProvider } from '@pii/platform';
+import { registerPageRoutes } from './routes-pages.ts';
 import { registerThreadRoutes } from './routes-threads.ts';
 import { registerNoteRoutes } from './routes-notes.ts';
 import { registerAuthRoutes, originGuard } from './routes-auth.ts';
@@ -77,6 +78,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
     if (!ok) throw new HttpError(403, 'consent_required', 'Please review and accept the privacy notice first');
   });
 
+  registerPageRoutes(app, deps);
   registerAuthRoutes(app, deps);
   registerConsentRoutes(app, deps);
   registerOrgRoutes(app, deps);
