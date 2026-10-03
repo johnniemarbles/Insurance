@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import type { Locale } from './types.ts';
+import type { ComposeApi, Locale } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Node { id: string; type: 'tenant' | 'location' | 'partner'; name: string; isActive: boolean }
@@ -13,26 +13,32 @@ const X = {
     intro: 'Set up your company, its branches and the partners under them. Each partner only sees its own people and records; the branch above sees everything below it.',
     company: 'Company', rename: 'Rename', save: 'Save', cancel: 'Cancel', addBranch: 'Add a branch', branchName: 'Branch name', add: 'Add',
     addPartner: 'Add a partner here', partnerName: 'Partner name', invite: 'Invite a person', email: 'Email', role: 'Role', sendInvite: 'Create invitation',
-    inviteHint: 'No email is sent yet. Copy this link and send it to the person; it works once and expires in 7 days.', copy: 'Copy link', copied: 'Copied',
+    inviteHint: 'Copy this link and send it to the person; it works once and expires in 7 days.', copy: 'Copy link', copied: 'Copied',
     people: 'People', nobody: 'Nobody yet.', off: 'Switch off', on: 'Switch back on', offChip: 'Off', pending: 'Invitations waiting', withdraw: 'Withdraw', remove: 'Remove role',
     disable: 'Switch person off', enable: 'Switch person on', none: 'Nothing set up yet. Start by adding a branch.', branch: 'Branch', partner: 'Partner', tenant: 'Company',
     roles: { admin: 'Admin', manager: 'Manager', trainer: 'Trainer', member: 'Member', learner: 'Learner' } as Record<string, string>, expires: 'expires',
     addRole: 'Add role to someone here', person: 'Person', makeRole: 'Give role',
+    viaGmail: 'Send it from my Gmail', gmailSent: (e: string) => `Invitation sent to ${e} from your Gmail.`, gmailFailed: 'Gmail did not send it. Copy the link below and send it yourself.',
+    subject: (c: string) => `You are invited to ${c} on PII`,
+    body: (c: string, who: string, url: string) => `<p>Hello,</p><p>${who} invited you to join <b>${c}</b> on PII by Punjab Insurance.</p><p><a href="${url}">Accept your invitation</a></p><p>This link works once and expires in 7 days.</p>`,
   },
   'fr-CA': {
     intro: 'Configurez votre entreprise, ses succursales et les partenaires qui en relèvent. Chaque partenaire ne voit que ses gens et ses dossiers; la succursale au-dessus voit tout ce qui est en dessous.',
     company: 'Entreprise', rename: 'Renommer', save: 'Enregistrer', cancel: 'Annuler', addBranch: 'Ajouter une succursale', branchName: 'Nom de la succursale', add: 'Ajouter',
     addPartner: 'Ajouter un partenaire ici', partnerName: 'Nom du partenaire', invite: 'Inviter une personne', email: 'Courriel', role: 'Rôle', sendInvite: 'Créer l’invitation',
-    inviteHint: 'Aucun courriel n’est envoyé pour l’instant. Copiez ce lien et transmettez-le à la personne; il sert une fois et expire dans 7 jours.', copy: 'Copier le lien', copied: 'Copié',
+    inviteHint: 'Copiez ce lien et transmettez-le à la personne; il sert une fois et expire dans 7 jours.', copy: 'Copier le lien', copied: 'Copié',
     people: 'Personnes', nobody: 'Personne pour l’instant.', off: 'Désactiver', on: 'Réactiver', offChip: 'Inactif', pending: 'Invitations en attente', withdraw: 'Retirer', remove: 'Retirer le rôle',
     disable: 'Désactiver la personne', enable: 'Réactiver la personne', none: 'Rien n’est configuré. Commencez par ajouter une succursale.', branch: 'Succursale', partner: 'Partenaire', tenant: 'Entreprise',
     roles: { admin: 'Administrateur', manager: 'Gestionnaire', trainer: 'Formateur', member: 'Membre', learner: 'Apprenant' } as Record<string, string>, expires: 'expire le',
     addRole: 'Donner un rôle à quelqu’un ici', person: 'Personne', makeRole: 'Donner le rôle',
+    viaGmail: 'L’envoyer depuis mon Gmail', gmailSent: (e: string) => `Invitation envoyée à ${e} depuis votre Gmail.`, gmailFailed: 'Gmail n’a pas envoyé le message. Copiez le lien ci-dessous et transmettez-le vous-même.',
+    subject: (c: string) => `Vous êtes invité à ${c} sur PII`,
+    body: (c: string, who: string, url: string) => `<p>Bonjour,</p><p>${who} vous invite à joindre <b>${c}</b> sur PII par Punjab Insurance.</p><p><a href="${url}">Accepter l’invitation</a></p><p>Ce lien sert une seule fois et expire dans 7 jours.</p>`,
   },
 };
 type Strs = (typeof X)['en'];
 
-export function OrgTab({ call, locale, isTenantAdmin }: { call: Call; locale: Locale; isTenantAdmin: boolean }) {
+export function OrgTab({ call, locale, isTenantAdmin, compose }: { call: Call; locale: Locale; isTenantAdmin: boolean; compose?: ComposeApi }) {
   const x = X[locale];
   const [nodes, setNodes] = useState<Node[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
@@ -47,6 +53,8 @@ export function OrgTab({ call, locale, isTenantAdmin }: { call: Call; locale: Lo
   const [link, setLink] = useState('');
   const [copied, setCopied] = useState(false);
   const [branch, setBranch] = useState('');
+  const [viaGmail, setViaGmail] = useState(true);
+  const [info, setInfo] = useState('');
 
   const load = async () => {
     try {
@@ -73,7 +81,19 @@ export function OrgTab({ call, locale, isTenantAdmin }: { call: Call; locale: Lo
       <div class="erow wrap2">
         <input type="email" placeholder={x.email} aria-label={x.email} value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} />
         <select aria-label={x.role} value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>{ROLES.map((r) => <option value={r}>{x.roles[r]}</option>)}</select>
-        <button class="primary" disabled={!email.includes('@')} onClick={() => void act(async () => { const r = await call('POST', '/v1/invitations', { email: email.trim(), nodeId: n.id, role, locale }); setLink(r.acceptUrl); setCopied(false); })}>{x.sendInvite}</button>
+        {compose && <label class="check"><input type="checkbox" checked={viaGmail} onChange={(e) => setViaGmail((e.target as HTMLInputElement).checked)} /> {x.viaGmail}</label>}
+        <button class="primary" disabled={!email.includes('@')} onClick={() => void act(async () => {
+          const to = email.trim();
+          const r = await call('POST', '/v1/invitations', { email: to, nodeId: n.id, role, locale });
+          setCopied(false); setInfo('');
+          if (compose && viaGmail) {
+            const me = await call('GET', '/v1/me');
+            const sent = await compose.send({ to, subject: x.subject(root?.name ?? 'PII'), html: x.body(root?.name ?? 'PII', me.user.displayName || me.user.email, r.acceptUrl) });
+            if (sent.ok) { setInfo(x.gmailSent(to)); setLink(''); return; }
+            setErr(x.gmailFailed);
+          }
+          setLink(r.acceptUrl);
+        })}>{x.sendInvite}</button>
         <button class="link" onClick={() => setOpen(null)}>{x.cancel}</button>
       </div>
     );
@@ -115,6 +135,7 @@ export function OrgTab({ call, locale, isTenantAdmin }: { call: Call; locale: Lo
     <div class="orgtab">
       <p class="muted">{x.intro}</p>
       {err && <p class="err" role="alert">{err}</p>}
+      {info && <p role="status">{info}</p>}
       {link && (
         <div class="hcard"><p>{x.inviteHint}</p>
           <div class="erow"><input readOnly value={link} aria-label={x.copy} onFocus={(e) => (e.target as HTMLInputElement).select()} /><button class="primary" onClick={() => { void navigator.clipboard?.writeText(link).then(() => setCopied(true), () => undefined); }}>{copied ? x.copied : x.copy}</button><button class="link" onClick={() => setLink('')}>×</button></div>

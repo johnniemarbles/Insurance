@@ -88,7 +88,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, compose, host }: { call: C
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'contacts' ? <ContactsView call={call} t={t} />
         : page === 'training' ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />
-        : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} /> : <div class="msg">{t.loading}</div>)
+        : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} compose={compose} /> : <div class="msg">{t.loading}</div>)
         : !prefs ? <div class="msg">{t.loading}</div>
         : <PipelineView key={`${page}:${routeId ?? ''}`} call={call} t={t} locale={locale} meEmail={meEmail} compose={compose} initialPid={routeId} prefs={prefs} openMerges={page === 'merges'} onStartTipsOff={() => void (settings as SettingsApi).set('ui.startTips', 'user', false)} />}
     </div>

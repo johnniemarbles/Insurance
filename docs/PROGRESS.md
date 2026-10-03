@@ -96,3 +96,4 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 ## Phase O1 — Company, branch and partner setup (done)
 - Settings > Company and people (admins only): tree of company/branches/partners, rename, switch off, add branch/partner, invite (copy link), roles, switch person off, withdraw invitation.
 - Invitation emails are not sent yet (needs mail provider); link is copied by hand.
+- Invitations are sent from the inviter's own Gmail (compose window) when running inside Gmail; link copy is the fallback. Server-sent mail (digest, notifications) via Gmail API needs the Gmail connect + gmail.send OAuth, not built yet.

@@ -2,7 +2,7 @@ import { PrivacyTab } from './privacy.tsx';
 import { OrgTab } from './org.tsx';
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { NAV_ITEMS, SETTINGS, type NavLayout, type SettingDef, type SettingScope, type SettingTab } from '../../../packages/domain/src/settings.ts';
-import type { Locale } from './types.ts';
+import type { ComposeApi, Locale } from './types.ts';
 import { AiAdminCard } from './ai.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -120,7 +120,7 @@ function LayoutEditor({ layout, onChange, disabled, x }: { layout: NavLayout; on
   );
 }
 
-export function SettingsPage({ api, call, locale, initialTab, isManager, pipelines }: { api: SettingsApi; call: Call; locale: Locale; initialTab?: string; isManager: boolean; pipelines: { id: string; name: string }[] }) {
+export function SettingsPage({ api, call, locale, initialTab, isManager, pipelines, compose }: { compose?: ComposeApi; api: SettingsApi; call: Call; locale: Locale; initialTab?: string; isManager: boolean; pipelines: { id: string; name: string }[] }) {
   const x = X[locale];
   const [who, setWho] = useState<{ canAdminister: boolean; isTenantAdmin: boolean } | null>(null);
   useEffect(() => { call('GET', '/v1/me').then((m) => setWho({ canAdminister: Boolean(m.canAdminister), isTenantAdmin: Boolean(m.isTenantAdmin) }), () => undefined); }, [call]);
@@ -184,7 +184,7 @@ export function SettingsPage({ api, call, locale, initialTab, isManager, pipelin
               {(hist ?? []).slice(0, 15).map((h) => <div class="ev">{SETTINGS.find((d) => d.key === h.key)?.label[locale] ?? h.key}<small>{h.scopeType === 'user' ? x.you : h.scopeName ?? x.company} · {h.changedBy} · {new Date(h.changedAt).toLocaleString(locale)}</small></div>)}
             </details>
           )}
-          {tab === 'organization' && <OrgTab call={call} locale={locale} isTenantAdmin={Boolean(who?.isTenantAdmin)} />}
+          {tab === 'organization' && <OrgTab call={call} locale={locale} isTenantAdmin={Boolean(who?.isTenantAdmin)} compose={compose} />}
           {tab === 'privacy' && <PrivacyTab call={call} locale={locale} />}
           {tab === 'team' && <TeamTab api={api} call={call} locale={locale} pipelines={pipelines} isManager={isManager} x={x} onError={setErr} />}
         </>
