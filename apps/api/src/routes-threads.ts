@@ -7,7 +7,8 @@ import { audit } from './audit.ts';
 import { HttpError, notFound } from './errors.ts';
 import { requireCrm, requireEdit, uuid } from './crm-helpers.ts';
 import { currentNoticeVersion } from './routes-consent.ts';
-import { fireAutomations, type Effect } from './automation-engine.ts';
+import { fireAutomations } from './automation-engine.ts';
+import { flushEffects, type Effect } from './effects.ts';
 import { emitEvent } from './webhooks.ts';
 import type { AppDeps } from './app.ts';
 
@@ -145,7 +146,7 @@ export function registerThreadRoutes(app: FastifyInstance, deps: AppDeps): void 
         }
         return { threadId };
       });
-      for (const f of effects) emitEvent(deps, ctx.tenantId, f.pipelineId, f.event, f.data);
+      void flushEffects(deps, ctx.tenantId, effects);
       return reply.code(201).send(out);
     },
   );

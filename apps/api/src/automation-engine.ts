@@ -4,14 +4,14 @@ import type { Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { fieldDefsFor } from './crm-helpers.ts';
 import { HttpError, invalid } from './errors.ts';
-import type { WebhookEvent } from './webhooks.ts';
+import type { Effect } from './effects.ts';
 
 export type Trigger = 'enter' | 'stale' | 'email';
-export interface Effect { pipelineId: string; event: WebhookEvent; data: Record<string, unknown> }
+export type { Effect };
 
 interface AutoRow {
   id: string; pipeline_id: string; stage_id: string; trigger: Trigger; action: string; title: string | null; due_in_days: number | null;
-  assignee_user_id: string | null; target_stage_id: string | null; target_pipeline_id: string | null; body: string | null;
+  assignee_user_id: string | null; target_stage_id: string | null; target_pipeline_id: string | null; body: string | null; merge_id: string | null;
 }
 const MAX_DEPTH = 3;
 
@@ -43,7 +43,7 @@ export async function stayKey(tx: Tx, boxId: string, kind: Trigger): Promise<str
 /** Run every active automation of this trigger that is set on the record's current stage. */
 export async function fireAutomations(tx: Tx, ctx: RequestContext, boxId: string, stageId: string, trigger: Trigger, effects: Effect[], depth = 0): Promise<void> {
   const autos = (await tx.query<AutoRow>(
-    `SELECT id, pipeline_id, stage_id, trigger, action, title, due_in_days, assignee_user_id, target_stage_id, target_pipeline_id, body
+    `SELECT id, pipeline_id, stage_id, trigger, action, title, due_in_days, assignee_user_id, target_stage_id, target_pipeline_id, body, merge_id
        FROM automations WHERE stage_id = $1 AND trigger = $2 AND active ORDER BY created_at`, [stageId, trigger],
   )).rows;
   if (autos.length === 0) return;
@@ -92,8 +92,10 @@ async function apply(tx: Tx, ctx: RequestContext, a: AutoRow, boxId: string, eff
     const from = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1', [b.stage_id])).rows[0];
     await tx.query('UPDATE boxes SET stage_id = $2, stage_entered_at = now(), updated_at = now() WHERE id = $1', [boxId, a.target_stage_id]);
     await tx.query(`INSERT INTO box_events (tenant_id, box_id, kind, from_stage_id, to_stage_id, actor_id) VALUES ($1,$2,'stage_changed',$3,$4,$5)`, [ctx.tenantId, boxId, b.stage_id, a.target_stage_id, ctx.userId]);
-    effects.push({ pipelineId: b.pipeline_id, event: 'box.stage_changed', data: { box: { id: boxId, name: b.name, stageId: a.target_stage_id, stageName: to.name, valueAmount: b.value_amount == null ? null : Number(b.value_amount) }, from: { stageId: b.stage_id, stageName: from?.name ?? null }, source: 'automation' } });
+    effects.push({ kind: 'event', pipelineId: b.pipeline_id, event: 'box.stage_changed', data: { box: { id: boxId, name: b.name, stageId: a.target_stage_id, stageName: to.name, valueAmount: b.value_amount == null ? null : Number(b.value_amount) }, from: { stageId: b.stage_id, stageName: from?.name ?? null }, source: 'automation' } });
     if (depth < MAX_DEPTH) await fireAutomations(tx, ctx, boxId, a.target_stage_id, 'enter', effects, depth + 1);
+  } else if (a.action === 'add_to_merge' && a.merge_id) {
+    effects.push({ kind: 'merge_add', mergeId: a.merge_id, boxId, nodeId: b.owner_node_id });
   } else if (a.action === 'copy_to_pipeline' && a.target_pipeline_id) {
     const target = (await tx.query<{ id: string }>('SELECT id FROM pipelines WHERE id = $1', [a.target_pipeline_id])).rows[0];
     if (!target) throw invalid('The target pipeline is not available');
@@ -113,7 +115,7 @@ async function apply(tx: Tx, ctx: RequestContext, a: AutoRow, boxId: string, eff
     );
     await tx.query(`INSERT INTO box_events (tenant_id, box_id, kind, to_stage_id, actor_id) VALUES ($1,$2,'created',$3,$4)`, [ctx.tenantId, newId, stage.id, ctx.userId]);
     await tx.query('INSERT INTO box_contacts (box_id, contact_id, tenant_id) SELECT $1, contact_id, tenant_id FROM box_contacts WHERE box_id = $2', [newId, boxId]);
-    effects.push({ pipelineId: target.id, event: 'box.created', data: { box: { id: newId, name: b.name, stageId: stage.id, stageName: stage.name, valueAmount: b.value_amount == null ? null : Number(b.value_amount) }, source: 'automation' } });
+    effects.push({ kind: 'event', pipelineId: target.id, event: 'box.created', data: { box: { id: newId, name: b.name, stageId: stage.id, stageName: stage.name, valueAmount: b.value_amount == null ? null : Number(b.value_amount) }, source: 'automation' } });
     if (depth < MAX_DEPTH) await fireAutomations(tx, ctx, newId, stage.id, 'enter', effects, depth + 1);
   }
 }

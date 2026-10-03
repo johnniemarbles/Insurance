@@ -704,3 +704,84 @@ test('inbound adapters: Calendly, Typeform, Jotform, Google Forms and plain post
   assert.ok(await find('Url Encoded'));
   assert.equal((await app.inject({ method: 'POST', url: '/v1/boxes', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-dev-user-email': P1U }, payload: 'a=b' })).statusCode, 415);
 });
+
+test('snippets: private by default, shared down to the team only, filled in for the person written to', async () => {
+  const mine = (await call(P1U, 'POST', '/v1/snippets', { name: 'Renewal', body: 'Hi {{firstName|there}},\n\nYour renewal is due. {{myName}}, {{company}}' })).json.id;
+  assert.equal((await call(S1U, 'GET', '/v1/snippets')).json.snippets.length, 0, 'private to the author');
+  assert.equal((await call(S1U, 'POST', '/v1/snippets', { name: 'x', body: 'y', shared: true })).status, 403, 'members cannot share');
+  assert.equal((await call(P1U, 'PATCH', `/v1/snippets/${mine}`, { shared: true })).status, 204);
+  assert.equal((await call(S1U, 'GET', '/v1/snippets')).json.snippets.length, 1, 'the sub-partner beneath sees it');
+  assert.equal((await call(P2U, 'GET', '/v1/snippets')).json.snippets.length, 0, 'siblings never do');
+  assert.equal((await call(S1U, 'PATCH', `/v1/snippets/${mine}`, { name: 'hijack' })).status, 404, 'only the author edits');
+  const r = (await call(S1U, 'POST', `/v1/snippets/${mine}/render`, { toName: 'Ada Lovelace <script>', toEmail: 'ada@x.test' })).json.html as string;
+  assert.match(r, /Hi Ada/);
+  assert.ok(!r.includes('<script>'), 'values are escaped');
+  assert.match((await call(S1U, 'POST', `/v1/snippets/${mine}/render`, {})).json.html, /Hi there/);
+  assert.equal((await call(P1U, 'DELETE', `/v1/snippets/${mine}`)).status, 204);
+});
+
+test('mail merge: recipients, opt-out, unsubscribe link, one message at a time, notes, and the add-to-merge automation', async () => {
+  const mkBox = async (name: string, email: string | null) => {
+    const cids: string[] = [];
+    if (email) cids.push((await call(P1U, 'POST', '/v1/contacts', { email, fullName: `${name} Person`, contextNodeId: X })).json.id);
+    return (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name, contextNodeId: X, custom: { policy_no: name }, contactIds: cids })).json.id as string;
+  };
+  const a = await mkBox('MergeA', 'mergea@x.test'), b = await mkBox('MergeB', 'mergeb@x.test'), noMail = await mkBox('MergeNoMail', null);
+  const tpl = { name: 'Renewals', subject: 'Hello {{firstName}}', body: 'Dear {{firstName|friend}},\n\nPolicy {{policy_no}} at {{company}}.\n\n{{unsubscribe}}' };
+  assert.equal((await call(P1U, 'POST', '/v1/merges', { ...tpl, body: 'No opt-out here', boxIds: [a] })).status, 422, 'must include an unsubscribe link');
+  const made = (await call(P1U, 'POST', '/v1/merges', { ...tpl, boxIds: [a, b, noMail, a] })).json;
+  assert.equal(made.recipients, 2);
+  assert.equal(made.skipped.noEmail, 1);
+  assert.equal(made.skipped.duplicate, 1);
+  const M = `/v1/merges/${made.id}`;
+  assert.equal((await call(P2U, 'GET', M)).status, 404, 'merges are private to the sender');
+  assert.equal((await call(S1U, 'GET', M)).status, 404);
+
+  const pv = (await call(P1U, 'POST', '/v1/merges/preview', { subject: tpl.subject, body: tpl.body + ' {{nope}}', boxId: a })).json;
+  assert.equal(pv.subject, 'Hello MergeA');
+  assert.match(pv.html, /Policy MergeA at CRM Test Co/);
+  assert.deepEqual(pv.unknown, ['nope']);
+
+  assert.equal((await call(P1U, 'POST', `${M}/next`)).json.idle, true, 'nothing goes out until started');
+  assert.equal((await call(P1U, 'PATCH', M, { status: 'running' })).status, 204);
+  assert.equal((await call(P1U, 'PATCH', M, { subject: 'changed' })).status, 422, 'pause before editing');
+
+  const first = (await call(P1U, 'POST', `${M}/next`)).json;
+  assert.match(first.to, /merge[ab]@x\.test/);
+  assert.match(first.html, /\/u\/unsub_/);
+  assert.equal((await call(P1U, 'POST', `${M}/recipients/${first.recipientId}/result`, { ok: true, threadId: 'thr-1' })).status, 204);
+  assert.equal((await call(P1U, 'POST', `${M}/recipients/${first.recipientId}/result`, { ok: true })).status, 422, 'reported once');
+  const second = (await call(P1U, 'POST', `${M}/next`)).json;
+  assert.notEqual(second.to, first.to);
+  assert.equal((await call(P1U, 'POST', `${M}/recipients/${second.recipientId}/result`, { ok: false, error: 'compose closed' })).status, 204);
+  assert.equal((await call(P1U, 'POST', `${M}/next`)).json.done, true);
+  const state = (await call(P1U, 'GET', M)).json;
+  assert.equal(state.status, 'done');
+  assert.equal(state.sent, 1);
+  assert.equal(state.failed, 1);
+  const sentBox = first.to.startsWith('mergea') ? a : b;
+  assert.match((await call(P1U, 'GET', `/v1/boxes/${sentBox}/notes`)).json.notes[0].body, /Mail merge “Renewals”: sent “Hello Merge[AB]/);
+  assert.equal((await call(P1U, 'POST', `${M}/retry-failed`)).json.retried, 1);
+
+  // the recipient unsubscribes through the public page
+  const token = first.html.match(/\/u\/(unsub_[\w-]+)/)[1];
+  assert.equal((await publicCall('GET', '/u/unsub_wrong')).status, 404);
+  assert.match((await publicCall('GET', `/u/${token}`)).text, /Yes, unsubscribe me/);
+  const un = await app.inject({ method: 'POST', url: `/u/${token}`, headers: { 'content-type': 'application/x-www-form-urlencoded' }, payload: '' });
+  assert.equal(un.statusCode, 200);
+  assert.match((await publicCall('GET', `/u/${token}`)).text, /You are unsubscribed/);
+  const again = (await call(P1U, 'POST', '/v1/merges', { ...tpl, name: 'Second', boxIds: [sentBox] })).json;
+  assert.equal(again.recipients, 0, 'opted-out contacts are never added');
+  assert.equal(again.skipped.optedOut, 1);
+
+  // automation: entering a stage adds the record's contact to a merge
+  const target = (await call(P1U, 'POST', '/v1/merges', { ...tpl, name: 'Welcome', boxIds: [] })).json.id;
+  const stage = stage1[3];
+  assert.equal((await call(P2U, 'POST', `/v1/pipelines/${pipe1}/automations`, { stageId: stage, action: 'add_to_merge', mergeId: target })).status, 404);
+  assert.equal((await call(P1U, 'POST', `/v1/pipelines/${pipe1}/automations`, { stageId: stage, action: 'add_to_merge', mergeId: randomUUIDLike() })).status, 422, 'must be my own merge');
+  assert.equal((await call(P1U, 'POST', `/v1/pipelines/${pipe1}/automations`, { stageId: stage, action: 'add_to_merge', mergeId: target })).status, 201);
+  const fresh = await mkBox('MergeFresh', 'fresh@x.test');
+  assert.equal((await call(P1U, 'PATCH', `/v1/boxes/${fresh}`, { stageId: stage })).status, 204);
+  assert.ok(await settle(async () => (await call(P1U, 'GET', `/v1/merges/${target}`)).json.total === 1));
+});
+const randomUUIDLike = () => '00000000-0000-4000-8000-000000000001';

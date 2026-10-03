@@ -9,7 +9,8 @@ import { fieldDefsFor, managerNodeIds, requireCrm, resolveOwnerAndContext, uuid 
 import { emitEvent, emitEventNow, safeTarget } from './webhooks.ts';
 import { normalizeInbound } from './inbound.ts';
 import { buildDigest } from './digest.ts';
-import { fireAutomations, type Effect } from './automation-engine.ts';
+import { fireAutomations } from './automation-engine.ts';
+import { flushEffects, type Effect } from './effects.ts';
 import type { AppDeps } from './app.ts';
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -162,7 +163,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
     });
     await deps.authPool.query('UPDATE intake_endpoints SET uses = uses + 1, last_used_at = now() WHERE id = $1', [e.id]).catch(() => undefined);
     emitEvent(deps, e.tenant_id, e.pipeline_id, 'box.created', { box: { id: boxId, name, stageId: e.stage_id, stageName: info.stage, valueAmount: value }, source: e.kind });
-    for (const f of effects) emitEvent(deps, e.tenant_id, f.pipelineId, f.event, f.data);
+    void flushEffects(deps, e.tenant_id, effects);
     return { boxId };
   }
 

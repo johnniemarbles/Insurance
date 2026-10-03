@@ -1,13 +1,10 @@
 import { withRequestTx } from '@pii/db';
-import type { RequestContext } from '@pii/domain';
-import { fireAutomations, runOne, type Effect, type Trigger } from './automation-engine.ts';
+import { fireAutomations, runOne, type Trigger } from './automation-engine.ts';
+import { actingAs, flushEffects, type Effect } from './effects.ts';
 import { buildDigest } from './digest.ts';
-import { emitEvent, emitEventNow } from './webhooks.ts';
+import { emitEventNow } from './webhooks.ts';
 import type { AppDeps } from './app.ts';
 
-/** The identity automations act as: the person who set them up, at the record's own branch. */
-const actingAs = (tenantId: string, userId: string, nodeId: string): RequestContext =>
-  ({ tenantId, userId, nodeIds: [nodeId], adminNodeIds: [], isTenantAdmin: false, canWrite: true, canUseCrm: true, roles: [] });
 
 /** Records that have sat in a stage longer than an automation allows. Each stay triggers an automation once. */
 export async function sweepStale(deps: AppDeps): Promise<number> {
@@ -34,10 +31,10 @@ export async function sweepStale(deps: AppDeps): Promise<number> {
         const effects: Effect[] = [];
         try {
           await withRequestTx(deps.appPool, ctx, async (tx) => {
-            const row = (await tx.query('SELECT id, pipeline_id, stage_id, trigger, action, title, due_in_days, assignee_user_id, target_stage_id, target_pipeline_id, body FROM automations WHERE id = $1 AND active', [a.id])).rows[0];
+            const row = (await tx.query('SELECT id, pipeline_id, stage_id, trigger, action, title, due_in_days, assignee_user_id, target_stage_id, target_pipeline_id, body, merge_id FROM automations WHERE id = $1 AND active', [a.id])).rows[0];
             if (row) await runOne(tx, ctx, row, d.box_id, d.key, effects, 0);
           });
-          for (const f of effects) emitEvent(deps, a.tenant_id, f.pipelineId, f.event, f.data);
+          await flushEffects(deps, a.tenant_id, effects);
           n++;
         } catch { /* one record failing must not stop the sweep */ }
       }

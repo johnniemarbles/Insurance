@@ -6,7 +6,8 @@ import { audit } from './audit.ts';
 import { invalid, notFound } from './errors.ts';
 import { allowedContexts, fieldDefsFor, page, pageQuery, requireCrm, requireEdit, resolveOwnerAndContext, scopeSql, uuid } from './crm-helpers.ts';
 import { emitEvent } from './webhooks.ts';
-import { checkStageRules, fireAutomations, type Effect } from './automation-engine.ts';
+import { checkStageRules, fireAutomations } from './automation-engine.ts';
+import { flushEffects, type Effect } from './effects.ts';
 import type { AppDeps } from './app.ts';
 
 const BOX_COLS = `b.id, b.pipeline_id AS "pipelineId", b.stage_id AS "stageId", b.owner_node_id AS "ownerNodeId",
@@ -128,7 +129,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
       });
       const { _hook, ...created } = out;
       emitEvent(deps, ctx.tenantId, b.pipelineId, 'box.created', { box: _hook, source: 'app' });
-      for (const f of effects) emitEvent(deps, ctx.tenantId, f.pipelineId, f.event, f.data);
+      void flushEffects(deps, ctx.tenantId, effects);
       return reply.code(201).send(created);
     },
   );
@@ -336,7 +337,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
         return { pipelineId: box.pipelineId, box: { id, name: now.name, stageId: b.stageId, stageName: nm(b.stageId), valueAmount: now.valueAmount }, from: { stageId: box.stageId, stageName: nm(box.stageId) } };
       });
       if (moved) emitEvent(deps, ctx.tenantId, moved.pipelineId, 'box.stage_changed', { box: moved.box, from: moved.from });
-      for (const f of effects) emitEvent(deps, ctx.tenantId, f.pipelineId, f.event, f.data);
+      void flushEffects(deps, ctx.tenantId, effects);
       return reply.code(204).send();
     },
   );

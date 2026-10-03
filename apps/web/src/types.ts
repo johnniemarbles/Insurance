@@ -17,4 +17,6 @@ export type SortKey = 'updated' | 'name' | 'value' | 'closeDate' | 'daysInStage'
 export interface TransportResult { status: number; json: any }
 /** How the app reaches the server. Standalone: fetch. Inside Gmail: a message to the extension's background worker. */
 export type Transport = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<TransportResult>;
-export interface HostOptions { transport: Transport; onSignIn: () => void; assetBase?: string }
+/** Gmail's compose window, available only when the app runs inside Gmail through the extension. */
+export interface ComposeApi { send(m: { to: string; subject: string; html: string }): Promise<{ ok: boolean; threadId?: string; error?: string }> }
+export interface HostOptions { transport: Transport; onSignIn: () => void; assetBase?: string; compose?: ComposeApi }

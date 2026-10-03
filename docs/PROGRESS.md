@@ -64,3 +64,9 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 - [x] Get notified: in-app weekly summary + `digest.weekly` event + send-test-message for subscribers
 - [x] Transfer data: export records/contacts CSV, import, Open in Sheets
 - [ ] Mail merge and its automations (needs Gmail compose slice D2), create-box-from-every-new-email (needs Gmail sync), Slack (deferred by choice), API keys
+
+## Phase D2 — Compose tools (done)
+- Snippets (private or shared downward), inserted from a "PII snippets" button in Gmail compose.
+- Mail merge: token templates with fallbacks, mandatory {{unsubscribe}} (CASL), public /u/:token opt-out, 400/day cap, 6–12 s pacing, sends through the user's own Gmail compose window; Gmail tab must stay open.
+- Automation action "add to mail merge" (works with forms/Calendly intake).
+- Deferred: send later (needs gmail.send OAuth); reply/view-based merge automations and open tracking (Phase E, need thread sync).

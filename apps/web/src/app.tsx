@@ -6,13 +6,15 @@ import { NewPipeline, PipelineEditor } from './editor.tsx';
 import { TrainingView } from './training.tsx';
 import { ContactsView } from './contacts.tsx';
 import { IntegrationsPanel } from './integrations.tsx';
+import { MergePanel } from './merge.tsx';
+import { SnippetsPanel } from './snippets.tsx';
 import { FilterBar } from './filterbar.tsx';
 import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
 import { buildColumns, Cell, ColumnPicker, loadColumns, saveColumns, type Ctx } from './columns.tsx';
 import { defaultSorts, emptyFilters, filterParams, hasFilters, migrateView, sortParam, type Filters, type GroupBy, type SortSpec } from './filters.ts';
 import { strings, type Strings } from './i18n.ts';
 import { ink, money, stageColor } from './theme.ts';
-import type { Box, BoxEvent, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, Stage } from './types.ts';
+import type { Box, BoxEvent, ComposeApi, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, Stage } from './types.ts';
 
 const PAGE = 100;
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -47,10 +49,10 @@ export function App({ host }: { host: HostOptions }) {
   if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><button class="btn" onClick={host.onSignIn}>{t.signIn}</button></div></div>;
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
-  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} />;
+  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} compose={host.compose} />;
 }
 
-function Shell({ call, t, locale, canAuthor, meEmail }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string }) {
+function Shell({ call, t, locale, canAuthor, meEmail, compose }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; compose?: ComposeApi }) {
   const [tab, setTab] = useState<'crm' | 'contacts' | 'training'>(() => { try { const v = localStorage.getItem('pii.tab'); return v === 'training' || v === 'contacts' ? v : 'crm'; } catch { return 'crm'; } });
   const pick = (v: 'crm' | 'contacts' | 'training') => { setTab(v); try { localStorage.setItem('pii.tab', v); } catch { /* private window */ } };
   return (
@@ -60,12 +62,12 @@ function Shell({ call, t, locale, canAuthor, meEmail }: { call: Call; t: Strings
         <button role="tab" aria-selected={tab === 'contacts'} onClick={() => pick('contacts')}>{t.contacts}</button>
         <button role="tab" aria-selected={tab === 'training'} onClick={() => pick('training')}>{t.training}</button>
       </div>
-      {tab === 'crm' ? <PipelineView call={call} t={t} locale={locale} meEmail={meEmail} /> : tab === 'contacts' ? <ContactsView call={call} t={t} /> : <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />}
+      {tab === 'crm' ? <PipelineView call={call} t={t} locale={locale} meEmail={meEmail} compose={compose} /> : tab === 'contacts' ? <ContactsView call={call} t={t} /> : <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />}
     </div>
   );
 }
 
-function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; locale: Locale; meEmail: string }) {
+function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: Strings; locale: Locale; meEmail: string; compose?: ComposeApi }) {
   const [pipelines, setPipelines] = useState<Pipeline[] | null>(null);
   const [pid, setPid] = useState('');
   const [scope, setScope] = useState<Scope>('all');
@@ -128,6 +130,8 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
   const [viz, setViz] = useState<Viz>(() => { try { const v = localStorage.getItem('pii.viz'); return v === 'pie' || v === 'column' || v === 'line' ? v : 'none'; } catch { return 'none'; } });
   const [reportsOpen, setReportsOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
+  const [mergeIds, setMergeIds] = useState<string[] | null>(null);
+  const [snippetsOpen, setSnippetsOpen] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [extraBox, setExtraBox] = useState<Box | null>(null);
@@ -261,6 +265,8 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
     { id: 'reports', label: t.reports, run: () => setReportsOpen(true) },
     { id: 'feed', label: t.newsfeed, run: () => setFeedOpen(true) },
     { id: 'import', label: t.import, run: () => setImporting(true) },
+    { id: 'merge', label: t.mailMerge, run: () => setMergeIds([]) },
+    { id: 'snippets', label: t.snippets, run: () => setSnippetsOpen(true) },
     { id: 'export', label: t.exportCsv, run: () => void exportCsv() },
     { id: 'edit', label: t.editPipeline, run: () => setEditing(true) },
     { id: 'refresh', label: t.refresh, hint: 'Alt+R', run: refresh },
@@ -292,7 +298,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
       e.stopPropagation();
       const el = e.target as HTMLElement;
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
-      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); setMenuOpen(false); setReportsOpen(false); setFeedOpen(false); setPaletteOpen(false); setIntegrationsOpen(false); return; }
+      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); setMenuOpen(false); setReportsOpen(false); setFeedOpen(false); setPaletteOpen(false); setIntegrationsOpen(false); setMergeIds(null); setSnippetsOpen(false); return; }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen(true); return; }
       if (e.altKey && e.key.toLowerCase() === 'r') { e.preventDefault(); refresh(); return; }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -325,6 +331,8 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
               <button role="menuitem" onClick={() => setReportsOpen(true)}>{t.reports}</button>
               <button role="menuitem" onClick={() => setFeedOpen(true)}>{t.newsfeed}</button>
               <button role="menuitem" onClick={() => setIntegrationsOpen(true)}>{t.integrations}</button>
+              <button role="menuitem" onClick={() => setMergeIds([])}>{t.mailMerge}</button>
+              <button role="menuitem" onClick={() => setSnippetsOpen(true)}>{t.snippets}</button>
               <button role="menuitem" onClick={() => setEditing(true)}>{t.editPipeline}</button>
               <button role="menuitem" onClick={() => setNewPipe(true)}>{t.newPipeline}</button>
               <button role="menuitem" onClick={() => setImporting(true)}>{t.import}</button>
@@ -375,6 +383,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
             <option value="">{t.moveTo}…</option>{stages.map((s) => <option value={s.id}>{s.name}</option>)}
           </select>
           <button class="btn" disabled={!bulkStage} onClick={bulkMove}>{t.apply}</button>
+          <button class="btn quiet" onClick={() => { setMergeIds([...picked]); setPicked(new Set()); }}>✉ {t.mailMerge}</button>
           <button class="btn quiet" onClick={() => setPicked(new Set())}>{t.cancel}</button>
         </div>
       )}
@@ -453,6 +462,8 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
         </div>
         )}
         {opened && pipeline && <Drawer key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setOpenId('')} onChanged={refresh} />}
+        {mergeIds && <MergePanel call={call} locale={locale} compose={compose} boxIds={mergeIds} onClose={() => setMergeIds(null)} onOpenBox={(id) => { if (id) { setMergeIds(null); void openById(id); } }} />}
+        {snippetsOpen && <SnippetsPanel call={call} locale={locale} onClose={() => setSnippetsOpen(false)} />}
         {integrationsOpen && pipeline && <IntegrationsPanel pipeline={pipeline} call={call} t={t} locale={locale} onAutomations={() => { setIntegrationsOpen(false); setEditing(true); }} onExport={() => void exportCsv()} onImport={() => { setIntegrationsOpen(false); setImporting(true); }} onOpenBox={(id) => { setIntegrationsOpen(false); void openById(id); }} onClose={() => setIntegrationsOpen(false)} />}
         {reportsOpen && pipeline && <ReportsPanel pipelineId={pid} scope={scope} call={call} t={t} locale={locale} colorOf={(id) => stageById.get(id)?.color ?? '#6b7280'} onClose={() => setReportsOpen(false)} />}
         {feedOpen && pipeline && <FeedPanel pipelineId={pid} scope={scope} call={call} t={t} locale={locale} onOpen={(id) => { setFeedOpen(false); void openById(id); }} onClose={() => setFeedOpen(false)} />}

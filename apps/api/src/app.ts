@@ -17,6 +17,7 @@ import { registerLmsRoutes } from './routes-lms.ts';
 import { registerInsightRoutes } from './routes-insights.ts';
 import { registerAutomationRoutes } from './routes-automation.ts';
 import { registerIntegrationRoutes } from './routes-integrations.ts';
+import { registerMergeRoutes } from './routes-merge.ts';
 import { registerAuthRoutes, originGuard } from './routes-auth.ts';
 import { registerConsentRoutes, hasAcceptedFirstLogin } from './routes-consent.ts';
 import { withRequestTx } from '@pii/db';
@@ -55,7 +56,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
 
   // Some tools (Jotform, Wufoo, plain HTML forms) post form-encoded data to a capture link; nothing else accepts it.
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 40_000 }, (req, body, done) => {
-    if (!req.url.startsWith('/v1/hooks/')) return done(new HttpError(415, 'unsupported_media_type', 'Send JSON'), undefined);
+    if (!req.url.startsWith('/v1/hooks/') && !req.url.startsWith('/u/')) return done(new HttpError(415, 'unsupported_media_type', 'Send JSON'), undefined);
     try { done(null, Object.fromEntries(new URLSearchParams(body as string))); } catch (e) { done(e as Error, undefined); }
   });
 
@@ -102,5 +103,6 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerInsightRoutes(app, deps);
   registerAutomationRoutes(app, deps);
   registerIntegrationRoutes(app, deps);
+  registerMergeRoutes(app, deps);
   return app;
 }
