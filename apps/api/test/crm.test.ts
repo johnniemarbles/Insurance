@@ -58,9 +58,10 @@ after(async () => {
   await db.drop();
 });
 
-test('learners have no CRM access', async () => {
-  assert.equal((await call(LRN, 'GET', '/v1/boxes')).status, 403);
-  assert.equal((await call(LRN, 'GET', '/v1/pipelines')).status, 403);
+test('learners are partners: they use the CRM too, but cannot define pipelines', async () => {
+  assert.equal((await call(LRN, 'GET', '/v1/boxes')).status, 200);
+  assert.equal((await call(LRN, 'GET', '/v1/pipelines')).status, 200);
+  assert.equal((await call(LRN, 'POST', '/v1/pipelines', { name: 'Nope' })).status, 403);
 });
 
 test('pipelines: managers define them, members cannot, siblings do not see them', async () => {

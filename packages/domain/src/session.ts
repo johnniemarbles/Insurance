@@ -55,7 +55,7 @@ export function buildRequestContext(input: SessionInput): RequestContext {
     isTenantAdmin: roles.some((r) => r.role === 'admin' && r.nodeId === input.tenantRootNodeId),
     // Any assigned role may write; finer rules (who may edit what) are enforced by the API.
     canWrite: roles.length > 0,
-    canUseCrm: roles.some((r) => r.role === 'admin' || r.role === 'manager' || r.role === 'member'),
+    canUseCrm: roles.length > 0, // everyone is a partner: learners and trainers use the CRM as well as the LMS
     roles,
   };
 }

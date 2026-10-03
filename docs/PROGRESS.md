@@ -17,11 +17,11 @@ Legend: [x] done · [~] in progress · [ ] not started
 - [x] 5. Tests (56 passing) and deploy
 
 Rules proven by tests: siblings never see each other; ancestors see downward but cannot edit;
-a partner serving several locations must say which location a record is for; learners have no CRM.
+a partner serving several locations must say which location a record is for; every partner role (including learner and trainer) can use both CRM and LMS; only admins/managers define pipelines.
 
 ## Phase 2 — Gmail side (next)
-- [ ] Chrome extension scaffold (InboxSDK, Manifest V3), sign-in from the extension
-- [ ] Sidebar in Gmail: show the box for a thread, move stages, add notes and tasks
+- [x] Chrome extension scaffold (InboxSDK, Manifest V3): sign-in, privacy notice, create box + contact from an email, move stages (EN / fr-CA) — needs a real-Chrome check
+- [ ] Sidebar: show the box for a thread, add notes and tasks
 - [ ] Link a thread to a box (cache content for linked threads only)
 - [ ] Gmail connection and sync (consent screen, scopes, token encryption)
 
