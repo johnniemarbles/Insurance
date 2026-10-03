@@ -2,9 +2,19 @@ import { api, ApiError } from './api';
 import { strings, type Locale, type Strings } from './i18n';
 
 interface Me { needsConsent: boolean; user: { displayName: string | null; email: string; locale: Locale }; tenant: { name: string }; product: { name: string; logoUrl: string } }
-interface Pipeline { id: string; name: string; stages: { id: string; name: string }[]; fields: { key: string; labels: Record<string, string>; type: string; required: boolean }[] }
+interface Pipeline { id: string; name: string; stages: { id: string; name: string }[] }
 interface Box { id: string; name: string; pipelineId: string; stageId: string; ownerNodeId: string }
-export interface ThreadInfo { subject: string; sender: { email: string; name: string } | null }
+interface Note { id: string; authorName: string | null; body: string; createdAt: string }
+interface Task { id: string; title: string; dueAt: string | null; doneAt: string | null }
+export interface CapturedMessage {
+  gmailMessageId: string; sentAt?: string; from?: string; to: { email: string; name?: string }[]; body: string; attachments: { name: string }[];
+}
+export interface ThreadInfo {
+  getSubject(): string;
+  getSender(): { email: string; name: string } | null;
+  getThreadId(): Promise<string>;
+  capture(): Promise<{ messages: CapturedMessage[]; skipped: number }>;
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -17,13 +27,13 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
 
 const STYLE = `
 .pii{font:13px/1.45 system-ui,sans-serif;color:#1f2937;padding:12px}
-.pii h3{margin:12px 0 6px;font-size:13px}.pii label{display:block;margin:8px 0 2px;color:#4b5563}
-.pii input,.pii select{width:100%;box-sizing:border-box;padding:6px;border:1px solid #d1d5db;border-radius:4px}
-.pii button{margin-top:8px;padding:6px 12px;border:0;border-radius:4px;background:#1d4ed8;color:#fff;cursor:pointer}
-.pii button.link{background:none;color:#1d4ed8;padding:0}.pii button:disabled{opacity:.6}
-.pii .head{display:flex;align-items:center;gap:8px;font-weight:600}.pii .head img{width:24px;height:24px}
-.pii .box{border-top:1px solid #e5e7eb;padding:8px 0}.pii .err{color:#b91c1c;margin-top:6px}.pii .ok{color:#047857;margin-top:6px}
-.pii .muted{color:#6b7280}.pii p.notice{white-space:pre-wrap}
+.pii h3{margin:14px 0 6px;font-size:13px}.pii label{display:block;margin:8px 0 2px;color:#4b5563}
+.pii input,.pii select,.pii textarea{width:100%;box-sizing:border-box;padding:6px;border:1px solid #d1d5db;border-radius:4px;font:inherit}
+.pii button{margin-top:8px;margin-right:6px;padding:6px 12px;border:0;border-radius:4px;background:#1d4ed8;color:#fff;cursor:pointer}
+.pii button.link{background:none;color:#1d4ed8;padding:0}.pii button.danger{background:#fff;color:#b91c1c;border:1px solid #fca5a5}.pii button.quiet{background:#e5e7eb;color:#111}
+.pii button:disabled{opacity:.6}.pii .head{display:flex;align-items:center;gap:8px;font-weight:600}.pii .head img{width:24px;height:24px}
+.pii .card{border:1px solid #e5e7eb;border-radius:6px;padding:10px;margin-top:10px}.pii .row{border-top:1px solid #f3f4f6;padding:6px 0}
+.pii .err{color:#b91c1c;margin-top:6px}.pii .ok{color:#047857;margin-top:6px}.pii .muted{color:#6b7280}.pii p.notice{white-space:pre-wrap}.pii .done{text-decoration:line-through;color:#6b7280}
 `;
 
 export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
@@ -34,7 +44,8 @@ export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
   let t: Strings = strings('en');
 
   const show = (...nodes: Node[]) => { app.replaceChildren(...nodes); };
-  const fail = (e: unknown) => show(el('div', { class: 'err' }, e instanceof ApiError && e.status === 0 ? t.offline : (e as Error).message), el('button', { textContent: t.retry, onclick: () => void load() }));
+  const errText = (e: unknown) => (e instanceof ApiError && e.status === 0 ? t.offline : e instanceof ApiError && e.code === 'keys_unavailable' ? t.keysOff : (e as Error).message);
+  const fail = (e: unknown) => show(el('div', { class: 'err' }, errText(e)), el('button', { textContent: t.retry, onclick: () => void load() }));
 
   async function load(): Promise<void> {
     show(el('div', { class: 'muted', textContent: t.loading }));
@@ -61,73 +72,135 @@ export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
   }
 
   async function main(me: Me): Promise<void> {
-    const [{ pipelines }, { boxes }] = await Promise.all([
+    const threadId = await thread.getThreadId();
+    const [{ pipelines }, { boxes: recent }, linked] = await Promise.all([
       api<{ pipelines: Pipeline[] }>('GET', '/v1/pipelines'),
-      api<{ boxes: Box[] }>('GET', '/v1/boxes?limit=15'),
+      api<{ boxes: Box[] }>('GET', '/v1/boxes?limit=50'),
+      api<{ boxes: (Box & { threadId: string })[] }>('GET', `/v1/threads/lookup?gmailThreadId=${encodeURIComponent(threadId)}`),
     ]);
     const head = el('div', { class: 'head' }, el('img', { src: me.product.logoUrl, alt: '' }), me.product.name);
     const sub = el('div', { class: 'muted', textContent: `${me.tenant.name} · ${me.user.email}` });
+    const parts: Node[] = [head, sub];
+    if (linked.boxes.length === 0) parts.push(addPanel(me, threadId, pipelines, recent));
+    else for (const b of linked.boxes) parts.push(boxPanel(b, pipelines, threadId));
+    show(...parts);
+  }
 
-    // ---- create box from this email ----
-    const form = el('div');
-    if (pipelines.length === 0) form.append(el('p', { class: 'muted', textContent: t.noPipeline }));
-    else {
-      const pSel = el('select');
-      for (const p of pipelines) pSel.append(el('option', { value: p.id, textContent: p.name }));
-      const name = el('input', { value: thread.subject || '' });
-      const msg = el('div');
-      const locSel = el('select');
-      const locWrap = el('div', {}, el('label', { textContent: t.location }), locSel);
-      locWrap.style.display = 'none';
-      void api<{ locations: { id: string; name: string }[] }>('GET', '/v1/org/contexts').then((r) => {
-        if (r.locations.length > 1) {
-          locSel.append(el('option', { value: '', textContent: t.chooseLocation }));
-          for (const l of r.locations) locSel.append(el('option', { value: l.id, textContent: l.name }));
-          locWrap.style.display = '';
-        }
-      }).catch(() => undefined);
-      const btn = el('button', { textContent: t.create });
-      btn.onclick = async () => {
-        btn.disabled = true; btn.textContent = t.creating; msg.replaceChildren();
-        try {
-          const loc = locSel.value || undefined;
-          let contactId: string | undefined;
-          if (thread.sender?.email) {
-            const c = await api<{ id: string }>('POST', '/v1/contacts', { email: thread.sender.email, fullName: thread.sender.name || undefined, contextNodeId: loc }).catch(async (e) => {
-              if (e instanceof ApiError && e.status === 409) { // already known: reuse
-                const found = await api<{ contacts: { id: string }[] }>('GET', `/v1/contacts?q=${encodeURIComponent(thread.sender!.email)}&limit=1`);
-                return found.contacts[0];
+  // ---------------- not linked yet ----------------
+  function addPanel(_me: Me, threadId: string, pipelines: Pipeline[], recent: Box[]): HTMLElement {
+    const wrap = el('div', { class: 'card' }, el('b', { textContent: t.addToBox }));
+    const target = el('select');
+    target.append(el('option', { value: '', textContent: t.newBox }));
+    for (const b of recent) target.append(el('option', { value: b.id, textContent: b.name }));
+    const pSel = el('select');
+    for (const p of pipelines) pSel.append(el('option', { value: p.id, textContent: p.name }));
+    const name = el('input', { value: thread.getSubject() || '' });
+    const locSel = el('select');
+    const locWrap = el('div', {}, el('label', { textContent: t.location }), locSel);
+    locWrap.style.display = 'none';
+    const newFields = el('div', {}, el('label', { textContent: t.pipeline }), pSel, el('label', { textContent: t.boxName }), name, locWrap);
+    void api<{ locations: { id: string; name: string }[] }>('GET', '/v1/org/contexts').then((r) => {
+      if (r.locations.length > 1) {
+        locSel.append(el('option', { value: '', textContent: t.chooseLocation }));
+        for (const l of r.locations) locSel.append(el('option', { value: l.id, textContent: l.name }));
+        locWrap.style.display = '';
+      }
+    }).catch(() => undefined);
+    target.onchange = () => { newFields.style.display = target.value ? 'none' : ''; };
+    const msg = el('div');
+    const go = el('button', { textContent: t.review });
+    wrap.append(el('label', { textContent: t.existingBox }), target, newFields, go, msg);
+    if (pipelines.length === 0 && recent.length === 0) { wrap.replaceChildren(el('b', { textContent: t.addToBox }), el('p', { class: 'muted', textContent: t.noPipeline })); return wrap; }
+
+    go.onclick = async () => {
+      msg.replaceChildren();
+      const existing = recent.find((b) => b.id === target.value);
+      const recordName = existing?.name ?? (name.value.trim() || 'Untitled');
+      try {
+        const n = await api<{ text: string }>('GET', `/v1/link-notice?recordName=${encodeURIComponent(recordName)}`);
+        const accept = el('button', { textContent: t.acceptAdd });
+        const cancel = el('button', { class: 'quiet', textContent: t.cancel, onclick: () => void load() });
+        accept.onclick = async () => {
+          accept.disabled = true; accept.textContent = t.creating;
+          try {
+            const { messages, skipped } = await thread.capture();
+            let boxId = existing?.id;
+            if (!boxId) {
+              const loc = locSel.value || undefined;
+              const sender = thread.getSender();
+              let contactId: string | undefined;
+              if (sender?.email) {
+                const c = await api<{ id: string }>('POST', '/v1/contacts', { email: sender.email, fullName: sender.name || undefined, contextNodeId: loc }).catch(async (e) => {
+                  if (e instanceof ApiError && e.status === 409) {
+                    const f = await api<{ contacts: { id: string }[] }>('GET', `/v1/contacts?q=${encodeURIComponent(sender.email)}&limit=1`);
+                    return f.contacts[0];
+                  }
+                  throw e;
+                });
+                contactId = c?.id;
               }
-              throw e;
-            });
-            contactId = c?.id;
-          }
-          await api('POST', '/v1/boxes', { pipelineId: pSel.value, name: name.value.trim() || thread.subject || 'Untitled', contextNodeId: loc, contactIds: contactId ? [contactId] : undefined });
-          msg.replaceChildren(el('div', { class: 'ok', textContent: t.created }));
-          await main(me);
-        } catch (e) {
-          msg.replaceChildren(el('div', { class: 'err', textContent: (e as Error).message }));
-          btn.disabled = false; btn.textContent = t.create;
-        }
-      };
-      form.append(el('label', { textContent: t.pipeline }), pSel, el('label', { textContent: t.boxName }), name, locWrap, btn, msg);
-    }
+              boxId = (await api<{ id: string }>('POST', '/v1/boxes', { pipelineId: pSel.value, name: recordName, contextNodeId: loc, contactIds: contactId ? [contactId] : undefined })).id;
+            }
+            await api('POST', `/v1/boxes/${boxId}/threads`, { gmailThreadId: threadId, subject: thread.getSubject() || undefined, acceptedNotice: true, messages });
+            await load();
+            if (skipped > 0) app.append(el('div', { class: 'muted', textContent: t.skipped(skipped) }));
+          } catch (e) { accept.disabled = false; accept.textContent = t.acceptAdd; msg.replaceChildren(el('div', { class: 'err', textContent: errText(e) })); }
+        };
+        wrap.replaceChildren(el('b', { textContent: t.notice }), el('p', { class: 'notice', textContent: n.text }), accept, cancel, msg);
+      } catch (e) { msg.replaceChildren(el('div', { class: 'err', textContent: errText(e) })); }
+    };
+    return wrap;
+  }
 
-    // ---- recent boxes with stage moves ----
-    const list = el('div');
-    if (boxes.length === 0) list.append(el('div', { class: 'muted', textContent: t.none }));
-    for (const b of boxes) {
-      const stages = pipelines.find((p) => p.id === b.pipelineId)?.stages ?? [];
-      const sel = el('select');
-      for (const s of stages) sel.append(el('option', { value: s.id, textContent: s.name, selected: s.id === b.stageId }));
-      const note = el('span', { class: 'muted' });
-      sel.onchange = async () => {
-        try { await api('PATCH', `/v1/boxes/${b.id}`, { stageId: sel.value }); note.textContent = t.saved; }
-        catch (e) { note.textContent = (e as ApiError).status === 403 ? t.readOnly : (e as Error).message; sel.value = b.stageId; }
-      };
-      list.append(el('div', { class: 'box' }, el('div', { textContent: b.name }), sel, note));
-    }
-    show(head, sub, el('h3', { textContent: t.createBox }), form, el('h3', { textContent: t.recent }), list);
+  // ---------------- linked: stage, notes, tasks ----------------
+  function boxPanel(b: Box & { threadId: string }, pipelines: Pipeline[], _threadId: string): HTMLElement {
+    const card = el('div', { class: 'card' }, el('b', { textContent: b.name }));
+    const stages = pipelines.find((p) => p.id === b.pipelineId)?.stages ?? [];
+    const sel = el('select');
+    for (const s of stages) sel.append(el('option', { value: s.id, textContent: s.name, selected: s.id === b.stageId }));
+    const stageMsg = el('span', { class: 'muted' });
+    sel.onchange = async () => {
+      try { await api('PATCH', `/v1/boxes/${b.id}`, { stageId: sel.value }); stageMsg.textContent = t.saved; b.stageId = sel.value; }
+      catch (e) { stageMsg.textContent = (e as ApiError).status === 403 ? t.readOnly : errText(e); sel.value = b.stageId; }
+    };
+    card.append(el('label', { textContent: t.stage }), sel, stageMsg);
+
+    const notes = el('div'), tasks = el('div');
+    const loadNotes = async () => {
+      const r = await api<{ notes: Note[] }>('GET', `/v1/boxes/${b.id}/notes?limit=20`);
+      notes.replaceChildren(...(r.notes.length ? r.notes.map((n) => el('div', { class: 'row' }, el('div', { class: 'muted', textContent: `${n.authorName ?? ''} · ${new Date(n.createdAt).toLocaleString()}` }), el('div', { textContent: n.body }))) : [el('div', { class: 'muted', textContent: t.none })]));
+    };
+    const loadTasks = async () => {
+      const r = await api<{ tasks: Task[] }>('GET', `/v1/tasks?boxId=${b.id}&limit=50`);
+      tasks.replaceChildren(...(r.tasks.length ? r.tasks.map((k) => {
+        const cb = el('input', { type: 'checkbox', checked: !!k.doneAt });
+        cb.style.width = 'auto';
+        cb.onchange = async () => { try { await api('PATCH', `/v1/tasks/${k.id}`, { done: cb.checked }); await loadTasks(); } catch { cb.checked = !cb.checked; } };
+        return el('div', { class: 'row' }, cb, ' ', el('span', { class: k.doneAt ? 'done' : '', textContent: k.title }), k.dueAt ? el('span', { class: 'muted', textContent: ` · ${new Date(k.dueAt).toLocaleDateString()}` }) : '');
+      }) : [el('div', { class: 'muted', textContent: t.none })]));
+    };
+
+    const noteBox = el('textarea', { rows: 2, placeholder: t.notePh });
+    const noteBtn = el('button', { textContent: t.addNote });
+    noteBtn.onclick = async () => {
+      if (!noteBox.value.trim()) return;
+      try { await api('POST', `/v1/boxes/${b.id}/notes`, { body: noteBox.value.trim() }); noteBox.value = ''; await loadNotes(); } catch (e) { alert(errText(e)); }
+    };
+    const taskIn = el('input', { placeholder: t.taskPh });
+    const taskBtn = el('button', { textContent: t.addTask });
+    taskBtn.onclick = async () => {
+      if (!taskIn.value.trim()) return;
+      try { await api('POST', `/v1/boxes/${b.id}/tasks`, { title: taskIn.value.trim() }); taskIn.value = ''; await loadTasks(); } catch (e) { alert(errText(e)); }
+    };
+    const unlink = el('button', { class: 'danger', textContent: t.unlink });
+    unlink.onclick = async () => {
+      if (!confirm(t.confirmUnlink)) return;
+      try { await api('DELETE', `/v1/boxes/${b.id}/threads/${b.threadId}`); await load(); } catch (e) { alert(errText(e)); }
+    };
+    card.append(el('h3', { textContent: t.notes }), noteBox, noteBtn, notes, el('h3', { textContent: t.tasks }), taskIn, taskBtn, tasks, el('div', {}, unlink));
+    void loadNotes().catch(() => undefined);
+    void loadTasks().catch(() => undefined);
+    return card;
   }
 
   void load();

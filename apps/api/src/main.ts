@@ -1,4 +1,4 @@
-import { loadConfig } from '@pii/platform';
+import { loadConfig, localKeyProvider } from '@pii/platform';
 import { assertDeployment, createPool } from '@pii/db';
 import { buildApp } from './app.ts';
 import { devAuthenticator, firstOf, sessionAuthenticator } from './auth.ts';
@@ -17,5 +17,7 @@ if (!google && !config.devAuth) {
   console.warn('Google sign-in is not configured: every authenticated route will answer 401.');
 }
 const authenticate = config.devAuth ? firstOf(sessionAuthenticator(authPool), devAuthenticator(authPool)) : sessionAuthenticator(authPool);
-const app = buildApp({ config, appPool, authPool, authenticate, google });
+const keys = config.localKeys && config.localKeySecret ? localKeyProvider(config.localKeySecret, config.currentKeyId) : undefined;
+if (!keys) console.warn('No encryption keys configured: linking email conversations is disabled.');
+const app = buildApp({ config, appPool, authPool, authenticate, google, keys });
 await app.listen({ port: config.port, host: '0.0.0.0' });

@@ -9,6 +9,8 @@ import { registerPeopleRoutes } from './routes-people.ts';
 import { registerPipelineRoutes } from './routes-pipelines.ts';
 import { registerBoxRoutes } from './routes-boxes.ts';
 import { registerContactRoutes } from './routes-contacts.ts';
+import type { KeyProvider } from '@pii/platform';
+import { registerThreadRoutes } from './routes-threads.ts';
 import { registerNoteRoutes } from './routes-notes.ts';
 import { registerAuthRoutes, originGuard } from './routes-auth.ts';
 import { registerConsentRoutes, hasAcceptedFirstLogin } from './routes-consent.ts';
@@ -21,6 +23,8 @@ export interface AppDeps {
   /** Pool for the narrow auth role (sessions, login lookup, invitation acceptance). */
   authPool: Db;
   google?: GoogleClient;
+  /** Encryption keys for linked email content. Absent: linking is refused (503). */
+  keys?: KeyProvider;
 }
 
 export function buildApp(input: AppDeps): FastifyInstance {
@@ -81,5 +85,6 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerBoxRoutes(app, deps);
   registerContactRoutes(app, deps);
   registerNoteRoutes(app, deps);
+  registerThreadRoutes(app, deps);
   return app;
 }

@@ -5,13 +5,21 @@ const en = {
   createBox: 'Add this email to the CRM', boxName: 'Name', create: 'Create', creating: 'Creating…', recent: 'Recent boxes', none: 'Nothing here yet.',
   noPipeline: 'No pipeline is available to you yet. Ask your manager to create one.', created: 'Box created', saved: 'Saved',
   readOnly: 'Read only', chooseLocation: 'Choose a location', fromSender: 'Contact', search: 'Search boxes',
+  addToBox: 'Add this conversation to a box', newBox: 'New box…', existingBox: 'Box', review: 'Review and add', cancel: 'Cancel', acceptAdd: 'Accept and add',
+  linked: 'Conversation added', unlink: 'Remove conversation', notes: 'Notes', addNote: 'Add note', notePh: 'Write a note…', tasks: 'Tasks', addTask: 'Add task',
+  taskPh: 'New task…', skipped: (n: number) => `${n} collapsed message(s) were not included. Expand them and add again to include them.`, confirmUnlink: 'Remove this conversation and delete the stored copy?',
+  keysOff: 'Adding conversations is not available on this server yet.',
 };
-const frCA: typeof en = {
+export type Strings = typeof en;
+const frCA: Strings = {
   loading: 'Chargement…', signIn: 'Se connecter avec Google', signedOut: 'Connectez-vous pour voir votre CRM ici.', offline: 'Impossible de joindre le serveur.',
   retry: 'Réessayer', notice: 'Avis de confidentialité', accept: 'J’ai compris', pipeline: 'Pipeline', stage: 'Étape', location: 'Emplacement',
   createBox: 'Ajouter ce courriel au CRM', boxName: 'Nom', create: 'Créer', creating: 'Création…', recent: 'Fiches récentes', none: 'Rien pour le moment.',
   noPipeline: 'Aucun pipeline n’est disponible pour vous. Demandez à votre gestionnaire d’en créer un.', created: 'Fiche créée', saved: 'Enregistré',
   readOnly: 'Lecture seule', chooseLocation: 'Choisissez un emplacement', fromSender: 'Contact', search: 'Rechercher des fiches',
+  addToBox: 'Ajouter cette conversation à une fiche', newBox: 'Nouvelle fiche…', existingBox: 'Fiche', review: 'Lire et ajouter', cancel: 'Annuler', acceptAdd: 'Accepter et ajouter',
+  linked: 'Conversation ajoutée', unlink: 'Retirer la conversation', notes: 'Notes', addNote: 'Ajouter une note', notePh: 'Écrire une note…', tasks: 'Tâches', addTask: 'Ajouter une tâche',
+  taskPh: 'Nouvelle tâche…', skipped: (n: number) => `${n} message(s) réduit(s) n’ont pas été inclus. Développez-les et ajoutez de nouveau pour les inclure.`, confirmUnlink: 'Retirer cette conversation et supprimer la copie conservée?',
+  keysOff: 'L’ajout de conversations n’est pas encore disponible sur ce serveur.',
 };
-export type Strings = typeof en;
 export const strings = (l: Locale): Strings => (l === 'fr-CA' ? frCA : en);

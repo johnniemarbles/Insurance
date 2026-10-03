@@ -4,7 +4,7 @@ import pg from 'pg';
 import type { FastifyInstance } from 'fastify';
 import { bootstrapTenant, createPool, type Db } from '@pii/db';
 import { createTestDb, type TestDb } from '@pii/db/testing';
-import { loadConfig } from '@pii/platform';
+import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 
@@ -38,7 +38,7 @@ before(async () => {
   const authPool = createPool(db.authUrl, 2);
   pools = [appPool, authPool];
   const config = loadConfig({ APP_ENV: 'test', REGION: 'ca-qc', DATABASE_URL: db.ownerUrl, APP_DATABASE_URL: db.appUrl, AUTH_DATABASE_URL: db.authUrl, DEV_AUTH: 'true' });
-  app = buildApp({ config, appPool, authPool, authenticate: devAuthenticator(authPool) });
+  app = buildApp({ config, appPool, authPool, authenticate: devAuthenticator(authPool), keys: localKeyProvider('0123456789abcdef0123') });
   tenant = await bootstrapTenant(db.ownerUrl, { name: 'CRM Test Co', countryCode: 'CA', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   X = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
@@ -209,6 +209,54 @@ test('notes and tasks follow the box', async () => {
   assert.equal((await call(S1U, 'DELETE', `/v1/notes/${note.json.id}`)).status, 204);
 });
 
+test('linking a conversation: notice first, encrypted at rest, visible down the chain, purged on unlink', async () => {
+  const subId = (await call(S1U, 'GET', '/v1/boxes')).json.boxes[0].id;
+  const notice = await call(S1U, 'GET', `/v1/boxes/${subId}/link-notice`);
+  assert.equal(notice.status, 200);
+  assert.match(notice.json.text, /admin edit/);
+  const payload = {
+    gmailThreadId: 'thr-100', subject: 'Quote request',
+    messages: [
+      { gmailMessageId: 'm1', sentAt: '2026-10-01T10:00:00Z', from: 'amy@client.example', to: [{ email: 's1@crm.test' }], body: 'Please quote my SECRET-PLAN-777 renewal.', attachments: [{ name: 'id.pdf', size: 10 }] },
+      { gmailMessageId: 'm2', sentAt: '2026-10-01T11:00:00Z', from: 's1@crm.test', to: [{ email: 'amy@client.example', name: 'Amy' }], body: 'Sure, on it.' },
+    ],
+  };
+  assert.equal((await call(S1U, 'POST', `/v1/boxes/${subId}/threads`, { ...payload })).status, 400); // notice not accepted
+  assert.equal((await call(P2U, 'POST', `/v1/boxes/${subId}/threads`, { ...payload, acceptedNotice: true })).status, 404);
+  assert.equal((await call(P1U, 'POST', `/v1/boxes/${subId}/threads`, { ...payload, acceptedNotice: true })).status, 403); // ancestor can read, not link
+  const linked = await call(S1U, 'POST', `/v1/boxes/${subId}/threads`, { ...payload, acceptedNotice: true });
+  assert.equal(linked.status, 201);
+  const threadId = linked.json.threadId;
+  // linking again adds nothing twice
+  assert.equal((await call(S1U, 'POST', `/v1/boxes/${subId}/threads`, { ...payload, acceptedNotice: true })).status, 201);
+  assert.equal((await call(S1U, 'GET', '/v1/threads/lookup?gmailThreadId=thr-100')).json.boxes[0].id, subId);
+  assert.equal((await call(S1U, 'GET', '/v1/threads/lookup?gmailThreadId=nope')).json.boxes.length, 0);
+  const list = (await call(S1U, 'GET', `/v1/boxes/${subId}/threads`)).json.threads;
+  assert.equal(list.length, 1);
+  assert.equal(list[0].messageCount, 2);
+
+  // stored encrypted
+  const o = new pg.Client({ connectionString: db.ownerUrl });
+  await o.connect();
+  const raw = (await o.query(`SELECT body_enc FROM linked_thread_messages WHERE thread_id = $1 AND gmail_message_id = 'm1'`, [threadId])).rows[0].body_enc as Buffer;
+  assert.ok(!raw.toString('utf8').includes('SECRET-PLAN-777'));
+  assert.equal((await o.query(`SELECT count(*)::int AS n FROM consent_records WHERE kind = 'link_thread'`)).rows[0].n, 2);
+
+  // the parent partner reads it; the sibling does not
+  const read = await call(P1U, 'GET', `/v1/threads/${threadId}/messages`);
+  assert.equal(read.status, 200);
+  assert.equal(read.json.messages[0].body, 'Please quote my SECRET-PLAN-777 renewal.');
+  assert.equal((await call(P2U, 'GET', `/v1/threads/${threadId}/messages`)).status, 404);
+  assert.equal((await call(P2U, 'GET', `/v1/boxes/${subId}/threads`)).status, 404);
+
+  // unlinking deletes the stored copy
+  assert.equal((await call(P2U, 'DELETE', `/v1/boxes/${subId}/threads/${threadId}`)).status, 404);
+  assert.equal((await call(S1U, 'DELETE', `/v1/boxes/${subId}/threads/${threadId}`)).status, 204);
+  assert.equal((await o.query('SELECT count(*)::int AS n FROM linked_thread_messages WHERE thread_id = $1', [threadId])).rows[0].n, 0);
+  assert.equal((await o.query('SELECT count(*)::int AS n FROM email_threads WHERE id = $1', [threadId])).rows[0].n, 0);
+  await o.end();
+});
+
 test('deleting a box removes its notes, tasks and links; audit records the actions', async () => {
   const id = (await call(P1U, 'GET', '/v1/boxes?q=Smith')).json.boxes[0].id;
   await call(P1U, 'POST', `/v1/boxes/${id}/notes`, { body: 'n' });
@@ -219,4 +267,10 @@ test('deleting a box removes its notes, tasks and links; audit records the actio
   const actions = (await call(ADMIN, 'GET', '/v1/audit')).json;
   const names = actions.events.map((e: any) => e.action);
   assert.ok(names.includes('box_created') && names.includes('box_deleted') && names.includes('box_stage_moved'));
+});
+
+test('generic link notice for a box that does not exist yet', async () => {
+  const r = await call(S1U, 'GET', '/v1/link-notice?recordName=New%20deal&locationName=Toronto');
+  assert.equal(r.status, 200);
+  assert.match(r.json.text, /New deal/);
 });

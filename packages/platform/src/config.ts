@@ -15,6 +15,7 @@ export interface Config {
   authDatabaseUrl: string;
   devAuth: boolean;
   localKeys: boolean;
+  localKeySecret?: string;
   currentKeyId: string;
   googleClientId?: string;
   googleClientSecret?: string;
@@ -42,6 +43,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if ((appEnv === 'prod' || appEnv === 'staging') && (devAuth || localKeys)) {
     throw new Error('DEV_AUTH and LOCAL_KEYS are not allowed when APP_ENV is staging or prod');
   }
+  if (localKeys && (env.LOCAL_KEY_SECRET ?? '').length < 16) throw new Error('LOCAL_KEY_SECRET (16+ characters) is required with LOCAL_KEYS');
   const googleClientId = env.GOOGLE_CLIENT_ID || undefined;
   const googleClientSecret = env.GOOGLE_CLIENT_SECRET || undefined;
   const cookieSecret = env.COOKIE_SECRET || undefined;
@@ -68,6 +70,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     authDatabaseUrl: req(env, 'AUTH_DATABASE_URL'),
     devAuth,
     localKeys,
+    localKeySecret: env.LOCAL_KEY_SECRET || undefined,
     currentKeyId: env.CURRENT_KEY_ID ?? 'local-1',
   };
 }
