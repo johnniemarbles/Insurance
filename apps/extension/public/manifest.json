@@ -53,7 +53,8 @@
     {
       "resources": [
         "nav-icon.png",
-        "icon-32.png"
+        "icon-32.png",
+        "icons/*.svg"
       ],
       "matches": [
         "https://mail.google.com/*",

@@ -76,11 +76,11 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     section = top;
     if (r.status !== 200) return;
     const nav = r.json as NavData;
-    const ICONS: Record<string, string> = { home: 'home', pipelines: 'view_kanban', contacts: 'contacts', merges: 'forward_to_inbox', training: 'school', settings: 'settings' };
+    const svg = (n: string) => chrome.runtime.getURL(`icons/${n}.svg`);
     nav.items.forEach((it, i) => {
-      const child = top.addNavItem({ name: withCount(it.name, it.count), iconLiga: ICONS[it.id] ?? 'circle', routeID: 'pii/:page', routeParams: { page: it.id }, orderHint: i });
+      const child = top.addNavItem({ name: withCount(it.name, it.count), iconUrl: svg(it.id), routeID: 'pii/:page', routeParams: { page: it.id }, orderHint: i });
       if (it.id === 'pipelines') {
-        nav.pipelines.forEach((p, j) => child.addNavItem({ name: p.count > 0 ? `${p.name}  ⚠ ${p.count}` : p.name, iconLiga: 'filter_list', routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: p.id }, orderHint: j }));
+        nav.pipelines.forEach((p, j) => child.addNavItem({ name: p.count > 0 ? `${p.name}  ⚠ ${p.count}` : p.name, iconUrl: svg('view'), routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: p.id }, orderHint: j }));
       }
     });
   };
