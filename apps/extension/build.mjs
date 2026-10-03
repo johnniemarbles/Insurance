@@ -2,7 +2,7 @@ import { build } from 'esbuild';
 import { cpSync, mkdirSync, rmSync } from 'node:fs';
 
 const API_BASE = process.env.PII_API_BASE ?? 'https://api-dev-20ea.up.railway.app';
-const INBOXSDK_APP_ID = process.env.INBOXSDK_APP_ID ?? 'sdk_REPLACE_ME';
+const INBOXSDK_APP_ID = process.env.INBOXSDK_APP_ID ?? 'sdk_PunjabInsurance_b26dfb5691';
 
 rmSync('dist', { recursive: true, force: true });
 mkdirSync('dist', { recursive: true });
