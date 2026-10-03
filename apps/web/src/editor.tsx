@@ -1,5 +1,5 @@
 import { useDialogFocus } from './a11y.ts';
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { TEMPLATES } from './templates.ts';
 import { stageColor } from './theme.ts';
 import type { Strings } from './i18n.ts';
@@ -57,6 +57,13 @@ export function PipelineEditor({ pipeline, call, t, locale, onClose, onChanged }
               <button class="btn quiet" onClick={() => setRemoving('')}>{t.cancel}</button>
             </div>
           )}
+          <details class="reqd">
+            <summary>{t.requiredToEnter}{(s.requiredFields?.length ?? 0) > 0 ? ` (${s.requiredFields!.length})` : ''}</summary>
+            {[{ k: 'value', l: t.value }, { k: 'closeDate', l: t.closeDate }, { k: 'owner', l: t.owner }, ...pipeline.fields.map((f) => ({ k: f.key, l: f.labels[locale] ?? f.labels.en ?? f.key }))].map((o) => (
+              <label class="check" key={o.k}><input type="checkbox" checked={s.requiredFields?.includes(o.k) ?? false}
+                onChange={(e) => { const on = (e.target as HTMLInputElement).checked; const cur = s.requiredFields ?? []; void act(() => call('PATCH', `${P}/stages/${s.id}`, { requiredFields: on ? [...cur, o.k] : cur.filter((x) => x !== o.k) })); }} /> {o.l}</label>
+            ))}
+          </details>
         </div>
       ))}
       <form class="erow" onSubmit={(e) => { e.preventDefault(); const n = newStage.trim(); if (n) { setNewStage(''); void act(() => call('POST', `${P}/stages`, { name: n })); } }}>
@@ -90,8 +97,63 @@ export function PipelineEditor({ pipeline, call, t, locale, onClose, onChanged }
         <button class="btn quiet" disabled={!colLabel.trim()}>+</button>
       </form>
 
+      <Automations pipeline={pipeline} call={call} t={t} act={act} />
+
       <div class="actions"><button class="btn quiet" onClick={onClose}>{t.close}</button></div>
     </aside>
+  );
+}
+
+interface Auto { id: string; stageId: string; action: 'create_task' | 'assign_owner'; title: string | null; dueInDays: number | null; assigneeName: string | null; active: boolean }
+function Automations({ pipeline, call, t, act }: { pipeline: Pipeline; call: Call; t: Strings; act: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const [list, setList] = useState<Auto[]>([]);
+  const [people, setPeople] = useState<{ id: string; displayName: string | null; email: string }[]>([]);
+  const [stageId, setStageId] = useState(pipeline.stages[0]?.id ?? '');
+  const [action, setAction] = useState<'create_task' | 'assign_owner'>('create_task');
+  const [title, setTitle] = useState('');
+  const [days, setDays] = useState('');
+  const [who, setWho] = useState('');
+  const [tick, setTick] = useState(0);
+  const P = `/v1/pipelines/${pipeline.id}/automations`;
+  useEffect(() => { call('GET', P).then((r) => setList(r.automations), () => undefined); }, [call, P, tick]);
+  useEffect(() => { call('GET', '/v1/users').then((r) => setPeople(r.users), () => undefined); }, [call]);
+  const stageName = (id: string) => pipeline.stages.find((s) => s.id === id)?.name ?? '…';
+  const run = (fn: () => Promise<unknown>) => act(async () => { await fn(); setTick((n) => n + 1); });
+  const ready = action === 'create_task' ? title.trim() !== '' : who !== '';
+  return (
+    <>
+      <h3>{t.automations}</h3>
+      <p class="muted">{t.automationsHelp}</p>
+      {list.map((a) => (
+        <div class="erow" key={a.id}>
+          <span class={a.active ? '' : 'strike'}>{t.whenEnters(stageName(a.stageId))}: {a.action === 'create_task' ? t.doTask(a.title ?? '', a.dueInDays) : t.doAssign(a.assigneeName ?? '…')}</span>
+          <span class="spacer" />
+          <button class="ib" aria-label={a.active ? t.pause : t.resume} onClick={() => void run(() => call('PATCH', `${P}/${a.id}`, { active: !a.active }))}>{a.active ? '⏸' : '▶'}</button>
+          <button class="ib danger" aria-label={t.remove} onClick={() => void run(() => call('DELETE', `${P}/${a.id}`))}>✕</button>
+        </div>
+      ))}
+      <form class="erow wrap2" onSubmit={(e) => {
+        e.preventDefault(); if (!ready) return;
+        const body = action === 'create_task' ? { stageId, action, title: title.trim(), ...(days !== '' ? { dueInDays: Number(days) } : {}) } : { stageId, action, assigneeUserId: who };
+        setTitle(''); setDays('');
+        void run(() => call('POST', P, body));
+      }}>
+        <span>{t.whenEntersShort}</span>
+        <select aria-label={t.stage} value={stageId} onChange={(e) => setStageId((e.target as HTMLSelectElement).value)}>{pipeline.stages.map((s) => <option value={s.id}>{s.name}</option>)}</select>
+        <select aria-label={t.actionLabel} value={action} onChange={(e) => setAction((e.target as HTMLSelectElement).value as 'create_task' | 'assign_owner')}>
+          <option value="create_task">{t.actCreateTask}</option><option value="assign_owner">{t.actAssign}</option>
+        </select>
+        {action === 'create_task' ? (
+          <>
+            <input placeholder={t.taskTitle} aria-label={t.taskTitle} value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} />
+            <input type="number" min="0" placeholder={t.dueInDays} aria-label={t.dueInDays} value={days} onInput={(e) => setDays((e.target as HTMLInputElement).value)} />
+          </>
+        ) : (
+          <select aria-label={t.assignTo} value={who} onChange={(e) => setWho((e.target as HTMLSelectElement).value)}><option value="">{t.assignTo}…</option>{people.map((u) => <option value={u.id}>{u.displayName ?? u.email}</option>)}</select>
+        )}
+        <button class="btn quiet" disabled={!ready}>+</button>
+      </form>
+    </>
   );
 }
 

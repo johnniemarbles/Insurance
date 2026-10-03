@@ -50,5 +50,6 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 - [x] Phase A: unified filter/sort/group bar, chips, multi-stage and owner filters, email-age filters, stacked sorts, group-by sections with totals, quick add, first-run checklist, kebab menu, Alt+R
 - [x] Phase B: column picker and order, automatic columns (freshness, last interaction, email, task and note counts), owner avatars, inline editing with undo, frozen name column
 - [x] Phase C: pie, column and weekly charts, Reports (funnel, win rate, forecast, by owner), Newsfeed, Ctrl/Cmd+K command palette
-- [ ] Phase D: automations, data validation, share, snippets, send later, mail merge
+- [x] Phase D (part 1): stage-entry automations, required fields per stage, shared team views
+- [ ] Phase D (part 2): snippets, send later, mail merge (Gmail compose integration)
 - [ ] Phase E: AI and opt-in tracking

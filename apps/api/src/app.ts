@@ -15,6 +15,7 @@ import { registerThreadRoutes } from './routes-threads.ts';
 import { registerNoteRoutes } from './routes-notes.ts';
 import { registerLmsRoutes } from './routes-lms.ts';
 import { registerInsightRoutes } from './routes-insights.ts';
+import { registerAutomationRoutes } from './routes-automation.ts';
 import { registerAuthRoutes, originGuard } from './routes-auth.ts';
 import { registerConsentRoutes, hasAcceptedFirstLogin } from './routes-consent.ts';
 import { withRequestTx } from '@pii/db';
@@ -92,5 +93,6 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerThreadRoutes(app, deps);
   registerLmsRoutes(app, deps);
   registerInsightRoutes(app, deps);
+  registerAutomationRoutes(app, deps);
   return app;
 }

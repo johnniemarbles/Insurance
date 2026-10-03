@@ -54,7 +54,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
     return run(ctx, async (tx) => {
       const pipes = (await tx.query(`SELECT id, name, owner_node_id AS "ownerNodeId", is_shared_down AS "sharedDown", color_theme AS "colorTheme", created_at AS "createdAt" FROM pipelines ORDER BY name`)).rows;
       const ids = pipes.map((p) => p.id);
-      const stages = (await tx.query(`SELECT id, pipeline_id AS "pipelineId", name, position, color, is_won AS "isWon", is_lost AS "isLost" FROM stages WHERE pipeline_id = ANY($1::uuid[]) ORDER BY position`, [ids])).rows;
+      const stages = (await tx.query(`SELECT id, pipeline_id AS "pipelineId", name, position, color, is_won AS "isWon", is_lost AS "isLost", required_fields AS "requiredFields" FROM stages WHERE pipeline_id = ANY($1::uuid[]) ORDER BY position`, [ids])).rows;
       const fields = (await tx.query(`SELECT id, pipeline_id AS "pipelineId", key, labels, type, options, required, position FROM field_defs WHERE pipeline_id = ANY($1::uuid[]) ORDER BY position`, [ids])).rows;
       return { pipelines: pipes.map((p) => ({ ...p, stages: stages.filter((s) => s.pipelineId === p.id), fields: fields.filter((f) => f.pipelineId === p.id) })) };
     });
@@ -159,19 +159,24 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
 
   app.patch(
     '/v1/pipelines/:id/stages/:stageId',
-    { schema: { params: stageParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { name: { type: 'string', minLength: 1, maxLength: 100 }, color: { anyOf: [colorProp, { type: 'null' }] }, isWon: { type: 'boolean' }, isLost: { type: 'boolean' } } } } },
+    { schema: { params: stageParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { name: { type: 'string', minLength: 1, maxLength: 100 }, color: { anyOf: [colorProp, { type: 'null' }] }, isWon: { type: 'boolean' }, isLost: { type: 'boolean' }, requiredFields: { type: 'array', maxItems: 40, items: { type: 'string', maxLength: 60 } } } } } },
     async (req, reply) => {
       const { ctx } = await deps.authenticate(req);
       requireCrm(ctx);
       const { id, stageId } = req.params as { id: string; stageId: string };
-      const b = req.body as { name?: string; color?: string | null; isWon?: boolean; isLost?: boolean };
+      const b = req.body as { name?: string; color?: string | null; isWon?: boolean; isLost?: boolean; requiredFields?: string[] };
       if (b.isWon && b.isLost) throw invalid('A stage cannot be both won and lost');
       await run(ctx, async (tx) => {
         await loadForManage(tx, ctx, id);
+        if (b.requiredFields) {
+          const keys = (await tx.query<{ key: string }>('SELECT key FROM field_defs WHERE pipeline_id = $1', [id])).rows.map((r) => r.key);
+          const bad = b.requiredFields.filter((k) => !['value', 'closeDate', 'owner'].includes(k) && !keys.includes(k));
+          if (bad.length) throw invalid(`Unknown required field: ${bad.join(', ')}`);
+        }
         const r = await tx.query(
           `UPDATE stages SET name = coalesce($3, name), color = CASE WHEN $4 THEN $5 ELSE color END,
-             is_won = coalesce($6, is_won), is_lost = coalesce($7, is_lost) WHERE id = $1 AND pipeline_id = $2`,
-          [stageId, id, b.name?.trim() ?? null, 'color' in b, b.color ?? null, b.isWon ?? null, b.isLost ?? null],
+             is_won = coalesce($6, is_won), is_lost = coalesce($7, is_lost), required_fields = coalesce($8::text[], required_fields) WHERE id = $1 AND pipeline_id = $2`,
+          [stageId, id, b.name?.trim() ?? null, 'color' in b, b.color ?? null, b.isWon ?? null, b.isLost ?? null, b.requiredFields ?? null],
         );
         if (r.rowCount === 0) throw notFound('Stage not found');
         await audit(tx, ctx, 'stage_updated', 'pipeline', id, { stageId, fields: Object.keys(b) });

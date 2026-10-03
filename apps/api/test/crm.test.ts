@@ -432,3 +432,53 @@ test('reports and newsfeed: totals, conversion inputs, isolation', async () => {
   assert.equal(sib.status, 404);
   assert.equal((await call(P2U, 'GET', `/v1/newsfeed?pipelineId=${pipe1}`)).json.items.length, 0);
 });
+
+test('stage rules and automations: required fields block a move; entering a stage creates a task and assigns', async () => {
+  const P = `/v1/pipelines/${pipe1}`;
+  const stages = (await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).stages.map((s: any) => s.id) as string[];
+  const target = stages[1]!;
+  assert.equal((await call(S1U, 'PATCH', `${P}/stages/${target}`, { requiredFields: ['value'] })).status, 403);
+  assert.equal((await call(P1U, 'PATCH', `${P}/stages/${target}`, { requiredFields: ['nope'] })).status, 422);
+  assert.equal((await call(P1U, 'PATCH', `${P}/stages/${target}`, { requiredFields: ['value', 'closeDate'] })).status, 204);
+  assert.deepEqual((await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).stages.find((s: any) => s.id === target).requiredFields, ['value', 'closeDate']);
+  const id = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'Rule box', contextNodeId: X, stageId: stages[0], custom: { policy_no: 'R-1' } })).json.id as string;
+  const blocked = await call(P1U, 'PATCH', `/v1/boxes/${id}`, { stageId: target });
+  assert.equal(blocked.status, 422);
+  assert.match(blocked.json.error.message, /Value, Close date/);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes/${id}`)).json.stageId, stages[0], 'the failed move changed nothing');
+  assert.equal((await call(P1U, 'PATCH', `/v1/boxes/${id}`, { stageId: target, valueAmount: 10, closeDate: '2030-01-01' })).status, 204);
+
+  // automations: managers only, visible to all who see the pipeline
+  assert.equal((await call(S1U, 'POST', `${P}/automations`, { stageId: target, action: 'create_task', title: 'x' })).status, 403);
+  assert.equal((await call(P1U, 'POST', `${P}/automations`, { stageId: target, action: 'create_task' })).status, 422);
+  const auto = (await call(P1U, 'POST', `${P}/automations`, { stageId: target, action: 'create_task', title: 'Send quote', dueInDays: 3 })).json.id;
+  assert.ok(auto);
+  assert.equal((await call(P2U, 'GET', `${P}/automations`)).status, 404, 'siblings cannot see it');
+  assert.equal((await call(P1U, 'GET', `${P}/automations`)).json.automations.length, 1);
+  const id2 = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'Auto box', contextNodeId: X, stageId: stages[0], custom: { policy_no: 'A-1' }, valueAmount: 5, closeDate: '2030-02-02' })).json.id as string;
+  assert.equal((await call(P1U, 'PATCH', `/v1/boxes/${id2}`, { stageId: target })).status, 204);
+  const tasks = (await call(P1U, 'GET', `/v1/tasks?boxId=${id2}`)).json.tasks;
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].title, 'Send quote');
+  assert.ok(tasks[0].dueAt);
+  // paused automations do nothing
+  assert.equal((await call(P1U, 'PATCH', `${P}/automations/${auto}`, { active: false })).status, 204);
+  const id3 = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'Quiet box', contextNodeId: X, stageId: stages[0], custom: { policy_no: 'Q-1' }, valueAmount: 5, closeDate: '2030-02-02' })).json.id as string;
+  await call(P1U, 'PATCH', `/v1/boxes/${id3}`, { stageId: target });
+  assert.equal((await call(P1U, 'GET', `/v1/tasks?boxId=${id3}`)).json.tasks.length, 0);
+  assert.equal((await call(P1U, 'DELETE', `${P}/automations/${auto}`)).status, 204);
+});
+
+test('shared views: own and shared, never someone else\'s private view', async () => {
+  const P = `/v1/pipelines/${pipe1}`;
+  assert.equal((await call(P1U, 'PATCH', P, { sharedDown: true })).status, 204);
+  assert.equal((await call(P1U, 'POST', `${P}/views`, { name: 'Private', config: { a: 1 } })).status, 201);
+  const shared = (await call(P1U, 'POST', `${P}/views`, { name: 'Team view', config: { a: 2 }, shared: true })).json.id;
+  const seen = (await call(S1U, 'GET', `${P}/views`)).json.views;
+  assert.deepEqual(seen.map((v: any) => v.name), ['Team view']);
+  assert.equal(seen[0].mine, false);
+  assert.equal((await call(S1U, 'DELETE', `/v1/views/${shared}`)).status, 404, 'cannot delete a view you did not make');
+  assert.equal((await call(P2U, 'GET', `${P}/views`)).json.views.length, 0);
+  assert.equal((await call(P1U, 'GET', `${P}/views`)).json.views.length, 2);
+  assert.equal((await call(P1U, 'DELETE', `/v1/views/${shared}`)).status, 204);
+});

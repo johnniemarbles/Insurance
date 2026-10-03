@@ -98,6 +98,8 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
   const [people, setPeople] = useState<{ id: string; displayName: string | null; email: string }[]>([]);
   interface SavedView { name: string; scope: Scope; filters: Filters; sorts: SortSpec[]; groupBy: GroupBy; view: 'table' | 'board' }
   const [views, setViews] = useState<SavedView[]>([]);
+  const [teamViews, setTeamViews] = useState<{ id: string; name: string; config: any; shared: boolean; mine: boolean; author: string | null }[]>([]);
+  useEffect(() => { if (pid) call('GET', `/v1/pipelines/${pid}/views`).then((r) => setTeamViews(r.views), () => setTeamViews([])); }, [call, pid, tick]);
   useEffect(() => { call('GET', '/v1/org/contexts').then((r) => { const l = (r.locations ?? []) as { id: string; name: string }[]; setQuickLocs(l); if (l.length === 1) setQuickLoc(l[0]!.id); }, () => undefined); }, [call]);
   useEffect(() => { call('GET', '/v1/users').then((r) => setPeople(r.users), () => undefined); }, [call]);
   useEffect(() => {
@@ -140,7 +142,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
     document.addEventListener('keydown', h, true);
     return () => document.removeEventListener('keydown', h, true);
   }, []);
-  const [toast, setToast] = useState<{ msg: string; undo: () => void } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; undo?: () => void; bad?: boolean } | null>(null);
   useEffect(() => { if (!toast) return; const h = setTimeout(() => setToast(null), 7000); return () => clearTimeout(h); }, [toast]);
 
   const query = useCallback((offset: number) => {
@@ -177,16 +179,21 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
       await call('PATCH', `/v1/boxes/${box.id}`, forward);
       setToast({ msg: t.updatedMsg(what), undo: async () => { setToast(null); try { await call('PATCH', `/v1/boxes/${box.id}`, undo); refresh(); } catch (e) { setError((e as Error).message); } } });
       refresh();
-    } catch (e) { setError((e as Error).message); refresh(); }
+    } catch (e) { setToast({ msg: (e as Error).message, bad: true }); refresh(); }
   };
   const storeViews = (v: SavedView[]) => { setViews(v); try { localStorage.setItem(`pii.views.${pid}`, JSON.stringify(v)); } catch { /* private window */ } };
   const saveView = () => {
     const name = prompt(t.viewName)?.trim();
     if (!name) return;
+    if (confirm(t.shareView)) {
+      call('POST', `/v1/pipelines/${pid}/views`, { name, shared: true, config: { scope, filters, sorts, groupBy, view } }).then(refresh, (e) => setError((e as Error).message));
+      return;
+    }
     storeViews([...views.filter((v) => v.name !== name), { name, scope, filters, sorts, groupBy, view }]);
   };
   const applyView = (name: string) => {
-    const v = views.find((x) => x.name === name);
+    const tv = name.startsWith('team:') ? teamViews.find((x) => x.id === name.slice(5)) : undefined;
+    const v = tv ? { scope: (tv.config.scope ?? 'all') as Scope, view: (tv.config.view ?? 'table') as 'table' | 'board', ...migrateView(tv.config) } : views.find((x) => x.name === name);
     if (!v) return;
     setScope(v.scope); setFilters(v.filters); setSorts(v.sorts); setGroupBy(v.groupBy); setView(v.view);
   };
@@ -212,7 +219,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
   const move = async (id: string, stageId: string, position: number) => {
     // show the move at once, then confirm with the server
     setBoxes((cur) => cur.map((b) => (b.id === id ? { ...b, stageId, position } : b)));
-    try { await call('PATCH', `/v1/boxes/${id}`, { stageId, position }); refresh(); } catch (e) { setError((e as Error).message); refresh(); }
+    try { await call('PATCH', `/v1/boxes/${id}`, { stageId, position }); refresh(); } catch (e) { setToast({ msg: (e as Error).message, bad: true }); refresh(); }
   };
   const togglePick = (id: string) => setPicked((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const bulkMove = async () => {
@@ -342,10 +349,14 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
       <div class="meta">
         <span aria-live="polite">{t.rows(total)}</span>
         <select class="sel small" aria-label={t.views} value="" onChange={(e) => applyView((e.target as HTMLSelectElement).value)}>
-          <option value="">{t.views}…</option>{views.map((v) => <option value={v.name}>{v.name}</option>)}
+          <option value="">{t.views}…</option>{views.map((v) => <option value={v.name}>{v.name}</option>)}{teamViews.map((v) => <option value={`team:${v.id}`}>{v.name} ({v.mine ? t.sharedTag : t.sharedBy(v.author ?? '…')})</option>)}
         </select>
         <button onClick={saveView}>{t.saveView}</button>
-        {views.length > 0 && <button onClick={() => { const n = prompt(t.removeViewName)?.trim(); if (n) storeViews(views.filter((v) => v.name !== n)); }}>{t.removeView}</button>}
+        {(views.length > 0 || teamViews.some((v) => v.mine)) && <button onClick={() => {
+          const n = prompt(t.removeViewName)?.trim(); if (!n) return;
+          const mineShared = teamViews.find((v) => v.mine && v.name === n);
+          if (mineShared) call('DELETE', `/v1/views/${mineShared.id}`).then(refresh, (e) => setError((e as Error).message)); else storeViews(views.filter((v) => v.name !== n));
+        }}>{t.removeView}</button>}
         {view === 'table' && (
           <select class="sel small" aria-label={t.chartLabel} value={viz} onChange={(e) => { const v = (e.target as HTMLSelectElement).value as Viz; setViz(v); try { localStorage.setItem('pii.viz', v); } catch { /* private window */ } }}>
             <option value="none">{t.chartLabel}: {t.vizNone}</option><option value="pie">{t.chartLabel}: {t.vizPie}</option><option value="column">{t.chartLabel}: {t.vizColumn}</option><option value="line">{t.chartLabel}: {t.vizLine}</option>
@@ -364,7 +375,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
         </div>
       )}
       {error && <div class="err" role="alert">{error}</div>}
-      {toast && <div class="toast" role="status">{toast.msg} <button onClick={toast.undo}>{t.undo}</button></div>}
+      {toast && <div class={`toast${toast.bad ? ' bad' : ''}`} role={toast.bad ? 'alert' : 'status'}>{toast.msg} {toast.undo && <button onClick={toast.undo}>{t.undo}</button>}{toast.bad && <button onClick={() => setToast(null)}>{t.close}</button>}</div>}
 
       <div class="root">
         {view === 'board' ? (
