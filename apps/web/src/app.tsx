@@ -5,6 +5,7 @@ import { ImportDialog } from './import.tsx';
 import { NewPipeline, PipelineEditor } from './editor.tsx';
 import { TrainingView } from './training.tsx';
 import { ContactsView } from './contacts.tsx';
+import { IntegrationsPanel } from './integrations.tsx';
 import { FilterBar } from './filterbar.tsx';
 import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
 import { buildColumns, Cell, ColumnPicker, loadColumns, saveColumns, type Ctx } from './columns.tsx';
@@ -126,6 +127,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
   const allCols = useMemo(() => (pipeline ? buildColumns(pipeline, t, locale) : []), [pipeline, t, locale]);
   const [viz, setViz] = useState<Viz>(() => { try { const v = localStorage.getItem('pii.viz'); return v === 'pie' || v === 'column' || v === 'line' ? v : 'none'; } catch { return 'none'; } });
   const [reportsOpen, setReportsOpen] = useState(false);
+  const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [extraBox, setExtraBox] = useState<Box | null>(null);
@@ -255,6 +257,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
   const paletteActions: PaletteAction[] = [
     { id: 'new', label: t.newBox, hint: 'N', run: () => setCreating(true) },
     { id: 'follow', label: t.myTasks, run: () => void openTasks() },
+    { id: 'integrations', label: t.integrations, run: () => setIntegrationsOpen(true) },
     { id: 'reports', label: t.reports, run: () => setReportsOpen(true) },
     { id: 'feed', label: t.newsfeed, run: () => setFeedOpen(true) },
     { id: 'import', label: t.import, run: () => setImporting(true) },
@@ -289,7 +292,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
       e.stopPropagation();
       const el = e.target as HTMLElement;
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
-      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); setMenuOpen(false); setReportsOpen(false); setFeedOpen(false); setPaletteOpen(false); return; }
+      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); setMenuOpen(false); setReportsOpen(false); setFeedOpen(false); setPaletteOpen(false); setIntegrationsOpen(false); return; }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen(true); return; }
       if (e.altKey && e.key.toLowerCase() === 'r') { e.preventDefault(); refresh(); return; }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -321,6 +324,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
               <button role="menuitem" onClick={refresh}>{t.refresh} <small>Alt+R</small></button>
               <button role="menuitem" onClick={() => setReportsOpen(true)}>{t.reports}</button>
               <button role="menuitem" onClick={() => setFeedOpen(true)}>{t.newsfeed}</button>
+              <button role="menuitem" onClick={() => setIntegrationsOpen(true)}>{t.integrations}</button>
               <button role="menuitem" onClick={() => setEditing(true)}>{t.editPipeline}</button>
               <button role="menuitem" onClick={() => setNewPipe(true)}>{t.newPipeline}</button>
               <button role="menuitem" onClick={() => setImporting(true)}>{t.import}</button>
@@ -449,6 +453,7 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
         </div>
         )}
         {opened && pipeline && <Drawer key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setOpenId('')} onChanged={refresh} />}
+        {integrationsOpen && pipeline && <IntegrationsPanel pipeline={pipeline} call={call} t={t} locale={locale} onAutomations={() => { setIntegrationsOpen(false); setEditing(true); }} onClose={() => setIntegrationsOpen(false)} />}
         {reportsOpen && pipeline && <ReportsPanel pipelineId={pid} scope={scope} call={call} t={t} locale={locale} colorOf={(id) => stageById.get(id)?.color ?? '#6b7280'} onClose={() => setReportsOpen(false)} />}
         {feedOpen && pipeline && <FeedPanel pipelineId={pid} scope={scope} call={call} t={t} locale={locale} onOpen={(id) => { setFeedOpen(false); void openById(id); }} onClose={() => setFeedOpen(false)} />}
         {paletteOpen && <Palette actions={paletteActions} call={call} pipelineId={pid} t={t} onPickBox={(b) => { setExtraBox(b); setOpenId(b.id); }} onClose={() => setPaletteOpen(false)} />}

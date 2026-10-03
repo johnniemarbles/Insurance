@@ -53,3 +53,10 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 - [x] Phase D (part 1): stage-entry automations, required fields per stage, shared team views
 - [ ] Phase D (part 2): snippets, send later, mail merge (Gmail compose integration)
 - [ ] Phase E: AI and opt-in tracking
+
+## Integrations & Automation (done)
+- [x] Capture from forms: hosted public form per pipeline (honeypot, rate limit, privacy sentence)
+- [x] Capture from schedulers/Zapier: private inbound webhook link
+- [x] Send to other apps: signed outbound webhooks (HMAC-SHA256, SSRF guard, auto-pause after 10 failures)
+- [x] Automate repetitive tasks: stage automations
+- [ ] Get notified, mail-merge automation, native integrations, Transfer Data, API keys

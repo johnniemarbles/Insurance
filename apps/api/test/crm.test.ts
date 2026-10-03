@@ -1,5 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
+import { createHmac } from 'node:crypto';
 import pg from 'pg';
 import type { FastifyInstance } from 'fastify';
 import { bootstrapTenant, createPool, type Db } from '@pii/db';
@@ -481,4 +483,82 @@ test('shared views: own and shared, never someone else\'s private view', async (
   assert.equal((await call(P2U, 'GET', `${P}/views`)).json.views.length, 0);
   assert.equal((await call(P1U, 'GET', `${P}/views`)).json.views.length, 2);
   assert.equal((await call(P1U, 'DELETE', `/v1/views/${shared}`)).status, 204);
+});
+
+
+async function publicCall(method: M, url: string, body?: unknown) {
+  const res = await app.inject({ method, url, ...(body ? { payload: body as object } : {}) });
+  return { status: res.statusCode, text: res.body, json: res.body && res.headers['content-type']?.toString().includes('json') ? JSON.parse(res.body) : null };
+}
+
+test('integrations: hosted form and inbound webhook create records; tokens are secret; managers only', async () => {
+  const P = `/v1/pipelines/${pipe1}`;
+  assert.equal((await call(S1U, 'POST', `${P}/intakes`, { kind: 'form', name: 'x' })).status, 403);
+  assert.equal((await call(P2U, 'POST', `${P}/intakes`, { kind: 'form', name: 'x' })).status, 404);
+  const form = (await call(P1U, 'POST', `${P}/intakes`, { kind: 'form', name: 'Website quote', title: 'Get a quote', contextNodeId: X })).json;
+  assert.match(form.url, /\/f\/pii_/);
+  const token = form.url.split('/f/')[1];
+  const list = (await call(P1U, 'GET', `${P}/intakes`)).json.intakes;
+  assert.equal(list.length, 1);
+  assert.ok(!JSON.stringify(list).includes(token), 'the token is not stored or listed');
+
+  const page = await publicCall('GET', `/f/${token}`);
+  assert.equal(page.status, 200);
+  assert.match(page.text, /Get a quote/);
+  assert.equal((await publicCall('GET', '/f/pii_wrong')).status, 404);
+
+  assert.equal((await publicCall('POST', `/f/${token}`, { name: '' })).status, 422);
+  assert.equal((await publicCall('POST', `/f/${token}`, { name: 'Bot', website: 'spam.example' })).status, 201);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Bot`)).json.total, 0, 'honeypot submissions are dropped');
+  assert.equal((await publicCall('POST', `/f/${token}`, { name: '<b>Web Lead</b>', email: 'WEB@example.com', phone: '555', message: 'Need home cover' })).status, 201);
+  const box = (await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Web Lead`)).json.boxes[0];
+  assert.ok(box, 'record created');
+  assert.equal((await call(P2U, 'GET', `/v1/boxes/${box.id}`)).status, 404, 'siblings do not see it');
+  const detail = (await call(P1U, 'GET', `/v1/boxes/${box.id}`)).json;
+  assert.equal(detail.contacts[0].email, 'web@example.com');
+  assert.match((await call(P1U, 'GET', `/v1/boxes/${box.id}/notes`)).json.notes[0].body, /Need home cover/);
+
+  const hook = (await call(P1U, 'POST', `${P}/intakes`, { kind: 'webhook', name: 'Zapier', contextNodeId: X })).json;
+  const ht = hook.url.split('/hooks/')[1];
+  assert.equal((await publicCall('POST', `/v1/hooks/${token}`, { name: 'x' })).status, 404, 'a form token does not work as a webhook');
+  assert.equal((await publicCall('POST', `/v1/hooks/${ht}`, { name: 'Zap Lead', value: 900, custom: { policy_no: 'Z-1' } })).status, 201);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Zap Lead`)).json.boxes[0].valueAmount * 1, 900);
+  assert.equal((await publicCall('POST', `/v1/hooks/${ht}`, { name: 'Bad', custom: { nope: 1 } })).status, 422);
+
+  // pause, then delete
+  assert.equal((await call(P1U, 'PATCH', `${P}/intakes/${hook.id}`, { active: false })).status, 204);
+  assert.equal((await publicCall('POST', `/v1/hooks/${ht}`, { name: 'Late' })).status, 404);
+  assert.equal((await call(P1U, 'DELETE', `${P}/intakes/${hook.id}`)).status, 204);
+  assert.equal((await call(P1U, 'GET', `${P}/intakes`)).json.intakes.length, 1);
+});
+
+test('integrations: outbound webhooks are signed, sent on events, and refuse unsafe addresses', async () => {
+  const P = `/v1/pipelines/${pipe1}`;
+  const got: { headers: http.IncomingHttpHeaders; body: string }[] = [];
+  const srv = http.createServer((rq, rs) => { let d = ''; rq.on('data', (c) => (d += c)); rq.on('end', () => { got.push({ headers: rq.headers, body: d }); rs.end('ok'); }); });
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+  const port = (srv.address() as { port: number }).port;
+  try {
+    assert.equal((await call(P1U, 'POST', `${P}/webhooks`, { url: 'http://10.0.0.5/x' })).status, 422);
+    assert.equal((await call(P1U, 'POST', `${P}/webhooks`, { url: 'ftp://example.com/x' })).status, 422);
+    assert.equal((await call(S1U, 'POST', `${P}/webhooks`, { url: `http://127.0.0.1:${port}/h` })).status, 403);
+    const wh = (await call(P1U, 'POST', `${P}/webhooks`, { url: `http://127.0.0.1:${port}/h` })).json;
+    assert.match(wh.secret, /^whsec_/);
+    const id = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'Hooked', contextNodeId: X, custom: { policy_no: 'H-9' } })).json.id;
+    for (let i = 0; i < 40 && got.length < 1; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(got.length, 1);
+    const ev = JSON.parse(got[0]!.body);
+    assert.equal(ev.event, 'box.created');
+    assert.equal(ev.box.name, 'Hooked');
+    const ts = got[0]!.headers['x-pii-timestamp'] as string;
+    assert.equal(got[0]!.headers['x-pii-signature'], `sha256=${createHmac('sha256', wh.secret).update(`${ts}.${got[0]!.body}`).digest('hex')}`);
+    const stages = (await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).stages.map((s: any) => s.id);
+    const open = stages[2];
+    await call(P1U, 'PATCH', `/v1/boxes/${id}`, { stageId: open });
+    for (let i = 0; i < 40 && got.length < 2; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(JSON.parse(got[1]!.body).event, 'box.stage_changed');
+    assert.equal((await call(P1U, 'GET', `${P}/webhooks`)).json.webhooks[0].lastStatus, 200);
+    assert.ok(!JSON.stringify((await call(P1U, 'GET', `${P}/webhooks`)).json).includes(wh.secret), 'the secret is never shown again');
+    assert.equal((await call(P1U, 'DELETE', `${P}/webhooks/${wh.id}`)).status, 204);
+  } finally { srv.close(); }
 });

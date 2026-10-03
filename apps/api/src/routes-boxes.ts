@@ -5,6 +5,7 @@ import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { invalid, notFound } from './errors.ts';
 import { allowedContexts, fieldDefsFor, page, pageQuery, requireCrm, requireEdit, resolveOwnerAndContext, scopeSql, uuid } from './crm-helpers.ts';
+import { emitEvent } from './webhooks.ts';
 import type { AppDeps } from './app.ts';
 
 const BOX_COLS = `b.id, b.pipeline_id AS "pipelineId", b.stage_id AS "stageId", b.owner_node_id AS "ownerNodeId",
@@ -158,9 +159,12 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
         await checkStageRules(tx, stageId!, id);
         await runAutomations(tx, ctx, id, stageId!);
         await audit(tx, ctx, 'box_created', 'box', id, { pipelineId: b.pipelineId, ownerNodeId });
-        return { id, ownerNodeId, contextNodeId };
+        const sn = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1', [stageId])).rows[0]?.name ?? null;
+        return { id, ownerNodeId, contextNodeId, _hook: { id, name: b.name.trim(), stageId, stageName: sn, valueAmount: b.valueAmount ?? null } };
       });
-      return reply.code(201).send(out);
+      const { _hook, ...created } = out;
+      emitEvent(deps, ctx.tenantId, b.pipelineId, 'box.created', { box: _hook, source: 'app' });
+      return reply.code(201).send(created);
     },
   );
 
@@ -323,7 +327,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
       requireCrm(ctx);
       const { id } = req.params as { id: string };
       const b = req.body as { position?: number; name?: string; stageId?: string; ownerUserId?: string | null; valueAmount?: number | null; currency?: string; closeDate?: string | null; custom?: Record<string, unknown> };
-      await run(ctx, async (tx) => {
+      const moved = await run(ctx, async (tx) => {
         const box = await loadBox(tx, id);
         requireEdit(ctx, box.ownerNodeId);
         if (b.stageId) await stageIn(tx, box.pipelineId, b.stageId);
@@ -359,7 +363,13 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
           await runAutomations(tx, ctx, id, b.stageId);
         }
         await audit(tx, ctx, b.stageId && b.stageId !== box.stageId ? 'box_stage_moved' : 'box_updated', 'box', id, { fields: Object.keys(b) });
+        if (!(b.stageId && b.stageId !== box.stageId)) return null;
+        const names = (await tx.query<{ id: string; name: string }>('SELECT id, name FROM stages WHERE id = ANY($1::uuid[])', [[box.stageId, b.stageId]])).rows;
+        const nm = (sid: string) => names.find((n) => n.id === sid)?.name ?? null;
+        const now = await loadBox(tx, id) as unknown as { name: string; valueAmount: number | null };
+        return { pipelineId: box.pipelineId, box: { id, name: now.name, stageId: b.stageId, stageName: nm(b.stageId), valueAmount: now.valueAmount }, from: { stageId: box.stageId, stageName: nm(box.stageId) } };
       });
+      if (moved) emitEvent(deps, ctx.tenantId, moved.pipelineId, 'box.stage_changed', { box: moved.box, from: moved.from });
       return reply.code(204).send();
     },
   );

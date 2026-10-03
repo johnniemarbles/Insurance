@@ -16,6 +16,7 @@ import { registerNoteRoutes } from './routes-notes.ts';
 import { registerLmsRoutes } from './routes-lms.ts';
 import { registerInsightRoutes } from './routes-insights.ts';
 import { registerAutomationRoutes } from './routes-automation.ts';
+import { registerIntegrationRoutes } from './routes-integrations.ts';
 import { registerAuthRoutes, originGuard } from './routes-auth.ts';
 import { registerConsentRoutes, hasAcceptedFirstLogin } from './routes-consent.ts';
 import { withRequestTx } from '@pii/db';
@@ -75,7 +76,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   // People must accept the first-login notice before using anything else (Law 25 / PIPEDA).
   app.addHook('preHandler', async (req) => {
     const path = req.url.split('?')[0]!;
-    if (!path.startsWith('/v1/') || path === '/v1/me' || path.startsWith('/v1/consent/')) return;
+    if (!path.startsWith('/v1/') || path === '/v1/me' || path.startsWith('/v1/consent/') || path.startsWith('/v1/hooks/')) return;
     const id = await deps.authenticate(req);
     const ok = await withRequestTx(deps.appPool, id.ctx, (tx) => hasAcceptedFirstLogin(tx, id.ctx));
     if (!ok) throw new HttpError(403, 'consent_required', 'Please review and accept the privacy notice first');
@@ -94,5 +95,6 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerLmsRoutes(app, deps);
   registerInsightRoutes(app, deps);
   registerAutomationRoutes(app, deps);
+  registerIntegrationRoutes(app, deps);
   return app;
 }

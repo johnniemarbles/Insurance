@@ -138,5 +138,8 @@ th.sticky1,th.sticky2{background:#f9fafb;z-index:3}tr.row:hover td.sticky1,tr.ro
 .palette{width:min(560px,92vw);background:#fff;border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.3);overflow:hidden}.palette>input{width:100%;border:0;border-bottom:1px solid #e5e7eb;padding:14px 16px;font:inherit;font-size:16px;outline:none}
 .palrow{display:flex;justify-content:space-between;width:100%;text-align:left;border:0;background:none;padding:10px 16px}.palrow.on{background:#eef2ff}.palrow small{color:#6b7280}
 .reqd{flex-basis:100%;font-size:13px;color:#4b5563}.reqd summary{cursor:pointer}.reqd label{margin:2px 0 2px 16px!important}
+.icard{border:1px solid #e5e7eb;border-radius:12px;padding:4px 14px 12px;margin:14px 0}.icard h3{margin:10px 0 2px!important}.icard.soon{background:#f9fafb}
+.secretbox{border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;padding:12px;margin:10px 0}.secretbox code{display:block;word-break:break-all;background:#fff;border:1px solid #dbeafe;border-radius:6px;padding:8px;margin:8px 0;user-select:all}
+.sample{background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;font-size:12px;white-space:pre-wrap;word-break:break-all}
 @media (max-width:640px){.bar{padding:10px 12px}.stages,.meta,.wrap,.fbar{padding-left:12px;padding-right:12px}.fmenu,.fpop{left:12px}}
 `;
