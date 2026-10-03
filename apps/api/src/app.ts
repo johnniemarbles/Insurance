@@ -6,6 +6,10 @@ import type { GoogleClient } from './google.ts';
 import { HttpError, mapDbError } from './errors.ts';
 import { registerOrgRoutes } from './routes-org.ts';
 import { registerPeopleRoutes } from './routes-people.ts';
+import { registerPipelineRoutes } from './routes-pipelines.ts';
+import { registerBoxRoutes } from './routes-boxes.ts';
+import { registerContactRoutes } from './routes-contacts.ts';
+import { registerNoteRoutes } from './routes-notes.ts';
 import { registerAuthRoutes, originGuard } from './routes-auth.ts';
 import { registerConsentRoutes, hasAcceptedFirstLogin } from './routes-consent.ts';
 import { withRequestTx } from '@pii/db';
@@ -31,6 +35,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
     },
   };
   const app = Fastify({
+    ajv: { customOptions: { allowUnionTypes: true } },
     logger: deps.config.appEnv === 'test' ? false : {
       level: deps.config.logLevel,
       redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-dev-user-email"]'],
@@ -72,5 +77,9 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerConsentRoutes(app, deps);
   registerOrgRoutes(app, deps);
   registerPeopleRoutes(app, deps);
+  registerPipelineRoutes(app, deps);
+  registerBoxRoutes(app, deps);
+  registerContactRoutes(app, deps);
+  registerNoteRoutes(app, deps);
   return app;
 }

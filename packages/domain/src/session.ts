@@ -24,6 +24,8 @@ export interface RequestContext {
   adminNodeIds: string[];
   isTenantAdmin: boolean;
   canWrite: boolean;
+  /** CRM access: any role except learner-only and trainer-only. */
+  canUseCrm: boolean;
   roles: { nodeId: string; role: OrgRole }[];
 }
 
@@ -53,6 +55,7 @@ export function buildRequestContext(input: SessionInput): RequestContext {
     isTenantAdmin: roles.some((r) => r.role === 'admin' && r.nodeId === input.tenantRootNodeId),
     // Any assigned role may write; finer rules (who may edit what) are enforced by the API.
     canWrite: roles.length > 0,
+    canUseCrm: roles.some((r) => r.role === 'admin' || r.role === 'manager' || r.role === 'member'),
     roles,
   };
 }

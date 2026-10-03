@@ -39,3 +39,11 @@ export function canChangeStructure(
   if (change === 'partner_link') return isAdminOnParentPartnerChain;
   return false;
 }
+
+/**
+ * Who may edit a CRM record: its owner node (the people who work it) and tenant admins.
+ * People above the owner can read it but not change it.
+ */
+export function canEditRecord(actor: { isTenantAdmin: boolean; nodeIds: string[] }, ownerNodeId: string): boolean {
+  return actor.isTenantAdmin || actor.nodeIds.includes(ownerNodeId);
+}
