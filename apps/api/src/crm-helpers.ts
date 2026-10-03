@@ -69,3 +69,11 @@ export function page(q: { limit?: number; offset?: number }): { limit: number; o
 
 export const uuid = { type: 'string', format: 'uuid' } as const;
 export const pageQuery = { limit: { type: 'integer', minimum: 1, maximum: 200 }, offset: { type: 'integer', minimum: 0 } } as const;
+
+/**
+ * "Whose records" filter shared by lists and counts. Takes the position of the scope parameter ($n = 'mine' | 'below' | 'all')
+ * and expects the caller's node ids as $(n+1). Row-level security still decides what is visible at all.
+ */
+export function scopeSql(n: number, alias = 'b'): string {
+  return `($${n}::text = 'all' OR ($${n}::text = 'mine' AND ${alias}.owner_node_id = ANY($${n + 1}::uuid[])) OR ($${n}::text = 'below' AND NOT (${alias}.owner_node_id = ANY($${n + 1}::uuid[]))))`;
+}

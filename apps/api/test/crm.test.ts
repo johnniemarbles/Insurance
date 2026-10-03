@@ -274,3 +274,56 @@ test('generic link notice for a box that does not exist yet', async () => {
   assert.equal(r.status, 200);
   assert.match(r.json.text, /New deal/);
 });
+
+test('pipeline UI: stage edit, reorder, delete with move, columns, summary, history', async () => {
+  const P = `/v1/pipelines/${pipe1}`;
+  const stages = (await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).stages;
+  const [a, b, c, d] = stages.map((s: any) => s.id) as string[];
+  // rename + colour; siblings and members cannot
+  assert.equal((await call(P1U, 'PATCH', `${P}/stages/${a}`, { name: 'Lead in', color: '#112233' })).status, 204);
+  assert.equal((await call(P1U, 'PATCH', `${P}/stages/${a}`, { color: 'red' })).status, 400);
+  assert.equal((await call(P2U, 'PATCH', `${P}/stages/${a}`, { name: 'x' })).status, 404);
+  assert.equal((await call(S1U, 'PATCH', `${P}/stages/${a}`, { name: 'x' })).status, 403);
+  assert.equal((await call(P1U, 'PATCH', `${P}`, { colorTheme: 'ocean' })).status, 204);
+  const got = (await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1);
+  assert.equal(got.colorTheme, 'ocean');
+  assert.equal(got.stages[0].name, 'Lead in');
+  assert.equal(got.stages[0].color, '#112233');
+  // reorder must list every stage once
+  assert.equal((await call(P1U, 'PUT', `${P}/stages/order`, { stageIds: [b, a, c] })).status, 422);
+  assert.equal((await call(P1U, 'PUT', `${P}/stages/order`, { stageIds: [b, a, c, d] })).status, 204);
+  assert.deepEqual((await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).stages.map((s: any) => s.id), [b, a, c, d]);
+
+  // box history and time in stage
+  const box = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'History box', contextNodeId: X, stageId: a, custom: { policy_no: 'H-1' } })).json.id;
+  assert.equal((await call(P1U, 'PATCH', `/v1/boxes/${box}`, { stageId: c })).status, 204);
+  const ev = (await call(P1U, 'GET', `/v1/boxes/${box}/events`)).json.events;
+  assert.deepEqual(ev.map((e: any) => e.kind).sort(), ['created', 'stage_changed']);
+  const listed = (await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=History`)).json;
+  assert.equal(listed.total, 1);
+  assert.equal(listed.boxes[0].daysInStage, 0);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=History&minDaysInStage=1`)).json.boxes.length, 0);
+  assert.equal((await call(P2U, 'GET', `/v1/boxes/${box}/events`)).status, 404);
+
+  // summary respects scope
+  const sum = (await call(P1U, 'GET', `${P}/summary?scope=mine`)).json;
+  assert.equal(sum.stages.find((s: any) => s.stageId === c).count, 1);
+  assert.equal((await call(P1U, 'GET', `${P}/summary?scope=below`)).json.total, 1);
+
+  // delete a used stage: must say where the boxes go, and they get a history entry
+  assert.equal((await call(P1U, 'DELETE', `${P}/stages/${c}`)).status, 422);
+  assert.equal((await call(P1U, 'DELETE', `${P}/stages/${c}?moveTo=${d}`)).status, 204);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes/${box}`)).json.stageId, d);
+  assert.equal((await call(P1U, 'GET', `/v1/boxes/${box}/events`)).json.events.length, 3);
+
+  // columns
+  const fields = (await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).fields;
+  const kind = fields.find((f: any) => f.key === 'kind');
+  assert.equal((await call(P1U, 'PATCH', `${P}/fields/${kind.id}`, { labels: { en: 'Type', 'fr-CA': 'Type' }, options: ['auto', 'home', 'boat'] })).status, 204);
+  assert.equal((await call(P1U, 'PATCH', `${P}/fields/${kind.id}`, { labels: { en: 'T', de: 'x' } })).status, 422);
+  const ids = fields.map((f: any) => f.id).reverse();
+  assert.equal((await call(P1U, 'PUT', `${P}/fields/order`, { fieldIds: ids })).status, 204);
+  const renewal = fields.find((f: any) => f.key === 'renewal');
+  assert.equal((await call(P1U, 'DELETE', `${P}/fields/${renewal.id}`)).status, 204);
+  assert.equal((await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).fields.length, 2);
+});

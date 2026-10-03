@@ -4,12 +4,14 @@ import { validateCustomValues, type RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { invalid, notFound } from './errors.ts';
-import { allowedContexts, fieldDefsFor, page, pageQuery, requireCrm, requireEdit, resolveOwnerAndContext, uuid } from './crm-helpers.ts';
+import { allowedContexts, fieldDefsFor, page, pageQuery, requireCrm, requireEdit, resolveOwnerAndContext, scopeSql, uuid } from './crm-helpers.ts';
 import type { AppDeps } from './app.ts';
 
 const BOX_COLS = `b.id, b.pipeline_id AS "pipelineId", b.stage_id AS "stageId", b.owner_node_id AS "ownerNodeId",
   b.context_node_id AS "contextNodeId", b.owner_user_id AS "ownerUserId", b.name, b.value_amount AS "valueAmount",
-  b.currency, b.close_date::text AS "closeDate", b.custom, b.created_at AS "createdAt", b.updated_at AS "updatedAt"`;
+  b.currency, b.close_date::text AS "closeDate", b.custom, b.created_at AS "createdAt", b.updated_at AS "updatedAt",
+  b.stage_entered_at AS "stageEnteredAt", b.position,
+  GREATEST(0, floor(extract(epoch FROM (now() - b.stage_entered_at)) / 86400))::int AS "daysInStage"`;
 
 const idParams = { type: 'object', properties: { id: uuid } } as const;
 
@@ -94,6 +96,10 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,coalesce($10,'CAD'),$11,$12,$13)`,
           [id, ctx.tenantId, b.pipelineId, stageId, ownerNodeId, contextNodeId, ownerUserId, b.name.trim(), b.valueAmount ?? null, b.currency ?? null, b.closeDate ?? null, JSON.stringify(v.value), ctx.userId],
         );
+        await tx.query(
+          `INSERT INTO box_events (tenant_id, box_id, kind, to_stage_id, actor_id) VALUES ($1,$2,'created',$3,$4)`,
+          [ctx.tenantId, id, stageId, ctx.userId],
+        );
         for (const cid of b.contactIds ?? []) {
           const c = await tx.query('SELECT 1 FROM contacts WHERE id = $1', [cid]);
           if (c.rowCount === 0) throw invalid('A contact does not exist');
@@ -108,26 +114,75 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get(
     '/v1/boxes',
-    { schema: { querystring: { type: 'object', properties: { pipelineId: uuid, stageId: uuid, q: { type: 'string', maxLength: 100 }, ...pageQuery } } } },
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            pipelineId: uuid, stageId: uuid, q: { type: 'string', maxLength: 100 },
+            scope: { type: 'string', enum: ['all', 'mine', 'below'] },
+            assignee: uuid, minDaysInStage: { type: 'integer', minimum: 0, maximum: 3650 },
+            sort: { type: 'string', enum: ['updated', 'created', 'name', 'value', 'closeDate', 'daysInStage', 'position'] },
+            dir: { type: 'string', enum: ['asc', 'desc'] },
+            ...pageQuery,
+          },
+        },
+      },
+    },
     async (req) => {
       const { ctx } = await deps.authenticate(req);
       requireCrm(ctx);
-      const q = req.query as { pipelineId?: string; stageId?: string; q?: string; limit?: number; offset?: number };
+      const q = req.query as {
+        pipelineId?: string; stageId?: string; q?: string; scope?: string; assignee?: string; minDaysInStage?: number;
+        sort?: string; dir?: string; limit?: number; offset?: number;
+      };
       const { limit, offset } = page(q);
+      const sortCol: Record<string, string> = {
+        updated: 'b.updated_at', created: 'b.created_at', name: 'lower(b.name)', value: 'b.value_amount',
+        closeDate: 'b.close_date', daysInStage: 'b.stage_entered_at', position: 'b.position',
+      };
+      // daysInStage ascending means entered most recently, so flip the direction for that column
+      const sortKey = q.sort ?? 'updated';
+      let dir = q.dir === 'asc' ? 'ASC' : 'DESC';
+      if (sortKey === 'daysInStage') dir = dir === 'ASC' ? 'DESC' : 'ASC';
+      if (sortKey === 'position' && !q.dir) dir = 'ASC';
       return run(ctx, async (tx) => {
         const rows = (
           await tx.query(
-            `SELECT ${BOX_COLS} FROM boxes b
+            `SELECT ${BOX_COLS}, count(*) OVER ()::int AS "total" FROM boxes b
               WHERE ($1::uuid IS NULL OR b.pipeline_id = $1) AND ($2::uuid IS NULL OR b.stage_id = $2)
                 AND ($3::text IS NULL OR b.name ILIKE '%' || $3 || '%')
-              ORDER BY b.updated_at DESC, b.id LIMIT $4 OFFSET $5`,
-            [q.pipelineId ?? null, q.stageId ?? null, q.q ?? null, limit, offset],
+                AND ${scopeSql(4)}
+                AND ($6::uuid IS NULL OR b.owner_user_id = $6)
+                AND ($7::int IS NULL OR b.stage_entered_at <= now() - ($7::int * interval '1 day'))
+              ORDER BY ${sortCol[sortKey]} ${dir} NULLS LAST, b.id LIMIT $8 OFFSET $9`,
+            [q.pipelineId ?? null, q.stageId ?? null, q.q ?? null, q.scope ?? 'all', ctx.nodeIds, q.assignee ?? null, q.minDaysInStage ?? null, limit, offset],
           )
-        ).rows;
-        return { boxes: rows, limit, offset };
+        ).rows as Array<{ total: number }>;
+        const total = rows[0]?.total ?? 0;
+        return { boxes: rows.map(({ total: _t, ...r }) => r), total, limit, offset };
       });
     },
   );
+
+  app.get('/v1/boxes/:id/events', { schema: { params: idParams } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    const { id } = req.params as { id: string };
+    return run(ctx, async (tx) => {
+      await loadBox(tx, id);
+      const events = (
+        await tx.query(
+          `SELECT e.id, e.kind, e.from_stage_id AS "fromStageId", fs.name AS "fromStage", e.to_stage_id AS "toStageId", ts.name AS "toStage",
+                  e.actor_id AS "actorId", e.created_at AS "createdAt"
+             FROM box_events e LEFT JOIN stages fs ON fs.id = e.from_stage_id LEFT JOIN stages ts ON ts.id = e.to_stage_id
+            WHERE e.box_id = $1 ORDER BY e.created_at DESC, e.id LIMIT 200`,
+          [id],
+        )
+      ).rows;
+      return { events };
+    });
+  });
 
   app.get('/v1/boxes/:id', { schema: { params: idParams } }, async (req) => {
     const { ctx } = await deps.authenticate(req);
@@ -155,7 +210,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 200 }, stageId: uuid, ownerUserId: { anyOf: [uuid, { type: 'null' }] },
             valueAmount: { type: ['number', 'null'], minimum: 0, maximum: 999999999999 },
-            currency: { type: 'string', pattern: '^[A-Z]{3}$' }, closeDate: { type: ['string', 'null'], format: 'date' }, custom: { type: 'object' },
+            currency: { type: 'string', pattern: '^[A-Z]{3}$' }, closeDate: { type: ['string', 'null'], format: 'date' }, custom: { type: 'object' }, position: { type: 'number' },
           },
         },
       },
@@ -164,7 +219,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
       const { ctx } = await deps.authenticate(req);
       requireCrm(ctx);
       const { id } = req.params as { id: string };
-      const b = req.body as { name?: string; stageId?: string; ownerUserId?: string | null; valueAmount?: number | null; currency?: string; closeDate?: string | null; custom?: Record<string, unknown> };
+      const b = req.body as { position?: number; name?: string; stageId?: string; ownerUserId?: string | null; valueAmount?: number | null; currency?: string; closeDate?: string | null; custom?: Record<string, unknown> };
       await run(ctx, async (tx) => {
         const box = await loadBox(tx, id);
         requireEdit(ctx, box.ownerNodeId);
@@ -185,11 +240,19 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
           `UPDATE boxes SET name = coalesce($2, name), stage_id = coalesce($3, stage_id),
              owner_user_id = CASE WHEN $4 THEN $5::uuid ELSE owner_user_id END,
              value_amount = CASE WHEN $6 THEN $7::numeric ELSE value_amount END,
+             stage_entered_at = CASE WHEN $12::uuid IS NOT NULL AND $12 <> stage_id THEN now() ELSE stage_entered_at END,
+             position = coalesce($13::double precision, position),
              currency = coalesce($8, currency),
              close_date = CASE WHEN $9 THEN $10::date ELSE close_date END,
              custom = coalesce($11::jsonb, custom), updated_at = now() WHERE id = $1`,
-          [id, b.name?.trim() ?? null, b.stageId ?? null, has('ownerUserId'), b.ownerUserId ?? null, has('valueAmount'), b.valueAmount ?? null, b.currency ?? null, has('closeDate'), b.closeDate ?? null, custom ? JSON.stringify(custom) : null],
+          [id, b.name?.trim() ?? null, b.stageId ?? null, has('ownerUserId'), b.ownerUserId ?? null, has('valueAmount'), b.valueAmount ?? null, b.currency ?? null, has('closeDate'), b.closeDate ?? null, custom ? JSON.stringify(custom) : null, b.stageId ?? null, b.position ?? null],
         );
+        if (b.stageId && b.stageId !== box.stageId) {
+          await tx.query(
+            `INSERT INTO box_events (tenant_id, box_id, kind, from_stage_id, to_stage_id, actor_id) VALUES ($1,$2,'stage_changed',$3,$4,$5)`,
+            [ctx.tenantId, id, box.stageId, b.stageId, ctx.userId],
+          );
+        }
         await audit(tx, ctx, b.stageId && b.stageId !== box.stageId ? 'box_stage_moved' : 'box_updated', 'box', id, { fields: Object.keys(b) });
       });
       return reply.code(204).send();
