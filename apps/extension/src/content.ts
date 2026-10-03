@@ -12,7 +12,6 @@ const transport: Transport = async (method, path, body) => {
     return { status: -1, json: null };
   }
 };
-};
 
 // Gmail page side. Reads only what is on screen for the open conversation, and only sends it after the person accepts the notice.
 console.info('[PII] content script running');
