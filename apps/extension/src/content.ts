@@ -2,8 +2,11 @@ import * as InboxSDK from '@inboxsdk/core';
 import { mountSidebar, type CapturedMessage } from './sidebar';
 
 // Gmail page side. Reads only what is on screen for the open conversation, and only sends it after the person accepts the notice.
+console.info('[PII] content script running');
 InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
+  console.info('[PII] InboxSDK loaded');
   sdk.Conversations.registerThreadViewHandler((threadView) => {
+    console.info('[PII] conversation opened');
     const el = document.createElement('div');
     mountSidebar(el, {
       getSubject: () => threadView.getSubject(),
@@ -35,4 +38,4 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     });
     threadView.addSidebarContentPanel({ title: 'PII', iconUrl: chrome.runtime.getURL('icon-32.png'), el });
   });
-});
+}).catch((e) => console.error('[PII] InboxSDK failed to load', e));
