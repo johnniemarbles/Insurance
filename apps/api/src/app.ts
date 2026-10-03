@@ -23,6 +23,7 @@ import { registerAiRoutes } from './routes-ai.ts';
 import { registerSettingRoutes } from './routes-settings.ts';
 import { registerNavRoutes } from './routes-nav.ts';
 import { registerNotificationRoutes } from './routes-notifications.ts';
+import { registerPrivacyRoutes } from './routes-privacy.ts';
 import { registerAuthRoutes, originGuard } from './routes-auth.ts';
 import { registerConsentRoutes, hasAcceptedFirstLogin } from './routes-consent.ts';
 import { withRequestTx } from '@pii/db';
@@ -115,5 +116,6 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerSettingRoutes(app, deps);
   registerNavRoutes(app, deps);
   registerNotificationRoutes(app, deps);
+  registerPrivacyRoutes(app, deps);
   return app;
 }

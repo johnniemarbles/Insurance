@@ -88,3 +88,7 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 ## Phase N1 — Notifications (done)
 - In-app notifications (assigned, task, mention, note, stage change, capture, merge done, unsubscribed); per-person filters in Settings > Notifications; unread count in left panel.
 - Deferred: email delivery, morning digest, quiet hours (need mail provider), browser notifications.
+
+## Phase P1 — Privacy centre (done)
+- Settings > Privacy: what is held about you, JSON export, access / withdraw / erase requests (30-day clock), admin queue to resolve.
+- Not automated: erasure itself is done by an admin; no automatic deletion yet.

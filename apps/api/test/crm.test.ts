@@ -902,3 +902,26 @@ test('notifications: told only about others, private to the person, filtered by 
   assert.equal((await list(S1U)).unread, 0);
   await call(S1U, 'DELETE', '/v1/settings/notify.mention?scope=user');
 });
+
+test('privacy centre: my data, export, requests visible to me and the company admin only', async () => {
+  const me = (await call(P1U, 'GET', '/v1/privacy')).json;
+  assert.equal(me.email, P1U);
+  assert.ok(me.held.notes >= 1, 'notes I wrote are counted');
+  assert.deepEqual(me.queue, [], 'a partner sees no queue');
+  const ex = await call(P1U, 'GET', '/v1/privacy/export');
+  assert.equal(ex.status, 200);
+  assert.equal(ex.json.profile.email, P1U);
+  assert.ok(ex.json.notes.length >= 1);
+  assert.ok(ex.json.notes.every((n: { body: string }) => typeof n.body === 'string'));
+  assert.ok(!JSON.stringify(ex.json).includes(S1U), 'nobody else is in my export');
+  const r = await call(P1U, 'POST', '/v1/privacy/requests', { kind: 'withdraw', note: 'Please stop using my data' });
+  assert.equal(r.status, 201);
+  assert.equal((await call(P1U, 'POST', '/v1/privacy/requests', { kind: 'withdraw' })).status, 200, 'a second identical request is not duplicated');
+  assert.equal((await call(P2U, 'GET', '/v1/privacy')).json.requests.length, 0, 'a sibling cannot see it');
+  const adm = (await call(ADMIN, 'GET', '/v1/privacy')).json;
+  assert.ok(adm.queue.some((q: { id: string }) => q.id === r.json.id), 'the company admin sees the queue');
+  assert.equal((await call(P1U, 'PATCH', `/v1/privacy/requests/${r.json.id}`, { status: 'done' })).status, 403);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/privacy/requests/${r.json.id}`, { status: 'done', resolution: 'Consent withdrawn' })).status, 204);
+  assert.equal((await call(P1U, 'GET', '/v1/privacy')).json.requests[0].status, 'done');
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/privacy/requests/${r.json.id}`, { status: 'done' })).status, 404, 'already resolved');
+});

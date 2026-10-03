@@ -1,6 +1,6 @@
 /** Every configurable thing in PII is listed here once. The server validates against it; the Settings page is drawn from it. */
 export type SettingScope = 'user' | 'node' | 'tenant';
-export type SettingTab = 'me' | 'leftPanel' | 'notifications' | 'email' | 'team';
+export type SettingTab = 'me' | 'leftPanel' | 'notifications' | 'email' | 'team' | 'privacy';
 type L = { en: string; 'fr-CA': string };
 
 interface Base { key: string; tab: SettingTab; scopes: readonly SettingScope[]; lockable: boolean; label: L; help: L; keywords: string }
