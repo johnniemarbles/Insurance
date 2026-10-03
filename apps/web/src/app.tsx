@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
+import { Board } from './board.tsx';
 import { strings, type Strings } from './i18n.ts';
 import { money, stageColor } from './theme.ts';
 import type { Box, BoxEvent, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, SortKey, Stage } from './types.ts';
@@ -53,6 +54,9 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
+  const [view, setView] = useState<'table' | 'board'>(() => { try { return localStorage.getItem('pii.view') === 'board' ? 'board' : 'table'; } catch { return 'table'; } });
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [bulkStage, setBulkStage] = useState('');
 
   useEffect(() => {
     call('GET', '/v1/pipelines').then((r) => {
@@ -67,11 +71,13 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   const pipeline = useMemo(() => pipelines?.find((p) => p.id === pid), [pipelines, pid]);
 
   const query = useCallback((offset: number) => {
-    const p = new URLSearchParams({ pipelineId: pid, scope, sort: sort.key, dir: sort.dir, limit: String(PAGE), offset: String(offset) });
+    const p = new URLSearchParams(view === 'board'
+      ? { pipelineId: pid, scope, sort: 'position', dir: 'asc', limit: '200', offset: String(offset) }
+      : { pipelineId: pid, scope, sort: sort.key, dir: sort.dir, limit: String(PAGE), offset: String(offset) });
     if (stageFilter) p.set('stageId', stageFilter);
     if (debouncedQ) p.set('q', debouncedQ);
     return `/v1/boxes?${p}`;
-  }, [pid, scope, sort, stageFilter, debouncedQ]);
+  }, [pid, scope, sort, stageFilter, debouncedQ, view]);
 
   useEffect(() => {
     if (!pid) return;
@@ -92,6 +98,21 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
     try { const b = await call('GET', query(boxes.length)); setBoxes((cur) => [...cur, ...b.boxes]); } catch (e) { setError((e as Error).message); }
   };
   const refresh = () => setTick((n) => n + 1);
+  const setViewSaved = (v: 'table' | 'board') => { setView(v); try { localStorage.setItem('pii.view', v); } catch { /* private window */ } };
+  const move = async (id: string, stageId: string, position: number) => {
+    // show the move at once, then confirm with the server
+    setBoxes((cur) => cur.map((b) => (b.id === id ? { ...b, stageId, position } : b)));
+    try { await call('PATCH', `/v1/boxes/${id}`, { stageId, position }); refresh(); } catch (e) { setError((e as Error).message); refresh(); }
+  };
+  const togglePick = (id: string) => setPicked((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const bulkMove = async () => {
+    if (!bulkStage) return;
+    const ids = [...picked]; setPicked(new Set()); setBulkStage('');
+    const failed: string[] = [];
+    for (const id of ids) { try { await call('PATCH', `/v1/boxes/${id}`, { stageId: bulkStage }); } catch { failed.push(id); } }
+    if (failed.length) setError(t.bulkFailed(failed.length));
+    refresh();
+  };
 
   if (error && !pipelines) return <div class="pii"><div class="err">{error}</div></div>;
   if (!pipelines) return <div class="pii"><div class="msg">{t.loading}</div></div>;
@@ -118,6 +139,10 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
           {(['all', 'mine', 'below'] as Scope[]).map((s) => <button aria-pressed={scope === s} onClick={() => setScope(s)}>{t[s]}</button>)}
         </div>
         <input class="search" type="search" placeholder={t.search} aria-label={t.search} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+        <div class="seg" role="group" aria-label="View">
+          <button aria-pressed={view === 'table'} onClick={() => setViewSaved('table')}>{t.table}</button>
+          <button aria-pressed={view === 'board'} onClick={() => setViewSaved('board')}>{t.board}</button>
+        </div>
         <span class="spacer" />
         <button class="btn" onClick={() => setCreating(true)}>+ {t.newBox}</button>
       </div>
@@ -139,14 +164,28 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
         <span>{t.rows(total)}</span>
         {stageFilter && <button onClick={() => setStageFilter('')}>{t.clearFilter}</button>}
       </div>
+      {picked.size > 0 && (
+        <div class="bulk" role="region" aria-label={t.selected(picked.size)}>
+          <b>{t.selected(picked.size)}</b>
+          <select class="sel" aria-label={t.moveTo} value={bulkStage} onChange={(e) => setBulkStage((e.target as HTMLSelectElement).value)}>
+            <option value="">{t.moveTo}…</option>{stages.map((s) => <option value={s.id}>{s.name}</option>)}
+          </select>
+          <button class="btn" disabled={!bulkStage} onClick={bulkMove}>{t.apply}</button>
+          <button class="btn quiet" onClick={() => setPicked(new Set())}>{t.cancel}</button>
+        </div>
+      )}
       {error && <div class="err">{error}</div>}
 
       <div class="root">
+        {view === 'board' ? (
+          <div class="wrap"><Board pipeline={pipeline!} boxes={boxes} summary={summary} t={t} locale={locale} onOpen={setOpenId} onMove={move} /></div>
+        ) : (
         <div class="wrap">
           {boxes.length === 0 ? <div class="msg">{t.empty}</div> : (
             <table>
               <thead>
                 <tr>
+                  <th><input type="checkbox" aria-label={t.selectAll} checked={boxes.length > 0 && picked.size === boxes.length} onChange={(e) => setPicked((e.target as HTMLInputElement).checked ? new Set(boxes.map((b) => b.id)) : new Set())} /></th>
                   <th aria-sort={ariaSort('name')}><button onClick={() => sortBy('name')}>{t.name}{arrow('name')}</button></th>
                   <th>{t.stage}</th>
                   <th aria-sort={ariaSort('value')}><button onClick={() => sortBy('value')}>{t.value}{arrow('value')}</button></th>
@@ -159,7 +198,8 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
                 {boxes.map((b) => {
                   const st = stageById.get(b.stageId);
                   return (
-                    <tr class="row" tabIndex={0} key={b.id} onClick={() => setOpenId(b.id)} onKeyDown={(e) => { if (e.key === 'Enter') setOpenId(b.id); }}>
+                    <tr class="row" tabIndex={0} key={b.id} onClick={() => setOpenId(b.id)} onKeyDown={(e) => { if (e.key === 'Enter') setOpenId(b.id); else if (e.key === ' ' && e.target === e.currentTarget) { e.preventDefault(); togglePick(b.id); } }}>
+                      <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={b.name} checked={picked.has(b.id)} onChange={() => togglePick(b.id)} /></td>
                       <td class="name">{b.name}</td>
                       <td>{st && <span class="pill" style={{ background: st.color }}>{st.s.name}</span>}</td>
                       <td>{money(b.valueAmount, b.currency, locale)}</td>
@@ -174,6 +214,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
           )}
           {boxes.length < total && <div class="msg"><button class="btn quiet" onClick={loadMore}>{t.loadMore}</button></div>}
         </div>
+        )}
         {opened && pipeline && <Drawer key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setOpenId('')} onChanged={refresh} />}
         {creating && pipeline && <Create pipeline={pipeline} call={call} t={t} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); refresh(); }} />}
       </div>

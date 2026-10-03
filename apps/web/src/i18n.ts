@@ -8,6 +8,7 @@ const en = {
   empty: 'Nothing here yet.', loadMore: 'Load more', create: 'Create', cancel: 'Cancel', close: 'Close', location: 'Location',
   chooseLocation: 'Choose a location', history: 'History', created: 'Created in', movedTo: (a: string | null, b: string | null) => `Moved from ${a ?? '—'} to ${b ?? '—'}`,
   saved: 'Saved', total: (n: number) => `${n} total`, edit: 'Edit', clearFilter: 'Show all stages', readOnly: 'View only: this record belongs to another branch.',
+  table: 'Table', board: 'Board', selected: (n: number) => `${n} selected`, moveTo: 'Move to stage', apply: 'Apply', selectAll: 'Select all', bulkFailed: (n: number) => `${n} could not be moved (view-only records).`,
   sortBy: 'Sort by', newPlaceholder: 'Name of the record', stalledOnly: 'Stuck 14+ days', rows: (n: number) => (n === 1 ? '1 record' : `${n} records`),
 };
 const frCA: typeof en = {
@@ -18,6 +19,7 @@ const frCA: typeof en = {
   empty: 'Rien ici pour l’instant.', loadMore: 'Afficher plus', create: 'Créer', cancel: 'Annuler', close: 'Fermer', location: 'Emplacement',
   chooseLocation: 'Choisir un emplacement', history: 'Historique', created: 'Créé à l’étape', movedTo: (a, b) => `Déplacé de ${a ?? '—'} à ${b ?? '—'}`,
   saved: 'Enregistré', total: (n) => `${n} au total`, edit: 'Modifier', clearFilter: 'Afficher toutes les étapes', readOnly: 'Lecture seule : ce dossier appartient à une autre branche.',
+  table: 'Tableau', board: 'Tableau Kanban', selected: (n) => (n === 1 ? '1 sélectionné' : `${n} sélectionnés`), moveTo: 'Déplacer à l’étape', apply: 'Appliquer', selectAll: 'Tout sélectionner', bulkFailed: (n) => `${n} n’ont pas pu être déplacés (lecture seule).`,
   sortBy: 'Trier par', newPlaceholder: 'Nom du dossier', stalledOnly: 'Bloqués 14 jours et +', rows: (n) => (n === 1 ? '1 dossier' : `${n} dossiers`),
 };
 export type Strings = typeof en;

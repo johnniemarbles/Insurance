@@ -44,6 +44,16 @@ tr.row:focus{outline:2px solid #1d4ed8;outline-offset:-2px}
 .ev{border-left:2px solid #e5e7eb;padding:0 0 12px 12px;margin-left:4px;font-size:13px}.ev small{color:#6b7280;display:block}
 .actions{display:flex;gap:8px;margin-top:16px}
 .ok{color:#047857;font-size:13px}
+.bulk{display:flex;gap:10px;align-items:center;padding:8px 20px;background:#eef2ff;border-top:1px solid #c7d2fe;border-bottom:1px solid #c7d2fe}
+td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px}
+.board{display:flex;gap:12px;align-items:flex-start;padding-top:8px;min-height:100%}
+.col{flex:0 0 260px;background:#f3f4f6;border-radius:10px;padding:8px;min-height:120px}
+.col.over{background:#e0e7ff}
+.col header{border-top:4px solid;border-radius:4px;padding:8px 6px;display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.col header span{color:#6b7280}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-top:8px;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.card:hover,.card:focus{border-color:#1d4ed8;outline:none}
+.cname{font-weight:500;margin-bottom:6px;overflow-wrap:anywhere}.cmeta{display:flex;justify-content:space-between;font-size:12px;color:#4b5563}
 .root{position:relative;flex:1;display:flex;flex-direction:column;min-height:0}
 @media (max-width:640px){.bar{padding:10px 12px}.stages,.meta,.wrap{padding-left:12px;padding-right:12px}}
 `;
