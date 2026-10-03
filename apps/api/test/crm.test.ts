@@ -417,3 +417,18 @@ test('automatic columns: task, note and email counts per record', async () => {
   assert.ok(row.nextTaskDue && row.lastNoteAt);
   assert.equal((await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&sorts=lastInteraction:desc`)).status, 200);
 });
+
+test('reports and newsfeed: totals, conversion inputs, isolation', async () => {
+  const r = (await call(P1U, 'GET', `/v1/pipelines/${pipe1}/report`)).json;
+  assert.ok(r.stages.length >= 3);
+  assert.equal(r.weekly.length, 12);
+  assert.equal(r.stages.reduce((n: number, s: any) => n + s.count, 0), r.totals.open + r.totals.won + r.totals.lost);
+  assert.ok(r.stages[0].reached >= r.stages[0].count);
+  assert.ok(Array.isArray(r.forecast) && Array.isArray(r.owners));
+  const feed = (await call(P1U, 'GET', `/v1/newsfeed?pipelineId=${pipe1}&limit=5`)).json.items;
+  assert.ok(feed.length > 0 && feed.length <= 5);
+  assert.ok(feed.every((i: any) => i.boxName && i.at));
+  const sib = (await call(P2U, 'GET', `/v1/pipelines/${pipe1}/report`));
+  assert.equal(sib.status, 404);
+  assert.equal((await call(P2U, 'GET', `/v1/newsfeed?pipelineId=${pipe1}`)).json.items.length, 0);
+});

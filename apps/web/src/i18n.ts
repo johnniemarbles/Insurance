@@ -21,7 +21,7 @@ const en = {
   types: { text: 'Text', number: 'Number', currency: 'Money', date: 'Date', dropdown: 'Dropdown', checkbox: 'Checkbox' } as Record<string, string>,
   lastEmail: 'Last email', lastEmailFrom: 'Last email from',
   contacts: 'Contacts', tasks: 'Tasks', notes: 'Notes', addTask: 'Add a follow-up', dueDate: 'Due date', addNote: 'Add a note', myTasks: 'My follow-ups', noTasks: 'Nothing due. Nice work.',
-  shortcuts: 'Shortcuts: / search · n new · v table/board · Esc close',
+  shortcuts: 'Shortcuts: Ctrl/Cmd+K commands · / search · n new · v table/board · Esc close',
   training: 'Training', newCourse: 'New course', courseTitle: 'Course title', noCourses: 'No courses yet.', myLearning: 'My learning', allCourses: 'Available courses', draft: 'Draft', completed: 'Completed', due: 'due',
   lessons: (n: number) => (n === 1 ? '1 lesson' : `${n} lessons`), lessonsTitle: 'Lessons', noLessons: 'No lessons yet.', optional: 'optional', addLesson: 'Add a lesson', courseSettings: 'Course settings', description: 'Description',
   publish: 'Publish', unpublish: 'Move back to draft', published: 'Published', assign: 'Assign', assignTo: 'Assign to', assigned: (n: number) => `Assigned. ${n} new learners enrolled.`, teamProgress: 'Team progress', showProgress: 'Show progress',
@@ -47,6 +47,10 @@ const en = {
   cLastInteraction: 'Last interaction', cFreshness: 'Freshness', fresh: 'Fresh', aging: 'Aging', stale: 'Stale', cEmails: 'Emails', cOpenTasks: 'Open tasks', cOverdue: 'Overdue tasks', cNextTask: 'Next task due',
   cTaskProgress: 'Tasks done', cNotes: 'Notes', cUpdated: 'Last updated', cCreated: 'Created', columnsBtn: 'Columns', colsReset: 'Reset columns', undo: 'Undo', updatedMsg: (w: string) => `${w} updated`, colsHelp: 'Choose and order the columns you see. Name always stays.',
   colGroupCore: 'Core', colGroupMagic: 'Automatic', colGroupCustom: 'Your columns',
+  vizNone: 'No chart', vizPie: 'Pie', vizColumn: 'Columns', vizLine: 'Created per week', vizStage: 'Records by stage', vizMetric: 'Measure', vizCount: 'Records', vizEmpty: 'Nothing to chart yet.', vizWeekly: 'Records created per week', vizMax: (n: number) => `max ${n}`, chartLabel: 'Chart',
+  reports: 'Reports', newsfeed: 'Newsfeed', kOpen: 'Open', kWon: 'Won', kLost: 'lost', kWinRate: 'Win rate', kDaysToWin: 'Days to win', funnel: 'Funnel and time in stage', funnelHelp: 'Records that ever reached each stage, the share that moved on from the stage before, and the average days records now in the stage have waited.',
+  forecast: 'Open value by expected close month', closeMonth: 'Close month', noCloseDate: 'No close date', byOwner: 'By owner', feedCreated: (s: string | null) => `created in ${s ?? '—'}`, feedNote: 'added a note', feedEmpty: 'No activity yet.',
+  palette: 'Command palette', palettePlaceholder: 'Type a command or a record name…', paletteNone: 'No match.', paletteRecord: 'Record', cmdSwitch: (n: string) => `Open pipeline: ${n}`, cmdGroupStage: 'Group by stage', cmdNoGroup: 'Remove grouping', cmdClear: 'Clear all filters', cmdBoard: 'Switch to board', cmdTable: 'Switch to table',
 };
 const frCA: typeof en = {
   needConsent: 'Ouvrez le panneau PII sur un courriel dans Gmail pour lire et accepter l’avis de confidentialité.', reloadNeeded: 'PII a été mis à jour. Actualisez cet onglet Gmail (Ctrl/Cmd+R) pour continuer.', loading: 'Chargement…', retry: 'Réessayer', signedOut: 'Connectez-vous pour utiliser PII.', signIn: 'Se connecter avec Google', offline: 'Impossible de joindre le serveur.',
@@ -69,7 +73,7 @@ const frCA: typeof en = {
   types: { text: 'Texte', number: 'Nombre', currency: 'Montant', date: 'Date', dropdown: 'Liste', checkbox: 'Case à cocher' },
   lastEmail: 'Dernier courriel', lastEmailFrom: 'Dernier courriel de',
   contacts: 'Contacts', tasks: 'Tâches', notes: 'Notes', addTask: 'Ajouter un suivi', dueDate: 'Échéance', addNote: 'Ajouter une note', myTasks: 'Mes suivis', noTasks: 'Rien à faire. Beau travail.',
-  shortcuts: 'Raccourcis : / recherche · n nouveau · v tableau/Kanban · Échap fermer',
+  shortcuts: 'Raccourcis : Ctrl/Cmd+K commandes · / recherche · n nouveau · v tableau/Kanban · Échap fermer',
   training: 'Formation', newCourse: 'Nouveau cours', courseTitle: 'Titre du cours', noCourses: 'Aucun cours pour l’instant.', myLearning: 'Ma formation', allCourses: 'Cours disponibles', draft: 'Brouillon', completed: 'Terminé', due: 'échéance',
   lessons: (n) => (n === 1 ? '1 leçon' : `${n} leçons`), lessonsTitle: 'Leçons', noLessons: 'Aucune leçon pour l’instant.', optional: 'facultatif', addLesson: 'Ajouter une leçon', courseSettings: 'Paramètres du cours', description: 'Description',
   publish: 'Publier', unpublish: 'Remettre en brouillon', published: 'Publié', assign: 'Assigner', assignTo: 'Assigner à', assigned: (n) => `Assigné. ${n} nouveaux apprenants inscrits.`, teamProgress: 'Progression de l’équipe', showProgress: 'Afficher la progression',
@@ -95,6 +99,10 @@ const frCA: typeof en = {
   cLastInteraction: 'Dernière interaction', cFreshness: 'Fraîcheur', fresh: 'Récent', aging: 'À relancer', stale: 'Inactif', cEmails: 'Courriels', cOpenTasks: 'Tâches ouvertes', cOverdue: 'Tâches en retard', cNextTask: 'Prochaine tâche',
   cTaskProgress: 'Tâches faites', cNotes: 'Notes', cUpdated: 'Dernière modification', cCreated: 'Création', columnsBtn: 'Colonnes', colsReset: 'Réinitialiser les colonnes', undo: 'Annuler', updatedMsg: (w) => `${w} : modifié`, colsHelp: 'Choisissez et ordonnez les colonnes. Le nom reste toujours.',
   colGroupCore: 'De base', colGroupMagic: 'Automatiques', colGroupCustom: 'Vos colonnes',
+  vizNone: 'Aucun graphique', vizPie: 'Secteurs', vizColumn: 'Colonnes', vizLine: 'Créés par semaine', vizStage: 'Dossiers par étape', vizMetric: 'Mesure', vizCount: 'Dossiers', vizEmpty: 'Rien à représenter pour l’instant.', vizWeekly: 'Dossiers créés par semaine', vizMax: (n) => `max ${n}`, chartLabel: 'Graphique',
+  reports: 'Rapports', newsfeed: 'Fil d’activité', kOpen: 'Ouverts', kWon: 'Gagnés', kLost: 'perdus', kWinRate: 'Taux de réussite', kDaysToWin: 'Jours pour gagner', funnel: 'Entonnoir et temps par étape', funnelHelp: 'Dossiers ayant déjà atteint chaque étape, part passée depuis l’étape précédente, et attente moyenne en jours des dossiers actuellement à l’étape.',
+  forecast: 'Valeur ouverte par mois de clôture prévu', closeMonth: 'Mois de clôture', noCloseDate: 'Sans date de clôture', byOwner: 'Par responsable', feedCreated: (s) => `créé à l’étape ${s ?? '—'}`, feedNote: 'a ajouté une note', feedEmpty: 'Aucune activité pour l’instant.',
+  palette: 'Palette de commandes', palettePlaceholder: 'Tapez une commande ou le nom d’un dossier…', paletteNone: 'Aucun résultat.', paletteRecord: 'Dossier', cmdSwitch: (n) => `Ouvrir le pipeline : ${n}`, cmdGroupStage: 'Regrouper par étape', cmdNoGroup: 'Retirer le regroupement', cmdClear: 'Effacer tous les filtres', cmdBoard: 'Passer au Kanban', cmdTable: 'Passer au tableau',
 };
 export type Strings = typeof en;
 export const strings = (l: Locale): Strings => (l === 'fr-CA' ? frCA : en);

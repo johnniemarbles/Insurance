@@ -6,6 +6,7 @@ import { NewPipeline, PipelineEditor } from './editor.tsx';
 import { TrainingView } from './training.tsx';
 import { ContactsView } from './contacts.tsx';
 import { FilterBar } from './filterbar.tsx';
+import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
 import { buildColumns, Cell, ColumnPicker, loadColumns, saveColumns, type Ctx } from './columns.tsx';
 import { defaultSorts, emptyFilters, filterParams, hasFilters, migrateView, sortParam, type Filters, type GroupBy, type SortSpec } from './filters.ts';
 import { strings, type Strings } from './i18n.ts';
@@ -121,8 +122,24 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
 
   const pipeline = useMemo(() => pipelines?.find((p) => p.id === pid), [pipelines, pid]);
   const allCols = useMemo(() => (pipeline ? buildColumns(pipeline, t, locale) : []), [pipeline, t, locale]);
+  const [viz, setViz] = useState<Viz>(() => { try { const v = localStorage.getItem('pii.viz'); return v === 'pie' || v === 'column' || v === 'line' ? v : 'none'; } catch { return 'none'; } });
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [feedOpen, setFeedOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [extraBox, setExtraBox] = useState<Box | null>(null);
+  const [weekly, setWeekly] = useState<Report['weekly'] | null>(null);
   const [colIds, setColIds] = useState<string[] | null>(null);
   useEffect(() => { if (allCols.length) setColIds(loadColumns(pid, allCols)); }, [pid, allCols.length]);
+  useEffect(() => {
+    if (viz !== 'line' || !pid) return;
+    call('GET', `/v1/pipelines/${pid}/report?scope=${scope}`).then((r) => setWeekly(r.weekly), () => undefined);
+  }, [call, viz, pid, scope, tick]);
+  useEffect(() => {
+    // works even when focus has drifted outside the PII panel (for example after closing a drawer)
+    const h = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); e.stopPropagation(); setPaletteOpen(true); } };
+    document.addEventListener('keydown', h, true);
+    return () => document.removeEventListener('keydown', h, true);
+  }, []);
   const [toast, setToast] = useState<{ msg: string; undo: () => void } | null>(null);
   useEffect(() => { if (!toast) return; const h = setTimeout(() => setToast(null), 7000); return () => clearTimeout(h); }, [toast]);
 
@@ -221,9 +238,28 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
   const arrow = (key: SortSpec['key']) => { const f = sorts[0]?.key === key ? sorts[0] : undefined; return f ? (f.dir === 'asc' ? ' ▲' : ' ▼') : ''; };
   const ariaSort = (key: SortSpec['key']) => { const f = sorts[0]?.key === key ? sorts[0] : undefined; return f ? (f.dir === 'asc' ? 'ascending' : 'descending') : 'none'; };
   const cur = boxes[0]?.currency ?? 'CAD';
-  const opened = boxes.find((b) => b.id === openId);
+  const opened = boxes.find((b) => b.id === openId) ?? (extraBox && extraBox.id === openId ? extraBox : undefined);
   const cols = (colIds ?? []).map((id) => allCols.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => !!c);
   const cellCtx: Ctx = { t, locale, stages, stageColor: (id) => stageById.get(id)?.color ?? '#6b7280', people, open: setOpenId, commit };
+  const openById = async (id: string) => {
+    if (boxes.some((b) => b.id === id)) { setOpenId(id); return; }
+    try { const b = (await call('GET', `/v1/boxes/${id}`)) as Box; setExtraBox(b); setOpenId(id); } catch (e) { setError((e as Error).message); }
+  };
+  const paletteActions: PaletteAction[] = [
+    { id: 'new', label: t.newBox, hint: 'N', run: () => setCreating(true) },
+    { id: 'follow', label: t.myTasks, run: () => void openTasks() },
+    { id: 'reports', label: t.reports, run: () => setReportsOpen(true) },
+    { id: 'feed', label: t.newsfeed, run: () => setFeedOpen(true) },
+    { id: 'import', label: t.import, run: () => setImporting(true) },
+    { id: 'export', label: t.exportCsv, run: () => void exportCsv() },
+    { id: 'edit', label: t.editPipeline, run: () => setEditing(true) },
+    { id: 'refresh', label: t.refresh, hint: 'Alt+R', run: refresh },
+    { id: 'view', label: view === 'table' ? t.cmdBoard : t.cmdTable, hint: 'V', run: () => setViewSaved(view === 'table' ? 'board' : 'table') },
+    { id: 'group', label: t.cmdGroupStage, run: () => setGroupBy('stage') },
+    { id: 'nogroup', label: t.cmdNoGroup, run: () => setGroupBy('none') },
+    { id: 'clear', label: t.cmdClear, run: () => setFilters(emptyFilters) },
+    ...(pipelines ?? []).filter((p) => p.id !== pid).map((p) => ({ id: `p-${p.id}`, label: t.cmdSwitch(p.name), run: () => { setPid(p.id); setFilters(emptyFilters); setGroupBy('none'); } })),
+  ];
   const filtering = hasFilters(filters);
   const onlyStage = filters.stageIds.length === 1 ? filters.stageIds[0] : '';
   const toggleStage = (id: string) => setFilters((f) => ({ ...f, stageIds: f.stageIds.length === 1 && f.stageIds[0] === id ? [] : [id] }));
@@ -246,7 +282,8 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
       e.stopPropagation();
       const el = e.target as HTMLElement;
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
-      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); setMenuOpen(false); return; }
+      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); setMenuOpen(false); setReportsOpen(false); setFeedOpen(false); setPaletteOpen(false); return; }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen(true); return; }
       if (e.altKey && e.key.toLowerCase() === 'r') { e.preventDefault(); refresh(); return; }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === '/') { e.preventDefault(); (e.currentTarget as HTMLElement).querySelector<HTMLInputElement>('.fin')?.focus(); }
@@ -275,6 +312,8 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
           {menuOpen && (
             <div class="kebab" role="menu" onClick={() => setMenuOpen(false)}>
               <button role="menuitem" onClick={refresh}>{t.refresh} <small>Alt+R</small></button>
+              <button role="menuitem" onClick={() => setReportsOpen(true)}>{t.reports}</button>
+              <button role="menuitem" onClick={() => setFeedOpen(true)}>{t.newsfeed}</button>
               <button role="menuitem" onClick={() => setEditing(true)}>{t.editPipeline}</button>
               <button role="menuitem" onClick={() => setNewPipe(true)}>{t.newPipeline}</button>
               <button role="menuitem" onClick={() => setImporting(true)}>{t.import}</button>
@@ -307,6 +346,11 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
         </select>
         <button onClick={saveView}>{t.saveView}</button>
         {views.length > 0 && <button onClick={() => { const n = prompt(t.removeViewName)?.trim(); if (n) storeViews(views.filter((v) => v.name !== n)); }}>{t.removeView}</button>}
+        {view === 'table' && (
+          <select class="sel small" aria-label={t.chartLabel} value={viz} onChange={(e) => { const v = (e.target as HTMLSelectElement).value as Viz; setViz(v); try { localStorage.setItem('pii.viz', v); } catch { /* private window */ } }}>
+            <option value="none">{t.chartLabel}: {t.vizNone}</option><option value="pie">{t.chartLabel}: {t.vizPie}</option><option value="column">{t.chartLabel}: {t.vizColumn}</option><option value="line">{t.chartLabel}: {t.vizLine}</option>
+          </select>
+        )}
         <span class="spacer" /><small title={t.shortcuts}>⌨ {t.shortcuts}</small>
       </div>
       {picked.size > 0 && (
@@ -327,6 +371,9 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
           <div class="wrap"><Board pipeline={pipeline!} boxes={boxes} summary={summary} t={t} locale={locale} onOpen={setOpenId} onMove={move} /></div>
         ) : (
         <div class="wrap">
+          {viz !== 'none' && (viz === 'line'
+            ? (weekly ? <WeeklyLine weekly={weekly} t={t} /> : null)
+            : <StageChart mode={viz} t={t} locale={locale} currency={cur} data={stages.map((s) => ({ name: s.name, color: stageById.get(s.id)!.color, count: summary[s.id]?.count ?? 0, value: summary[s.id]?.value ?? 0 }))} />)}
           {showStart && (
             <div class="start" role="region" aria-label={t.gsTitle}>
               <h2>{t.gsTitle}</h2>
@@ -391,6 +438,9 @@ function PipelineView({ call, t, locale, meEmail }: { call: Call; t: Strings; lo
         </div>
         )}
         {opened && pipeline && <Drawer key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setOpenId('')} onChanged={refresh} />}
+        {reportsOpen && pipeline && <ReportsPanel pipelineId={pid} scope={scope} call={call} t={t} locale={locale} colorOf={(id) => stageById.get(id)?.color ?? '#6b7280'} onClose={() => setReportsOpen(false)} />}
+        {feedOpen && pipeline && <FeedPanel pipelineId={pid} scope={scope} call={call} t={t} locale={locale} onOpen={(id) => { setFeedOpen(false); void openById(id); }} onClose={() => setFeedOpen(false)} />}
+        {paletteOpen && <Palette actions={paletteActions} call={call} pipelineId={pid} t={t} onPickBox={(b) => { setExtraBox(b); setOpenId(b.id); }} onClose={() => setPaletteOpen(false)} />}
         {myTasks && (
           <aside ref={(el) => el?.focus()} tabIndex={-1} class="drawer" role="dialog" aria-label={t.myTasks}>
             <h2>{t.myTasks}</h2>
