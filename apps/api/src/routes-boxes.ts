@@ -11,6 +11,8 @@ const BOX_COLS = `b.id, b.pipeline_id AS "pipelineId", b.stage_id AS "stageId", 
   b.context_node_id AS "contextNodeId", b.owner_user_id AS "ownerUserId", b.name, b.value_amount AS "valueAmount",
   b.currency, b.close_date::text AS "closeDate", b.custom, b.created_at AS "createdAt", b.updated_at AS "updatedAt",
   b.stage_entered_at AS "stageEnteredAt", b.position,
+  (SELECT m.sent_at FROM linked_thread_messages m JOIN box_threads bt ON bt.thread_id = m.thread_id WHERE bt.box_id = b.id ORDER BY m.sent_at DESC NULLS LAST LIMIT 1) AS "lastEmailAt",
+  (SELECT m.from_addr FROM linked_thread_messages m JOIN box_threads bt ON bt.thread_id = m.thread_id WHERE bt.box_id = b.id ORDER BY m.sent_at DESC NULLS LAST LIMIT 1) AS "lastEmailFrom",
   GREATEST(0, floor(extract(epoch FROM (now() - b.stage_entered_at)) / 86400))::int AS "daysInStage"`;
 
 const idParams = { type: 'object', properties: { id: uuid } } as const;
@@ -122,7 +124,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
             pipelineId: uuid, stageId: uuid, q: { type: 'string', maxLength: 100 },
             scope: { type: 'string', enum: ['all', 'mine', 'below'] },
             assignee: uuid, minDaysInStage: { type: 'integer', minimum: 0, maximum: 3650 },
-            sort: { type: 'string', enum: ['updated', 'created', 'name', 'value', 'closeDate', 'daysInStage', 'position'] },
+            sort: { type: 'string', enum: ['updated', 'created', 'name', 'value', 'closeDate', 'daysInStage', 'position', 'lastEmail'] },
             dir: { type: 'string', enum: ['asc', 'desc'] },
             ...pageQuery,
           },
@@ -139,7 +141,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
       const { limit, offset } = page(q);
       const sortCol: Record<string, string> = {
         updated: 'b.updated_at', created: 'b.created_at', name: 'lower(b.name)', value: 'b.value_amount',
-        closeDate: 'b.close_date', daysInStage: 'b.stage_entered_at', position: 'b.position',
+        closeDate: 'b.close_date', lastEmail: '"lastEmailAt"', daysInStage: 'b.stage_entered_at', position: 'b.position',
       };
       // daysInStage ascending means entered most recently, so flip the direction for that column
       const sortKey = q.sort ?? 'updated';

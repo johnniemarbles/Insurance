@@ -1,11 +1,12 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import readXlsx from 'read-excel-file/universal';
 import type { Strings } from './i18n.ts';
 import type { Pipeline } from './types.ts';
 
 type Cell = string | number | boolean | Date | null;
-interface Parsed { headers: string[]; rows: Cell[][] }
-interface Result { created: number; skipped: { row: number; reason: string }[]; stagesCreated: number; fieldsCreated: number }
+interface ContactRow { boxName: string; fullName: string | null; email: string | null; phone: string | null; title: string | null }
+interface Parsed { headers: string[]; rows: Cell[][]; contacts: ContactRow[] }
+interface Result { contactsCreated?: number; contactsLinked?: number; created: number; skipped: { row: number; reason: string }[]; stagesCreated: number; fieldsCreated: number }
 
 export function parseCsv(text: string): Cell[][] {
   const out: Cell[][] = []; let row: Cell[] = []; let cur = ''; let q = false;
@@ -43,24 +44,40 @@ const num = (v: Cell): number | null => {
 };
 
 export function ImportDialog({ pipeline, call, t, onClose, onDone }: {
-  pipeline: Pipeline; call: (m: 'POST', p: string, b: unknown) => Promise<any>; t: Strings; onClose: () => void; onDone: () => void;
+  pipeline: Pipeline; call: (m: 'GET' | 'POST', p: string, b?: unknown) => Promise<any>; t: Strings; onClose: () => void; onDone: () => void;
 }) {
   const [data, setData] = useState<Parsed | null>(null);
   const [fileName, setFileName] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [res, setRes] = useState<Result | null>(null);
+  const [locs, setLocs] = useState<{ id: string; name: string }[]>([]);
+  const [loc, setLoc] = useState('');
+  useEffect(() => { call('GET', '/v1/org/contexts').then((r) => setLocs(r.locations ?? []), () => undefined); }, [call]);
 
   const onFile = async (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (!f) return;
     setErr(''); setRes(null); setFileName(f.name);
     try {
-      const raw: Cell[][] = /\.xlsx$/i.test(f.name) ? (((await readXlsx(f))[0]?.data ?? []) as unknown as Cell[][]) : parseCsv(await f.text());
+      let contacts: ContactRow[] = [];
+      let raw: Cell[][];
+      if (/\.xlsx$/i.test(f.name)) {
+        const sheets = (await readXlsx(f)) as unknown as { sheet: string; data: Cell[][] }[];
+        raw = sheets[0]?.data ?? [];
+        const cs = sheets.find((s) => /^contacts/i.test(s.sheet));
+        if (cs && cs.data.length > 1) {
+          const h = cs.data[0]!.map((x) => norm(String(x ?? '')));
+          const at = (...names: string[]) => h.findIndex((x) => names.includes(x));
+          const [bn, fn, ln, em, ph, ti] = [at('box name'), at('first name'), at('last name'), at('email addresses', 'email'), at('phone numbers', 'phone'), at('title')];
+          const v = (r: Cell[], i: number) => (i < 0 || r[i] == null || r[i] === '' ? null : String(r[i]));
+          contacts = cs.data.slice(1).map((r) => ({ boxName: v(r, bn) ?? '', fullName: [v(r, fn), v(r, ln)].filter(Boolean).join(' ') || null, email: v(r, em), phone: v(r, ph), title: v(r, ti) })).filter((c) => c.boxName);
+        }
+      } else raw = parseCsv(await f.text());
       if (raw.length < 2) throw new Error(t.importEmpty);
       const headers = raw[0]!.map((h) => String(h ?? '').trim());
       if (!headers.some((h) => KNOWN[norm(h)] === 'name')) throw new Error(t.importNoName);
-      setData({ headers, rows: raw.slice(1).filter((r) => r.some((x) => x != null && x !== '')) });
+      setData({ headers, contacts, rows: raw.slice(1).filter((r) => r.some((x) => x != null && x !== '')) });
     } catch (x) { setData(null); setErr((x as Error).message); }
   };
 
@@ -86,9 +103,13 @@ export function ImportDialog({ pipeline, call, t, onClose, onDone }: {
     try {
       for (let i = 0; i < rows.length; i += 500) {
         const chunk = rows.slice(i, i + 500);
-        const r = (await call('POST', `/v1/pipelines/${pipeline.id}/import`, { columns: customCols.map((c) => ({ key: keyOf.get(c.i)!, label: c.h })), rows: chunk })) as Result;
+        const r = (await call('POST', `/v1/pipelines/${pipeline.id}/import`, { ...(loc ? { contextNodeId: loc } : {}), columns: customCols.map((c) => ({ key: keyOf.get(c.i)!, label: c.h })), rows: chunk })) as Result;
         total.created += r.created; total.stagesCreated += r.stagesCreated; total.fieldsCreated += r.fieldsCreated;
         total.skipped.push(...r.skipped.map((s) => ({ row: s.row + i, reason: s.reason })));
+      }
+      for (let i = 0; i < data.contacts.length; i += 500) {
+        const r = (await call('POST', `/v1/pipelines/${pipeline.id}/import`, { ...(loc ? { contextNodeId: loc } : {}), rows: [], contacts: data.contacts.slice(i, i + 500) })) as Result;
+        total.contactsCreated = (total.contactsCreated ?? 0) + (r.contactsCreated ?? 0);
       }
       setRes(total); onDone();
     } catch (x) { setErr((x as Error).message); }
@@ -103,18 +124,22 @@ export function ImportDialog({ pipeline, call, t, onClose, onDone }: {
       {err && <div class="err">{err}</div>}
       {data && plan && !res && (
         <>
-          <p><b>{fileName}</b>: {t.rows(data.rows.length)}</p>
+          <p><b>{fileName}</b>: {t.rows(data.rows.length)}{data.contacts.length > 0 && <> · {t.importContacts(data.contacts.length)}</>}</p>
           <ul class="maplist">
             {plan.map((c) => (
               <li><span>{c.h}</span> → <b>{c.kind === 'ignore' ? t.importIgnored : c.kind === 'custom' ? t.importAsColumn : t.importFields[c.kind]}</b></li>
             ))}
           </ul>
-          <div class="actions"><button class="btn" disabled={busy} onClick={go}>{busy ? t.loading : t.importGo(data.rows.length)}</button><button class="btn quiet" onClick={onClose}>{t.cancel}</button></div>
+          {locs.length > 1 && (
+            <><label for="il">{t.location}</label>
+            <select id="il" value={loc} onChange={(e) => setLoc((e.target as HTMLSelectElement).value)}><option value="">{t.chooseLocation}</option>{locs.map((l) => <option value={l.id}>{l.name}</option>)}</select></>
+          )}
+          <div class="actions"><button class="btn" disabled={busy || (locs.length > 1 && !loc)} onClick={go}>{busy ? t.loading : t.importGo(data.rows.length)}</button><button class="btn quiet" onClick={onClose}>{t.cancel}</button></div>
         </>
       )}
       {res && (
         <>
-          <p class="ok">{t.importDone(res.created, res.stagesCreated, res.fieldsCreated)}</p>
+          <p class="ok">{t.importDone(res.created, res.stagesCreated, res.fieldsCreated)}{res.contactsCreated ? ` ${t.importContactsDone(res.contactsCreated)}` : ''}</p>
           {res.skipped.length > 0 && <><h3>{t.importSkipped(res.skipped.length)}</h3><ul class="maplist">{res.skipped.slice(0, 20).map((s) => <li>#{s.row}: {s.reason}</li>)}</ul></>}
           <div class="actions"><button class="btn quiet" onClick={onClose}>{t.close}</button></div>
         </>

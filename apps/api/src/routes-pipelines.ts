@@ -320,6 +320,10 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
           type: 'object', required: ['rows'], additionalProperties: false,
           properties: {
             contextNodeId: uuid,
+            contacts: {
+              type: 'array', maxItems: 1000,
+              items: { type: 'object', required: ['boxName'], additionalProperties: false, properties: { boxName: { type: 'string', maxLength: 200 }, fullName: { type: ['string', 'null'], maxLength: 200 }, email: { type: ['string', 'null'], maxLength: 2000 }, phone: { type: ['string', 'null'], maxLength: 400 }, title: { type: ['string', 'null'], maxLength: 200 } } },
+            },
             columns: { type: 'array', maxItems: 40, items: { type: 'object', required: ['key', 'label'], additionalProperties: false, properties: { key: { type: 'string', pattern: FIELD_KEY_RE.source }, label: { type: 'string', minLength: 1, maxLength: 100 } } } },
             rows: {
               type: 'array', maxItems: 2000,
@@ -341,7 +345,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
       requireCrm(ctx);
       const { id } = req.params as { id: string };
       const b = req.body as {
-        contextNodeId?: string; columns?: { key: string; label: string }[];
+        contextNodeId?: string; contacts?: { boxName: string; fullName?: string | null; email?: string | null; phone?: string | null; title?: string | null }[]; columns?: { key: string; label: string }[];
         rows: { name: string; stage?: string; valueAmount?: number | null; closeDate?: string | null; assignedEmail?: string | null; daysInStage?: number | null; custom?: Record<string, string | number | null> }[];
       };
       const out = await run(ctx, async (tx) => {
@@ -405,8 +409,32 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
           await tx.query(`INSERT INTO box_events (tenant_id, box_id, kind, to_stage_id, actor_id) VALUES ($1,$2,'created',$3,$4)`, [ctx.tenantId, boxId, stageId, ctx.userId]);
           existing.add(name.toLowerCase()); created++;
         }
-        await audit(tx, ctx, 'pipeline_import', 'pipeline', id, { created, skipped: skipped.length, stagesCreated, fieldsCreated });
-        return { created, skipped, stagesCreated, fieldsCreated };
+        // contacts: reuse a person already on file (same email, or same name when there is no email), then attach to the named record
+        let contactsCreated = 0, contactsLinked = 0;
+        const boxIds = new Map((await tx.query<{ id: string; name: string }>('SELECT id, lower(name) AS name FROM boxes WHERE pipeline_id = $1 AND owner_node_id = $2', [id, ownerNodeId])).rows.map((r) => [r.name, r.id]));
+        for (const c of b.contacts ?? []) {
+          const boxId = boxIds.get(c.boxName.trim().toLowerCase());
+          if (!boxId) continue;
+          const email = (c.email ?? '').split(/[\s,;]+/).find((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x))?.toLowerCase() ?? null;
+          const fullName = c.fullName?.trim() || null;
+          if (!email && !fullName) continue;
+          let cid = (await tx.query<{ id: string }>(
+            email ? 'SELECT id FROM contacts WHERE owner_node_id = $1 AND email = $2' : 'SELECT id FROM contacts WHERE owner_node_id = $1 AND email IS NULL AND lower(full_name) = lower($2)',
+            [ownerNodeId, email ?? fullName],
+          )).rows[0]?.id;
+          if (!cid) {
+            cid = randomUUID();
+            await tx.query(
+              'INSERT INTO contacts (id, tenant_id, owner_node_id, context_node_id, email, full_name, phone, custom) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+              [cid, ctx.tenantId, ownerNodeId, contextNodeId, email, fullName, c.phone?.trim().slice(0, 40) || null, JSON.stringify(c.title ? { title: c.title.trim().slice(0, 200) } : {})],
+            );
+            contactsCreated++;
+          }
+          const l = await tx.query('INSERT INTO box_contacts (box_id, contact_id, tenant_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [boxId, cid, ctx.tenantId]);
+          contactsLinked += l.rowCount ?? 0;
+        }
+        await audit(tx, ctx, 'pipeline_import', 'pipeline', id, { created, skipped: skipped.length, stagesCreated, fieldsCreated, contactsCreated });
+        return { created, skipped, stagesCreated, fieldsCreated, contactsCreated, contactsLinked };
       });
       return reply.code(200).send(out);
     },

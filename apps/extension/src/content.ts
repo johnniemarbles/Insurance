@@ -4,8 +4,14 @@ import { mountPii } from '../../web/src/mount';
 import type { Transport } from '../../web/src/types';
 
 const transport: Transport = async (method, path, body) => {
-  const r = (await chrome.runtime.sendMessage({ type: 'pii:api', method, path, body }).catch(() => undefined)) as { status: number; json: any } | undefined;
-  return r ?? { status: 0, json: null };
+  try {
+    const r = (await chrome.runtime.sendMessage({ type: 'pii:api', method, path, body })) as { status: number; json: any } | undefined;
+    return r ?? { status: -1, json: null };
+  } catch {
+    // The extension was reloaded or updated while this Gmail tab stayed open.
+    return { status: -1, json: null };
+  }
+};
 };
 
 // Gmail page side. Reads only what is on screen for the open conversation, and only sends it after the person accepts the notice.

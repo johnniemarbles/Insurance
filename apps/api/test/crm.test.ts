@@ -234,6 +234,8 @@ test('linking a conversation: notice first, encrypted at rest, visible down the 
   const list = (await call(S1U, 'GET', `/v1/boxes/${subId}/threads`)).json.threads;
   assert.equal(list.length, 1);
   assert.equal(list[0].messageCount, 2);
+  const withMail = (await call(S1U, 'GET', `/v1/boxes/${subId}`)).json;
+  assert.ok(withMail.lastEmailAt && withMail.lastEmailFrom, 'last email date and sender are filled in');
 
   // stored encrypted
   const o = new pg.Client({ connectionString: db.ownerUrl });
@@ -351,4 +353,19 @@ test('import: stages and columns are created, bad rows are skipped with a reason
   assert.equal(list[0].custom.lead_source, 'Referral');
   const again = await call(P1U, 'POST', `/v1/pipelines/${pipe1}/import`, body);
   assert.equal(again.json.created, 0);
+});
+
+test('import: contacts are created once, matched to their record, and reused on a repeat', async () => {
+  const body = { contextNodeId: X, rows: [], contacts: [
+    { boxName: 'imported a', fullName: 'Ann Lee', email: 'ann@example.com, other@example.com', phone: '555-0100', title: 'Owner' },
+    { boxName: 'Imported B', fullName: 'No Email Person' },
+    { boxName: 'Nonexistent', fullName: 'Ghost' },
+  ] };
+  const r = await call(P1U, 'POST', `/v1/pipelines/${pipe1}/import`, body);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.contactsCreated, 2);
+  const a = (await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Imported%20A`)).json.boxes[0].id;
+  const detail = (await call(P1U, 'GET', `/v1/boxes/${a}`)).json;
+  assert.equal(detail.contacts[0].email, 'ann@example.com');
+  assert.equal((await call(P1U, 'POST', `/v1/pipelines/${pipe1}/import`, body)).json.contactsCreated, 0);
 });

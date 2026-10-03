@@ -19,7 +19,7 @@ export function App({ host }: { host: HostOptions }) {
   const call: Call = useCallback(async (method, path, body) => {
     const r = await host.transport(method, path, body);
     if (r.status >= 200 && r.status < 300) return r.json;
-    throw new ApiErr(r.status, r.status === 0 ? t.offline : (r.json?.error?.message ?? `Error ${r.status}`));
+    throw new ApiErr(r.status, r.status === -1 ? t.reloadNeeded : r.status === 0 ? t.offline : (r.json?.error?.message ?? `Error ${r.status}`));
   }, [host, t.offline]);
 
   const boot = useCallback(async () => {
@@ -214,6 +214,8 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
                       <td>{money(b.valueAmount, b.currency, locale)}</td>
                       <td>{b.closeDate ?? ''}</td>
                       <td><span class={`age${b.daysInStage >= 30 ? ' bad' : b.daysInStage >= 14 ? ' warn' : ''}`}>{b.daysInStage === 0 ? t.today : t.days(b.daysInStage)}</span></td>
+                      <td>{b.lastEmailAt ? new Date(b.lastEmailAt).toLocaleDateString(locale) : ''}</td>
+                      <td>{b.lastEmailFrom ?? ''}</td>
                       {pipeline!.fields.map((f) => <td>{cell(b.custom[f.key])}</td>)}
                     </tr>
                   );
