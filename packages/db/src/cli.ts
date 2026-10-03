@@ -1,3 +1,4 @@
+import pg from 'pg';
 import { bootstrapDeployment, bootstrapTenant, ensureRoles, migrate } from './index.ts';
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -27,6 +28,18 @@ try {
     await ensureRoles(url, { appRuntime, appAuth });
     const r = await migrate(url);
     await bootstrapDeployment(url, { region, environment, physicalRegionVerified: process.env.PHYSICAL_REGION_VERIFIED === 'true' });
+    // Optional first-tenant bootstrap from the environment, only while the database has no tenants.
+    const bt = { name: process.env.BOOTSTRAP_TENANT_NAME, country: process.env.BOOTSTRAP_TENANT_COUNTRY, email: process.env.BOOTSTRAP_ADMIN_EMAIL };
+    if (bt.name && bt.email && (bt.country === 'CA' || bt.country === 'US')) {
+      const c = new pg.Client({ connectionString: url });
+      await c.connect();
+      const n = (await c.query<{ n: number }>('SELECT count(*)::int AS n FROM tenants')).rows[0]!.n;
+      await c.end();
+      if (n === 0) {
+        const t = await bootstrapTenant(url, { name: bt.name, countryCode: bt.country, adminEmail: bt.email, defaultLocale: (process.env.BOOTSTRAP_TENANT_LOCALE as 'en' | 'fr-CA') ?? 'en' });
+        console.log(`bootstrapped first tenant ${t.tenantId}`);
+      }
+    }
     console.log(`release ok: ${region}/${environment}; applied ${r.applied.length}, existing ${r.skipped.length}`);
   } else if (cmd === 'bootstrap-deployment') {
     const region = flag('region') as 'ca-qc' | 'us' | undefined;

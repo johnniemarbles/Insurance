@@ -13,7 +13,8 @@ await assertDeployment(appPool, config.region);
 
 const google = config.googleClientId ? realGoogleClient(config) : undefined;
 if (!google && !config.devAuth) {
-  throw new Error('Configure GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / COOKIE_SECRET, or set DEV_AUTH=true in dev only.');
+  // Safe state: the API runs, but nobody can sign in until Google sign-in is configured.
+  console.warn('Google sign-in is not configured: every authenticated route will answer 401.');
 }
 const authenticate = config.devAuth ? firstOf(sessionAuthenticator(authPool), devAuthenticator(authPool)) : sessionAuthenticator(authPool);
 const app = buildApp({ config, appPool, authPool, authenticate, google });
