@@ -1,0 +1,13 @@
+# Local development: one Postgres per region would be separate databases; locally one is enough.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: pw
+    ports: ["5432:5432"]
+    volumes:
+      - ./infra/init-roles.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      retries: 20

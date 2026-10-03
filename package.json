@@ -1,0 +1,22 @@
+{
+  "name": "pii-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PII: Gmail-native CRM + LMS for Punjab Insurance Agency Inc (app.punjabinsurance.net)",
+  "engines": { "node": ">=22.18" },
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test --test-concurrency=1 \"packages/*/test/*.test.ts\" \"apps/*/test/*.test.ts\"",
+    "test:isolation": "bash tests/isolation/run.sh",
+    "migrate": "node packages/db/src/cli.ts migrate",
+    "dev": "node --watch apps/api/src/main.ts",
+    "start": "node apps/api/src/main.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,245 @@
+import psycopg2, uuid, sys, subprocess
+HOST, DB = '127.0.0.1', 'crm_test'
+def U(): return str(uuid.uuid4())
+def su_conn(): return psycopg2.connect(dbname=DB, user='postgres', password='pw', host=HOST)
+results = []
+def check(name, cond, detail=''):
+    results.append((name, bool(cond)))
+    print(('PASS ' if cond else 'FAIL ') + name + (('  -> ' + str(detail)) if not cond else ''))
+
+# ---------------- seed (as superuser) ----------------
+su = su_conn(); cur = su.cursor()
+cur.execute("INSERT INTO deployment_info(region) VALUES ('ca-qc')")
+T, T2 = U(), U()
+for t, n in ((T, 'Tenant CA'), (T2, 'Other CA tenant')):
+    cur.execute("INSERT INTO tenants(id,name,country_code,region) VALUES (%s,%s,'CA','ca-qc')", (t, n))
+    cur.execute("INSERT INTO tenant_settings(tenant_id) VALUES (%s)", (t,))
+N = {k: U() for k in ['R','X','Y','P1','P2','P3','S1','S2','R2']}
+types = {'R':'tenant','X':'location','Y':'location','P1':'partner','P2':'partner','P3':'partner','S1':'partner','S2':'partner','R2':'tenant'}
+for k, i in N.items():
+    cur.execute("INSERT INTO org_nodes(id,tenant_id,type,name) VALUES (%s,%s,%s,%s)", (i, T2 if k=='R2' else T, types[k], k))
+def link(a, b, kind, t=T):
+    cur.execute("INSERT INTO org_links(tenant_id,parent_id,child_id,kind) VALUES (%s,%s,%s,%s)", (t, N[a], N[b], kind))
+for a, b in (('X','P1'),('X','P2'),('X','P3'),('Y','P3')): link(a, b, 'location_link')
+for a, b in (('P3','S1'),('P3','S2')): link(a, b, 'partner_link')
+
+UID, EMAIL_HOME = {}, {'admin':'R','mgrX':'X','mgrY':'Y','u1':'P1','u2':'P2','u3':'P3','s1':'S1','s2':'S2','out':'R2'}
+for k, home in EMAIL_HOME.items():
+    UID[k] = U()
+    cur.execute("INSERT INTO app_users(id,tenant_id,email,home_node_id,status) VALUES (%s,%s,%s,%s,'active')",
+                (UID[k], T2 if k=='out' else T, k+'@example.com', N[home]))
+CTX = {k: dict(tenant=T2 if k=='out' else T, user=UID[k], nodes=[N[EMAIL_HOME[k]]], admin=(k=='admin'), write=True) for k in UID}
+
+PL, ST = U(), U()
+cur.execute("INSERT INTO pipelines(id,tenant_id,owner_node_id,name,is_shared_down) VALUES (%s,%s,%s,'Sales',true)", (PL, T, N['R']))
+cur.execute("INSERT INTO stages(id,tenant_id,pipeline_id,name,position) VALUES (%s,%s,%s,'New',1)", (ST, T, PL))
+BOX = {}
+for name, owner, ctxn in (('b1','P1','X'),('b2','P2','X'),('b3','P3','X'),('b4','P3','Y'),('b5','S1','X'),('b6','S2','Y')):
+    BOX[name] = U()
+    cur.execute("INSERT INTO boxes(id,tenant_id,pipeline_id,stage_id,owner_node_id,context_node_id,name) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (BOX[name], T, PL, ST, N[owner], N[ctxn], name))
+    cur.execute("INSERT INTO contacts(tenant_id,owner_node_id,context_node_id,email,full_name) VALUES (%s,%s,%s,%s,%s)",
+                (T, N[owner], N[ctxn], name+'@client.com', 'contact-'+name))
+GM = {}
+for k in ('u1','u2','u3'):
+    GM[k] = U()
+    cur.execute("INSERT INTO gmail_accounts(id,tenant_id,user_id,email,refresh_token_enc,key_id,scopes) VALUES (%s,%s,%s,%s,'\\x00','k1',ARRAY['gmail.modify'])", (GM[k], T, UID[k], k+'@gmail.com'))
+    cur.execute("INSERT INTO snippets(tenant_id,user_id,name,body) VALUES (%s,%s,%s,'hi')", (T, UID[k], 'snip-'+k))
+    cur.execute("INSERT INTO scheduled_sends(tenant_id,user_id,gmail_account_id,mime_enc,key_id,send_at) VALUES (%s,%s,%s,'\\x00','k1',now())", (T, UID[k], GM[k]))
+TH = {}
+for k, own in (('u1','P1'),('u2','P2')):
+    TH[k] = U()
+    cur.execute("INSERT INTO email_threads(id,tenant_id,gmail_account_id,owner_node_id,gmail_thread_id,subject) VALUES (%s,%s,%s,%s,%s,%s)", (TH[k], T, GM[k], N[own], 'g-'+k, 'subject-'+k))
+cur.execute("INSERT INTO consent_records(id,tenant_id,user_id,kind,notice_version,locale,region) VALUES (%s,%s,%s,'link_thread','v1','fr-CA','ca-qc') RETURNING id", (U(), T, UID['u1']))
+CONSENT = cur.fetchone()[0]
+cur.execute("INSERT INTO box_threads(box_id,thread_id,tenant_id,linked_by,consent_id) VALUES (%s,%s,%s,%s,%s)", (BOX['b1'], TH['u1'], T, UID['u1'], CONSENT))
+cur.execute("INSERT INTO linked_thread_messages(tenant_id,thread_id,gmail_message_id,body_enc,key_id) VALUES (%s,%s,'m1','\\x00','k1')", (T, TH['u1']))
+# LMS
+C0, CD = U(), U()
+cur.execute("INSERT INTO courses(id,tenant_id,owner_node_id,status) VALUES (%s,%s,%s,'published')", (C0, T, N['R']))
+cur.execute("INSERT INTO course_locales(course_id,tenant_id,locale,title,is_published) VALUES (%s,%s,'en','Onboarding',true)", (C0, T))
+cur.execute("INSERT INTO courses(id,tenant_id,owner_node_id,status) VALUES (%s,%s,%s,'draft')", (CD, T, N['P1']))
+ASG = U()
+cur.execute("INSERT INTO course_assignments(id,tenant_id,course_id,node_id) VALUES (%s,%s,%s,%s)", (ASG, T, C0, N['X']))
+su.commit()
+g = su_conn(); g.autocommit = True; gc = g.cursor()
+gc.execute("SELECT 1 FROM pg_roles WHERE rolname='app_runtime'")
+if not gc.fetchone(): gc.execute("CREATE ROLE app_runtime LOGIN PASSWORD 'pw' NOBYPASSRLS")
+gc.execute("GRANT USAGE ON SCHEMA public TO app_runtime")
+gc.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO app_runtime")
+g.close()
+
+# ---------------- runtime helper (as app_runtime, RLS enforced) ----------------
+def run(ctxname, sql, params=()):
+    c = CTX[ctxname] if ctxname else None
+    con = psycopg2.connect(dbname=DB, user='app_runtime', password='pw', host=HOST); cu = con.cursor()
+    if c:
+        cu.execute("SELECT set_config('app.tenant_id',%s,false), set_config('app.user_id',%s,false), set_config('app.node_ids',%s,false), set_config('app.is_tenant_admin',%s,false), set_config('app.can_write',%s,false)",
+                   (c['tenant'], c['user'], '{'+','.join(c['nodes'])+'}', str(c['admin']).lower(), str(c['write']).lower()))
+    try:
+        cu.execute(sql, params)
+        rows = cu.fetchall() if cu.description else []
+        n = cu.rowcount; con.commit(); return rows, n, None
+    except Exception as e:
+        con.rollback(); return [], 0, e
+    finally: con.close()
+def names(ctxname, sql): return sorted(r[0] for r in run(ctxname, sql)[0])
+
+print('\n== 1-3. CRM visibility ==')
+exp = {'u1':['b1'],'u2':['b2'],'u3':['b3','b4','b5','b6'],'s1':['b5'],'s2':['b6'],
+       'mgrX':['b1','b2','b3','b5'],'mgrY':['b4','b6'],'admin':['b1','b2','b3','b4','b5','b6']}
+for k, v in exp.items():
+    got = names(k, "SELECT name FROM boxes ORDER BY name")
+    check(f"boxes visible to {k} = {v}", got == v, got)
+    got = names(k, "SELECT full_name FROM contacts ORDER BY full_name")
+    check(f"contacts visible to {k}", got == ['contact-'+b for b in v], got)
+check("sibling partners isolated (u1 sees none of u2's contacts)", 'contact-b2' not in names('u1', "SELECT full_name FROM contacts"))
+check("sibling sub-partners isolated (s1 does not see s2)", 'b6' not in names('s1', "SELECT name FROM boxes"))
+check("multi-location: mgrX cannot see work marked for Y", 'b4' not in names('mgrX', "SELECT name FROM boxes"))
+
+print('\n== 4. Private Gmail data ==')
+for tbl, col in (('gmail_accounts','email'),('snippets','name'),('scheduled_sends','user_id::text')):
+    for k in ('admin','mgrX','u3','u2'):
+        got = names(k, f"SELECT {col} FROM {tbl}")
+        own = 1 if k in ('u2','u3') else 0
+        check(f"{tbl}: {k} sees only own rows ({own})", len(got) == own, got)
+    check(f"{tbl}: u1 sees own", len(names('u1', f"SELECT {col} FROM {tbl}")) == 1)
+
+print('\n== 7. Linked thread cache visibility ==')
+check("mgrX can read cached messages of linked thread", len(run('mgrX', "SELECT 1 FROM linked_thread_messages")[0]) == 1)
+check("u1 can read cached messages", len(run('u1', "SELECT 1 FROM linked_thread_messages")[0]) == 1)
+check("u2 (sibling) cannot", len(run('u2', "SELECT 1 FROM linked_thread_messages")[0]) == 0)
+check("mgrY cannot", len(run('mgrY', "SELECT 1 FROM linked_thread_messages")[0]) == 0)
+check("mgrX can see subject of the linked thread", names('mgrX', "SELECT subject FROM email_threads") == ['subject-u1'], names('mgrX', "SELECT subject FROM email_threads"))
+check("mgrX cannot see UNlinked thread of u1/u2", 'subject-u2' not in names('mgrX', "SELECT subject FROM email_threads"))
+check("u3 (other partner) sees no threads", names('u3', "SELECT subject FROM email_threads") == [])
+
+print('\n== Writes and tenant wall ==')
+_, _, e = run('u1', "INSERT INTO boxes(tenant_id,pipeline_id,stage_id,owner_node_id,context_node_id,name) VALUES (%s,%s,%s,%s,%s,'w1')", (T, PL, ST, N['P1'], N['X']))
+check("u1 can create own box in linked location X", e is None, e)
+_, _, e = run('u1', "INSERT INTO boxes(tenant_id,pipeline_id,stage_id,owner_node_id,context_node_id,name) VALUES (%s,%s,%s,%s,%s,'w2')", (T, PL, ST, N['P1'], N['Y']))
+check("context Y rejected for P1 (not linked)", e is not None)
+_, _, e = run('u1', "INSERT INTO boxes(tenant_id,pipeline_id,stage_id,owner_node_id,name) VALUES (%s,%s,%s,%s,'w3')", (T, PL, ST, N['P2']))
+check("u1 cannot create a box owned by sibling P2", e is not None)
+_, n, e = run('u1', "UPDATE boxes SET name='hacked' WHERE name='b2'")
+check("u1 cannot update sibling's box (0 rows)", e is None and n == 0, (n, e))
+_, n, e = run('u1', "DELETE FROM boxes WHERE name='b2'")
+check("u1 cannot delete sibling's box (0 rows)", e is None and n == 0, (n, e))
+CTX['u1']['write'] = False
+_, _, e = run('u1', "INSERT INTO boxes(tenant_id,pipeline_id,stage_id,owner_node_id,name) VALUES (%s,%s,%s,%s,'w4')", (T, PL, ST, N['P1']))
+check("read-only session cannot insert", e is not None)
+CTX['u1']['write'] = True
+check("other tenant user sees 0 boxes", names('out', "SELECT name FROM boxes") == [])
+check("no session context sees 0 boxes", names(None, "SELECT name FROM boxes") == [])
+check("no session context sees 0 tenants", len(run(None, "SELECT 1 FROM tenants")[0]) == 0)
+_, _, e = run('out', "INSERT INTO boxes(tenant_id,pipeline_id,stage_id,owner_node_id,name) VALUES (%s,%s,%s,%s,'x')", (T, PL, ST, N['P1']))
+check("cross-tenant insert blocked", e is not None)
+check("pipeline shared down: u3 and s1 see 'Sales' and its stage", names('s1', "SELECT name FROM pipelines") == ['Sales'] and names('s1', "SELECT name FROM stages") == ['New'])
+
+print('\n== 8. LMS ==')
+rows, n, e = run('admin', "SELECT sync_enrollments(%s)", (ASG,))
+check("sync_enrollments creates 6 enrollments (5 beneath X + mgrX)", e is None and rows[0][0] == 6, (rows, e))
+q = "SELECT u.email FROM enrollments en JOIN app_users u ON u.id = en.user_id ORDER BY 1"
+exp = {'u1':['u1'],'u2':['u2'],'u3':['u3','s1','s2'],'s1':['s1'],'s2':['s2'],'mgrY':['u3','s1','s2']}
+for k, v in exp.items():
+    got = [x.replace('@example.com','') for x in names(k, q)]
+    check(f"enrollments visible to {k} = {v}", sorted(got) == sorted(v), got)
+check("mgrX and admin see all 6", len(names('mgrX', q)) == 6 and len(names('admin', q)) == 6)
+for k in ('u1','u2','u3','s1','mgrY','mgrX','admin'):
+    check(f"published course owned by tenant visible to {k}", len(run(k, "SELECT 1 FROM courses WHERE id=%s", (C0,))[0]) == 1)
+for k, ok in (('u1',True),('mgrX',True),('admin',True),('u2',False),('u3',False),('mgrY',False),('s1',False)):
+    check(f"draft course at P1 visible to {k}: {ok}", (len(run(k, "SELECT 1 FROM courses WHERE id=%s", (CD,))[0]) == 1) == ok)
+
+print('\n== 5-6. Org graph (closure, cycles, depth) ==')
+su = su_conn(); cur = su.cursor()
+def new_partner(name):
+    i = U(); cur.execute("INSERT INTO org_nodes(id,tenant_id,type,name) VALUES (%s,%s,'partner',%s)", (i, T, name)); return i
+def lk(a, b): cur.execute("INSERT INTO org_links(tenant_id,parent_id,child_id,kind) VALUES (%s,%s,%s,'partner_link')", (T, a, b))
+def unlk(a, b): cur.execute("DELETE FROM org_links WHERE parent_id=%s AND child_id=%s", (a, b))
+def pc(a, b):
+    cur.execute("SELECT path_count FROM org_partner_closure WHERE ancestor_id=%s AND descendant_id=%s", (a, b)); r = cur.fetchone(); return r[0] if r else None
+SS = new_partner('SS')
+lk(N['S1'], SS); lk(N['S2'], SS)
+check("diamond: (P3,SS) has 2 paths", pc(N['P3'], SS) == 2, pc(N['P3'], SS))
+unlk(N['S1'], SS)
+check("remove one parent link: (P3,SS) keeps 1 path", pc(N['P3'], SS) == 1, pc(N['P3'], SS))
+check("(S1,SS) removed", pc(N['S1'], SS) is None)
+unlk(N['S2'], SS)
+check("remove last link: (P3,SS) gone", pc(N['P3'], SS) is None)
+check("self row remains", pc(SS, SS) == 1)
+su.rollback()
+su = su_conn(); cur = su.cursor()
+try:
+    cur.execute("SAVEPOINT s"); lk(N['S1'], N['P3']); ok = False
+except Exception as ex:
+    ok = 'Cycle' in str(ex); cur.execute("ROLLBACK TO s")
+check("cycle S1 -> P3 rejected", ok)
+A, B, Cc, D = (new_partner(x) for x in 'ABCD')
+lk(N['S1'], A); lk(A, B); lk(B, Cc)       # P3(1) S1(2) A(3) B(4) C(5)
+check("5 levels allowed", pc(N['P3'], Cc) == 1, pc(N['P3'], Cc))
+try:
+    cur.execute("SAVEPOINT d"); lk(Cc, D); ok = False
+except Exception as ex:
+    ok = 'depth cap' in str(ex); cur.execute("ROLLBACK TO d")
+check("6th level rejected", ok)
+try:
+    cur.execute("SAVEPOINT e"); lk(N['P1'], N['X']); ok = False
+except Exception as ex:
+    ok = True; cur.execute("ROLLBACK TO e")
+check("partner_link to a location rejected", ok)
+su.rollback()
+
+print('\n== 7b/8b. Cache purge and Quebec publish guard ==')
+su = su_conn(); cur = su.cursor()
+b7 = U()
+cur.execute("INSERT INTO boxes(id,tenant_id,pipeline_id,stage_id,owner_node_id,context_node_id,name) VALUES (%s,%s,%s,%s,%s,%s,'b7')", (b7, T, PL, ST, N['P1'], N['X']))
+cur.execute("INSERT INTO box_threads(box_id,thread_id,tenant_id,linked_by,consent_id) VALUES (%s,%s,%s,%s,%s)", (b7, TH['u1'], T, UID['u1'], CONSENT))
+cur.execute("DELETE FROM box_threads WHERE box_id=%s", (b7,))
+cur.execute("SELECT count(*) FROM linked_thread_messages WHERE thread_id=%s", (TH['u1'],))
+check("unlink one of two boxes: cache kept", cur.fetchone()[0] == 1)
+cur.execute("DELETE FROM box_threads WHERE box_id=%s", (BOX['b1'],))
+cur.execute("SELECT count(*) FROM linked_thread_messages WHERE thread_id=%s", (TH['u1'],))
+check("unlink last box: cached content deleted", cur.fetchone()[0] == 0)
+su.rollback()
+su = su_conn(); cur = su.cursor()
+Q, M, L = U(), U(), U()
+cur.execute("INSERT INTO courses(id,tenant_id,owner_node_id,quebec_facing) VALUES (%s,%s,%s,true)", (Q, T, N['R']))
+cur.execute("INSERT INTO course_locales(course_id,tenant_id,locale,title,is_published) VALUES (%s,%s,'en','t',true)", (Q, T))
+cur.execute("INSERT INTO course_modules(id,tenant_id,course_id,position) VALUES (%s,%s,%s,1)", (M, T, Q))
+cur.execute("INSERT INTO lessons(id,tenant_id,course_id,module_id,position,type) VALUES (%s,%s,%s,%s,1,'richtext')", (L, T, Q, M))
+cur.execute("INSERT INTO lesson_locales(lesson_id,tenant_id,locale,title) VALUES (%s,%s,'en','t')", (L, T))
+def pub():
+    try:
+        cur.execute("SAVEPOINT p"); cur.execute("UPDATE courses SET status='published' WHERE id=%s", (Q,)); return True
+    except Exception: cur.execute("ROLLBACK TO p"); return False
+check("Quebec-facing: publish blocked without fr-CA course", not pub())
+cur.execute("INSERT INTO course_locales(course_id,tenant_id,locale,title,is_published) VALUES (%s,%s,'fr-CA','t',true)", (Q, T))
+check("Quebec-facing: publish blocked without fr-CA lessons", not pub())
+cur.execute("INSERT INTO lesson_locales(lesson_id,tenant_id,locale,title) VALUES (%s,%s,'fr-CA','t')", (L, T))
+check("Quebec-facing: publish allowed with full French", pub())
+su.rollback()
+try:
+    cur.execute("INSERT INTO tenants(name,country_code,region) VALUES ('x','US','us')"); ok = False
+except Exception: ok = True
+su.rollback()
+check("residency guard: US tenant rejected in the Quebec deployment", ok)
+su = su_conn(); cur = su.cursor()
+cur.execute("UPDATE deployment_info SET environment='prod'")
+try:
+    cur.execute("SAVEPOINT g"); cur.execute("INSERT INTO tenants(name,country_code,region) VALUES ('x','CA','ca-qc')"); ok = False
+except Exception as ex:
+    ok = 'not verified' in str(ex); cur.execute("ROLLBACK TO g")
+check("prod deployment not verified in region: tenant creation blocked", ok)
+cur.execute("UPDATE deployment_info SET physical_region_verified=true")
+try:
+    cur.execute("INSERT INTO tenants(name,country_code,region) VALUES ('x','CA','ca-qc')"); ok = True
+except Exception: ok = False
+check("prod deployment verified in region: tenant creation allowed", ok)
+su.rollback()
+
+print('\n== 9. RLS drift guard ==')
+su = su_conn(); cur = su.cursor(); cur.execute("SELECT table_name FROM rls_drift")
+d = cur.fetchall(); check("rls_drift returns no rows", d == [], d)
+
+f = [r for r in results if not r[1]]
+print(f"\n{len(results)-len(f)}/{len(results)} passed"); sys.exit(1 if f else 0)

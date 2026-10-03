@@ -1,0 +1,7 @@
+{
+  "name": "@pii/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@pii/db": "*", "@pii/domain": "*", "@pii/platform": "*", "fastify": "^5.0.0" }
+}
