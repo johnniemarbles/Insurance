@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { bootstrapDeployment, bootstrapTenant, ensureRoles, migrate } from './index.ts';
+import { bootstrapDeployment, bootstrapTenant, ensureRoles, migrate, seedStarterPipelines } from './index.ts';
 
 const [cmd, ...args] = process.argv.slice(2);
 const url = process.env.DATABASE_URL;
@@ -39,6 +39,10 @@ try {
         const t = await bootstrapTenant(url, { name: bt.name, countryCode: bt.country, adminEmail: bt.email, defaultLocale: (process.env.BOOTSTRAP_TENANT_LOCALE as 'en' | 'fr-CA') ?? 'en' });
         console.log(`bootstrapped first tenant ${t.tenantId}`);
       }
+    }
+    if (process.env.SEED_STARTER_PIPELINE === 'true') {
+      const n = await seedStarterPipelines(url);
+      if (n > 0) console.log(`seeded starter pipeline for ${n} tenant(s)`);
     }
     console.log(`release ok: ${region}/${environment}; applied ${r.applied.length}, existing ${r.skipped.length}`);
   } else if (cmd === 'bootstrap-deployment') {

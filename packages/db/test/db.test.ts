@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
 import { buildRequestContext } from '@pii/domain';
-import { ensureRoles, assertDeployment, bootstrapTenant, createPool, migrate, withRequestTx, findLoginCandidates, type Db } from '../src/index.ts';
+import { ensureRoles, assertDeployment, bootstrapTenant, seedStarterPipelines, createPool, migrate, withRequestTx, findLoginCandidates, type Db } from '../src/index.ts';
 import { createTestDb, type TestDb } from '../src/testing.ts';
 
 let db: TestDb;
@@ -125,4 +125,14 @@ test('ensureRoles sets login passwords and rejects weak ones', async () => {
   const c = new pg.Client({ connectionString: u.toString() });
   await c.connect(); await c.end();
   await ensureRoles(db.ownerUrl, { appRuntime: 'pwpwpwpwpwpwpwpwpw', appAuth: 'pwpwpwpwpwpwpwpwpw' });
+});
+
+test('starter pipeline is seeded once per tenant that has none', async () => {
+  assert.equal(await seedStarterPipelines(db.ownerUrl), 1);
+  assert.equal(await seedStarterPipelines(db.ownerUrl), 0);
+  const o = new pg.Client({ connectionString: db.ownerUrl });
+  await o.connect();
+  const rows = (await o.query(`SELECT (SELECT count(*)::int FROM stages) AS stages, (SELECT count(*)::int FROM field_defs) AS fields, (SELECT is_shared_down FROM pipelines) AS shared`)).rows[0];
+  await o.end();
+  assert.deepEqual(rows, { stages: 6, fields: 3, shared: true });
 });

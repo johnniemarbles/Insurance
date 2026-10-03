@@ -109,3 +109,52 @@ export async function ensureRoles(databaseUrl: string, passwords: { appRuntime: 
     await client.end();
   }
 }
+
+/** A ready-to-use pipeline so a new tenant can start straight away. Only for tenants that have none; shared down to everyone below. */
+export async function seedStarterPipelines(databaseUrl: string): Promise<number> {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  let seeded = 0;
+  try {
+    const tenants = (
+      await client.query<{ tenant_id: string; root: string; admin: string | null }>(
+        `SELECT t.id AS tenant_id, n.id AS root,
+                (SELECT r.user_id FROM user_node_roles r WHERE r.tenant_id = t.id AND r.node_id = n.id AND r.role = 'admin' LIMIT 1) AS admin
+           FROM tenants t JOIN org_nodes n ON n.tenant_id = t.id AND n.type = 'tenant'
+          WHERE NOT EXISTS (SELECT 1 FROM pipelines p WHERE p.tenant_id = t.id)`,
+      )
+    ).rows;
+    for (const t of tenants) {
+      await client.query('BEGIN');
+      try {
+        for (const [k, v] of [['app.tenant_id', t.tenant_id], ['app.user_id', t.admin ?? ''], ['app.node_ids', `{${t.root}}`], ['app.is_tenant_admin', 'true'], ['app.can_write', 'true']] as const) {
+          await client.query('SELECT set_config($1, $2, true)', [k, v]);
+        }
+        const pid = randomUUID();
+        await client.query(`INSERT INTO pipelines (id, tenant_id, owner_node_id, name, is_shared_down, created_by) VALUES ($1,$2,$3,'Insurance leads',true,$4)`, [pid, t.tenant_id, t.root, t.admin]);
+        const stages: [string, boolean, boolean][] = [['New lead', false, false], ['Contacted', false, false], ['Quote sent', false, false], ['Application', false, false], ['Policy issued', true, false], ['Lost', false, true]];
+        let i = 1;
+        for (const [name, won, lost] of stages) {
+          await client.query('INSERT INTO stages (tenant_id, pipeline_id, name, position, is_won, is_lost) VALUES ($1,$2,$3,$4,$5,$6)', [t.tenant_id, pid, name, i++, won, lost]);
+        }
+        const fields: [string, Record<string, string>, string, string[] | null][] = [
+          ['policy_type', { en: 'Policy type', 'fr-CA': 'Type de police' }, 'dropdown', ['Auto', 'Home', 'Life', 'Health', 'Commercial', 'Travel']],
+          ['renewal_date', { en: 'Renewal date', 'fr-CA': 'Date de renouvellement' }, 'date', null],
+          ['premium', { en: 'Annual premium', 'fr-CA': 'Prime annuelle' }, 'currency', null],
+        ];
+        let f = 1;
+        for (const [key, labels, type, options] of fields) {
+          await client.query('INSERT INTO field_defs (tenant_id, pipeline_id, key, labels, type, options, required, position) VALUES ($1,$2,$3,$4,$5,$6,false,$7)', [t.tenant_id, pid, key, JSON.stringify(labels), type, options ? JSON.stringify(options) : null, f++]);
+        }
+        await client.query('COMMIT');
+        seeded++;
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw err;
+      }
+    }
+  } finally {
+    await client.end();
+  }
+  return seeded;
+}
