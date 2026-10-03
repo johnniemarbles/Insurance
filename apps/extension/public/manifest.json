@@ -4,19 +4,61 @@
   "short_name": "PII",
   "version": "0.1.0",
   "description": "CRM and training for your insurance partners, inside Gmail.",
-  "icons": { "16": "icon-16.png", "32": "icon-32.png", "48": "icon-48.png", "128": "icon-128.png" },
-  "action": { "default_title": "PII by Punjab Insurance", "default_icon": { "16": "icon-16.png", "32": "icon-32.png" } },
-  "permissions": ["storage", "scripting"],
+  "icons": {
+    "16": "icon-16.png",
+    "32": "icon-32.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "action": {
+    "default_title": "PII by Punjab Insurance",
+    "default_icon": {
+      "16": "icon-16.png",
+      "32": "icon-32.png"
+    }
+  },
+  "permissions": [
+    "storage",
+    "scripting"
+  ],
   "host_permissions": [
     "https://mail.google.com/*",
     "https://inbox.google.com/*",
     "https://*.up.railway.app/*",
     "https://app.punjabinsurance.net/*"
   ],
-  "background": { "service_worker": "background.js" },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
-    { "matches": ["https://mail.google.com/*", "https://inbox.google.com/*"], "js": ["content.js"], "run_at": "document_end" }
+    {
+      "matches": [
+        "https://mail.google.com/*",
+        "https://inbox.google.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_end"
+    }
   ],
-  "options_ui": { "page": "options.html", "open_in_tab": true },
-  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'" }
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "nav-icon.png",
+        "icon-32.png"
+      ],
+      "matches": [
+        "https://mail.google.com/*",
+        "https://inbox.google.com/*"
+      ]
+    }
+  ]
 }

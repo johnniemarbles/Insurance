@@ -20,7 +20,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     const unmount = mountPii(host, { transport, onSignIn: () => void chrome.runtime.sendMessage({ type: 'pii:signin' }) });
     view.on('destroy', unmount);
   });
-  sdk.NavMenu.addNavItem({ name: 'PII', iconUrl: chrome.runtime.getURL('icon-32.png'), routeID: 'pii/:page', routeParams: { page: 'pipelines' } });
+  sdk.NavMenu.addNavItem({ name: 'PII', iconUrl: chrome.runtime.getURL('nav-icon.png'), routeID: 'pii/:page', routeParams: { page: 'pipelines' } });
   sdk.Conversations.registerThreadViewHandler((threadView) => {
     console.info('[PII] conversation opened');
     const el = document.createElement('div');
@@ -52,6 +52,6 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
         return { messages, skipped };
       },
     });
-    threadView.addSidebarContentPanel({ title: 'PII', iconUrl: chrome.runtime.getURL('icon-32.png'), el });
+    threadView.addSidebarContentPanel({ title: 'PII', iconUrl: chrome.runtime.getURL('nav-icon.png'), el });
   });
 }).catch((e) => console.error('[PII] InboxSDK failed to load', e));
