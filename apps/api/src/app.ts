@@ -20,6 +20,8 @@ import { registerAutomationRoutes } from './routes-automation.ts';
 import { registerIntegrationRoutes } from './routes-integrations.ts';
 import { registerMergeRoutes } from './routes-merge.ts';
 import { registerAiRoutes } from './routes-ai.ts';
+import { registerSettingRoutes } from './routes-settings.ts';
+import { registerNavRoutes } from './routes-nav.ts';
 import { registerAuthRoutes, originGuard } from './routes-auth.ts';
 import { registerConsentRoutes, hasAcceptedFirstLogin } from './routes-consent.ts';
 import { withRequestTx } from '@pii/db';
@@ -109,5 +111,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerIntegrationRoutes(app, deps);
   registerMergeRoutes(app, deps);
   registerAiRoutes(app, deps);
+  registerSettingRoutes(app, deps);
+  registerNavRoutes(app, deps);
   return app;
 }

@@ -3,3 +3,4 @@ export * from './org.ts';
 export * from './session.ts';
 export * from './consent.ts';
 export * from './fields.ts';
+export * from './settings.ts';

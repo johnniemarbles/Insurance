@@ -7,11 +7,12 @@ import { forbidden, HttpError, invalid, notFound } from './errors.ts';
 import { managerNodeIds, requireCrm, uuid } from './crm-helpers.ts';
 import { actingAs } from './effects.ts';
 import { BASE_TOKENS, escapeHtml, renderBody, renderSubject, tokensIn } from './merge-render.ts';
+import { effectiveSetting } from './settings.ts';
 import type { AppDeps } from './app.ts';
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 /** Gmail allows 500 messages a day for free accounts and 2,000 for Workspace; stay well inside. */
-const DAILY_CAP = 400;
+const MAX_DAILY = 400;
 
 interface Me { displayName: string | null; email: string; tenantName: string; locale: 'en' | 'fr-CA' }
 
@@ -233,6 +234,7 @@ export function registerMergeRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (!m) throw notFound('Mail merge not found');
       if (m.status !== 'running') return { idle: true, status: m.status };
       const today = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM mail_merge_recipients WHERE user_id = $1 AND sent_at > now() - interval '24 hours'`, [ctx.userId])).rows[0]!.n;
+      const DAILY_CAP = Math.min(MAX_DAILY, await effectiveSetting<number>(tx, ctx.userId, 'merge.dailyCap'));
       if (today >= DAILY_CAP) throw new HttpError(429, 'daily_limit', `Daily limit of ${DAILY_CAP} messages reached. The merge continues tomorrow.`);
       for (let i = 0; i < 25; i++) {
         const r = (await tx.query<{ id: string; email: string; box_id: string | null; contact_id: string | null; opted: boolean }>(

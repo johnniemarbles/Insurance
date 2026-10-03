@@ -77,3 +77,10 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 - "Needs attention" panel: stalled, overdue, past close date, no next step, unowned (plain rules, no AI).
 - Needs ANTHROPIC_API_KEY (optional AI_MODEL) on the server. Data goes to Anthropic's API (outside Quebec): get privacy counsel sign-off before real Canadian users.
 - Not yet: open tracking, auto-generated alerts by email, thread sync.
+
+## Phase S1–S3 — Settings and left panel (done)
+- Layered settings (person / branch / company), locks enforced by a database trigger, history, audit. Registry in packages/domain/src/settings.ts; add a setting there and it appears on the page.
+- Settings page (Me, Left panel, Email and compose, Team and company) with search, undo and a live preview of the panel; AI switch moved here.
+- Gmail left panel: collapsible PII section built from the person's layout (Home, Pipelines with each pipeline, Contacts, Mail merges, Training, Settings), counts, redrawn when settings change.
+- Home ("My day"): tasks due, needs attention, merges in progress, recently updated.
+- Not yet: notifications grid, privacy centre, impact line on shared changes, role presets, saved views under each pipeline, Gmail Settings tab injection.

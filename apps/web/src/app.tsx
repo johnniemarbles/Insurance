@@ -10,6 +10,8 @@ import { MergePanel } from './merge.tsx';
 import { SnippetsPanel } from './snippets.tsx';
 import { FilterBar } from './filterbar.tsx';
 import { AiBox, AttentionPanel } from './ai.tsx';
+import { HomePage } from './home.tsx';
+import { SettingsPage, useSettings, type SettingsApi } from './settings.tsx';
 import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
 import { buildColumns, Cell, ColumnPicker, loadColumns, saveColumns, type Ctx } from './columns.tsx';
 import { defaultSorts, emptyFilters, filterParams, hasFilters, migrateView, sortParam, type Filters, type GroupBy, type SortSpec } from './filters.ts';
@@ -50,27 +52,50 @@ export function App({ host }: { host: HostOptions }) {
   if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><button class="btn" onClick={host.onSignIn}>{t.signIn}</button></div></div>;
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
-  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} compose={host.compose} />;
+  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} compose={host.compose} host={host} />;
 }
 
-function Shell({ call, t, locale, canAuthor, meEmail, compose }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; compose?: ComposeApi }) {
-  const [tab, setTab] = useState<'crm' | 'contacts' | 'training'>(() => { try { const v = localStorage.getItem('pii.tab'); return v === 'training' || v === 'contacts' ? v : 'crm'; } catch { return 'crm'; } });
-  const pick = (v: 'crm' | 'contacts' | 'training') => { setTab(v); try { localStorage.setItem('pii.tab', v); } catch { /* private window */ } };
+type PageId = 'home' | 'pipelines' | 'contacts' | 'merges' | 'training' | 'settings';
+const PAGES: PageId[] = ['home', 'pipelines', 'contacts', 'merges', 'training', 'settings'];
+const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
+
+function Shell({ call, t, locale, canAuthor, meEmail, compose, host }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; compose?: ComposeApi; host: HostOptions }) {
+  const inGmail = !!host.route;
+  const [page, setPage] = useState<PageId>(() => {
+    if (host.route) return pageOf(host.route.page);
+    try { const v = localStorage.getItem('pii.page'); return pageOf(v ?? undefined); } catch { return 'pipelines'; }
+  });
+  const [routeId, setRouteId] = useState<string | undefined>(host.route?.id);
+  const settings = useSettings(call);
+  const [pipeList, setPipeList] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => { call('GET', '/v1/pipelines').then((r) => setPipeList((r.pipelines as Pipeline[]).map((p) => ({ id: p.id, name: p.name }))), () => undefined); }, [call]);
+  const go = (p: string, id?: string) => {
+    if (host.navigate) { host.navigate(p, id); return; }
+    const next = pageOf(p); setPage(next); setRouteId(id);
+    try { localStorage.setItem('pii.page', next); } catch { /* private window */ }
+  };
+  const label: Record<PageId, string> = { home: t.home, pipelines: t.tabPipelines, contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
+  const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
     <div class="pii" onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
-      <div class="tabs" role="tablist">
-        <button role="tab" aria-selected={tab === 'crm'} onClick={() => pick('crm')}>{t.tabPipelines}</button>
-        <button role="tab" aria-selected={tab === 'contacts'} onClick={() => pick('contacts')}>{t.contacts}</button>
-        <button role="tab" aria-selected={tab === 'training'} onClick={() => pick('training')}>{t.training}</button>
-      </div>
-      {tab === 'crm' ? <PipelineView call={call} t={t} locale={locale} meEmail={meEmail} compose={compose} /> : tab === 'contacts' ? <ContactsView call={call} t={t} /> : <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />}
+      {!inGmail && (
+        <div class="tabs" role="tablist">
+          {PAGES.filter((p) => p !== 'merges').map((p) => <button role="tab" aria-selected={page === p} onClick={() => go(p)}>{label[p]}</button>)}
+        </div>
+      )}
+      {page === 'home' ? <HomePage call={call} locale={locale} go={go} />
+        : page === 'contacts' ? <ContactsView call={call} t={t} />
+        : page === 'training' ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />
+        : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} /> : <div class="msg">{t.loading}</div>)
+        : !prefs ? <div class="msg">{t.loading}</div>
+        : <PipelineView key={`${page}:${routeId ?? ''}`} call={call} t={t} locale={locale} meEmail={meEmail} compose={compose} initialPid={routeId} prefs={prefs} openMerges={page === 'merges'} onStartTipsOff={() => void (settings as SettingsApi).set('ui.startTips', 'user', false)} />}
     </div>
   );
 }
 
-function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: Strings; locale: Locale; meEmail: string; compose?: ComposeApi }) {
+function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, openMerges, onStartTipsOff }: { call: Call; t: Strings; locale: Locale; meEmail: string; compose?: ComposeApi; initialPid?: string; prefs: { defaultView: string; startTips: boolean; defaultPipeline: string }; openMerges: boolean; onStartTipsOff: () => void }) {
   const [pipelines, setPipelines] = useState<Pipeline[] | null>(null);
-  const [pid, setPid] = useState('');
+  const [pid, setPid] = useState(initialPid || prefs.defaultPipeline || '');
   const [scope, setScope] = useState<Scope>('all');
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [sorts, setSorts] = useState<SortSpec[]>(defaultSorts);
@@ -83,7 +108,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
   const [quickLoc, setQuickLoc] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [hideStart, setHideStart] = useState(() => { try { return localStorage.getItem('pii.start') === 'off'; } catch { return false; } });
+  const [hideStart, setHideStart] = useState(!prefs.startTips);
   const [boxes, setBoxes] = useState<Box[]>([]);
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<Record<string, { count: number; value: number }>>({});
@@ -96,7 +121,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
   const [dueCount, setDueCount] = useState(0);
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
-  const [view, setView] = useState<'table' | 'board'>(() => { try { return localStorage.getItem('pii.view') === 'board' ? 'board' : 'table'; } catch { return 'table'; } });
+  const [view, setView] = useState<'table' | 'board'>(prefs.defaultView === 'board' ? 'board' : 'table');
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [bulkStage, setBulkStage] = useState('');
   const [people, setPeople] = useState<{ id: string; displayName: string | null; email: string }[]>([]);
@@ -118,7 +143,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
     call('GET', '/v1/pipelines').then((r) => {
       const list = r.pipelines as Pipeline[];
       setPipelines(list);
-      setPid((cur) => cur || (list[0]?.id ?? ''));
+      setPid((cur) => (cur && list.some((p) => p.id === cur) ? cur : (list[0]?.id ?? '')));
     }, (e) => setError((e as Error).message));
   }, [call, tick]);
 
@@ -134,7 +159,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
   const [attentionOpen, setAttentionOpen] = useState(false);
   const [riskCount, setRiskCount] = useState(0);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
-  const [mergeIds, setMergeIds] = useState<string[] | null>(null);
+  const [mergeIds, setMergeIds] = useState<string[] | null>(openMerges ? [] : null);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -225,7 +250,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
       const a = document.createElement('a'); a.href = url; a.download = `${pipeline?.name ?? 'pipeline'}.csv`; a.click(); URL.revokeObjectURL(url);
     } catch (e) { setError((e as Error).message); }
   };
-  const setViewSaved = (v: 'table' | 'board') => { setView(v); try { localStorage.setItem('pii.view', v); } catch { /* private window */ } };
+  const setViewSaved = (v: 'table' | 'board') => setView(v);
   const move = async (id: string, stageId: string, position: number) => {
     // show the move at once, then confirm with the server
     setBoxes((cur) => cur.map((b) => (b.id === id ? { ...b, stageId, position } : b)));
@@ -411,7 +436,7 @@ function PipelineView({ call, t, locale, meEmail, compose }: { call: Call; t: St
               <button onClick={() => setEditing(true)}><b>1</b> {t.gsStages}</button>
               <button onClick={() => setImporting(true)}><b>2</b> {t.gsImport}</button>
               <button onClick={() => setCreating(true)}><b>3</b> {t.gsAdd}</button>
-              <button class="link" onClick={() => { setHideStart(true); try { localStorage.setItem('pii.start', 'off'); } catch { /* private window */ } }}>{t.gsDone}</button>
+              <button class="link" onClick={() => { setHideStart(true); onStartTipsOff(); }}>{t.gsDone}</button>
             </div>
           )}
           <form class="quick" onSubmit={(e) => { e.preventDefault(); void quickAdd(quickStageId, quickName); }}>

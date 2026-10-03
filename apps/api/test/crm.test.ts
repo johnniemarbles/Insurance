@@ -816,3 +816,64 @@ test('AI assist: off until an admin enables it, stays inside what you can see, a
   await app2.close();
   void saved;
 });
+
+test('settings: layered values, locks held by the database, and nothing leaks sideways', async () => {
+  const get = async (u: string) => (await call(u, 'GET', '/v1/settings')).json.settings;
+  assert.equal((await get(S1U))['merge.dailyCap'].value, 400, 'default');
+  assert.equal((await call(S1U, 'PUT', '/v1/settings/merge.dailyCap', { scope: 'user', value: 25 })).status, 200);
+  assert.equal((await get(S1U))['merge.dailyCap'].value, 25);
+  assert.equal((await call(S1U, 'PUT', '/v1/settings/merge.dailyCap', { scope: 'user', value: 5000 })).status, 422, 'out of range');
+  assert.equal((await call(S1U, 'PUT', '/v1/settings/nope', { scope: 'user', value: 1 })).status, 422, 'unknown key');
+  assert.equal((await call(S1U, 'PUT', '/v1/settings/merge.dailyCap', { scope: 'user', value: 25, locked: true })).status, 422, 'a person cannot lock');
+  assert.equal((await call(S1U, 'PUT', '/v1/settings/merge.dailyCap', { scope: 'node', scopeId: P1, value: 50 })).status, 403, 'a member cannot set branch values');
+  assert.equal((await call(P1U, 'PUT', '/v1/settings/ui.defaultView', { scope: 'node', scopeId: P1, value: 'board', locked: true })).status, 422, 'not lockable');
+
+  // Partner One's manager sets and locks a cap for the branch; Sub One sits beneath it.
+  assert.equal((await call(P1U, 'PUT', '/v1/settings/merge.dailyCap', { scope: 'node', scopeId: P1, value: 50, locked: true })).status, 200);
+  const s1 = (await get(S1U))['merge.dailyCap'];
+  assert.equal(s1.value, 50);
+  assert.equal(s1.locked, true);
+  assert.equal(s1.source.name, 'Partner One');
+  assert.equal(s1.own, 25, 'own value is kept but overridden');
+  const blocked = await call(S1U, 'PUT', '/v1/settings/merge.dailyCap', { scope: 'user', value: 30 });
+  assert.equal(blocked.status, 423, 'the database refuses a write under a lock');
+  assert.equal((await get(P2U))['merge.dailyCap'].value, 400, 'a sibling branch is untouched');
+  assert.equal((await call(P2U, 'PUT', '/v1/settings/merge.dailyCap', { scope: 'node', scopeId: P1, value: 50 })).status, 403, 'cannot set another branch');
+
+  // The company can lock above the branch; the manager is then stopped too.
+  assert.equal((await call(ADMIN, 'PUT', '/v1/settings/merge.dailyCap', { scope: 'tenant', value: 100, locked: true })).status, 200);
+  assert.equal((await get(S1U))['merge.dailyCap'].value, 100, 'the highest lock wins');
+  assert.equal((await call(P1U, 'PUT', '/v1/settings/merge.dailyCap', { scope: 'node', scopeId: P1, value: 30, locked: true })).status, 423);
+  assert.equal((await call(P1U, 'PUT', '/v1/settings/merge.dailyCap', { scope: 'tenant', value: 50 })).status, 403);
+
+  // Unlock and clear; the person's own value comes back.
+  assert.equal((await call(ADMIN, 'DELETE', '/v1/settings/merge.dailyCap?scope=tenant')).status, 200);
+  assert.equal((await call(P1U, 'DELETE', `/v1/settings/merge.dailyCap?scope=node&scopeId=${P1}`)).status, 200);
+  assert.equal((await get(S1U))['merge.dailyCap'].value, 25);
+  assert.equal((await call(S1U, 'DELETE', '/v1/settings/merge.dailyCap?scope=user')).status, 200);
+  assert.equal((await get(S1U))['merge.dailyCap'].value, 400);
+
+  // Nav layout is cleaned: unknown items are refused, missing ones are appended.
+  assert.equal((await call(S1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['bogus'], hidden: [] } })).status, 422);
+  const lay = await call(S1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['training', 'home'], hidden: ['contacts'] } });
+  assert.deepEqual(lay.json.settings['nav.layout'].value.order, ['training', 'home', 'pipelines', 'contacts', 'merges', 'settings']);
+  const hist = (await call(S1U, 'GET', '/v1/settings/history')).json.history;
+  assert.ok(hist.some((h: { key: string }) => h.key === 'merge.dailyCap'));
+  assert.ok(!hist.some((h: { scopeType: string; changedBy: string }) => h.scopeType === 'user' && /p1@|admin@/.test(h.changedBy)), "others' personal history is not visible");
+});
+
+test('left panel and home: layout drives the items, the layout is per person, counts are live', async () => {
+  const nav = async (u: string) => (await call(u, 'GET', '/v1/nav')).json;
+  const base = await nav(P1U);
+  assert.deepEqual(base.items.map((i: { id: string }) => i.id), ['home', 'pipelines', 'contacts', 'merges', 'training', 'settings']);
+  assert.ok(base.pipelines.some((p: { id: string }) => p.id === pipe1));
+  assert.equal((await call(P1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['training', 'home'], hidden: ['merges', 'settings'] } })).status, 200);
+  const mine = await nav(P1U);
+  assert.deepEqual(mine.items.map((i: { id: string }) => i.id), ['training', 'home', 'pipelines', 'contacts', 'settings'], 'settings can never be hidden');
+  assert.equal((await nav(LRN)).items.length, 6, 'everyone is a partner, learners included');
+  const home = (await call(P1U, 'GET', '/v1/home')).json;
+  assert.ok(Array.isArray(home.tasks) && Array.isArray(home.risks) && Array.isArray(home.merges) && Array.isArray(home.recent));
+  assert.ok(home.recent.length > 0);
+  assert.equal((await call(P2U, 'GET', '/v1/home')).json.recent.every((r: { id: string }) => !home.recent.some((x: { id: string }) => x.id === r.id)), true, 'a sibling sees none of the same records');
+  await call(P1U, 'DELETE', '/v1/settings/nav.layout?scope=user');
+});

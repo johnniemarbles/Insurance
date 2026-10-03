@@ -40,17 +40,68 @@ interface Snippet { id: string; name: string; body: string; shared: boolean }
 console.info('[PII] content script running');
 InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
   console.info('[PII] InboxSDK loaded');
-  // Full-page view: a PII item in Gmail's left menu opens the pipeline screen in place of the mailbox.
-  sdk.Router.handleCustomRoute('pii/:page', (view) => {
+  // Full-page views: every item in the PII section of Gmail's left panel opens a page in place of the mailbox.
+  const goto = (page: string, id?: string) => {
+    if (id) sdk.Router.goto('pii/:page/:id', { page, id });
+    else sdk.Router.goto('pii/:page', { page });
+  };
+  const mountRoute = (view: { getElement(): HTMLElement; getParams(): Record<string, string>; on(ev: 'destroy', fn: () => void): unknown }) => {
+    const params = view.getParams();
     const host = document.createElement('div');
     host.style.cssText = 'height:calc(100vh - 130px);min-height:480px;background:#fff';
     view.getElement().appendChild(host);
-    const unmount = mountPii(host, { transport, onSignIn: () => void chrome.runtime.sendMessage({ type: 'pii:signin' }), compose: { send: sendOne(sdk) } });
+    const unmount = mountPii(host, {
+      transport, onSignIn: () => void chrome.runtime.sendMessage({ type: 'pii:signin' }), compose: { send: sendOne(sdk) },
+      route: { page: params.page ?? 'pipelines', id: params.id }, navigate: goto,
+    });
     view.on('destroy', unmount);
-  });
-  sdk.NavMenu.addNavItem({ name: 'PII', iconUrl: chrome.runtime.getURL('nav-icon.png'), routeID: 'pii/:page', routeParams: { page: 'pipelines' } });
+  };
+  sdk.Router.handleCustomRoute('pii/:page', mountRoute);
+  sdk.Router.handleCustomRoute('pii/:page/:id', mountRoute);
+
+  // The left panel is drawn from the person's own layout (Settings > Left panel), limited to what they can use, with live counts.
+  interface NavData { items: { id: string; name: string; count: number }[]; pipelines: { id: string; name: string; count: number }[] }
+  let section: { remove(): void } | null = null;
+  let navSig = '';
+  const icon = chrome.runtime.getURL('nav-icon.png');
+  const withCount = (name: string, n: number) => (n > 0 ? `${name} (${n})` : name);
+  const drawNav = async () => {
+    const r = await transport('GET', '/v1/nav');
+    const sig = JSON.stringify(r.status === 200 ? r.json : r.status);
+    if (sig === navSig && section) return;
+    navSig = sig;
+    section?.remove();
+    const top = sdk.NavMenu.addNavItem({ name: 'PII', iconUrl: icon, type: sdk.NavMenu.NavItemTypes.SECTION, orderHint: 5 });
+    section = top;
+    if (r.status !== 200) { top.addNavItem({ name: 'PII', routeID: 'pii/:page', routeParams: { page: 'pipelines' } }); return; }
+    const nav = r.json as NavData;
+    nav.items.forEach((it, i) => {
+      const child = top.addNavItem({ name: withCount(it.name, it.count), routeID: 'pii/:page', routeParams: { page: it.id }, orderHint: i });
+      if (it.id === 'pipelines') {
+        nav.pipelines.forEach((p, j) => child.addNavItem({ name: p.count > 0 ? `${p.name}  ⚠ ${p.count}` : p.name, routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: p.id }, orderHint: j }));
+      }
+    });
+  };
+  const redraw = () => { void drawNav().catch((e) => console.warn('[PII] left panel failed', e)); };
+  redraw();
+  setInterval(redraw, 5 * 60_000);
+  let redrawTimer: ReturnType<typeof setTimeout> | undefined;
+  window.addEventListener('pii-settings-changed', () => { clearTimeout(redrawTimer); redrawTimer = setTimeout(redraw, 400); });
+
+  // Whether the Snippets button shows is a setting; read it at most once a minute.
+  let snippetsOn = true;
+  let snippetsAt = 0;
+  const snippetsEnabled = async () => {
+    if (Date.now() - snippetsAt > 60_000) {
+      snippetsAt = Date.now();
+      const r = await transport('GET', '/v1/settings');
+      if (r.status === 200) snippetsOn = r.json?.settings?.['email.snippetsButton']?.value !== false;
+    }
+    return snippetsOn;
+  };
   // Snippets: a button in every compose window that drops a saved reply in, filled in for the person being written to.
-  sdk.Compose.registerComposeViewHandler((composeView) => {
+  sdk.Compose.registerComposeViewHandler(async (composeView) => {
+    if (!(await snippetsEnabled())) return;
     composeView.addButton({
       title: 'PII snippets',
       iconUrl: chrome.runtime.getURL('nav-icon.png'),
