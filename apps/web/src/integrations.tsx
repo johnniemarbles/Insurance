@@ -36,6 +36,8 @@ export function IntegrationsPanel({ pipeline, call, t, locale, onAutomations, on
   const [hooks, setHooks] = useState<Hook[]>([]);
   const [locs, setLocs] = useState<{ id: string; name: string }[]>([]);
   const [loc, setLoc] = useState('');
+  const [people, setPeople] = useState<{ id: string; label: string }[]>([]);
+  const [ownerId, setOwnerId] = useState('');
   const [err, setErr] = useState('');
   const [secret, setSecret] = useState<{ label: string; value: string } | null>(null);
   const [name, setName] = useState('');
@@ -50,8 +52,9 @@ export function IntegrationsPanel({ pipeline, call, t, locale, onAutomations, on
   useEffect(() => { call('GET', `${P}/intakes`).then((r) => setIntakes(r.intakes), () => undefined); call('GET', `${P}/webhooks`).then((r) => setHooks(r.webhooks), () => undefined); }, [call, P, tick]);
   useEffect(() => { call('GET', '/v1/org/contexts').then((r) => { const l = (r.locations ?? []) as { id: string; name: string }[]; setLocs(l); if (l.length === 1) setLoc(l[0]!.id); }, () => undefined); }, [call]);
   const act = async (fn: () => Promise<void>) => { setErr(''); try { await fn(); setTick((n) => n + 1); } catch (e) { setErr((e as Error).message); } };
+  useEffect(() => { call('GET', '/v1/users').then((r) => setPeople(((r.users ?? []) as { id: string; email: string; displayName: string | null; status: string }[]).filter((u) => u.status === 'active').map((u) => ({ id: u.id, label: u.displayName || u.email }))), () => undefined); }, [call]);
   const needLoc = locs.length > 1 && !loc;
-  const locBody = loc ? { contextNodeId: loc } : {};
+  const locBody = { ...(loc ? { contextNodeId: loc } : {}), ...(ownerId ? { ownerUserId: ownerId } : {}) };
   const copy = async (v: string) => { try { await navigator.clipboard.writeText(v); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked: the text stays selectable */ } };
   const when = (v: string | null) => (v ? new Date(v).toLocaleString(locale) : t.never);
   const stageName = (id: string) => pipeline.stages.find((s) => s.id === id)?.name ?? '…';
@@ -110,6 +113,12 @@ export function IntegrationsPanel({ pipeline, call, t, locale, onAutomations, on
         <>
           <label for="il">{t.location}</label>
           <select id="il" value={loc} onChange={(e) => setLoc((e.target as HTMLSelectElement).value)}><option value="">{t.chooseLocation}</option>{locs.map((l) => <option value={l.id}>{l.name}</option>)}</select>
+        </>
+      )}
+      {people.length > 1 && (
+        <>
+          <label for="io">{t.assignNew}</label>
+          <select id="io" value={ownerId} onChange={(e) => setOwnerId((e.target as HTMLSelectElement).value)}><option value="">{t.unassigned}</option>{people.map((u) => <option value={u.id}>{u.label}</option>)}</select>
         </>
       )}
 
