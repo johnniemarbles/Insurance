@@ -6,7 +6,7 @@ export type Theme = 'rainbow' | 'ocean' | 'forest' | 'sunset' | 'mono';
 export interface Box {
   id: string; pipelineId: string; stageId: string; ownerNodeId: string; contextNodeId: string; name: string;
   valueAmount: number | null; currency: string; closeDate: string | null; custom: Record<string, unknown>;
-  updatedAt: string; createdAt: string; stageEnteredAt: string; lastEmailAt: string | null; lastEmailFrom: string | null; daysInStage: number; position: number;
+  updatedAt: string; createdAt: string; stageEnteredAt: string; ownerName: string | null; ownerUserId: string | null; lastEmailAt: string | null; lastEmailFrom: string | null; daysInStage: number; position: number;
 }
 export interface BoxEvent { id: string; kind: 'created' | 'stage_changed'; fromStage: string | null; toStage: string | null; createdAt: string }
 export interface Me { needsConsent: boolean; user: { displayName: string | null; email: string; locale: Locale }; tenant: { name: string }; product: { name: string; logoUrl: string } }

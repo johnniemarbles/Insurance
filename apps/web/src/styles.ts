@@ -87,6 +87,10 @@ td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px}
 .opt{display:flex;gap:8px;align-items:center;margin:6px 0}
 .wide{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font:inherit;display:block}
 .tpad label{display:block;margin:10px 0 4px;color:#4b5563;font-size:12px}
+.chk{display:inline-flex;gap:6px;align-items:center;color:#374151}.sel.small{padding:4px 8px;font-size:13px;max-width:200px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.drawer:focus{outline:none}
+.pii button:focus-visible,.pii a:focus-visible,.pii input:focus-visible,.pii select:focus-visible,.pii textarea:focus-visible{outline:2px solid #1d4ed8;outline-offset:2px}
 .root{position:relative;flex:1;display:flex;flex-direction:column;min-height:0}
 @media (max-width:640px){.bar{padding:10px 12px}.stages,.meta,.wrap{padding-left:12px;padding-right:12px}}
 `;

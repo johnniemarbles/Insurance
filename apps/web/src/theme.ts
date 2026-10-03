@@ -16,3 +16,10 @@ export const stageColor = (theme: Theme, stage: Stage, index: number): string =>
 };
 export const money = (v: number | null | undefined, cur: string, locale: string): string =>
   v == null ? '' : new Intl.NumberFormat(locale, { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(v);
+
+/** Readable text colour (dark or white) for a given background, by WCAG contrast. */
+export const ink = (hex: string): string => {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  const L = 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!;
+  return L > 0.4 ? '#111827' : '#ffffff';
+};

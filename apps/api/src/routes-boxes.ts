@@ -11,6 +11,7 @@ const BOX_COLS = `b.id, b.pipeline_id AS "pipelineId", b.stage_id AS "stageId", 
   b.context_node_id AS "contextNodeId", b.owner_user_id AS "ownerUserId", b.name, b.value_amount AS "valueAmount",
   b.currency, b.close_date::text AS "closeDate", b.custom, b.created_at AS "createdAt", b.updated_at AS "updatedAt",
   b.stage_entered_at AS "stageEnteredAt", b.position,
+  (SELECT coalesce(u.display_name, u.email::text) FROM app_users u WHERE u.id = b.owner_user_id) AS "ownerName",
   (SELECT m.sent_at FROM linked_thread_messages m JOIN box_threads bt ON bt.thread_id = m.thread_id WHERE bt.box_id = b.id ORDER BY m.sent_at DESC NULLS LAST LIMIT 1) AS "lastEmailAt",
   (SELECT m.from_addr FROM linked_thread_messages m JOIN box_threads bt ON bt.thread_id = m.thread_id WHERE bt.box_id = b.id ORDER BY m.sent_at DESC NULLS LAST LIMIT 1) AS "lastEmailFrom",
   GREATEST(0, floor(extract(epoch FROM (now() - b.stage_entered_at)) / 86400))::int AS "daysInStage"`;

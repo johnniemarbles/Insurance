@@ -1,3 +1,4 @@
+import { useDialogFocus } from './a11y.ts';
 import { useEffect, useState } from 'preact/hooks';
 import readXlsx from 'read-excel-file/universal';
 import type { Strings } from './i18n.ts';
@@ -46,6 +47,7 @@ const num = (v: Cell): number | null => {
 export function ImportDialog({ pipeline, call, t, onClose, onDone }: {
   pipeline: Pipeline; call: (m: 'GET' | 'POST', p: string, b?: unknown) => Promise<any>; t: Strings; onClose: () => void; onDone: () => void;
 }) {
+  const dlg = useDialogFocus<HTMLElement>();
   const [data, setData] = useState<Parsed | null>(null);
   const [fileName, setFileName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -117,11 +119,11 @@ export function ImportDialog({ pipeline, call, t, onClose, onDone }: {
   };
 
   return (
-    <aside class="drawer" role="dialog" aria-label={t.import}>
+    <aside ref={dlg} tabIndex={-1} class="drawer" role="dialog" aria-label={t.import}>
       <h2>{t.import}</h2>
       <p class="muted">{t.importHelp}</p>
       <input type="file" accept=".csv,.xlsx" aria-label={t.chooseFile} onChange={onFile} />
-      {err && <div class="err">{err}</div>}
+      {err && <div class="err" role="alert">{err}</div>}
       {data && plan && !res && (
         <>
           <p><b>{fileName}</b>: {t.rows(data.rows.length)}{data.contacts.length > 0 && <> · {t.importContacts(data.contacts.length)}</>}</p>
@@ -139,7 +141,7 @@ export function ImportDialog({ pipeline, call, t, onClose, onDone }: {
       )}
       {res && (
         <>
-          <p class="ok">{t.importDone(res.created, res.stagesCreated, res.fieldsCreated)}{res.contactsCreated ? ` ${t.importContactsDone(res.contactsCreated)}` : ''}</p>
+          <p class="ok" role="status">{t.importDone(res.created, res.stagesCreated, res.fieldsCreated)}{res.contactsCreated ? ` ${t.importContactsDone(res.contactsCreated)}` : ''}</p>
           {res.skipped.length > 0 && <><h3>{t.importSkipped(res.skipped.length)}</h3><ul class="maplist">{res.skipped.slice(0, 20).map((s) => <li>#{s.row}: {s.reason}</li>)}</ul></>}
           <div class="actions"><button class="btn quiet" onClick={onClose}>{t.close}</button></div>
         </>

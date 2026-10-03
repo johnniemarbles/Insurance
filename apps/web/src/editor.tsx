@@ -1,3 +1,4 @@
+import { useDialogFocus } from './a11y.ts';
 import { useState } from 'preact/hooks';
 import { TEMPLATES } from './templates.ts';
 import { stageColor } from './theme.ts';
@@ -10,6 +11,7 @@ const slug = (s: string) => { const k = s.toLowerCase().normalize('NFD').replace
 const move = <T,>(a: T[], i: number, d: number): T[] => { const b = [...a]; const j = i + d; if (j < 0 || j >= b.length) return b; [b[i], b[j]] = [b[j]!, b[i]!]; return b; };
 
 export function PipelineEditor({ pipeline, call, t, locale, onClose, onChanged }: { pipeline: Pipeline; call: Call; t: Strings; locale: Locale; onClose: () => void; onChanged: () => void }) {
+  const dlg = useDialogFocus<HTMLElement>();
   const [err, setErr] = useState('');
   const [note, setNote] = useState('');
   const [newStage, setNewStage] = useState('');
@@ -27,9 +29,9 @@ export function PipelineEditor({ pipeline, call, t, locale, onClose, onChanged }
   const st = pipeline.stages;
 
   return (
-    <aside class="drawer wide" role="dialog" aria-label={t.editPipeline}>
+    <aside ref={dlg} tabIndex={-1} class="drawer wide" role="dialog" aria-label={t.editPipeline}>
       <h2>{t.editPipeline}</h2>
-      {err && <div class="err">{err}</div>}{note && <div class="ok">{note}</div>}
+      {err && <div class="err" role="alert">{err}</div>}{note && <div class="ok" role="status">{note}</div>}
 
       <label for="pn">{t.name}</label>
       <input id="pn" defaultValue={pipeline.name} onBlur={(e) => { const v = (e.target as HTMLInputElement).value.trim(); if (v && v !== pipeline.name) void act(() => call('PATCH', P, { name: v })); }} />
@@ -94,6 +96,7 @@ export function PipelineEditor({ pipeline, call, t, locale, onClose, onChanged }
 }
 
 export function NewPipeline({ call, t, locale, onClose, onCreated }: { call: Call; t: Strings; locale: Locale; onClose: () => void; onCreated: (id: string) => void }) {
+  const dlg = useDialogFocus<HTMLElement>();
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
@@ -102,9 +105,9 @@ export function NewPipeline({ call, t, locale, onClose, onCreated }: { call: Cal
     try { const r = await call('POST', '/v1/pipelines', { sharedDown: true, ...body }); onCreated(r.id); } catch (e) { setErr((e as Error).message); setBusy(false); }
   };
   return (
-    <aside class="drawer wide" role="dialog" aria-label={t.newPipeline}>
+    <aside ref={dlg} tabIndex={-1} class="drawer wide" role="dialog" aria-label={t.newPipeline}>
       <h2>{t.newPipeline}</h2>
-      {err && <div class="err">{err}</div>}
+      {err && <div class="err" role="alert">{err}</div>}
       <p class="muted">{t.templateHelp}</p>
       {TEMPLATES.map((tp) => (
         <button class="tpl" disabled={busy} key={tp.id} onClick={() => void create({ name: tp.name[locale], stages: tp.stages, fields: tp.fields.map((f) => ({ key: f.key, labels: f.labels, type: f.type, ...(f.options ? { options: f.options } : {}) })) })}>

@@ -1,10 +1,12 @@
+import { useDialogFocus } from './a11y.ts';
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { Board } from './board.tsx';
 import { ImportDialog } from './import.tsx';
 import { NewPipeline, PipelineEditor } from './editor.tsx';
 import { TrainingView } from './training.tsx';
+import { ContactsView } from './contacts.tsx';
 import { strings, type Strings } from './i18n.ts';
-import { money, stageColor } from './theme.ts';
+import { ink, money, stageColor } from './theme.ts';
 import type { Box, BoxEvent, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, SortKey, Stage } from './types.ts';
 
 const PAGE = 100;
@@ -35,7 +37,7 @@ export function App({ host }: { host: HostOptions }) {
   }, [call]);
   useEffect(() => { void boot(); }, [boot]);
 
-  if (error) return <div class="pii"><div class="err">{error}</div><div class="msg"><button class="btn" onClick={boot}>{t.retry}</button></div></div>;
+  if (error) return <div class="pii"><div class="err" role="alert">{error}</div><div class="msg"><button class="btn" onClick={boot}>{t.retry}</button></div></div>;
   if (!me) return <div class="pii"><div class="msg">{t.loading}</div></div>;
   if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><button class="btn" onClick={host.onSignIn}>{t.signIn}</button></div></div>;
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
@@ -44,15 +46,16 @@ export function App({ host }: { host: HostOptions }) {
 }
 
 function Shell({ call, t, locale, canAuthor }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean }) {
-  const [tab, setTab] = useState<'crm' | 'training'>(() => { try { return localStorage.getItem('pii.tab') === 'training' ? 'training' : 'crm'; } catch { return 'crm'; } });
-  const pick = (v: 'crm' | 'training') => { setTab(v); try { localStorage.setItem('pii.tab', v); } catch { /* private window */ } };
+  const [tab, setTab] = useState<'crm' | 'contacts' | 'training'>(() => { try { const v = localStorage.getItem('pii.tab'); return v === 'training' || v === 'contacts' ? v : 'crm'; } catch { return 'crm'; } });
+  const pick = (v: 'crm' | 'contacts' | 'training') => { setTab(v); try { localStorage.setItem('pii.tab', v); } catch { /* private window */ } };
   return (
     <div class="pii" onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
       <div class="tabs" role="tablist">
         <button role="tab" aria-selected={tab === 'crm'} onClick={() => pick('crm')}>{t.tabPipelines}</button>
+        <button role="tab" aria-selected={tab === 'contacts'} onClick={() => pick('contacts')}>{t.contacts}</button>
         <button role="tab" aria-selected={tab === 'training'} onClick={() => pick('training')}>{t.training}</button>
       </div>
-      {tab === 'crm' ? <PipelineView call={call} t={t} locale={locale} /> : <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />}
+      {tab === 'crm' ? <PipelineView call={call} t={t} locale={locale} /> : tab === 'contacts' ? <ContactsView call={call} t={t} /> : <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />}
     </div>
   );
 }
@@ -80,6 +83,13 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   const [view, setView] = useState<'table' | 'board'>(() => { try { return localStorage.getItem('pii.view') === 'board' ? 'board' : 'table'; } catch { return 'table'; } });
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [bulkStage, setBulkStage] = useState('');
+  const [stuck, setStuck] = useState(false);
+  const [assignee, setAssignee] = useState('');
+  const [people, setPeople] = useState<{ id: string; displayName: string | null; email: string }[]>([]);
+  interface SavedView { name: string; scope: Scope; stageFilter: string; q: string; stuck: boolean; assignee: string; view: 'table' | 'board'; sort: { key: SortKey; dir: 'asc' | 'desc' } }
+  const [views, setViews] = useState<SavedView[]>([]);
+  useEffect(() => { call('GET', '/v1/users').then((r) => setPeople(r.users), () => undefined); }, [call]);
+  useEffect(() => { try { setViews(JSON.parse(localStorage.getItem(`pii.views.${pid}`) ?? '[]')); } catch { setViews([]); } }, [pid]);
 
   useEffect(() => {
     call('GET', '/v1/pipelines').then((r) => {
@@ -103,8 +113,10 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
       : { pipelineId: pid, scope, sort: sort.key, dir: sort.dir, limit: String(PAGE), offset: String(offset) });
     if (stageFilter) p.set('stageId', stageFilter);
     if (debouncedQ) p.set('q', debouncedQ);
+    if (stuck) p.set('minDaysInStage', '14');
+    if (assignee) p.set('assignee', assignee);
     return `/v1/boxes?${p}`;
-  }, [pid, scope, sort, stageFilter, debouncedQ, view]);
+  }, [pid, scope, sort, stageFilter, debouncedQ, view, stuck, assignee]);
 
   useEffect(() => {
     if (!pid) return;
@@ -125,6 +137,39 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
     try { const b = await call('GET', query(boxes.length)); setBoxes((cur) => [...cur, ...b.boxes]); } catch (e) { setError((e as Error).message); }
   };
   const refresh = () => setTick((n) => n + 1);
+  const storeViews = (v: SavedView[]) => { setViews(v); try { localStorage.setItem(`pii.views.${pid}`, JSON.stringify(v)); } catch { /* private window */ } };
+  const saveView = () => {
+    const name = prompt(t.viewName)?.trim();
+    if (!name) return;
+    storeViews([...views.filter((v) => v.name !== name), { name, scope, stageFilter, q, stuck, assignee, view, sort }]);
+  };
+  const applyView = (name: string) => {
+    const v = views.find((x) => x.name === name);
+    if (!v) return;
+    setScope(v.scope); setStageFilter(v.stageFilter); setQ(v.q); setStuck(v.stuck); setAssignee(v.assignee); setView(v.view); setSort(v.sort);
+  };
+  const exportCsv = async () => {
+    try {
+      const all: Box[] = [];
+      for (let off = 0; off < 20000; off += 200) {
+        const p = new URLSearchParams({ pipelineId: pid, scope, sort: 'name', dir: 'asc', limit: '200', offset: String(off) });
+        if (stageFilter) p.set('stageId', stageFilter);
+        if (debouncedQ) p.set('q', debouncedQ);
+        if (stuck) p.set('minDaysInStage', '14');
+        if (assignee) p.set('assignee', assignee);
+        const r = await call('GET', `/v1/boxes?${p}`);
+        all.push(...r.boxes);
+        if (all.length >= r.total || r.boxes.length === 0) break;
+      }
+      const stageName = new Map((pipeline?.stages ?? []).map((x) => [x.id, x.name]));
+      const cols = pipeline?.fields ?? [];
+      const esc = (v: unknown) => { let x = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(x)) x = `'${x}`; return /[",\n\r]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x; };
+      const rows = [[t.name, t.stage, t.value, t.closeDate, t.inStage, t.owner, t.lastEmail, t.lastEmailFrom, ...cols.map((f) => label(f, locale))].map(esc).join(',')];
+      for (const b of all) rows.push([b.name, stageName.get(b.stageId), b.valueAmount, b.closeDate, b.daysInStage, b.ownerName, b.lastEmailAt?.slice(0, 10), b.lastEmailFrom, ...cols.map((f) => b.custom[f.key])].map(esc).join(','));
+      const url = URL.createObjectURL(new Blob(['\uFEFF' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+      const a = document.createElement('a'); a.href = url; a.download = `${pipeline?.name ?? 'pipeline'}.csv`; a.click(); URL.revokeObjectURL(url);
+    } catch (e) { setError((e as Error).message); }
+  };
   const setViewSaved = (v: 'table' | 'board') => { setView(v); try { localStorage.setItem('pii.view', v); } catch { /* private window */ } };
   const move = async (id: string, stageId: string, position: number) => {
     // show the move at once, then confirm with the server
@@ -141,7 +186,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
     refresh();
   };
 
-  if (error && !pipelines) return <div class="pii"><div class="err">{error}</div></div>;
+  if (error && !pipelines) return <div class="pii"><div class="err" role="alert">{error}</div></div>;
   if (!pipelines) return <div class="pii"><div class="msg">{t.loading}</div></div>;
   if (pipelines.length === 0) return <div class="pii"><div class="msg">{t.noPipelines}</div></div>;
 
@@ -194,7 +239,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
           const sum = summary[s.id];
           const on = stageFilter === s.id;
           return (
-            <button class={`stagebtn${stageFilter && !on ? ' dim' : ''}`} style={{ background: stageById.get(s.id)!.color }} aria-pressed={on}
+            <button class={`stagebtn${stageFilter && !on ? ' dim' : ''}`} style={{ background: stageById.get(s.id)!.color, color: ink(stageById.get(s.id)!.color) }} aria-pressed={on}
               onClick={() => setStageFilter(on ? '' : s.id)} key={s.id}>
               <b>{s.name}</b>
               <span>{sum?.count ?? 0}{sum && sum.value > 0 ? ` · ${money(sum.value, cur, locale)}` : ''}</span>
@@ -204,6 +249,16 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
       </div>
       <div class="meta">
         <span>{t.rows(total)}</span>
+        <label class="chk"><input type="checkbox" checked={stuck} onChange={(e) => setStuck((e.target as HTMLInputElement).checked)} /> {t.stalledOnly}</label>
+        <select class="sel small" aria-label={t.owner} value={assignee} onChange={(e) => setAssignee((e.target as HTMLSelectElement).value)}>
+          <option value="">{t.owner}: {t.all}</option>{people.map((u) => <option value={u.id}>{u.displayName ?? u.email}</option>)}
+        </select>
+        <select class="sel small" aria-label={t.views} value="" onChange={(e) => applyView((e.target as HTMLSelectElement).value)}>
+          <option value="">{t.views}…</option>{views.map((v) => <option value={v.name}>{v.name}</option>)}
+        </select>
+        <button onClick={saveView}>{t.saveView}</button>
+        {views.length > 0 && <button onClick={() => { const n = prompt(t.removeViewName)?.trim(); if (n) storeViews(views.filter((v) => v.name !== n)); }}>{t.removeView}</button>}
+        <button onClick={exportCsv}>{t.exportCsv}</button>
         <span class="spacer" /><small title={t.shortcuts}>⌨ {t.shortcuts}</small>
         {stageFilter && <button onClick={() => setStageFilter('')}>{t.clearFilter}</button>}
       </div>
@@ -217,7 +272,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
           <button class="btn quiet" onClick={() => setPicked(new Set())}>{t.cancel}</button>
         </div>
       )}
-      {error && <div class="err">{error}</div>}
+      {error && <div class="err" role="alert">{error}</div>}
 
       <div class="root">
         {view === 'board' ? (
@@ -231,6 +286,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
                   <th><input type="checkbox" aria-label={t.selectAll} checked={boxes.length > 0 && picked.size === boxes.length} onChange={(e) => setPicked((e.target as HTMLInputElement).checked ? new Set(boxes.map((b) => b.id)) : new Set())} /></th>
                   <th aria-sort={ariaSort('name')}><button onClick={() => sortBy('name')}>{t.name}{arrow('name')}</button></th>
                   <th>{t.stage}</th>
+                  <th>{t.owner}</th>
                   <th aria-sort={ariaSort('value')}><button onClick={() => sortBy('value')}>{t.value}{arrow('value')}</button></th>
                   <th aria-sort={ariaSort('closeDate')}><button onClick={() => sortBy('closeDate')}>{t.closeDate}{arrow('closeDate')}</button></th>
                   <th aria-sort={ariaSort('daysInStage')}><button onClick={() => sortBy('daysInStage')}>{t.inStage}{arrow('daysInStage')}</button></th>
@@ -244,7 +300,8 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
                     <tr class="row" tabIndex={0} key={b.id} onClick={() => setOpenId(b.id)} onKeyDown={(e) => { if (e.key === 'Enter') setOpenId(b.id); else if (e.key === ' ' && e.target === e.currentTarget) { e.preventDefault(); togglePick(b.id); } }}>
                       <td onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={b.name} checked={picked.has(b.id)} onChange={() => togglePick(b.id)} /></td>
                       <td class="name">{b.name}</td>
-                      <td>{st && <span class="pill" style={{ background: st.color }}>{st.s.name}</span>}</td>
+                      <td>{st && <span class="pill" style={{ background: st.color, color: ink(st.color) }}>{st.s.name}</span>}</td>
+                      <td>{b.ownerName ?? ''}</td>
                       <td>{money(b.valueAmount, b.currency, locale)}</td>
                       <td>{b.closeDate ?? ''}</td>
                       <td><span class={`age${b.daysInStage >= 30 ? ' bad' : b.daysInStage >= 14 ? ' warn' : ''}`}>{b.daysInStage === 0 ? t.today : t.days(b.daysInStage)}</span></td>
@@ -262,7 +319,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
         )}
         {opened && pipeline && <Drawer key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setOpenId('')} onChanged={refresh} />}
         {myTasks && (
-          <aside class="drawer" role="dialog" aria-label={t.myTasks}>
+          <aside ref={(el) => el?.focus()} tabIndex={-1} class="drawer" role="dialog" aria-label={t.myTasks}>
             <h2>{t.myTasks}</h2>
             {myTasks.length === 0 && <p class="muted">{t.noTasks}</p>}
             {myTasks.map((k) => (
@@ -288,6 +345,7 @@ const label = (f: FieldDef, locale: Locale) => f.labels[locale] ?? f.labels.en ?
 const cell = (v: unknown) => (v == null ? '' : typeof v === 'boolean' ? (v ? '✓' : '') : String(v));
 
 function Drawer({ box, pipeline, call, t, locale, onClose, onChanged }: { box: Box; pipeline: Pipeline; call: Call; t: Strings; locale: Locale; onClose: () => void; onChanged: () => void }) {
+  const dlg = useDialogFocus<HTMLElement>();
   const [events, setEvents] = useState<BoxEvent[]>([]);
   const [canEdit, setCanEdit] = useState(true);
   const [contacts, setContacts] = useState<{ id: string; fullName: string | null; email: string | null }[]>([]);
@@ -319,14 +377,14 @@ function Drawer({ box, pipeline, call, t, locale, onClose, onChanged }: { box: B
     try { await call('PATCH', `/v1/boxes/${box.id}`, { stageId: id }); setMsg(t.saved); onChanged(); } catch (e) { setErr((e as Error).message); setStageId(box.stageId); }
   };
   return (
-    <aside class="drawer" role="dialog" aria-label={box.name}>
+    <aside ref={dlg} tabIndex={-1} class="drawer" role="dialog" aria-label={box.name}>
       <h2>{box.name}</h2>
       {!canEdit && <p class="muted">{t.readOnly}</p>}
       <label for="stg">{t.stage}</label>
       <select id="stg" value={stageId} disabled={!canEdit} onChange={(e) => void move((e.target as HTMLSelectElement).value)}>
         {pipeline.stages.map((s) => <option value={s.id}>{s.name}</option>)}
       </select>
-      {msg && <div class="ok">{msg}</div>}{err && <div class="err">{err}</div>}
+      {msg && <div class="ok" role="status">{msg}</div>}{err && <div class="err" role="alert">{err}</div>}
       <dl class="kv">
         <dt>{t.value}</dt><dd>{money(box.valueAmount, box.currency, locale)}</dd>
         <dt>{t.closeDate}</dt><dd>{box.closeDate ?? ''}</dd>
@@ -364,6 +422,7 @@ function Drawer({ box, pipeline, call, t, locale, onClose, onChanged }: { box: B
 }
 
 function Create({ pipeline, call, t, onClose, onCreated }: { pipeline: Pipeline; call: Call; t: Strings; onClose: () => void; onCreated: () => void }) {
+  const dlg = useDialogFocus<HTMLElement>();
   const [name, setName] = useState('');
   const [stageId, setStageId] = useState(pipeline.stages[0]?.id ?? '');
   const [value, setValue] = useState('');
@@ -388,7 +447,7 @@ function Create({ pipeline, call, t, onClose, onCreated }: { pipeline: Pipeline;
     } catch (x) { setErr((x as Error).message); setBusy(false); }
   };
   return (
-    <aside class="drawer" role="dialog" aria-label={t.newBox}>
+    <aside ref={dlg} tabIndex={-1} class="drawer" role="dialog" aria-label={t.newBox}>
       <h2>{t.newBox}</h2>
       <form onSubmit={submit}>
         <label for="nm">{t.name}</label>
@@ -405,7 +464,7 @@ function Create({ pipeline, call, t, onClose, onCreated }: { pipeline: Pipeline;
             </select>
           </>
         )}
-        {err && <div class="err">{err}</div>}
+        {err && <div class="err" role="alert">{err}</div>}
         <div class="actions"><button class="btn" disabled={busy || !name.trim()}>{t.create}</button><button type="button" class="btn quiet" onClick={onClose}>{t.cancel}</button></div>
       </form>
     </aside>

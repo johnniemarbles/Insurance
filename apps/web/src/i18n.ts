@@ -32,6 +32,8 @@ const en = {
   lessonTypes: { richtext: 'Reading', link: 'Link', video: 'Video', quiz: 'Quiz' } as Record<string, string>,
   enrollStatus: { assigned: 'Not started', in_progress: 'In progress', completed: 'Completed' } as Record<string, string>,
   tabPipelines: 'Pipelines',
+  owner: 'Owner', views: 'Views', saveView: 'Save view', viewName: 'Name for this view', removeView: 'Delete a view', removeViewName: 'Name of the view to delete', exportCsv: 'Export CSV',
+  phone: 'Phone', jobTitle: 'Title',
   sortBy: 'Sort by', newPlaceholder: 'Name of the record', stalledOnly: 'Stuck 14+ days', rows: (n: number) => (n === 1 ? '1 record' : `${n} records`),
 };
 const frCA: typeof en = {
@@ -66,6 +68,8 @@ const frCA: typeof en = {
   lessonTypes: { richtext: 'Lecture', link: 'Lien', video: 'Vidéo', quiz: 'Quiz' },
   enrollStatus: { assigned: 'Non commencé', in_progress: 'En cours', completed: 'Terminé' },
   tabPipelines: 'Pipelines',
+  owner: 'Responsable', views: 'Vues', saveView: 'Enregistrer la vue', viewName: 'Nom de cette vue', removeView: 'Supprimer une vue', removeViewName: 'Nom de la vue à supprimer', exportCsv: 'Exporter en CSV',
+  phone: 'Téléphone', jobTitle: 'Titre',
   sortBy: 'Trier par', newPlaceholder: 'Nom du dossier', stalledOnly: 'Bloqués 14 jours et +', rows: (n) => (n === 1 ? '1 dossier' : `${n} dossiers`),
 };
 export type Strings = typeof en;

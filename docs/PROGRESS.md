@@ -22,10 +22,10 @@ a partner serving several locations must say which location a record is for; eve
 ## Phase 1B — Pipeline UI (Streak-style, built better) — plan shared as a document
 - [x] 1 Foundation: stage/column edit APIs, stage history, counts; web app; Gmail left-menu page
 - [x] 2 Pipeline page: stage bar, table, filters, hierarchy switch, record panel
-- [x] 3 Board view (drag and drop), bulk move  · [ ] saved views
+- [x] 3 Board view (drag and drop), bulk move  · [x] saved views, stuck + owner filters
 - [x] 4 Edit-pipeline drawer, insurance templates (4), colour themes
-- [x] 5 Streak/spreadsheet import (records + contacts), reminders, notes, last-email columns  · [ ] export, contacts page
-- [~] 6 Keyboard shortcuts and fr-CA done  · [ ] accessibility pass, speed test, partner usability test
+- [x] 5 Streak/spreadsheet import (records + contacts), reminders, notes, last-email columns  · [x] CSV export, contacts page
+- [x] 6 Keyboard, fr-CA, accessibility pass (focus, contrast, labels), speed test (20,000 records ≈ 0.25 s)  · [ ] partner usability test
 
 ## Phase 2 — Gmail side
 - [x] Chrome extension scaffold (InboxSDK, Manifest V3): sign-in, privacy notice, create box + contact from an email, move stages (EN / fr-CA) — needs a real-Chrome check
