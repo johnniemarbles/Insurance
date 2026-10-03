@@ -1,0 +1,136 @@
+import { useEffect, useState } from 'preact/hooks';
+import type { Locale } from './types.ts';
+
+type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
+interface Node { id: string; type: 'tenant' | 'location' | 'partner'; name: string; isActive: boolean }
+interface Link { parentId: string; childId: string }
+interface Member { nodeId: string; role: string; userId: string; email: string; displayName: string | null; status: string }
+interface Inv { id: string; email: string; nodeId: string; role: string; expiresAt: string; acceptedAt: string | null }
+const ROLES = ['admin', 'manager', 'trainer', 'member', 'learner'] as const;
+
+const X = {
+  'en': {
+    intro: 'Set up your company, its branches and the partners under them. Each partner only sees its own people and records; the branch above sees everything below it.',
+    company: 'Company', rename: 'Rename', save: 'Save', cancel: 'Cancel', addBranch: 'Add a branch', branchName: 'Branch name', add: 'Add',
+    addPartner: 'Add a partner here', partnerName: 'Partner name', invite: 'Invite a person', email: 'Email', role: 'Role', sendInvite: 'Create invitation',
+    inviteHint: 'No email is sent yet. Copy this link and send it to the person; it works once and expires in 7 days.', copy: 'Copy link', copied: 'Copied',
+    people: 'People', nobody: 'Nobody yet.', off: 'Switch off', on: 'Switch back on', offChip: 'Off', pending: 'Invitations waiting', withdraw: 'Withdraw', remove: 'Remove role',
+    disable: 'Switch person off', enable: 'Switch person on', none: 'Nothing set up yet. Start by adding a branch.', branch: 'Branch', partner: 'Partner', tenant: 'Company',
+    roles: { admin: 'Admin', manager: 'Manager', trainer: 'Trainer', member: 'Member', learner: 'Learner' } as Record<string, string>, expires: 'expires',
+    addRole: 'Add role to someone here', person: 'Person', makeRole: 'Give role',
+  },
+  'fr-CA': {
+    intro: 'Configurez votre entreprise, ses succursales et les partenaires qui en relèvent. Chaque partenaire ne voit que ses gens et ses dossiers; la succursale au-dessus voit tout ce qui est en dessous.',
+    company: 'Entreprise', rename: 'Renommer', save: 'Enregistrer', cancel: 'Annuler', addBranch: 'Ajouter une succursale', branchName: 'Nom de la succursale', add: 'Ajouter',
+    addPartner: 'Ajouter un partenaire ici', partnerName: 'Nom du partenaire', invite: 'Inviter une personne', email: 'Courriel', role: 'Rôle', sendInvite: 'Créer l’invitation',
+    inviteHint: 'Aucun courriel n’est envoyé pour l’instant. Copiez ce lien et transmettez-le à la personne; il sert une fois et expire dans 7 jours.', copy: 'Copier le lien', copied: 'Copié',
+    people: 'Personnes', nobody: 'Personne pour l’instant.', off: 'Désactiver', on: 'Réactiver', offChip: 'Inactif', pending: 'Invitations en attente', withdraw: 'Retirer', remove: 'Retirer le rôle',
+    disable: 'Désactiver la personne', enable: 'Réactiver la personne', none: 'Rien n’est configuré. Commencez par ajouter une succursale.', branch: 'Succursale', partner: 'Partenaire', tenant: 'Entreprise',
+    roles: { admin: 'Administrateur', manager: 'Gestionnaire', trainer: 'Formateur', member: 'Membre', learner: 'Apprenant' } as Record<string, string>, expires: 'expire le',
+    addRole: 'Donner un rôle à quelqu’un ici', person: 'Personne', makeRole: 'Donner le rôle',
+  },
+};
+type Strs = (typeof X)['en'];
+
+export function OrgTab({ call, locale, isTenantAdmin }: { call: Call; locale: Locale; isTenantAdmin: boolean }) {
+  const x = X[locale];
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [links, setLinks] = useState<Link[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [invs, setInvs] = useState<Inv[]>([]);
+  const [err, setErr] = useState('');
+  const [open, setOpen] = useState<{ id: string; mode: 'rename' | 'partner' | 'invite' | 'role' } | null>(null);
+  const [text, setText] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('member');
+  const [who, setWho] = useState('');
+  const [link, setLink] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [branch, setBranch] = useState('');
+
+  const load = async () => {
+    try {
+      const [n, l, m, i] = await Promise.all([call('GET', '/v1/org/nodes'), call('GET', '/v1/org/links'), call('GET', '/v1/org/members'), call('GET', '/v1/invitations')]);
+      setNodes(n.nodes); setLinks(l.links); setMembers(m.members); setInvs((i.invitations as Inv[]).filter((v) => !v.acceptedAt));
+    } catch (e) { setErr((e as Error).message); }
+  };
+  useEffect(() => { void load(); }, []);
+  const act = async (fn: () => Promise<unknown>) => { setErr(''); try { await fn(); setOpen(null); setText(''); setEmail(''); await load(); } catch (e) { setErr((e as Error).message); } };
+
+  const root = nodes.find((n) => n.type === 'tenant');
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const kids = (id: string) => links.filter((l) => l.parentId === id && byId.has(l.childId)).map((l) => byId.get(l.childId)!).sort((a, b) => a.name.localeCompare(b.name));
+  const hasParent = new Set(links.filter((l) => byId.has(l.parentId) && byId.get(l.parentId)!.type !== 'tenant').map((l) => l.childId));
+  const tops = nodes.filter((n) => n.type !== 'tenant' && !hasParent.has(n.id)).sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'location' ? -1 : 1));
+  const people = [...new Map(members.map((m) => [m.userId, m])).values()];
+
+  const form = (n: Node) => {
+    if (!open || open.id !== n.id) return null;
+    if (open.mode === 'rename') return <div class="erow"><input aria-label={x.rename} value={text} onInput={(e) => setText((e.target as HTMLInputElement).value)} /><button class="primary" disabled={!text.trim()} onClick={() => void act(() => call('PATCH', `/v1/org/nodes/${n.id}`, { name: text.trim() }))}>{x.save}</button><button class="link" onClick={() => setOpen(null)}>{x.cancel}</button></div>;
+    if (open.mode === 'partner') return <div class="erow"><input placeholder={x.partnerName} aria-label={x.partnerName} value={text} onInput={(e) => setText((e.target as HTMLInputElement).value)} /><button class="primary" disabled={!text.trim()} onClick={() => void act(() => call('POST', '/v1/org/partners', { name: text.trim(), parentId: n.id }))}>{x.add}</button><button class="link" onClick={() => setOpen(null)}>{x.cancel}</button></div>;
+    if (open.mode === 'role') return <div class="erow"><select aria-label={x.person} value={who} onChange={(e) => setWho((e.target as HTMLSelectElement).value)}><option value="">{x.person}</option>{people.map((p) => <option value={p.userId}>{p.displayName || p.email}</option>)}</select><select aria-label={x.role} value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>{ROLES.map((r) => <option value={r}>{x.roles[r]}</option>)}</select><button class="primary" disabled={!who} onClick={() => void act(() => call('POST', '/v1/org/members', { userId: who, nodeId: n.id, role }))}>{x.makeRole}</button><button class="link" onClick={() => setOpen(null)}>{x.cancel}</button></div>;
+    return (
+      <div class="erow wrap2">
+        <input type="email" placeholder={x.email} aria-label={x.email} value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} />
+        <select aria-label={x.role} value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>{ROLES.map((r) => <option value={r}>{x.roles[r]}</option>)}</select>
+        <button class="primary" disabled={!email.includes('@')} onClick={() => void act(async () => { const r = await call('POST', '/v1/invitations', { email: email.trim(), nodeId: n.id, role, locale }); setLink(r.acceptUrl); setCopied(false); })}>{x.sendInvite}</button>
+        <button class="link" onClick={() => setOpen(null)}>{x.cancel}</button>
+      </div>
+    );
+  };
+
+  const nodeRow = (n: Node, depth: number): any => {
+    const here = members.filter((m) => m.nodeId === n.id);
+    const label = n.type === 'location' ? x.branch : n.type === 'partner' ? x.partner : x.company;
+    const go = (mode: 'rename' | 'partner' | 'invite' | 'role') => { setText(mode === 'rename' ? n.name : ''); setOpen({ id: n.id, mode }); };
+    return (
+      <div key={n.id} class="orgnode" style={{ marginLeft: `${depth * 18}px` }}>
+        <div class="erow wrap2">
+          <strong>{n.name}</strong> <span class="chip">{label}</span>{!n.isActive && <span class="chip warn">{x.offChip}</span>}
+          <span class="spacer" />
+          <button class="link" onClick={() => go('rename')}>{x.rename}</button>
+          {n.type !== 'tenant' && <button class="link" onClick={() => go('partner')}>{x.addPartner}</button>}
+          <button class="link" onClick={() => go('invite')}>{x.invite}</button>
+          <button class="link" onClick={() => go('role')}>{x.addRole}</button>
+          {n.type !== 'tenant' && <button class="link" onClick={() => void act(() => call('PATCH', `/v1/org/nodes/${n.id}`, { isActive: !n.isActive }))}>{n.isActive ? x.off : x.on}</button>}
+        </div>
+        {form(n)}
+        <details><summary>{x.people} ({here.length})</summary>
+          {here.length === 0 && <p class="muted">{x.nobody}</p>}
+          {here.map((m) => (
+            <div class="erow" key={m.userId + m.role}>
+              <span>{m.displayName || m.email} <small class="muted">{m.displayName ? m.email : ''}</small></span><span class="chip">{x.roles[m.role] ?? m.role}</span>{m.status === 'disabled' && <span class="chip warn">{x.offChip}</span>}
+              <span class="spacer" />
+              <button class="link" onClick={() => void act(() => call('DELETE', `/v1/org/members?userId=${m.userId}&nodeId=${n.id}&role=${m.role}`))}>{x.remove}</button>
+              {m.status !== 'invited' && <button class="link" onClick={() => void act(() => call('PATCH', `/v1/users/${m.userId}`, { status: m.status === 'disabled' ? 'active' : 'disabled' }))}>{m.status === 'disabled' ? x.enable : x.disable}</button>}
+            </div>
+          ))}
+        </details>
+        {kids(n.id).map((c) => nodeRow(c, depth + 1))}
+      </div>
+    );
+  };
+
+  return (
+    <div class="orgtab">
+      <p class="muted">{x.intro}</p>
+      {err && <p class="err" role="alert">{err}</p>}
+      {link && (
+        <div class="hcard"><p>{x.inviteHint}</p>
+          <div class="erow"><input readOnly value={link} aria-label={x.copy} onFocus={(e) => (e.target as HTMLInputElement).select()} /><button class="primary" onClick={() => { void navigator.clipboard?.writeText(link).then(() => setCopied(true), () => undefined); }}>{copied ? x.copied : x.copy}</button><button class="link" onClick={() => setLink('')}>×</button></div>
+        </div>
+      )}
+      {root && nodeRow(root, 0)}
+      {isTenantAdmin && (
+        <div class="erow"><input placeholder={x.branchName} aria-label={x.branchName} value={branch} onInput={(e) => setBranch((e.target as HTMLInputElement).value)} /><button class="primary" disabled={!branch.trim()} onClick={() => void act(async () => { await call('POST', '/v1/org/locations', { name: branch.trim() }); setBranch(''); })}>{x.addBranch}</button></div>
+      )}
+      {tops.length === 0 && <p class="muted">{x.none}</p>}
+      {tops.map((n) => nodeRow(n, 1))}
+      {invs.length > 0 && (
+        <div class="hcard"><h3>{x.pending}</h3>
+          {invs.map((v) => <div class="erow" key={v.id}><span>{v.email} <small class="muted">· {byId.get(v.nodeId)?.name ?? ''} · {x.roles[v.role] ?? v.role} · {x.expires} {new Date(v.expiresAt).toLocaleDateString(locale)}</small></span><span class="spacer" /><button class="link" onClick={() => void act(() => call('DELETE', `/v1/invitations/${v.id}`))}>{x.withdraw}</button></div>)}
+        </div>
+      )}
+    </div>
+  );
+}

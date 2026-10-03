@@ -126,4 +126,28 @@ export function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): void {
       return reply.code(204).send();
     },
   );
+
+  // Rename or switch off a company, branch or partner. Nothing is ever deleted (history).
+  app.patch(
+    '/v1/org/nodes/:id',
+    { schema: { params: { type: 'object', properties: { id: uuidSchema } }, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { name: nameSchema, isActive: { type: 'boolean' } } } } },
+    async (req, reply) => {
+      const { ctx } = await deps.authenticate(req);
+      const { id } = req.params as { id: string };
+      const b = req.body as { name?: string; isActive?: boolean };
+      await run(ctx, async (tx) => {
+        const type = await nodeType(tx, id);
+        const ok = ctx.isTenantAdmin || (type === 'partner' && (await isAdminOnPartnerChain(tx, ctx, id)));
+        if (!ok) throw forbidden(type === 'partner' ? undefined : 'Only a company administrator can change this');
+        if (type === 'tenant' && b.isActive === false) throw invalid('The company itself cannot be switched off');
+        if (b.name !== undefined) {
+          await tx.query('UPDATE org_nodes SET name = $2 WHERE id = $1', [id, b.name.trim()]);
+          if (type === 'tenant') await tx.query('UPDATE tenants SET name = $1 WHERE id = $2', [b.name.trim(), ctx.tenantId]);
+        }
+        if (b.isActive !== undefined) await tx.query('UPDATE org_nodes SET is_active = $2 WHERE id = $1', [id, b.isActive]);
+        await audit(tx, ctx, 'node_updated', 'org_node', id, b);
+      });
+      return reply.code(204).send();
+    },
+  );
 }

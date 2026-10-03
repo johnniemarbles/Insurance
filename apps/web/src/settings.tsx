@@ -1,4 +1,5 @@
 import { PrivacyTab } from './privacy.tsx';
+import { OrgTab } from './org.tsx';
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { NAV_ITEMS, SETTINGS, type NavLayout, type SettingDef, type SettingScope, type SettingTab } from '../../../packages/domain/src/settings.ts';
 import type { Locale } from './types.ts';
@@ -46,7 +47,7 @@ export function useSettings(call: Call): SettingsApi | null {
 const X = {
   'en': {
     title: 'Settings', search: 'Search settings (for example “snippets” or “left panel”)', noMatch: 'No setting matches that.',
-    tabs: { me: 'Me', leftPanel: 'Left panel', notifications: 'Notifications', email: 'Email and compose', team: 'Team and company', privacy: 'Privacy' } as Record<SettingTab, string>,
+    tabs: { me: 'Me', leftPanel: 'Left panel', notifications: 'Notifications', email: 'Email and compose', team: 'Team and company', organization: 'Company and people', privacy: 'Privacy' } as Record<SettingTab, string>,
     you: 'Set by you', company: 'Company setting', branch: (n: string) => `Set by ${n}`, def: 'Default', lockedBy: (n: string) => `Locked by ${n}`, useDefault: 'Use the default', useTeam: 'Use the team setting',
     saved: 'Saved', undo: 'Undo', failed: 'Could not save', history: 'Recent changes', noHistory: 'No changes yet.',
     layoutHelp: 'Choose what appears in Gmail’s left panel and drag to reorder. Settings always stays, so you can find your way back here.', preview: 'Preview', moveUp: 'Move up', moveDown: 'Move down', show: 'Show',
@@ -58,7 +59,7 @@ const X = {
   },
   'fr-CA': {
     title: 'Paramètres', search: 'Rechercher un paramètre (par exemple « extraits » ou « panneau »)', noMatch: 'Aucun paramètre ne correspond.',
-    tabs: { me: 'Moi', leftPanel: 'Panneau de gauche', notifications: 'Notifications', email: 'Courriel et rédaction', team: 'Équipe et entreprise', privacy: 'Confidentialité' } as Record<SettingTab, string>,
+    tabs: { me: 'Moi', leftPanel: 'Panneau de gauche', notifications: 'Notifications', email: 'Courriel et rédaction', team: 'Équipe et entreprise', organization: 'Entreprise et personnes', privacy: 'Confidentialité' } as Record<SettingTab, string>,
     you: 'Défini par vous', company: 'Paramètre de l’entreprise', branch: (n: string) => `Défini par ${n}`, def: 'Par défaut', lockedBy: (n: string) => `Verrouillé par ${n}`, useDefault: 'Utiliser la valeur par défaut', useTeam: 'Utiliser le paramètre de l’équipe',
     saved: 'Enregistré', undo: 'Annuler', failed: 'Enregistrement impossible', history: 'Changements récents', noHistory: 'Aucun changement.',
     layoutHelp: 'Choisissez ce qui s’affiche dans le panneau de gauche de Gmail et glissez pour réordonner. Paramètres reste toujours affiché.', preview: 'Aperçu', moveUp: 'Monter', moveDown: 'Descendre', show: 'Afficher',
@@ -121,8 +122,10 @@ function LayoutEditor({ layout, onChange, disabled, x }: { layout: NavLayout; on
 
 export function SettingsPage({ api, call, locale, initialTab, isManager, pipelines }: { api: SettingsApi; call: Call; locale: Locale; initialTab?: string; isManager: boolean; pipelines: { id: string; name: string }[] }) {
   const x = X[locale];
+  const [who, setWho] = useState<{ canAdminister: boolean; isTenantAdmin: boolean } | null>(null);
+  useEffect(() => { call('GET', '/v1/me').then((m) => setWho({ canAdminister: Boolean(m.canAdminister), isTenantAdmin: Boolean(m.isTenantAdmin) }), () => undefined); }, [call]);
   const showTeam = api.canSet.tenant || api.canSet.node.length > 0;
-  const tabs = (['me', 'leftPanel', 'notifications', 'email', ...(showTeam ? ['team'] : []), 'privacy'] as SettingTab[]);
+  const tabs = (['me', 'leftPanel', 'notifications', 'email', ...(showTeam ? ['team'] : []), ...(who?.canAdminister ? ['organization'] : []), 'privacy'] as SettingTab[]);
   const [tab, setTab] = useState<SettingTab>(() => (tabs.includes(initialTab as SettingTab) ? (initialTab as SettingTab) : 'me'));
   const [q, setQ] = useState('');
   const [toast, setToast] = useState<{ text: string; undo?: () => Promise<void> } | null>(null);
@@ -174,13 +177,14 @@ export function SettingsPage({ api, call, locale, initialTab, isManager, pipelin
           <div class="tabs sub" role="tablist">
             {tabs.map((k) => <button role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{x.tabs[k]}</button>)}
           </div>
-          {tab !== 'team' && tab !== 'privacy' && SETTINGS.filter((d) => d.tab === tab).map(row)}
+          {tab !== 'team' && tab !== 'privacy' && tab !== 'organization' && SETTINGS.filter((d) => d.tab === tab).map(row)}
           {tab === 'me' && (
             <details class="hist"><summary>{x.history}</summary>
               {hist && hist.length === 0 && <p class="muted">{x.noHistory}</p>}
               {(hist ?? []).slice(0, 15).map((h) => <div class="ev">{SETTINGS.find((d) => d.key === h.key)?.label[locale] ?? h.key}<small>{h.scopeType === 'user' ? x.you : h.scopeName ?? x.company} · {h.changedBy} · {new Date(h.changedAt).toLocaleString(locale)}</small></div>)}
             </details>
           )}
+          {tab === 'organization' && <OrgTab call={call} locale={locale} isTenantAdmin={Boolean(who?.isTenantAdmin)} />}
           {tab === 'privacy' && <PrivacyTab call={call} locale={locale} />}
           {tab === 'team' && <TeamTab api={api} call={call} locale={locale} pipelines={pipelines} isManager={isManager} x={x} onError={setErr} />}
         </>

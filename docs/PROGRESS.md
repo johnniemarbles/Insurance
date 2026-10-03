@@ -92,3 +92,7 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 ## Phase P1 — Privacy centre (done)
 - Settings > Privacy: what is held about you, JSON export, access / withdraw / erase requests (30-day clock), admin queue to resolve.
 - Not automated: erasure itself is done by an admin; no automatic deletion yet.
+
+## Phase O1 — Company, branch and partner setup (done)
+- Settings > Company and people (admins only): tree of company/branches/partners, rename, switch off, add branch/partner, invite (copy link), roles, switch person off, withdraw invitation.
+- Invitation emails are not sent yet (needs mail provider); link is copied by hand.

@@ -925,3 +925,39 @@ test('privacy centre: my data, export, requests visible to me and the company ad
   assert.equal((await call(P1U, 'GET', '/v1/privacy')).json.requests[0].status, 'done');
   assert.equal((await call(ADMIN, 'PATCH', `/v1/privacy/requests/${r.json.id}`, { status: 'done' })).status, 404, 'already resolved');
 });
+
+test('organization: rename, switch off, roles, people and invitations are controlled by the right admin', async () => {
+  const nodes = (await call(ADMIN, 'GET', '/v1/org/nodes')).json.nodes as { id: string; name: string; type: string }[];
+  const root = nodes.find((n) => n.type === 'tenant')!;
+  assert.equal((await call(P1U, 'PATCH', `/v1/org/nodes/${root.id}`, { name: 'Nope' })).status, 403, 'a partner cannot rename the company');
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/org/nodes/${P1}`, { name: 'Partner One Renamed' })).status, 204);
+  assert.ok(((await call(ADMIN, 'GET', '/v1/org/nodes')).json.nodes as { name: string }[]).some((n) => n.name === 'Partner One Renamed'));
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/org/nodes/${P1}`, { name: 'Partner One' })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/org/nodes/${root.id}`, { isActive: false })).status, 422, 'the company cannot be switched off');
+  assert.equal((await call(P2U, 'PATCH', `/v1/org/nodes/${P1}`, { name: 'Hijack' })).status, 404, 'a sibling cannot even see it');
+
+  const members = (await call(ADMIN, 'GET', '/v1/org/members')).json.members as { email: string; role: string; nodeId: string; userId: string }[];
+  assert.ok(members.some((m) => m.email === P1U && m.nodeId === P1));
+  assert.ok(!((await call(P2U, 'GET', '/v1/org/members')).json.members as { email: string }[]).some((m) => m.email === P1U), 'a sibling sees no one of the other branch');
+  const p1 = members.find((m) => m.email === P1U)!;
+  assert.equal((await call(S1U, 'POST', '/v1/org/members', { userId: s1UserId, nodeId: S1, role: 'admin' })).status, 403, 'a member cannot promote themselves');
+  assert.equal((await call(ADMIN, 'POST', '/v1/org/members', { userId: p1.userId, nodeId: P1, role: 'manager' })).status, 204);
+  assert.equal((await call(ADMIN, 'DELETE', `/v1/org/members?userId=${p1.userId}&nodeId=${P1}&role=manager`)).status, 204);
+  const adm = members.find((m) => m.email === ADMIN && m.role === 'admin')!;
+  assert.equal((await call(ADMIN, 'DELETE', `/v1/org/members?userId=${adm.userId}&nodeId=${adm.nodeId}&role=admin`)).status, 422, 'the last company admin stays');
+
+  const inv = (await call(ADMIN, 'POST', '/v1/invitations', { email: 'new.person@crm.test', nodeId: P1, role: 'member' })).json;
+  assert.ok(inv.acceptUrl);
+  assert.equal((await call(P2U, 'DELETE', `/v1/invitations/${inv.id}`)).status, 404, 'a sibling cannot withdraw it');
+  assert.equal((await call(ADMIN, 'DELETE', `/v1/invitations/${inv.id}`)).status, 204);
+  assert.equal((await call(ADMIN, 'DELETE', `/v1/invitations/${inv.id}`)).status, 404);
+
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/users/${p1.userId}`, { status: 'disabled' })).status, 204);
+  assert.equal((await call(P1U, 'GET', '/v1/me')).status, 401, 'a switched-off person is signed out');
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/users/${p1.userId}`, { status: 'active' })).status, 204);
+  assert.equal((await call(P1U, 'GET', '/v1/me')).status, 200);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/users/${adm.userId}`, { status: 'disabled' })).status, 422, 'not yourself');
+  assert.equal((await call(ADMIN, 'GET', '/v1/me')).json.canAdminister, true);
+  assert.equal((await call(P1U, 'GET', '/v1/me')).json.canAdminister, true, 'a partner admin administers their own branch');
+  assert.equal((await call(S1U, 'GET', '/v1/me')).json.canAdminister, false);
+});
