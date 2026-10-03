@@ -31,7 +31,12 @@ export function buildApp(input: AppDeps): FastifyInstance {
     },
   };
   const app = Fastify({
-    logger: deps.config.appEnv === 'test' ? false : { level: deps.config.logLevel, redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-dev-user-email"]'] },
+    logger: deps.config.appEnv === 'test' ? false : {
+      level: deps.config.logLevel,
+      redact: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-dev-user-email"]'],
+      // Never log query strings: sign-in callbacks and invitation links carry one-time codes.
+      serializers: { req: (r: { method: string; url: string; host?: string }) => ({ method: r.method, url: r.url.split('?')[0], host: r.host }) },
+    },
   });
 
   app.setErrorHandler((err, req, reply) => {
