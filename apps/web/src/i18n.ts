@@ -20,6 +20,8 @@ const en = {
   themes: { rainbow: 'Rainbow', ocean: 'Ocean', forest: 'Forest', sunset: 'Sunset', mono: 'Grey' } as Record<string, string>,
   types: { text: 'Text', number: 'Number', currency: 'Money', date: 'Date', dropdown: 'Dropdown', checkbox: 'Checkbox' } as Record<string, string>,
   lastEmail: 'Last email', lastEmailFrom: 'Last email from',
+  contacts: 'Contacts', tasks: 'Tasks', notes: 'Notes', addTask: 'Add a follow-up', dueDate: 'Due date', addNote: 'Add a note', myTasks: 'My follow-ups', noTasks: 'Nothing due. Nice work.',
+  shortcuts: 'Shortcuts: / search · n new · v table/board · Esc close',
   sortBy: 'Sort by', newPlaceholder: 'Name of the record', stalledOnly: 'Stuck 14+ days', rows: (n: number) => (n === 1 ? '1 record' : `${n} records`),
 };
 const frCA: typeof en = {
@@ -42,6 +44,8 @@ const frCA: typeof en = {
   themes: { rainbow: 'Arc-en-ciel', ocean: 'Océan', forest: 'Forêt', sunset: 'Coucher de soleil', mono: 'Gris' },
   types: { text: 'Texte', number: 'Nombre', currency: 'Montant', date: 'Date', dropdown: 'Liste', checkbox: 'Case à cocher' },
   lastEmail: 'Dernier courriel', lastEmailFrom: 'Dernier courriel de',
+  contacts: 'Contacts', tasks: 'Tâches', notes: 'Notes', addTask: 'Ajouter un suivi', dueDate: 'Échéance', addNote: 'Ajouter une note', myTasks: 'Mes suivis', noTasks: 'Rien à faire. Beau travail.',
+  shortcuts: 'Raccourcis : / recherche · n nouveau · v tableau/Kanban · Échap fermer',
   sortBy: 'Trier par', newPlaceholder: 'Nom du dossier', stalledOnly: 'Bloqués 14 jours et +', rows: (n) => (n === 1 ? '1 dossier' : `${n} dossiers`),
 };
 export type Strings = typeof en;

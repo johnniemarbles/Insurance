@@ -101,7 +101,8 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
       return run(ctx, async (tx) => ({
         tasks: (
           await tx.query(
-            `SELECT t.id, t.box_id AS "boxId", t.assignee_id AS "assigneeId", t.title, t.due_at AS "dueAt", t.done_at AS "doneAt", t.created_at AS "createdAt"
+            `SELECT t.id, t.box_id AS "boxId", t.assignee_id AS "assigneeId", t.title, t.due_at AS "dueAt", t.done_at AS "doneAt", t.created_at AS "createdAt",
+                    (SELECT b.name FROM boxes b WHERE b.id = t.box_id) AS "boxName", (SELECT b.pipeline_id FROM boxes b WHERE b.id = t.box_id) AS "pipelineId"
                FROM tasks t WHERE ($1::uuid IS NULL OR t.box_id = $1) AND (NOT $2 OR t.assignee_id = $3) AND (NOT $4 OR t.done_at IS NULL)
               ORDER BY t.due_at NULLS LAST, t.created_at DESC, t.id LIMIT $5 OFFSET $6`,
             [q.boxId ?? null, q.mine ?? false, ctx.userId, q.open ?? false, limit, offset],

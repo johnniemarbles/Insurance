@@ -1,6 +1,7 @@
 export const CSS = `
 :host{all:initial}
 *{box-sizing:border-box}
+.pii:focus{outline:none}
 .pii{font:14px/1.45 "Google Sans",Roboto,system-ui,sans-serif;color:#1f2937;background:#fff;min-height:100%;display:flex;flex-direction:column}
 .pii button{font:inherit;cursor:pointer}
 .bar{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid #e5e7eb;flex-wrap:wrap}
@@ -65,6 +66,10 @@ td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px}
 .tpl{display:block;width:100%;text-align:left;border:1px solid #e5e7eb;background:#fff;border-radius:10px;padding:12px;margin:8px 0}.tpl:hover{border-color:#1d4ed8;background:#f8fafc}
 .tpl b{display:block}.tpl span{display:block;color:#4b5563;margin:2px 0}.tpl small{color:#6b7280}
 .drawer{z-index:5}
+.task{display:flex!important;gap:8px;align-items:flex-start;margin:6px 0!important;color:#1f2937!important;font-size:14px!important}.task input{width:auto!important;margin-top:3px}
+.strike{text-decoration:line-through;color:#6b7280}.overdue{color:#b91c1c;font-weight:600}
+.badge{background:#b91c1c;color:#fff;border-radius:999px;font-size:11px;padding:1px 7px;margin-left:6px}
+.drawer textarea{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font:inherit;resize:vertical}
 .root{position:relative;flex:1;display:flex;flex-direction:column;min-height:0}
 @media (max-width:640px){.bar{padding:10px 12px}.stages,.meta,.wrap{padding-left:12px;padding-right:12px}}
 `;

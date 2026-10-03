@@ -57,6 +57,8 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   const [importing, setImporting] = useState(false);
   const [editing, setEditing] = useState(false);
   const [newPipe, setNewPipe] = useState(false);
+  const [myTasks, setMyTasks] = useState<TaskRow[] | null>(null);
+  const [dueCount, setDueCount] = useState(0);
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
   const [view, setView] = useState<'table' | 'board'>(() => { try { return localStorage.getItem('pii.view') === 'board' ? 'board' : 'table'; } catch { return 'table'; } });
@@ -71,6 +73,10 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
     }, (e) => setError((e as Error).message));
   }, [call, tick]);
 
+  useEffect(() => {
+    call('GET', '/v1/tasks?mine=true&open=true&limit=200').then((r) => setDueCount((r.tasks as TaskRow[]).filter((k) => k.dueAt && new Date(k.dueAt) <= new Date()).length), () => undefined);
+  }, [call, tick]);
+  const openTasks = async () => { try { setMyTasks((await call('GET', '/v1/tasks?mine=true&open=true&limit=200')).tasks); } catch (e) { setError((e as Error).message); } };
   useEffect(() => { const h = setTimeout(() => setDebouncedQ(q), 250); return () => clearTimeout(h); }, [q]);
 
   const pipeline = useMemo(() => pipelines?.find((p) => p.id === pid), [pipelines, pid]);
@@ -133,7 +139,17 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   const opened = boxes.find((b) => b.id === openId);
 
   return (
-    <div class="pii">
+    <div class="pii" tabIndex={-1} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()} onKeyDown={(e) => {
+      // keep Gmail's own one-key shortcuts (c, e, #, …) from firing while the person works in PII
+      e.stopPropagation();
+      const el = e.target as HTMLElement;
+      const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
+      if (e.key === 'Escape') { setOpenId(''); setCreating(false); setEditing(false); setImporting(false); setNewPipe(false); setMyTasks(null); return; }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === '/') { e.preventDefault(); (e.currentTarget as HTMLElement).querySelector<HTMLInputElement>('.search')?.focus(); }
+      else if (e.key === 'n') { e.preventDefault(); setCreating(true); }
+      else if (e.key === 'v') setViewSaved(view === 'table' ? 'board' : 'table');
+    }}>
       <div class="bar">
         <h1>{pipeline?.name}</h1>
         {pipelines.length > 1 && (
@@ -150,6 +166,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
           <button aria-pressed={view === 'board'} onClick={() => setViewSaved('board')}>{t.board}</button>
         </div>
         <span class="spacer" />
+        <button class="btn quiet" onClick={openTasks}>{t.myTasks}{dueCount > 0 && <span class="badge">{dueCount}</span>}</button>
         <button class="btn quiet" onClick={() => setEditing(true)}>{t.edit}</button>
         <button class="btn quiet" onClick={() => setNewPipe(true)}>{t.newPipeline}</button>
         <button class="btn quiet" onClick={() => setImporting(true)}>{t.import}</button>
@@ -171,6 +188,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
       </div>
       <div class="meta">
         <span>{t.rows(total)}</span>
+        <span class="spacer" /><small title={t.shortcuts}>⌨ {t.shortcuts}</small>
         {stageFilter && <button onClick={() => setStageFilter('')}>{t.clearFilter}</button>}
       </div>
       {picked.size > 0 && (
@@ -227,6 +245,19 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
         </div>
         )}
         {opened && pipeline && <Drawer key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setOpenId('')} onChanged={refresh} />}
+        {myTasks && (
+          <aside class="drawer" role="dialog" aria-label={t.myTasks}>
+            <h2>{t.myTasks}</h2>
+            {myTasks.length === 0 && <p class="muted">{t.noTasks}</p>}
+            {myTasks.map((k) => (
+              <label class="task" key={k.id}>
+                <input type="checkbox" onChange={async () => { try { await call('PATCH', `/v1/tasks/${k.id}`, { done: true }); setMyTasks((cur) => cur && cur.filter((x) => x.id !== k.id)); refresh(); } catch (e) { setError((e as Error).message); } }} />
+                <span>{k.title}<small class={k.dueAt && new Date(k.dueAt) < new Date() ? 'overdue' : ''}>{k.dueAt ? ` · ${new Date(k.dueAt).toLocaleDateString(locale)}` : ''}</small><small class="muted"> {k.boxName}</small></span>
+              </label>
+            ))}
+            <div class="actions"><button class="btn quiet" onClick={() => setMyTasks(null)}>{t.close}</button></div>
+          </aside>
+        )}
         {editing && pipeline && <PipelineEditor pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setEditing(false)} onChanged={refresh} />}
         {newPipe && <NewPipeline call={call} t={t} locale={locale} onClose={() => setNewPipe(false)} onCreated={(id) => { setNewPipe(false); setPid(id); setStageFilter(''); refresh(); }} />}
         {importing && pipeline && <ImportDialog pipeline={pipeline} call={call} t={t} onClose={() => setImporting(false)} onDone={refresh} />}
@@ -236,19 +267,37 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   );
 }
 
+interface TaskRow { id: string; boxId: string; boxName: string | null; title: string; dueAt: string | null; doneAt: string | null }
 const label = (f: FieldDef, locale: Locale) => f.labels[locale] ?? f.labels.en ?? f.key;
 const cell = (v: unknown) => (v == null ? '' : typeof v === 'boolean' ? (v ? '✓' : '') : String(v));
 
 function Drawer({ box, pipeline, call, t, locale, onClose, onChanged }: { box: Box; pipeline: Pipeline; call: Call; t: Strings; locale: Locale; onClose: () => void; onChanged: () => void }) {
   const [events, setEvents] = useState<BoxEvent[]>([]);
   const [canEdit, setCanEdit] = useState(true);
+  const [contacts, setContacts] = useState<{ id: string; fullName: string | null; email: string | null }[]>([]);
+  const [notes, setNotes] = useState<{ id: string; authorName: string | null; body: string; createdAt: string }[]>([]);
+  const [tasks, setTasks] = useState<TaskRow[]>([]);
+  const [noteText, setNoteText] = useState('');
+  const [taskText, setTaskText] = useState('');
+  const [taskDue, setTaskDue] = useState('');
+  const [reload, setReload] = useState(0);
   const [stageId, setStageId] = useState(box.stageId);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   useEffect(() => {
     call('GET', `/v1/boxes/${box.id}/events`).then((r) => setEvents(r.events), () => undefined);
-    call('GET', `/v1/boxes/${box.id}`).then((r) => setCanEdit(Boolean(r.canEdit)), () => undefined);
-  }, [call, box.id, msg]);
+    call('GET', `/v1/boxes/${box.id}`).then((r) => { setCanEdit(Boolean(r.canEdit)); setContacts(r.contacts ?? []); }, () => undefined);
+    call('GET', `/v1/boxes/${box.id}/notes`).then((r) => setNotes(r.notes), () => undefined);
+    call('GET', `/v1/tasks?boxId=${box.id}`).then((r) => setTasks(r.tasks), () => undefined);
+  }, [call, box.id, msg, reload]);
+  const addNote = async (e: Event) => { e.preventDefault(); const b = noteText.trim(); if (!b) return; setNoteText(''); try { await call('POST', `/v1/boxes/${box.id}/notes`, { body: b }); setReload((n) => n + 1); } catch (x) { setErr((x as Error).message); } };
+  const addTask = async (e: Event) => {
+    e.preventDefault(); const title = taskText.trim(); if (!title) return;
+    const due = taskDue ? new Date(`${taskDue}T09:00:00`).toISOString() : undefined;
+    setTaskText(''); setTaskDue('');
+    try { await call('POST', `/v1/boxes/${box.id}/tasks`, { title, ...(due ? { dueAt: due } : {}) }); setReload((n) => n + 1); } catch (x) { setErr((x as Error).message); }
+  };
+  const toggleTask = async (id: string, done: boolean) => { try { await call('PATCH', `/v1/tasks/${id}`, { done }); setReload((n) => n + 1); } catch (x) { setErr((x as Error).message); } };
   const move = async (id: string) => {
     setStageId(id); setErr(''); setMsg('');
     try { await call('PATCH', `/v1/boxes/${box.id}`, { stageId: id }); setMsg(t.saved); onChanged(); } catch (e) { setErr((e as Error).message); setStageId(box.stageId); }
@@ -267,6 +316,25 @@ function Drawer({ box, pipeline, call, t, locale, onClose, onChanged }: { box: B
         <dt>{t.closeDate}</dt><dd>{box.closeDate ?? ''}</dd>
         {pipeline.fields.map((f) => <><dt>{label(f, locale)}</dt><dd>{cell(box.custom[f.key])}</dd></>)}
       </dl>
+      {contacts.length > 0 && <><h3>{t.contacts}</h3>{contacts.map((c) => <div class="ev" key={c.id}>{c.fullName ?? c.email}<small>{c.fullName ? c.email : ''}</small></div>)}</>}
+      <h3>{t.tasks}</h3>
+      {tasks.map((k) => (
+        <label class="task" key={k.id}>
+          <input type="checkbox" checked={Boolean(k.doneAt)} onChange={(e) => void toggleTask(k.id, (e.target as HTMLInputElement).checked)} />
+          <span class={k.doneAt ? 'strike' : ''}>{k.title}{k.dueAt && <small class={!k.doneAt && new Date(k.dueAt) < new Date() ? 'overdue' : ''}> · {new Date(k.dueAt).toLocaleDateString(locale)}</small>}</span>
+        </label>
+      ))}
+      <form class="erow" onSubmit={addTask}>
+        <input placeholder={t.addTask} aria-label={t.addTask} value={taskText} onInput={(e) => setTaskText((e.target as HTMLInputElement).value)} />
+        <input type="date" aria-label={t.dueDate} value={taskDue} onInput={(e) => setTaskDue((e.target as HTMLInputElement).value)} style={{ flex: '0 0 140px' }} />
+        <button class="btn quiet" disabled={!taskText.trim()}>+</button>
+      </form>
+      <h3>{t.notes}</h3>
+      <form onSubmit={addNote}>
+        <textarea rows={3} placeholder={t.addNote} aria-label={t.addNote} value={noteText} onInput={(e) => setNoteText((e.target as HTMLTextAreaElement).value)} />
+        <div class="actions"><button class="btn quiet" disabled={!noteText.trim()}>{t.addNote}</button></div>
+      </form>
+      {notes.map((n) => <div class="ev" key={n.id}>{n.body}<small>{n.authorName ?? ''} · {new Date(n.createdAt).toLocaleString(locale)}</small></div>)}
       <h3>{t.history}</h3>
       {events.map((e) => (
         <div class="ev" key={e.id}>
