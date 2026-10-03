@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { Board } from './board.tsx';
 import { ImportDialog } from './import.tsx';
+import { NewPipeline, PipelineEditor } from './editor.tsx';
 import { strings, type Strings } from './i18n.ts';
 import { money, stageColor } from './theme.ts';
 import type { Box, BoxEvent, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, SortKey, Stage } from './types.ts';
@@ -54,6 +55,8 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   const [openId, setOpenId] = useState('');
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [newPipe, setNewPipe] = useState(false);
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
   const [view, setView] = useState<'table' | 'board'>(() => { try { return localStorage.getItem('pii.view') === 'board' ? 'board' : 'table'; } catch { return 'table'; } });
@@ -120,7 +123,8 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   if (!pipelines) return <div class="pii"><div class="msg">{t.loading}</div></div>;
   if (pipelines.length === 0) return <div class="pii"><div class="msg">{t.noPipelines}</div></div>;
 
-  const stages = pipeline?.stages ?? [];
+  if (!pipeline) return <div class="pii"><div class="msg">{t.loading}</div></div>;
+  const stages = pipeline.stages;
   const stageById = new Map(stages.map((s, i) => [s.id, { s, color: stageColor(pipeline!.colorTheme, s, i) }]));
   const sortBy = (key: SortKey) => setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'name' ? 'asc' : 'desc' }));
   const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '');
@@ -146,6 +150,8 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
           <button aria-pressed={view === 'board'} onClick={() => setViewSaved('board')}>{t.board}</button>
         </div>
         <span class="spacer" />
+        <button class="btn quiet" onClick={() => setEditing(true)}>{t.edit}</button>
+        <button class="btn quiet" onClick={() => setNewPipe(true)}>{t.newPipeline}</button>
         <button class="btn quiet" onClick={() => setImporting(true)}>{t.import}</button>
         <button class="btn" onClick={() => setCreating(true)}>+ {t.newBox}</button>
       </div>
@@ -219,6 +225,8 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
         </div>
         )}
         {opened && pipeline && <Drawer key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setOpenId('')} onChanged={refresh} />}
+        {editing && pipeline && <PipelineEditor pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setEditing(false)} onChanged={refresh} />}
+        {newPipe && <NewPipeline call={call} t={t} locale={locale} onClose={() => setNewPipe(false)} onCreated={(id) => { setNewPipe(false); setPid(id); setStageFilter(''); refresh(); }} />}
         {importing && pipeline && <ImportDialog pipeline={pipeline} call={call} t={t} onClose={() => setImporting(false)} onDone={refresh} />}
         {creating && pipeline && <Create pipeline={pipeline} call={call} t={t} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); refresh(); }} />}
       </div>

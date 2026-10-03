@@ -13,6 +13,11 @@ const en = {
   importEmpty: 'The file has no rows.', importNoName: 'No “Name” column found in the first row.', importIgnored: 'not imported', importAsColumn: 'new column',
   importFields: { name: 'Name', stage: 'Stage', value: 'Value', closeDate: 'Close date', assigned: 'Owner (by email)', days: 'Days in stage', ignore: '' } as Record<string, string>,
   importGo: (n: number) => `Import ${n}`, importDone: (n: number, s: number, f: number) => `Imported ${n}. New stages: ${s}. New columns: ${f}.`, importSkipped: (n: number) => `${n} skipped`,
+  editPipeline: 'Edit pipeline', colourTheme: 'Colour theme', shareDown: 'Share with the partners below me', stages: 'Stages', colour: 'Colour', moveUp: 'Move up', moveDown: 'Move down', remove: 'Remove',
+  moveRecordsTo: 'Move its records to', addStage: 'Add a stage', columns: 'Columns', addColumn: 'Add a column', type: 'Type', optionsHint: 'Choices, separated by commas', needOptions: 'Add at least one choice for a dropdown column.',
+  confirmColumn: (n: string) => `Remove the column “${n}”? Its values are deleted from every record.`, newPipeline: 'New pipeline', blankPipeline: 'Or start blank', templateHelp: 'Start from a ready-made pipeline. You can change everything afterwards.',
+  themes: { rainbow: 'Rainbow', ocean: 'Ocean', forest: 'Forest', sunset: 'Sunset', mono: 'Grey' } as Record<string, string>,
+  types: { text: 'Text', number: 'Number', currency: 'Money', date: 'Date', dropdown: 'Dropdown', checkbox: 'Checkbox' } as Record<string, string>,
   sortBy: 'Sort by', newPlaceholder: 'Name of the record', stalledOnly: 'Stuck 14+ days', rows: (n: number) => (n === 1 ? '1 record' : `${n} records`),
 };
 const frCA: typeof en = {
@@ -28,6 +33,11 @@ const frCA: typeof en = {
   importEmpty: 'Le fichier ne contient aucune ligne.', importNoName: 'Aucune colonne « Name » dans la première ligne.', importIgnored: 'non importée', importAsColumn: 'nouvelle colonne',
   importFields: { name: 'Nom', stage: 'Étape', value: 'Valeur', closeDate: 'Date de clôture', assigned: 'Responsable (courriel)', days: 'Jours à l’étape', ignore: '' } as Record<string, string>,
   importGo: (n) => `Importer ${n}`, importDone: (n, s, f) => `${n} importés. Nouvelles étapes : ${s}. Nouvelles colonnes : ${f}.`, importSkipped: (n) => `${n} ignorés`,
+  editPipeline: 'Modifier le pipeline', colourTheme: 'Thème de couleurs', shareDown: 'Partager avec les partenaires sous moi', stages: 'Étapes', colour: 'Couleur', moveUp: 'Monter', moveDown: 'Descendre', remove: 'Retirer',
+  moveRecordsTo: 'Déplacer ses dossiers vers', addStage: 'Ajouter une étape', columns: 'Colonnes', addColumn: 'Ajouter une colonne', type: 'Type', optionsHint: 'Choix, séparés par des virgules', needOptions: 'Ajoutez au moins un choix pour une colonne à liste.',
+  confirmColumn: (n) => `Retirer la colonne « ${n} »? Ses valeurs seront supprimées de tous les dossiers.`, newPipeline: 'Nouveau pipeline', blankPipeline: 'Ou partir de zéro', templateHelp: 'Partez d’un pipeline prêt à l’emploi. Tout reste modifiable.',
+  themes: { rainbow: 'Arc-en-ciel', ocean: 'Océan', forest: 'Forêt', sunset: 'Coucher de soleil', mono: 'Gris' },
+  types: { text: 'Texte', number: 'Nombre', currency: 'Montant', date: 'Date', dropdown: 'Liste', checkbox: 'Case à cocher' },
   sortBy: 'Trier par', newPlaceholder: 'Nom du dossier', stalledOnly: 'Bloqués 14 jours et +', rows: (n) => (n === 1 ? '1 dossier' : `${n} dossiers`),
 };
 export type Strings = typeof en;
