@@ -71,14 +71,16 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     if (sig === navSig && section) return;
     navSig = sig;
     section?.remove();
-    const top = sdk.NavMenu.addNavItem({ name: 'PII', iconUrl: icon, type: sdk.NavMenu.NavItemTypes.SECTION, orderHint: 5 });
+    // A normal link item (the kind that worked before) with the pages nested under it, each with a Google Material icon.
+    const top = sdk.NavMenu.addNavItem({ name: 'PII', iconUrl: icon, routeID: 'pii/:page', routeParams: { page: 'home' }, orderHint: 5 });
     section = top;
-    if (r.status !== 200) { top.addNavItem({ name: 'PII', routeID: 'pii/:page', routeParams: { page: 'pipelines' } }); return; }
+    if (r.status !== 200) return;
     const nav = r.json as NavData;
+    const ICONS: Record<string, string> = { home: 'home', pipelines: 'view_kanban', contacts: 'contacts', merges: 'forward_to_inbox', training: 'school', settings: 'settings' };
     nav.items.forEach((it, i) => {
-      const child = top.addNavItem({ name: withCount(it.name, it.count), routeID: 'pii/:page', routeParams: { page: it.id }, orderHint: i });
+      const child = top.addNavItem({ name: withCount(it.name, it.count), iconLiga: ICONS[it.id] ?? 'circle', routeID: 'pii/:page', routeParams: { page: it.id }, orderHint: i });
       if (it.id === 'pipelines') {
-        nav.pipelines.forEach((p, j) => child.addNavItem({ name: p.count > 0 ? `${p.name}  ⚠ ${p.count}` : p.name, routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: p.id }, orderHint: j }));
+        nav.pipelines.forEach((p, j) => child.addNavItem({ name: p.count > 0 ? `${p.name}  ⚠ ${p.count}` : p.name, iconLiga: 'filter_list', routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: p.id }, orderHint: j }));
       }
     });
   };
