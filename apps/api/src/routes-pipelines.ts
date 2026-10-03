@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { FIELD_KEY_RE, FIELD_TYPES, type RequestContext } from '@pii/domain';
+import { FIELD_KEY_RE, FIELD_TYPES, validateCustomValues, type RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { forbidden, notFound, invalid } from './errors.ts';
-import { managerNodeIds, requireCrm, resolveOwnerNode, scopeSql, uuid } from './crm-helpers.ts';
+import { fieldDefsFor, managerNodeIds, requireCrm, resolveOwnerAndContext, resolveOwnerNode, scopeSql, uuid } from './crm-helpers.ts';
 import type { AppDeps } from './app.ts';
 
 const DEFAULT_STAGES = [
@@ -308,6 +308,109 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
     });
     return reply.code(204).send();
   });
+
+  // ---- bring records in from another tool (Streak export, spreadsheet) ----
+  app.post(
+    '/v1/pipelines/:id/import',
+    {
+      bodyLimit: 8 * 1024 * 1024,
+      schema: {
+        params: { type: 'object', properties: { id: uuid } },
+        body: {
+          type: 'object', required: ['rows'], additionalProperties: false,
+          properties: {
+            contextNodeId: uuid,
+            columns: { type: 'array', maxItems: 40, items: { type: 'object', required: ['key', 'label'], additionalProperties: false, properties: { key: { type: 'string', pattern: FIELD_KEY_RE.source }, label: { type: 'string', minLength: 1, maxLength: 100 } } } },
+            rows: {
+              type: 'array', maxItems: 2000,
+              items: {
+                type: 'object', required: ['name'], additionalProperties: false,
+                properties: {
+                  name: { type: 'string', maxLength: 200 }, stage: { type: 'string', maxLength: 100 }, valueAmount: { type: ['number', 'null'] },
+                  closeDate: { type: ['string', 'null'] }, assignedEmail: { type: ['string', 'null'], maxLength: 320 }, daysInStage: { type: ['number', 'null'] },
+                  custom: { type: 'object', additionalProperties: { type: ['string', 'number', 'null'] } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { ctx } = await deps.authenticate(req);
+      requireCrm(ctx);
+      const { id } = req.params as { id: string };
+      const b = req.body as {
+        contextNodeId?: string; columns?: { key: string; label: string }[];
+        rows: { name: string; stage?: string; valueAmount?: number | null; closeDate?: string | null; assignedEmail?: string | null; daysInStage?: number | null; custom?: Record<string, string | number | null> }[];
+      };
+      const out = await run(ctx, async (tx) => {
+        const p = await loadForManage(tx, ctx, id);
+        const { ownerNodeId, contextNodeId } = await resolveOwnerAndContext(tx, ctx, { ownerNodeId: p.owner_node_id, contextNodeId: b.contextNodeId });
+        // stages: match by name, ignoring case; create the ones that are missing
+        const stages = new Map((await tx.query<{ id: string; name: string }>('SELECT id, name FROM stages WHERE pipeline_id = $1 ORDER BY position', [id])).rows.map((r) => [r.name.toLowerCase(), r.id]));
+        const firstStage = [...stages.values()][0];
+        if (!firstStage) throw invalid('The pipeline has no stages');
+        let stagesCreated = 0;
+        for (const r of b.rows) {
+          const n = r.stage?.trim();
+          if (!n || stages.has(n.toLowerCase())) continue;
+          const ins = await tx.query<{ id: string }>(
+            `INSERT INTO stages (tenant_id, pipeline_id, name, position) VALUES ($1,$2,$3,(SELECT coalesce(max(position),0)+1 FROM stages WHERE pipeline_id=$2)) RETURNING id`,
+            [ctx.tenantId, id, n.slice(0, 100)],
+          );
+          stages.set(n.toLowerCase(), ins.rows[0]!.id); stagesCreated++;
+        }
+        // columns: add the ones that do not exist yet, as text
+        const have = new Set((await tx.query<{ key: string }>('SELECT key FROM field_defs WHERE pipeline_id = $1', [id])).rows.map((r) => r.key));
+        let fieldsCreated = 0;
+        for (const c of b.columns ?? []) {
+          if (have.has(c.key)) continue;
+          await tx.query(
+            `INSERT INTO field_defs (tenant_id, pipeline_id, key, labels, type, required, position)
+             VALUES ($1,$2,$3,$4,'text',false,(SELECT coalesce(max(position),0)+1 FROM field_defs WHERE pipeline_id=$2))`,
+            [ctx.tenantId, id, c.key, JSON.stringify({ en: c.label })],
+          );
+          have.add(c.key); fieldsCreated++;
+        }
+        const defs = await fieldDefsFor(tx, id);
+        const existing = new Set((await tx.query<{ name: string }>('SELECT lower(name) AS name FROM boxes WHERE pipeline_id = $1 AND owner_node_id = $2', [id, ownerNodeId])).rows.map((r) => r.name));
+        const people = new Map((await tx.query<{ email: string; id: string }>(
+          `SELECT lower(u.email) AS email, u.id FROM app_users u JOIN user_node_roles r ON r.user_id = u.id WHERE r.node_id = $1`, [ownerNodeId])).rows.map((r) => [r.email, r.id]));
+        const skipped: { row: number; reason: string }[] = [];
+        let created = 0;
+        for (const [i, r] of b.rows.entries()) {
+          const name = r.name.trim();
+          if (!name) { skipped.push({ row: i + 1, reason: 'No name' }); continue; }
+          if (existing.has(name.toLowerCase())) { skipped.push({ row: i + 1, reason: 'A record with this name already exists' }); continue; }
+          const custom: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(r.custom ?? {})) {
+            if (v === null || v === '') continue;
+            const d = defs.find((x) => x.key === k);
+            custom[k] = d && (d.type === 'number' || d.type === 'currency') ? Number(v) : String(v).slice(0, 2000);
+          }
+          const v = validateCustomValues(defs.map((d) => ({ ...d, required: false })), custom);
+          if (!v.ok) { skipped.push({ row: i + 1, reason: v.errors.join('; ') }); continue; }
+          if (r.closeDate && !/^\d{4}-\d{2}-\d{2}$/.test(r.closeDate)) { skipped.push({ row: i + 1, reason: `Close date "${r.closeDate}" is not YYYY-MM-DD` }); continue; }
+          if (r.valueAmount != null && (r.valueAmount < 0 || r.valueAmount > 999999999999)) { skipped.push({ row: i + 1, reason: 'Value out of range' }); continue; }
+          const stageId = (r.stage && stages.get(r.stage.trim().toLowerCase())) || firstStage;
+          const days = Math.min(Math.max(Math.floor(r.daysInStage ?? 0), 0), 3650);
+          const ownerUser = (r.assignedEmail && people.get(r.assignedEmail.trim().toLowerCase())) || ctx.userId;
+          const boxId = randomUUID();
+          await tx.query(
+            `INSERT INTO boxes (id, tenant_id, pipeline_id, stage_id, owner_node_id, context_node_id, owner_user_id, name, value_amount, close_date, custom, created_by, stage_entered_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now() - ($13::int * interval '1 day'))`,
+            [boxId, ctx.tenantId, id, stageId, ownerNodeId, contextNodeId, ownerUser, name, r.valueAmount ?? null, r.closeDate ?? null, JSON.stringify(v.value), ctx.userId, days],
+          );
+          await tx.query(`INSERT INTO box_events (tenant_id, box_id, kind, to_stage_id, actor_id) VALUES ($1,$2,'created',$3,$4)`, [ctx.tenantId, boxId, stageId, ctx.userId]);
+          existing.add(name.toLowerCase()); created++;
+        }
+        await audit(tx, ctx, 'pipeline_import', 'pipeline', id, { created, skipped: skipped.length, stagesCreated, fieldsCreated });
+        return { created, skipped, stagesCreated, fieldsCreated };
+      });
+      return reply.code(200).send(out);
+    },
+  );
 
   // ---- counts for the stage bar ----
   app.get(

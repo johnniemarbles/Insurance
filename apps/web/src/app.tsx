@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { Board } from './board.tsx';
+import { ImportDialog } from './import.tsx';
 import { strings, type Strings } from './i18n.ts';
 import { money, stageColor } from './theme.ts';
 import type { Box, BoxEvent, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, SortKey, Stage } from './types.ts';
@@ -52,6 +53,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
   const [summary, setSummary] = useState<Record<string, { count: number; value: number }>>({});
   const [openId, setOpenId] = useState('');
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
   const [view, setView] = useState<'table' | 'board'>(() => { try { return localStorage.getItem('pii.view') === 'board' ? 'board' : 'table'; } catch { return 'table'; } });
@@ -144,6 +146,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
           <button aria-pressed={view === 'board'} onClick={() => setViewSaved('board')}>{t.board}</button>
         </div>
         <span class="spacer" />
+        <button class="btn quiet" onClick={() => setImporting(true)}>{t.import}</button>
         <button class="btn" onClick={() => setCreating(true)}>+ {t.newBox}</button>
       </div>
 
@@ -216,6 +219,7 @@ function PipelineView({ call, t, locale }: { call: Call; t: Strings; locale: Loc
         </div>
         )}
         {opened && pipeline && <Drawer key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setOpenId('')} onChanged={refresh} />}
+        {importing && pipeline && <ImportDialog pipeline={pipeline} call={call} t={t} onClose={() => setImporting(false)} onDone={refresh} />}
         {creating && pipeline && <Create pipeline={pipeline} call={call} t={t} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); refresh(); }} />}
       </div>
     </div>

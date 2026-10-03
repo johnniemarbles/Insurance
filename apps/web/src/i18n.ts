@@ -9,6 +9,10 @@ const en = {
   chooseLocation: 'Choose a location', history: 'History', created: 'Created in', movedTo: (a: string | null, b: string | null) => `Moved from ${a ?? '—'} to ${b ?? '—'}`,
   saved: 'Saved', total: (n: number) => `${n} total`, edit: 'Edit', clearFilter: 'Show all stages', readOnly: 'View only: this record belongs to another branch.',
   table: 'Table', board: 'Board', selected: (n: number) => `${n} selected`, moveTo: 'Move to stage', apply: 'Apply', selectAll: 'Select all', bulkFailed: (n: number) => `${n} could not be moved (view-only records).`,
+  import: 'Import', chooseFile: 'Choose a file', importHelp: 'Bring in records from Streak or any spreadsheet (.xlsx or .csv). The first row must be the column names, and one column must be Name.',
+  importEmpty: 'The file has no rows.', importNoName: 'No “Name” column found in the first row.', importIgnored: 'not imported', importAsColumn: 'new column',
+  importFields: { name: 'Name', stage: 'Stage', value: 'Value', closeDate: 'Close date', assigned: 'Owner (by email)', days: 'Days in stage', ignore: '' } as Record<string, string>,
+  importGo: (n: number) => `Import ${n}`, importDone: (n: number, s: number, f: number) => `Imported ${n}. New stages: ${s}. New columns: ${f}.`, importSkipped: (n: number) => `${n} skipped`,
   sortBy: 'Sort by', newPlaceholder: 'Name of the record', stalledOnly: 'Stuck 14+ days', rows: (n: number) => (n === 1 ? '1 record' : `${n} records`),
 };
 const frCA: typeof en = {
@@ -20,6 +24,10 @@ const frCA: typeof en = {
   chooseLocation: 'Choisir un emplacement', history: 'Historique', created: 'Créé à l’étape', movedTo: (a, b) => `Déplacé de ${a ?? '—'} à ${b ?? '—'}`,
   saved: 'Enregistré', total: (n) => `${n} au total`, edit: 'Modifier', clearFilter: 'Afficher toutes les étapes', readOnly: 'Lecture seule : ce dossier appartient à une autre branche.',
   table: 'Tableau', board: 'Tableau Kanban', selected: (n) => (n === 1 ? '1 sélectionné' : `${n} sélectionnés`), moveTo: 'Déplacer à l’étape', apply: 'Appliquer', selectAll: 'Tout sélectionner', bulkFailed: (n) => `${n} n’ont pas pu être déplacés (lecture seule).`,
+  import: 'Importer', chooseFile: 'Choisir un fichier', importHelp: 'Importez des dossiers depuis Streak ou un tableur (.xlsx ou .csv). La première ligne doit contenir les noms de colonnes, dont « Name ».',
+  importEmpty: 'Le fichier ne contient aucune ligne.', importNoName: 'Aucune colonne « Name » dans la première ligne.', importIgnored: 'non importée', importAsColumn: 'nouvelle colonne',
+  importFields: { name: 'Nom', stage: 'Étape', value: 'Valeur', closeDate: 'Date de clôture', assigned: 'Responsable (courriel)', days: 'Jours à l’étape', ignore: '' } as Record<string, string>,
+  importGo: (n) => `Importer ${n}`, importDone: (n, s, f) => `${n} importés. Nouvelles étapes : ${s}. Nouvelles colonnes : ${f}.`, importSkipped: (n) => `${n} ignorés`,
   sortBy: 'Trier par', newPlaceholder: 'Nom du dossier', stalledOnly: 'Bloqués 14 jours et +', rows: (n) => (n === 1 ? '1 dossier' : `${n} dossiers`),
 };
 export type Strings = typeof en;

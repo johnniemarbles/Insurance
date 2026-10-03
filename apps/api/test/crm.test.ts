@@ -327,3 +327,28 @@ test('pipeline UI: stage edit, reorder, delete with move, columns, summary, hist
   assert.equal((await call(P1U, 'DELETE', `${P}/fields/${renewal.id}`)).status, 204);
   assert.equal((await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).fields.length, 2);
 });
+
+test('import: stages and columns are created, bad rows are skipped with a reason, repeats are not duplicated', async () => {
+  const body = {
+    contextNodeId: X,
+    columns: [{ key: 'lead_source', label: 'Lead Source' }],
+    rows: [
+      { name: 'Imported A', stage: 'Brand new stage', valueAmount: 500, closeDate: '2027-02-01', daysInStage: 5, custom: { lead_source: 'Referral', policy_no: 'I-1' } },
+      { name: 'Imported B', stage: 'in progress', custom: { policy_no: 'I-2' } },
+      { name: '  ', custom: {} },
+      { name: 'Imported C', closeDate: '01/02/2027' },
+    ],
+  };
+  assert.equal((await call(S1U, 'POST', `/v1/pipelines/${pipe1}/import`, body)).status, 403);
+  const r = await call(P1U, 'POST', `/v1/pipelines/${pipe1}/import`, body);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.created, 2);
+  assert.equal(r.json.stagesCreated, 1);
+  assert.equal(r.json.fieldsCreated, 1);
+  assert.equal(r.json.skipped.length, 2);
+  const list = (await call(P1U, 'GET', `/v1/boxes?pipelineId=${pipe1}&q=Imported%20A`)).json.boxes;
+  assert.equal(list[0].daysInStage, 5);
+  assert.equal(list[0].custom.lead_source, 'Referral');
+  const again = await call(P1U, 'POST', `/v1/pipelines/${pipe1}/import`, body);
+  assert.equal(again.json.created, 0);
+});
