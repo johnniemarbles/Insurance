@@ -7,6 +7,8 @@ type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, 
 interface Ev { id: number; createdAt: string; action: string; area: string; actorId: string | null; actorName: string | null; entityType: string | null; detail: Record<string, any>; placeName: string | null; detailPlaceName: string | null }
 type Area = '' | 'invitations' | 'people' | 'structure' | 'settings' | 'privacy' | 'records';
 
+const RN_EN: Record<string,string> = { admin: 'admin', manager: 'manager', trainer: 'trainer', member: 'member', learner: 'learner' };
+const RN_FR: Record<string,string> = { admin: 'admin', manager: 'gestionnaire', trainer: 'formateur', member: 'membre', learner: 'apprenant' };
 const X = {
   'en': {
     areas: { '': 'Everything', invitations: 'Invitations', people: 'People', structure: 'Structure', settings: 'Settings', privacy: 'Privacy', records: 'Records' } as Record<string, string>,
@@ -14,7 +16,7 @@ const X = {
     someone: 'Someone', you: 'You', gmail: 'Gmail', link: 'a copied link', noaccess: 'Only administrators can read the activity log.', lock: 'locked',
     note: 'Lines cannot be edited or deleted. Each administrator sees the places they administer.',
     s: (e: Ev, who: string, place: string): string => {
-      const d = e.detail, em = d.email ?? '', role = d.role ? String(d.role) : '';
+      const d = e.detail, em = d.email ?? '', role = d.role ? (RN_EN[String(d.role)] ?? String(d.role)) : '';
       switch (e.action) {
         case 'invitation_created': return `${who} invited ${em} to ${place} as ${role}`;
         case 'invitation_sent': return `${who} sent the invitation to ${em} from ${d.method === 'link' ? 'a copied link' : 'Gmail'}`;
@@ -46,7 +48,7 @@ const X = {
     someone: 'Quelqu’un', you: 'Vous', gmail: 'Gmail', link: 'un lien copié', noaccess: 'Seuls les administrateurs peuvent lire le journal d’activité.', lock: 'verrouillé',
     note: 'Les lignes ne peuvent être ni modifiées ni supprimées. Chaque administrateur voit les endroits qu’il administre.',
     s: (e: Ev, who: string, place: string): string => {
-      const d = e.detail, em = d.email ?? '', role = d.role ? String(d.role) : '';
+      const d = e.detail, em = d.email ?? '', role = d.role ? (RN_FR[String(d.role)] ?? String(d.role)) : '';
       switch (e.action) {
         case 'invitation_created': return `${who} a invité ${em} à ${place} comme ${role}`;
         case 'invitation_sent': return `${who} a envoyé l’invitation à ${em} depuis ${d.method === 'link' ? 'un lien copié' : 'Gmail'}`;

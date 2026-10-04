@@ -31,14 +31,16 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const ids = order.filter((id) => !hidden.has(id));
       if (!ids.includes('settings')) ids.push('settings'); // there is always a way back to Settings
       let tasksDue = 0;
-      let pipelines: { id: string; name: string; count: number }[] = [];
+      let pipelines: { id: string; name: string; count: number; views: { id: string; name: string }[] }[] = [];
       const unread = await unreadCount(tx, ctx.userId);
       if (ctx.canUseCrm) {
         tasksDue = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM tasks WHERE assignee_id = $1 AND done_at IS NULL AND due_at < (date_trunc('day', now()) + interval '1 day')`, [ctx.userId])).rows[0]!.n;
         if (ids.includes('pipelines')) {
           const risks = await listRisks(tx, null);
           const list = (await tx.query<{ id: string; name: string }>('SELECT id, name FROM pipelines ORDER BY name')).rows;
-          pipelines = list.map((p) => ({ id: p.id, name: p.name, count: risks.filter((r) => r.pipelineId === p.id).length }));
+          const vs = (await tx.query<{ id: string; name: string; pipeline_id: string }>(
+            'SELECT id, name, pipeline_id FROM saved_views WHERE is_shared OR user_id = $1 ORDER BY name', [ctx.userId])).rows;
+          pipelines = list.map((p) => ({ id: p.id, name: p.name, count: risks.filter((r) => r.pipelineId === p.id).length, views: vs.filter((v) => v.pipeline_id === p.id).slice(0, 12).map((v) => ({ id: v.id, name: v.name })) }));
         }
       }
       return {

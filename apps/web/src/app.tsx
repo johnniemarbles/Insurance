@@ -97,7 +97,8 @@ function Shell({ call, t, locale, canAuthor, meEmail, compose, host }: { call: C
 
 function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, openMerges, onStartTipsOff }: { call: Call; t: Strings; locale: Locale; meEmail: string; compose?: ComposeApi; initialPid?: string; prefs: { defaultView: string; startTips: boolean; defaultPipeline: string }; openMerges: boolean; onStartTipsOff: () => void }) {
   const [pipelines, setPipelines] = useState<Pipeline[] | null>(null);
-  const [pid, setPid] = useState(initialPid || prefs.defaultPipeline || '');
+  const [pid, setPid] = useState((initialPid ?? '').split(':')[0] || prefs.defaultPipeline || '');
+  const wantView = (initialPid ?? '').split(':')[1] ?? '';
   const [scope, setScope] = useState<Scope>('all');
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [sorts, setSorts] = useState<SortSpec[]>(defaultSorts);
@@ -228,6 +229,12 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
     }
     storeViews([...views.filter((v) => v.name !== name), { name, scope, filters, sorts, groupBy, view }]);
   };
+  useEffect(() => {
+    if (!wantView || !teamViews.length) return;
+    const v = teamViews.find((x) => x.id === wantView);
+    if (v) applyView(`team:${v.id}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantView, teamViews.length]);
   const applyView = (name: string) => {
     const tv = name.startsWith('team:') ? teamViews.find((x) => x.id === name.slice(5)) : undefined;
     const v = tv ? { scope: (tv.config.scope ?? 'all') as Scope, view: (tv.config.view ?? 'table') as 'table' | 'board', ...migrateView(tv.config) } : views.find((x) => x.name === name);

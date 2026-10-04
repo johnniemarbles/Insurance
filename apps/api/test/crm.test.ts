@@ -867,6 +867,11 @@ test('left panel and home: layout drives the items, the layout is per person, co
   const base = await nav(P1U);
   assert.deepEqual(base.items.map((i: { id: string }) => i.id), ['home', 'notifications', 'pipelines', 'contacts', 'merges', 'training', 'settings']);
   assert.ok(base.pipelines.some((p: { id: string }) => p.id === pipe1));
+  const mk = await call(P1U, 'POST', `/v1/pipelines/${pipe1}/views`, { name: 'Nav view', shared: true, config: { scope: 'all' } });
+  assert.ok(mk.status < 300, JSON.stringify(mk.json));
+  const withV = (await nav(P1U)).pipelines.find((p: { id: string }) => p.id === pipe1);
+  assert.ok(withV.views.some((v: { name: string }) => v.name === 'Nav view'), 'saved views are listed under their pipeline');
+  assert.ok(!(await nav(P2U)).pipelines.some((p: { views: { name: string }[] }) => p.views.some((v) => v.name === 'Nav view')), 'a sibling does not see it');
   assert.equal((await call(P1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['training', 'home'], hidden: ['merges', 'settings'] } })).status, 200);
   const mine = await nav(P1U);
   assert.deepEqual(mine.items.map((i: { id: string }) => i.id), ['training', 'home', 'notifications', 'pipelines', 'contacts', 'settings'], 'settings can never be hidden');

@@ -60,7 +60,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
   sdk.Router.handleCustomRoute('pii/:page/:id', mountRoute);
 
   // The left panel is drawn from the person's own layout (Settings > Left panel), limited to what they can use, with live counts.
-  interface NavData { items: { id: string; name: string; count: number }[]; pipelines: { id: string; name: string; count: number }[] }
+  interface NavData { items: { id: string; name: string; count: number }[]; pipelines: { id: string; name: string; count: number; views?: { id: string; name: string }[] }[] }
   let section: { remove(): void } | null = null;
   let navSig = '';
   const icon = chrome.runtime.getURL('nav-icon.png');
@@ -80,7 +80,11 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     nav.items.forEach((it, i) => {
       const child = top.addNavItem({ name: withCount(it.name, it.count), iconUrl: svg(it.id), routeID: 'pii/:page', routeParams: { page: it.id }, orderHint: i });
       if (it.id === 'pipelines') {
-        nav.pipelines.forEach((p, j) => child.addNavItem({ name: p.count > 0 ? `${p.name}  ⚠ ${p.count}` : p.name, iconUrl: svg('view'), routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: p.id }, orderHint: j }));
+        nav.pipelines.forEach((p, j) => {
+          const pi = child.addNavItem({ name: p.count > 0 ? `${p.name}  ⚠ ${p.count}` : p.name, iconUrl: svg('view'), routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: p.id }, orderHint: j });
+          // Saved views sit under their pipeline; the route id carries both ("pipelineId:viewId").
+          (p.views ?? []).forEach((v, k) => pi.addNavItem({ name: v.name, iconUrl: svg('filter'), routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: `${p.id}:${v.id}` }, orderHint: k }));
+        });
       }
     });
   };
