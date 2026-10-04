@@ -98,7 +98,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
   const STATUS_SQL = `CASE WHEN i.accepted_at IS NOT NULL THEN 'accepted' WHEN i.expires_at <= now() THEN 'expired' WHEN i.link_opened_at IS NOT NULL THEN 'opened'
                            WHEN i.sent_at IS NOT NULL THEN 'sent' WHEN i.delivery_error IS NOT NULL THEN 'not_sent' ELSE 'created' END`;
   const INVITE_COLS = `i.id, i.email::text AS email, i.node_id AS "nodeId", i.role::text AS role, i.locale::text AS locale, i.expires_at AS "expiresAt", i.accepted_at AS "acceptedAt",
-        i.created_at AS "createdAt", i.sent_at AS "sentAt", i.delivery_method AS "deliveryMethod", i.delivery_error AS "deliveryError", i.attempts, i.last_attempt_at AS "lastAttemptAt",
+        i.created_at AS "createdAt", i.sent_at AS "sentAt", i.delivery_method AS "deliveryMethod", i.delivery_error AS "deliveryError", i.gmail_thread_id AS "gmailThreadId", i.attempts, i.last_attempt_at AS "lastAttemptAt",
         i.link_opened_at AS "linkOpenedAt", coalesce(iu.display_name, iu.email::text) AS "invitedBy", i.invited_by AS "invitedById", ${STATUS_SQL} AS status`;
 
   app.get('/v1/invitations', async (req) => {
@@ -122,19 +122,19 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
 
   // The extension (or the person copying the link) reports what happened when the invitation was sent.
   app.post('/v1/invitations/:id/delivery', {
-    schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } }, body: { type: 'object', required: ['method', 'ok'], additionalProperties: false, properties: { method: { enum: ['gmail', 'link'] }, ok: { type: 'boolean' }, error: { type: 'string', maxLength: 300 } } } },
+    schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } }, body: { type: 'object', required: ['method', 'ok'], additionalProperties: false, properties: { method: { enum: ['gmail', 'link'] }, ok: { type: 'boolean' }, error: { type: 'string', maxLength: 300 }, threadId: { type: 'string', pattern: '^[A-Za-z0-9_:-]{4,80}$' } } } },
   }, async (req, reply) => {
     const { ctx } = await deps.authenticate(req);
     const { id } = req.params as { id: string };
-    const b = req.body as { method: 'gmail' | 'link'; ok: boolean; error?: string };
+    const b = req.body as { method: 'gmail' | 'link'; ok: boolean; error?: string; threadId?: string };
     await run(ctx, async (tx) => {
       const inv = await loadInvite(tx, ctx, id);
       if (inv.accepted_at) throw conflict('This person has already joined');
       await tx.query(
         `UPDATE invitations SET attempts = attempts + 1, last_attempt_at = now(), delivery_method = $2,
                 sent_at = CASE WHEN $3 THEN now() ELSE sent_at END, sent_by = CASE WHEN $3 THEN $4::uuid ELSE sent_by END,
-                delivery_error = CASE WHEN $3 THEN NULL ELSE $5 END WHERE id = $1`,
-        [id, b.method, b.ok, ctx.userId, b.error ?? 'Not sent'],
+                delivery_error = CASE WHEN $3 THEN NULL ELSE $5 END, gmail_thread_id = CASE WHEN $3 AND $2 = 'gmail' THEN $6 ELSE gmail_thread_id END WHERE id = $1`,
+        [id, b.method, b.ok, ctx.userId, b.error ?? 'Not sent', b.threadId ?? null],
       );
       await audit(tx, ctx, b.ok ? 'invitation_sent' : 'invitation_not_sent', 'invitation', id, { email: inv.email, method: b.method, ...(b.ok ? {} : { error: b.error ?? 'Not sent' }) }, inv.node_id);
     });
@@ -153,7 +153,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
       const { token, hash } = newToken();
       const expiresAt = new Date(Date.now() + INVITE_DAYS * 86_400_000);
       await tx.query(
-        `UPDATE invitations SET token_hash = $2, expires_at = $3, sent_at = NULL, sent_by = NULL, link_opened_at = NULL, delivery_error = NULL, stale_notified_at = NULL, last_attempt_at = now() WHERE id = $1`,
+        `UPDATE invitations SET token_hash = $2, expires_at = $3, sent_at = NULL, sent_by = NULL, gmail_thread_id = NULL, link_opened_at = NULL, delivery_error = NULL, stale_notified_at = NULL, last_attempt_at = now() WHERE id = $1`,
         [id, hash, expiresAt],
       );
       await audit(tx, ctx, 'invitation_resent', 'invitation', id, { email: inv.email }, inv.node_id);

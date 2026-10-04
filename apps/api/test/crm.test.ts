@@ -979,8 +979,10 @@ test('invitations: honest status, delivery report, the link page, resend and exp
   const failed = await get(ADMIN, inv.id);
   assert.equal(failed.status, 'not_sent');
   assert.equal(failed.deliveryError, 'The compose window was closed');
-  assert.equal((await call(ADMIN, 'POST', `/v1/invitations/${inv.id}/delivery`, { method: 'gmail', ok: true })).status, 204);
+  assert.equal((await call(ADMIN, 'POST', `/v1/invitations/${inv.id}/delivery`, { method: 'gmail', ok: true, threadId: '18c3fa01b2d4e5f6' })).status, 204);
   const sent = await get(ADMIN, inv.id);
+  assert.equal(sent.gmailThreadId, '18c3fa01b2d4e5f6');
+  assert.equal((await call(ADMIN, 'POST', `/v1/invitations/${inv.id}/delivery`, { method: 'gmail', ok: true, threadId: '<script>' })).status, 400, 'a thread id is only letters and digits');
   assert.equal(sent.status, 'sent');
   assert.equal(sent.attempts, 2);
   assert.equal(sent.deliveryError, null);

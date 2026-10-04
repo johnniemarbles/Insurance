@@ -7,7 +7,7 @@ type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, 
 export interface Node { id: string; type: 'tenant' | 'location' | 'partner'; name: string; isActive: boolean }
 export interface Link { parentId: string; childId: string }
 interface Member { nodeId: string; role: string; userId: string; email: string; displayName: string | null; status: string }
-interface Inv { id: string; email: string; nodeId: string; role: string; locale: string; expiresAt: string; acceptedAt: string | null; createdAt: string; sentAt: string | null; deliveryMethod: 'gmail' | 'link' | null; deliveryError: string | null; attempts: number; linkOpenedAt: string | null; invitedBy: string | null; status: 'created' | 'sent' | 'opened' | 'accepted' | 'expired' | 'not_sent' }
+interface Inv { id: string; email: string; nodeId: string; role: string; locale: string; expiresAt: string; acceptedAt: string | null; createdAt: string; sentAt: string | null; deliveryMethod: 'gmail' | 'link' | null; deliveryError: string | null; gmailThreadId: string | null; attempts: number; linkOpenedAt: string | null; invitedBy: string | null; status: 'created' | 'sent' | 'opened' | 'accepted' | 'expired' | 'not_sent' }
 const ROLES = ['admin', 'manager', 'trainer', 'member', 'learner'] as const;
 
 export const X = {
@@ -18,7 +18,7 @@ export const X = {
     status: { created: 'Ready to send', sent: 'Sent', opened: 'Link opened', accepted: 'Active', expired: 'Expired', not_sent: 'Not sent', off: 'Switched off' } as Record<string, string>,
     hint: { created: 'Nothing has been sent yet.', sent: 'Waiting for them to open the link.', opened: 'They opened the link but have not signed in.', expired: 'Nobody joined within 7 days.', not_sent: 'The email did not go out.' } as Record<string, string>,
     invitedBy: 'Invited by', ago: 'ago', via: { gmail: 'from Gmail', link: 'by a copied link' },
-    resend: 'Resend', newLink: 'Get a link', withdraw: 'Withdraw', switchOff: 'Switch off', switchOn: 'Switch back on', giveRole: 'Give a role', removeRole: 'Remove', copy: 'Copy link', copied: 'Copied', sending: 'Sending from your Gmail…', sendingNow: 'Sending…', sendingHint: 'Gmail is sending this now.', queued: 'Waiting for Gmail', handedOff: (e: string) => `Handed to Gmail for ${e}. Check your Sent folder if you want to be sure.`, closeKeep: 'Close, sending continues',
+    resend: 'Resend', newLink: 'Get a link', withdraw: 'Withdraw', switchOff: 'Switch off', switchOn: 'Switch back on', giveRole: 'Give a role', removeRole: 'Remove', copy: 'Copy link', copied: 'Copied', sending: 'Sending from your Gmail…', sendingNow: 'Sending…', reviewL: 'Let me check each email in Gmail first', reviewD: 'A Gmail window opens for each person with the message ready. Press Send there. Recommended until you have seen one arrive.', openSent: 'Open the sent email', notThere: 'Not there yet? Ask them to check Spam, or use ⋯ → Get a link and send it yourself.', sendingHint: 'Gmail is sending this now.', queued: 'Waiting for Gmail', handedOff: (e: string) => `Handed to Gmail for ${e}. Check your Sent folder if you want to be sure.`, closeKeep: 'Close, sending continues',
     sentOk: (e: string) => `Sent to ${e} from your Gmail.`, linkReady: 'Link ready. Send it to the person yourself.', openGmail: 'Open Gmail with the PII extension to send from your own address.',
     step: ['Who', 'Where', 'Role', 'Send'], next: 'Next', back: 'Back', close: 'Close', cancel: 'Cancel',
     whoT: 'Who are you adding?', whoHelp: 'One email per line. You can paste a list.', whoPh: 'asha@example.com\nraj@example.com', already: (e: string) => `${e} is already in the company. Use Give a role on their row.`, bad: 'That does not look like an email address.',
@@ -41,7 +41,7 @@ export const X = {
     status: { created: 'Prête à envoyer', sent: 'Envoyée', opened: 'Lien ouvert', accepted: 'Active', expired: 'Expirée', not_sent: 'Non envoyée', off: 'Désactivée' } as Record<string, string>,
     hint: { created: 'Rien n’a encore été envoyé.', sent: 'En attente de l’ouverture du lien.', opened: 'Le lien a été ouvert, mais la personne ne s’est pas connectée.', expired: 'Personne ne s’est joint en 7 jours.', not_sent: 'Le courriel n’est pas parti.' } as Record<string, string>,
     invitedBy: 'Invitée par', ago: '', via: { gmail: 'depuis Gmail', link: 'par un lien copié' },
-    resend: 'Renvoyer', newLink: 'Obtenir un lien', withdraw: 'Retirer', switchOff: 'Désactiver', switchOn: 'Réactiver', giveRole: 'Donner un rôle', removeRole: 'Retirer', copy: 'Copier le lien', copied: 'Copié', sending: 'Envoi depuis votre Gmail…', sendingNow: 'Envoi…', sendingHint: 'Gmail envoie ce message.', queued: 'En attente de Gmail', handedOff: (e: string) => `Remis à Gmail pour ${e}. Vérifiez vos éléments envoyés pour en être certain.`, closeKeep: 'Fermer, l’envoi continue',
+    resend: 'Renvoyer', newLink: 'Obtenir un lien', withdraw: 'Retirer', switchOff: 'Désactiver', switchOn: 'Réactiver', giveRole: 'Donner un rôle', removeRole: 'Retirer', copy: 'Copier le lien', copied: 'Copié', sending: 'Envoi depuis votre Gmail…', sendingNow: 'Envoi…', reviewL: 'Me laisser vérifier chaque courriel dans Gmail', reviewD: 'Une fenêtre Gmail s’ouvre pour chaque personne avec le message prêt. Appuyez sur Envoyer. Recommandé tant que vous n’en avez pas vu arriver un.', openSent: 'Ouvrir le courriel envoyé', notThere: 'Pas encore reçu? Demandez de vérifier les pourriels, ou utilisez ⋯ → Obtenir un lien et envoyez-le vous-même.', sendingHint: 'Gmail envoie ce message.', queued: 'En attente de Gmail', handedOff: (e: string) => `Remis à Gmail pour ${e}. Vérifiez vos éléments envoyés pour en être certain.`, closeKeep: 'Fermer, l’envoi continue',
     sentOk: (e: string) => `Envoyé à ${e} depuis votre Gmail.`, linkReady: 'Lien prêt. Transmettez-le vous-même à la personne.', openGmail: 'Ouvrez Gmail avec l’extension PII pour envoyer depuis votre adresse.',
     step: ['Qui', 'Où', 'Rôle', 'Envoi'], next: 'Suivant', back: 'Retour', close: 'Fermer', cancel: 'Annuler',
     whoT: 'Qui ajoutez-vous?', whoHelp: 'Un courriel par ligne. Vous pouvez coller une liste.', whoPh: 'asha@exemple.com\nraj@exemple.com', already: (e: string) => `${e} fait déjà partie de l’entreprise. Utilisez Donner un rôle sur sa ligne.`, bad: 'Ceci ne ressemble pas à une adresse courriel.',
@@ -126,6 +126,8 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
   const [linkBox, setLinkBox] = useState<{ email: string; url: string; id: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
+  const [review, setReviewState] = useState(() => { try { return localStorage.getItem('pii.inviteAuto') !== '1'; } catch { return true; } });
+  const setReview = (v: boolean) => { setReviewState(v); try { localStorage.setItem('pii.inviteAuto', v ? '0' : '1'); } catch { /* private window */ } };
   const [flight, setFlight] = useState<Set<string>>(new Set());
   const queue = useRef<Promise<unknown>>(Promise.resolve());
 
@@ -162,16 +164,16 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
     const loc = (i.locale === 'fr-CA' ? 'fr-CA' : locale) as Locale, t = X[loc];
     const place = placeName(i.nodeId) || rootName, role = roleLabel(i.role, i.nodeId) ?? i.role;
     return {
-      to: i.email, subject: t.subj(rootName),
+      to: i.email, subject: t.subj(rootName), review,
       html: `<div style="font-family:Arial,sans-serif;font-size:15px;color:#0f172a;max-width:520px"><p>${t.mailHi}</p><p>${t.mailBody(esc(me?.name ?? ''), esc(rootName), esc(place), esc(role))}</p>${i.note ? `<p style="border-left:3px solid #c7d2fe;padding-left:10px;color:#475569">${esc(i.note)}</p>` : ''}<p><a href="${i.acceptUrl}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">${t.mailBtn}</a></p><p style="color:#64748b;font-size:13px">${t.mailFoot}</p></div>`,
     };
   };
-  const report = (id: string, method: 'gmail' | 'link', ok: boolean, error?: string) => call('POST', `/v1/invitations/${id}/delivery`, { method, ok, ...(error ? { error: error.slice(0, 300) } : {}) }).catch(() => undefined);
+  const report = (id: string, method: 'gmail' | 'link', ok: boolean, error?: string, threadId?: string) => call('POST', `/v1/invitations/${id}/delivery`, { method, ok, ...(error ? { error: error.slice(0, 300) } : {}), ...(threadId && /^[A-Za-z0-9_:-]{4,80}$/.test(threadId) ? { threadId } : {}) }).catch(() => undefined);
 
   /** One Gmail window at a time: the message goes out from the person's own Gmail, and the server is told what happened. */
   const deliver = (id: string, mail: { to: string; subject: string; html: string }) => {
     setFlight((f) => new Set(f).add(id));
-    const run = queue.current.then(async () => { const sent = await compose!.send(mail); await report(id, 'gmail', sent.ok, sent.error); return sent; });
+    const run = queue.current.then(async () => { const sent = await compose!.send(mail); await report(id, 'gmail', sent.ok, sent.error, sent.threadId); return sent; });
     queue.current = run.catch(() => undefined);
     return run.catch((e) => ({ ok: false as const, error: (e as Error).message, unconfirmed: false, threadId: undefined })).finally(() => { setFlight((f) => { const n = new Set(f); n.delete(id); return n; }); void load(); });
   };
@@ -225,6 +227,8 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
                 {flight.has(i.id) ? <span>{x.sendingHint}</span> : i.status === 'not_sent' && i.deliveryError ? <span class="why">{i.deliveryError}</span> : <span>{x.hint[i.status]}</span>}
                 <span> · {roleLabel(i.role, i.nodeId)} · {placeName(i.nodeId)}</span>
                 <span> · {x.invitedBy} {i.invitedBy ?? '—'}, {ago(i.createdAt, locale)}{i.sentAt && i.deliveryMethod ? ` · ${x.status.sent} ${x.via[i.deliveryMethod]}` : ''}</span>
+                {i.gmailThreadId && i.sentAt && <span> · <a class="link" href={`https://mail.google.com/mail/u/0/#all/${i.gmailThreadId}`} target="_blank" rel="noreferrer">{x.openSent}</a></span>}
+                {i.status === 'sent' && i.deliveryMethod === 'gmail' && <div class="why soft">{x.notThere}</div>}
               </div>
             </div>
             <div class="pact">
@@ -257,7 +261,7 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
         {counts.all > 0 && invRows.length + peopleRows.length === 0 && <p class="muted pad">—</p>}
       </div>
       {toast && <div class="toast2" role="status">{toast}</div>}
-      {adding && <AddPerson x={x} locale={locale} places={places} members={members} isTenantAdmin={isTenantAdmin} compose={compose} call={call} email={email} report={report} deliver={deliver} onClose={() => { setAdding(false); void load(); }} reload={load} />}
+      {adding && <AddPerson x={x} locale={locale} places={places} members={members} isTenantAdmin={isTenantAdmin} compose={compose} call={call} email={email} report={report} deliver={deliver} review={review} setReview={setReview} onClose={() => { setAdding(false); void load(); }} reload={load} />}
       {roleFor && <RoleDialog x={x} places={places} person={people.find((p) => p.userId === roleFor)!} isTenantAdmin={isTenantAdmin} roleLabel={(role, t) => (role === 'admin' ? x.roleName.admin[t] : x.roleName[role])} onClose={() => setRoleFor(null)} onSave={async (nodeId, role) => { await act(() => call('POST', '/v1/org/members', { userId: roleFor, nodeId, role })); setRoleFor(null); }} />}
     </div>
   );
@@ -283,11 +287,12 @@ function RoleDialog({ x, places, person, isTenantAdmin, roleLabel, onClose, onSa
 
 interface Outcome { pending?: boolean; unconfirmed?: boolean; email: string; ok: boolean; via?: 'gmail' | 'link'; error?: string; url?: string; id?: string; skipped?: string }
 
-function AddPerson({ x, locale, places, members, isTenantAdmin, compose, call, email, report, deliver, onClose, reload }: {
+function AddPerson({ x, locale, places, members, isTenantAdmin, compose, call, email, report, deliver, review, setReview, onClose, reload }: {
   x: Strs; locale: Locale; places: ReturnType<typeof placeList>; members: Member[]; isTenantAdmin: boolean; compose?: ComposeApi; call: Call;
-  email: (i: { email: string; role: string; nodeId: string; acceptUrl: string; note?: string; locale?: string }) => { to: string; subject: string; html: string };
-  report: (id: string, method: 'gmail' | 'link', ok: boolean, error?: string) => Promise<unknown>;
-  deliver: (id: string, mail: { to: string; subject: string; html: string }) => Promise<{ ok: boolean; error?: string; unconfirmed?: boolean }>;
+  email: (i: { email: string; role: string; nodeId: string; acceptUrl: string; note?: string; locale?: string }) => { to: string; subject: string; html: string; review?: boolean };
+  report: (id: string, method: 'gmail' | 'link', ok: boolean, error?: string, threadId?: string) => Promise<unknown>;
+  review: boolean; setReview: (v: boolean) => void;
+  deliver: (id: string, mail: { to: string; subject: string; html: string; review?: boolean }) => Promise<{ ok: boolean; error?: string; unconfirmed?: boolean }>;
   onClose: () => void; reload: () => Promise<void>;
 }) {
   const [step, setStep] = useState(0);
@@ -405,6 +410,7 @@ function AddPerson({ x, locale, places, members, isTenantAdmin, compose, call, e
           <button role="radio" aria-checked={viaGmail} class={`rolecard ${viaGmail ? 'sel' : ''}`} onClick={() => setViaGmail(true)}><b>✉️ {x.viaGmail}</b><small>{compose ? x.viaGmailD : x.oldExt}</small></button>
           <button role="radio" aria-checked={!viaGmail} class={`rolecard ${!viaGmail ? 'sel' : ''}`} onClick={() => setViaGmail(false)}><b>🔗 {x.viaLink}</b><small>{x.viaLinkD}</small></button>
         </div>
+        {viaGmail && compose && <label class="chk"><input type="checkbox" checked={review} onChange={(e) => setReview((e.target as HTMLInputElement).checked)} /><span><b>{x.reviewL}</b><small>{x.reviewD}</small></span></label>}
         {viaGmail && <label class="fl">{x.noteL}<textarea rows={2} placeholder={x.notePh} value={note} onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)} /></label>}
         <div class="review">{x.review(fresh.length, choice?.node.type === 'tenant' ? x.company : choice?.node.name ?? '', roleText, viaGmail && Boolean(compose))}</div>
       </div>

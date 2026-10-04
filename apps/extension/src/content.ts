@@ -15,7 +15,7 @@ const transport: Transport = async (method, path, body) => {
 
 
 // Sending for mail merge: open a normal Gmail compose window, fill it in, press Send, and wait to hear how it went.
-const sendOne = (sdk: InboxSDK.InboxSDK): ComposeApi['send'] => async ({ to, subject, html }) => {
+const sendOne = (sdk: InboxSDK.InboxSDK): ComposeApi['send'] => async ({ to, subject, html, review }) => {
   let cv: Awaited<ReturnType<typeof sdk.Compose.openNewComposeView>>;
   try { cv = await sdk.Compose.openNewComposeView(); } catch { return { ok: false, error: 'Could not open a Gmail compose window' }; }
   return new Promise((resolve) => {
@@ -26,8 +26,11 @@ const sendOne = (sdk: InboxSDK.InboxSDK): ComposeApi['send'] => async ({ to, sub
     // One timer at a time. Before Gmail accepts the click a stall is a failure; after it, Gmail has the message,
     // and when it never announces "sent" (undo-send delay, a slow page) the message is reported as handed over, not lost.
     const arm = (ms: number, r: R, closeWindow = false) => { clearTimeout(timer); timer = setTimeout(() => { finish(r); if (closeWindow) { try { cv.close(); } catch { /* already closed */ } } }, ms); };
-    arm(30_000, { ok: false, error: 'Gmail did not start sending. Close any open drafts and try again.' }, true);
-    cv.on('sending', () => { arm(45_000, { ok: true, unconfirmed: true }); });
+    // Review mode leaves the window open for the person to read and press Send; they get ten minutes.
+    if (review) arm(10 * 60_000, { ok: false, error: 'The email was not sent from the Gmail window' });
+    else arm(30_000, { ok: false, error: 'Gmail did not start sending. Close any open drafts and try again.' }, true);
+    cv.on('presending', () => { clicked = true; });
+    cv.on('sending', () => { clicked = true; arm(45_000, { ok: true, unconfirmed: true }); });
     cv.on('sent', (e) => { void e.getThreadID().then((threadId) => finish({ ok: true, threadId }), () => finish({ ok: true })); });
     cv.on('sendCanceled', () => finish({ ok: false, error: 'Gmail canceled the send' }));
     cv.on('destroy', () => {
@@ -38,7 +41,7 @@ const sendOne = (sdk: InboxSDK.InboxSDK): ComposeApi['send'] => async ({ to, sub
       cv.setToRecipients([to]);
       cv.setSubject(subject);
       cv.setBodyHTML(html);
-      setTimeout(() => { try { clicked = true; cv.send(); } catch (e) { clicked = false; finish({ ok: false, error: (e as Error).message }); } }, 600);
+      if (!review) setTimeout(() => { try { clicked = true; cv.send(); } catch (e) { clicked = false; finish({ ok: false, error: (e as Error).message }); } }, 600);
     } catch (e) { finish({ ok: false, error: (e as Error).message }); }
   });
 };
