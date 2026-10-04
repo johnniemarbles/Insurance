@@ -1,5 +1,5 @@
 import { PrivacyTab } from './privacy.tsx';
-import { OrgTab } from './org.tsx';
+import { PeopleHub } from './people.tsx';
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { NAV_ITEMS, SETTINGS, type NavLayout, type SettingDef, type SettingScope, type SettingTab } from '../../../packages/domain/src/settings.ts';
 import type { ComposeApi, Locale } from './types.ts';
@@ -184,7 +184,7 @@ export function SettingsPage({ api, call, locale, initialTab, isManager, pipelin
               {(hist ?? []).slice(0, 15).map((h) => <div class="ev">{SETTINGS.find((d) => d.key === h.key)?.label[locale] ?? h.key}<small>{h.scopeType === 'user' ? x.you : h.scopeName ?? x.company} · {h.changedBy} · {new Date(h.changedAt).toLocaleString(locale)}</small></div>)}
             </details>
           )}
-          {tab === 'organization' && <OrgTab call={call} locale={locale} isTenantAdmin={Boolean(who?.isTenantAdmin)} compose={compose} />}
+          {tab === 'organization' && <PeopleHub call={call} locale={locale} isTenantAdmin={Boolean(who?.isTenantAdmin)} compose={compose} />}
           {tab === 'privacy' && <PrivacyTab call={call} locale={locale} />}
           {tab === 'team' && <TeamTab api={api} call={call} locale={locale} pipelines={pipelines} isManager={isManager} x={x} onError={setErr} />}
         </>

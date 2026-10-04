@@ -61,13 +61,26 @@ export async function sweepDigests(deps: AppDeps): Promise<number> {
   return n;
 }
 
+/** Tell the person who invited someone when nothing has happened for 3 days. Once per invitation. */
+export async function sweepStaleInvitations(deps: AppDeps): Promise<number> {
+  const r = await deps.authPool.query<{ id: string; tenant_id: string; invited_by: string; email: string }>(
+    `UPDATE invitations SET stale_notified_at = now()
+      WHERE accepted_at IS NULL AND expires_at > now() AND created_at <= now() - interval '3 days' AND stale_notified_at IS NULL AND invited_by IS NOT NULL
+      RETURNING id, tenant_id, invited_by, email::text AS email`,
+  );
+  for (const i of r.rows) {
+    await deps.authPool.query(`INSERT INTO notifications (tenant_id, user_id, kind, data) VALUES ($1, $2, 'invite_stale', $3)`, [i.tenant_id, i.invited_by, JSON.stringify({ email: i.email, invitationId: i.id })]);
+  }
+  return r.rowCount ?? 0;
+}
+
 let running = false;
 /** Every ten minutes; safe to run on several instances because each automation acts once per stay. */
 export function startBackgroundJobs(deps: AppDeps): () => void {
   const tick = async () => {
     if (running) return;
     running = true;
-    try { await sweepStale(deps); await sweepDigests(deps); } catch { /* next tick */ } finally { running = false; }
+    try { await sweepStale(deps); await sweepDigests(deps); await sweepStaleInvitations(deps); } catch { /* next tick */ } finally { running = false; }
   };
   const t = setInterval(() => void tick(), 10 * 60_000);
   t.unref();

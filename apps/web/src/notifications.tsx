@@ -18,6 +18,8 @@ const X = {
         case 'capture': return `${n.data.source ?? 'A form'} “${n.data.via ?? ''}” created ${box}`;
         case 'merge_done': return `Your mail merge “${n.data.name ?? ''}” has finished`;
         case 'unsubscribed': return `${n.data.email ?? 'A recipient'} unsubscribed from your mail merge`;
+        case 'invite_accepted': return `${n.data.email ?? who} accepted your invitation and joined`;
+        case 'invite_stale': return `${n.data.email ?? 'Someone'} has not joined yet, 3 days after your invitation. Open Settings > Company and people to resend it.`;
         default: return n.kind;
       }
     },
@@ -35,6 +37,8 @@ const X = {
         case 'capture': return `${n.data.source ?? 'Un formulaire'} « ${n.data.via ?? ''} » a créé ${box}`;
         case 'merge_done': return `Votre publipostage « ${n.data.name ?? ''} » est terminé`;
         case 'unsubscribed': return `${n.data.email ?? 'Un destinataire'} s’est désabonné de votre publipostage`;
+        case 'invite_accepted': return `${n.data.email ?? who} a accepté votre invitation et s’est joint`;
+        case 'invite_stale': return `${n.data.email ?? 'Quelqu’un'} ne s’est pas encore joint, 3 jours après votre invitation. Ouvrez Paramètres > Entreprise et personnes pour la renvoyer.`;
         default: return n.kind;
       }
     },

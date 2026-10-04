@@ -69,6 +69,7 @@ export function toSessionSettings(ctx: RequestContext): Record<string, string> {
     'app.tenant_id': ctx.tenantId,
     'app.user_id': ctx.userId,
     'app.node_ids': `{${ctx.nodeIds.join(',')}}`,
+    'app.admin_node_ids': `{${ctx.adminNodeIds.filter((i) => isUuid(i)).join(',')}}`,
     'app.is_tenant_admin': ctx.isTenantAdmin ? 'true' : 'false',
     'app.can_write': ctx.canWrite ? 'true' : 'false',
   };

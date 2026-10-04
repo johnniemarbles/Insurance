@@ -72,6 +72,14 @@ export const SETTINGS: readonly SettingDef[] = [
     key: 'notify.unsubscribed', tab: 'notifications', type: 'bool', default: false, scopes: ALL, lockable: false,
     label: { en: 'Someone unsubscribes from my merge', 'fr-CA': 'Quelqu’un se désabonne de mon publipostage' }, help: { en: 'A recipient clicks the unsubscribe link.', 'fr-CA': 'Un destinataire clique sur le lien de désabonnement.' }, keywords: 'notification alert notify bell unsubscribed',
   },
+  {
+    key: 'notify.invite_accepted', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'Someone I invited joins', 'fr-CA': 'Une personne que j’ai invitée se joint' }, help: { en: 'They accepted and signed in.', 'fr-CA': 'Elle a accepté et s’est connectée.' }, keywords: 'notification alert notify bell invitation accepted joined',
+  },
+  {
+    key: 'notify.invite_stale', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'An invitation is stuck', 'fr-CA': 'Une invitation est bloquée' }, help: { en: 'Nothing has happened 3 days after you invited someone.', 'fr-CA': 'Rien ne s’est passé 3 jours après votre invitation.' }, keywords: 'notification alert notify bell invitation stale waiting',
+  },
 ] as const;
 
 export const NAV_ITEMS = ['home', 'notifications', 'pipelines', 'contacts', 'merges', 'training', 'settings'] as const;

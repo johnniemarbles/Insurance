@@ -61,8 +61,8 @@ export async function signInWithGoogle(
     let accepted = false;
     if (opts.inviteToken) {
       const inv = (
-        await client.query<{ id: string; tenant_id: string; node_id: string; role: string; email: string; locale: string }>(
-          `SELECT id, tenant_id, node_id, role::text AS role, email::text AS email, locale::text AS locale FROM invitations
+        await client.query<{ id: string; tenant_id: string; node_id: string; role: string; email: string; locale: string; invited_by: string | null }>(
+          `SELECT id, tenant_id, node_id, role::text AS role, email::text AS email, locale::text AS locale, invited_by FROM invitations
             WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > now() FOR UPDATE`,
           [hash(opts.inviteToken)],
         )
@@ -93,9 +93,15 @@ export async function signInWithGoogle(
       await client.query(`INSERT INTO user_node_roles (tenant_id, user_id, node_id, role) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`, [inv.tenant_id, uid, inv.node_id, inv.role]);
       await client.query('UPDATE invitations SET accepted_at = now() WHERE id = $1', [inv.id]);
       await client.query(
-        `INSERT INTO audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, detail) VALUES ($1, $2, 'invitation_accepted', 'invitation', $3, $4)`,
-        [inv.tenant_id, uid, inv.id, JSON.stringify({ nodeId: inv.node_id, role: inv.role })],
+        `INSERT INTO audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, detail, owner_node_id) VALUES ($1, $2, 'invitation_accepted', 'invitation', $3, $4, $5)`,
+        [inv.tenant_id, uid, inv.id, JSON.stringify({ nodeId: inv.node_id, role: inv.role, email: inv.email }), inv.node_id],
       );
+      if (inv.invited_by && inv.invited_by !== uid) {
+        await client.query(
+          `INSERT INTO notifications (tenant_id, user_id, kind, actor_id, data) VALUES ($1, $2, 'invite_accepted', $3, $4)`,
+          [inv.tenant_id, inv.invited_by, uid, JSON.stringify({ email: inv.email, role: inv.role })],
+        );
+      }
       accepted = true;
       opts = { ...opts, tenantId: inv.tenant_id };
     }

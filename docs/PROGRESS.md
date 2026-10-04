@@ -97,3 +97,10 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 - Settings > Company and people (admins only): tree of company/branches/partners, rename, switch off, add branch/partner, invite (copy link), roles, switch person off, withdraw invitation.
 - Invitation emails are not sent yet (needs mail provider); link is copied by hand.
 - Invitations are sent from the inviter's own Gmail (compose window) when running inside Gmail; link copy is the fallback. Server-sent mail (digest, notifications) via Gmail API needs the Gmail connect + gmail.send OAuth, not built yet.
+
+## Phase O2 — Adding people, invitation status, Activity (done)
+- /accept page (was missing: invite links went nowhere), link-opened recorded, accepted + stuck-invite notifications.
+- Invitation states: ready, sent, link opened, active, not sent, expired; delivery reported back from the Gmail compose window; resend makes a new link.
+- Settings > Company and people: People (list, Add person dialog), Structure, Activity (audit log with filters and CSV, branch-scoped).
+- Not verified in real Gmail: sending from the compose window and reporting back.
+- Later: Gmail connect + gmail.send for server-sent mail.

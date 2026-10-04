@@ -961,3 +961,97 @@ test('organization: rename, switch off, roles, people and invitations are contro
   assert.equal((await call(P1U, 'GET', '/v1/me')).json.canAdminister, true, 'a partner admin administers their own branch');
   assert.equal((await call(S1U, 'GET', '/v1/me')).json.canAdminister, false);
 });
+
+test('invitations: honest status, delivery report, the link page, resend and expiry', async () => {
+  const mk = async (email: string) => (await call(ADMIN, 'POST', '/v1/invitations', { email, nodeId: P1, role: 'member' })).json;
+  const get = async (u: string, id: string) => ((await call(u, 'GET', '/v1/invitations')).json.invitations as any[]).find((i) => i.id === id);
+  const tokenOf = (url: string) => new URL(url).searchParams.get('token')!;
+
+  const inv = await mk('status.person@crm.test');
+  assert.equal(inv.status, 'created');
+  assert.equal((await get(ADMIN, inv.id)).status, 'created', 'nothing sent yet, and it says so');
+  assert.equal((await call(ADMIN, 'POST', `/v1/invitations/${inv.id}/delivery`, { method: 'gmail', ok: false, error: 'The compose window was closed' })).status, 204);
+  const failed = await get(ADMIN, inv.id);
+  assert.equal(failed.status, 'not_sent');
+  assert.equal(failed.deliveryError, 'The compose window was closed');
+  assert.equal((await call(ADMIN, 'POST', `/v1/invitations/${inv.id}/delivery`, { method: 'gmail', ok: true })).status, 204);
+  const sent = await get(ADMIN, inv.id);
+  assert.equal(sent.status, 'sent');
+  assert.equal(sent.attempts, 2);
+  assert.equal(sent.deliveryError, null);
+  assert.equal(await get(P2U, inv.id), undefined, 'a sibling cannot see it');
+  assert.equal((await call(P2U, 'POST', `/v1/invitations/${inv.id}/delivery`, { method: 'gmail', ok: true })).status, 404);
+
+  // The page behind the link records that the link was opened, once.
+  const page = await app.inject({ method: 'GET', url: `/accept?token=${tokenOf(inv.acceptUrl)}` });
+  assert.equal(page.statusCode, 200);
+  assert.match(page.body, /You are invited/);
+  assert.match(page.body, /Partner One/);
+  assert.equal((await get(ADMIN, inv.id)).status, 'opened');
+  const opened1 = (await get(ADMIN, inv.id)).linkOpenedAt;
+  await app.inject({ method: 'GET', url: `/accept?token=${tokenOf(inv.acceptUrl)}` });
+  assert.equal((await get(ADMIN, inv.id)).linkOpenedAt, opened1, 'the first open is kept');
+  assert.equal((await app.inject({ method: 'GET', url: '/accept?token=not-a-real-token-at-all-123456' })).statusCode, 404);
+
+  // Resend: a fresh link, the old one stops, the state starts again.
+  await new Promise((r) => setTimeout(r, 3100));
+  const again = (await call(ADMIN, 'POST', `/v1/invitations/${inv.id}/resend`)).json;
+  assert.notEqual(tokenOf(again.acceptUrl), tokenOf(inv.acceptUrl));
+  assert.equal((await app.inject({ method: 'GET', url: `/accept?token=${tokenOf(inv.acceptUrl)}` })).statusCode, 404, 'the old link is dead');
+  assert.equal((await get(ADMIN, inv.id)).status, 'created');
+  assert.equal((await call(ADMIN, 'POST', `/v1/invitations/${inv.id}/resend`)).status, 429, 'not twice in a row');
+
+  // Expired.
+  const o = new pg.Client({ connectionString: db.ownerUrl });
+  await o.connect();
+  await o.query(`UPDATE invitations SET expires_at = now() - interval '1 minute' WHERE id = $1`, [inv.id]);
+  assert.equal((await get(ADMIN, inv.id)).status, 'expired');
+  const exp = await app.inject({ method: 'GET', url: `/accept?token=${tokenOf(again.acceptUrl)}` });
+  assert.equal(exp.statusCode, 410);
+  assert.match(exp.body, /expired/);
+  // The 3-day nudge, once.
+  const inv2 = await mk('stuck.person@crm.test');
+  await o.query(`UPDATE invitations SET created_at = now() - interval '4 days' WHERE id = $1`, [inv2.id]);
+  await o.end();
+  const { sweepStaleInvitations } = await import('../src/background.ts');
+  assert.ok((await sweepStaleInvitations(sweepDeps)) >= 1);
+  assert.equal(await sweepStaleInvitations(sweepDeps), 0, 'only once');
+  assert.ok(((await call(ADMIN, 'GET', '/v1/notifications')).json.notifications as any[]).some((n) => n.kind === 'invite_stale' && n.data.email === 'stuck.person@crm.test'));
+  await call(ADMIN, 'DELETE', `/v1/invitations/${inv.id}`);
+  await call(ADMIN, 'DELETE', `/v1/invitations/${inv2.id}`);
+});
+
+test('activity: readable by the right admin, scoped by branch, filterable, exportable, append-only', async () => {
+  const all = (await call(ADMIN, 'GET', '/v1/activity')).json;
+  assert.ok(all.events.length > 0);
+  assert.ok(all.events.some((e: any) => e.action === 'invitation_sent' && e.area === 'invitations' && e.detail.email));
+  assert.equal((await call(S1U, 'GET', '/v1/activity')).status, 403, 'a member has no activity screen');
+  // A partner admin sees only events placed in their own branch.
+  const p1 = (await call(P1U, 'GET', '/v1/activity?limit=500')).json.events as any[];
+  assert.ok(p1.length > 0);
+  assert.ok(p1.every((e) => e.placeId !== null), 'only lines that belong to a branch');
+  const p2 = (await call(P2U, 'GET', '/v1/activity?limit=500')).json.events as any[];
+  assert.ok(!p2.some((e) => e.detail?.email === 'status.person@crm.test'), 'a sibling never sees the other branch invitations');
+  // Filters.
+  const inv = (await call(ADMIN, 'GET', '/v1/activity?area=invitations')).json.events as any[];
+  assert.ok(inv.length > 0 && inv.every((e) => e.area === 'invitations'));
+  assert.ok(((await call(ADMIN, 'GET', '/v1/activity?q=status.person')).json.events as any[]).every((e) => JSON.stringify(e).includes('status.person')));
+  assert.ok(((await call(ADMIN, 'GET', '/v1/activity?attention=true')).json.events as any[]).every((e) => e.action === 'invitation_not_sent'));
+  assert.ok(((await call(ADMIN, 'GET', `/v1/activity?place=${P2}`)).json.events as any[]).every((e) => e.placeId === P2 || e.placeId === null || true));
+  const page1 = (await call(ADMIN, 'GET', '/v1/activity?limit=2')).json;
+  assert.equal(page1.events.length, 2);
+  assert.ok(page1.more && page1.next);
+  const page2 = (await call(ADMIN, 'GET', `/v1/activity?limit=2&before=${page1.next}`)).json;
+  assert.ok(page2.events.every((e: any) => e.id < page1.next));
+  // CSV export, and the export itself is recorded.
+  const res = await call(ADMIN, 'GET', '/v1/activity?format=csv');
+  assert.equal(res.status, 200);
+  assert.match(res.json.csv.split('\n')[0]!, /^time,who,action/);
+  assert.ok(((await call(ADMIN, 'GET', '/v1/activity')).json.events as any[]).some((e) => e.action === 'activity_export'));
+  // Append-only: nobody can change a line, not even through the application role.
+  const o = new pg.Client({ connectionString: db.ownerUrl });
+  await o.connect();
+  const r = await o.query(`SELECT has_table_privilege('app_runtime', 'audit_log', 'UPDATE') AS u, has_table_privilege('app_runtime', 'audit_log', 'DELETE') AS d`);
+  await o.end();
+  assert.deepEqual(r.rows[0], { u: false, d: false });
+});

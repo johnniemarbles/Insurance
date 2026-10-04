@@ -55,7 +55,7 @@ export function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): void {
     const out = await run(ctx, async (tx) => {
       const id = randomUUID();
       await tx.query(`INSERT INTO org_nodes (id, tenant_id, type, name) VALUES ($1, $2, 'location', $3)`, [id, ctx.tenantId, name.trim()]);
-      await audit(tx, ctx, 'node_created', 'org_node', id, { type: 'location', name });
+      await audit(tx, ctx, 'node_created', 'org_node', id, { type: 'location', name }, id);
       return { id };
     });
     return reply.code(201).send(out);
@@ -78,7 +78,7 @@ export function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): void {
         const id = randomUUID();
         await tx.query(`INSERT INTO org_nodes (id, tenant_id, type, name) VALUES ($1, $2, 'partner', $3)`, [id, ctx.tenantId, name.trim()]);
         await tx.query(`INSERT INTO org_links (tenant_id, parent_id, child_id, kind, created_by) VALUES ($1, $2, $3, $4, $5)`, [ctx.tenantId, parentId, id, kind, ctx.userId]);
-        await audit(tx, ctx, 'node_created', 'org_node', id, { type: 'partner', name, parentId, kind });
+        await audit(tx, ctx, 'node_created', 'org_node', id, { type: 'partner', name, parentId, kind }, id);
         return { id, kind };
       });
       return reply.code(201).send(out);
@@ -145,7 +145,7 @@ export function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): void {
           if (type === 'tenant') await tx.query('UPDATE tenants SET name = $1 WHERE id = $2', [b.name.trim(), ctx.tenantId]);
         }
         if (b.isActive !== undefined) await tx.query('UPDATE org_nodes SET is_active = $2 WHERE id = $1', [id, b.isActive]);
-        await audit(tx, ctx, 'node_updated', 'org_node', id, b);
+        await audit(tx, ctx, 'node_updated', 'org_node', id, b, id);
       });
       return reply.code(204).send();
     },

@@ -45,7 +45,7 @@ export function OrgTab({ call, locale, isTenantAdmin, compose }: { call: Call; l
   const [members, setMembers] = useState<Member[]>([]);
   const [invs, setInvs] = useState<Inv[]>([]);
   const [err, setErr] = useState('');
-  const [open, setOpen] = useState<{ id: string; mode: 'rename' | 'partner' | 'invite' | 'role' } | null>(null);
+  const [open, setOpen] = useState<{ id: string; mode: 'rename' | 'partner' } | null>(null);
   const [text, setText] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('member');
@@ -76,33 +76,13 @@ export function OrgTab({ call, locale, isTenantAdmin, compose }: { call: Call; l
     if (!open || open.id !== n.id) return null;
     if (open.mode === 'rename') return <div class="erow"><input aria-label={x.rename} value={text} onInput={(e) => setText((e.target as HTMLInputElement).value)} /><button class="primary" disabled={!text.trim()} onClick={() => void act(() => call('PATCH', `/v1/org/nodes/${n.id}`, { name: text.trim() }))}>{x.save}</button><button class="link" onClick={() => setOpen(null)}>{x.cancel}</button></div>;
     if (open.mode === 'partner') return <div class="erow"><input placeholder={x.partnerName} aria-label={x.partnerName} value={text} onInput={(e) => setText((e.target as HTMLInputElement).value)} /><button class="primary" disabled={!text.trim()} onClick={() => void act(() => call('POST', '/v1/org/partners', { name: text.trim(), parentId: n.id }))}>{x.add}</button><button class="link" onClick={() => setOpen(null)}>{x.cancel}</button></div>;
-    if (open.mode === 'role') return <div class="erow"><select aria-label={x.person} value={who} onChange={(e) => setWho((e.target as HTMLSelectElement).value)}><option value="">{x.person}</option>{people.map((p) => <option value={p.userId}>{p.displayName || p.email}</option>)}</select><select aria-label={x.role} value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>{ROLES.map((r) => <option value={r}>{x.roles[r]}</option>)}</select><button class="primary" disabled={!who} onClick={() => void act(() => call('POST', '/v1/org/members', { userId: who, nodeId: n.id, role }))}>{x.makeRole}</button><button class="link" onClick={() => setOpen(null)}>{x.cancel}</button></div>;
-    return (
-      <div class="erow wrap2">
-        <input type="email" placeholder={x.email} aria-label={x.email} value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} />
-        <select aria-label={x.role} value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>{ROLES.map((r) => <option value={r}>{x.roles[r]}</option>)}</select>
-        {compose && <label class="check"><input type="checkbox" checked={viaGmail} onChange={(e) => setViaGmail((e.target as HTMLInputElement).checked)} /> {x.viaGmail}</label>}
-        <button class="primary" disabled={!email.includes('@')} onClick={() => void act(async () => {
-          const to = email.trim();
-          const r = await call('POST', '/v1/invitations', { email: to, nodeId: n.id, role, locale });
-          setCopied(false); setInfo('');
-          if (compose && viaGmail) {
-            const me = await call('GET', '/v1/me');
-            const sent = await compose.send({ to, subject: x.subject(root?.name ?? 'PII'), html: x.body(root?.name ?? 'PII', me.user.displayName || me.user.email, r.acceptUrl) });
-            if (sent.ok) { setInfo(x.gmailSent(to)); setLink(''); return; }
-            setErr(x.gmailFailed);
-          }
-          setLink(r.acceptUrl);
-        })}>{x.sendInvite}</button>
-        <button class="link" onClick={() => setOpen(null)}>{x.cancel}</button>
-      </div>
-    );
+    return null;
   };
 
   const nodeRow = (n: Node, depth: number): any => {
     const here = members.filter((m) => m.nodeId === n.id);
     const label = n.type === 'location' ? x.branch : n.type === 'partner' ? x.partner : x.company;
-    const go = (mode: 'rename' | 'partner' | 'invite' | 'role') => { setText(mode === 'rename' ? n.name : ''); setOpen({ id: n.id, mode }); };
+    const go = (mode: 'rename' | 'partner') => { setText(mode === 'rename' ? n.name : ''); setOpen({ id: n.id, mode }); };
     return (
       <div key={n.id} class="orgnode" style={{ marginLeft: `${depth * 18}px` }}>
         <div class="erow wrap2">
@@ -110,8 +90,6 @@ export function OrgTab({ call, locale, isTenantAdmin, compose }: { call: Call; l
           <span class="spacer" />
           <button class="link" onClick={() => go('rename')}>{x.rename}</button>
           {n.type !== 'tenant' && <button class="link" onClick={() => go('partner')}>{x.addPartner}</button>}
-          <button class="link" onClick={() => go('invite')}>{x.invite}</button>
-          <button class="link" onClick={() => go('role')}>{x.addRole}</button>
           {n.type !== 'tenant' && <button class="link" onClick={() => void act(() => call('PATCH', `/v1/org/nodes/${n.id}`, { isActive: !n.isActive }))}>{n.isActive ? x.off : x.on}</button>}
         </div>
         {form(n)}
@@ -135,23 +113,12 @@ export function OrgTab({ call, locale, isTenantAdmin, compose }: { call: Call; l
     <div class="orgtab">
       <p class="muted">{x.intro}</p>
       {err && <p class="err" role="alert">{err}</p>}
-      {info && <p role="status">{info}</p>}
-      {link && (
-        <div class="hcard"><p>{x.inviteHint}</p>
-          <div class="erow"><input readOnly value={link} aria-label={x.copy} onFocus={(e) => (e.target as HTMLInputElement).select()} /><button class="primary" onClick={() => { void navigator.clipboard?.writeText(link).then(() => setCopied(true), () => undefined); }}>{copied ? x.copied : x.copy}</button><button class="link" onClick={() => setLink('')}>×</button></div>
-        </div>
-      )}
       {root && nodeRow(root, 0)}
       {isTenantAdmin && (
         <div class="erow"><input placeholder={x.branchName} aria-label={x.branchName} value={branch} onInput={(e) => setBranch((e.target as HTMLInputElement).value)} /><button class="primary" disabled={!branch.trim()} onClick={() => void act(async () => { await call('POST', '/v1/org/locations', { name: branch.trim() }); setBranch(''); })}>{x.addBranch}</button></div>
       )}
       {tops.length === 0 && <p class="muted">{x.none}</p>}
       {tops.map((n) => nodeRow(n, 1))}
-      {invs.length > 0 && (
-        <div class="hcard"><h3>{x.pending}</h3>
-          {invs.map((v) => <div class="erow" key={v.id}><span>{v.email} <small class="muted">· {byId.get(v.nodeId)?.name ?? ''} · {x.roles[v.role] ?? v.role} · {x.expires} {new Date(v.expiresAt).toLocaleDateString(locale)}</small></span><span class="spacer" /><button class="link" onClick={() => void act(() => call('DELETE', `/v1/invitations/${v.id}`))}>{x.withdraw}</button></div>)}
-        </div>
-      )}
     </div>
   );
 }

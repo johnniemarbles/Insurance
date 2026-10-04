@@ -67,7 +67,7 @@ export function registerSettingRoutes(app: FastifyInstance, deps: AppDeps): void
         `INSERT INTO setting_history (tenant_id, scope_type, scope_id, key, old_value, new_value, old_locked, new_locked, changed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [ctx.tenantId, b.scope, scopeId, key, prev ? JSON.stringify(prev.value) : null, JSON.stringify(check.value), prev?.locked ?? null, !!b.locked, ctx.userId],
       );
-      if (b.scope !== 'user') await audit(tx, ctx, 'setting_changed', b.scope, scopeId, { key, locked: !!b.locked });
+      if (b.scope !== 'user') await audit(tx, ctx, 'setting_changed', b.scope, scopeId, { key, locked: !!b.locked, value: b.value }, b.scope === 'node' ? scopeId : null);
       return { settings: await resolveSettings(tx, ctx.userId, [key]) };
     });
   });
@@ -94,7 +94,7 @@ export function registerSettingRoutes(app: FastifyInstance, deps: AppDeps): void
           `INSERT INTO setting_history (tenant_id, scope_type, scope_id, key, old_value, new_value, old_locked, new_locked, changed_by) VALUES ($1,$2,$3,$4,$5,NULL,$6,NULL,$7)`,
           [ctx.tenantId, q.scope, scopeId, key, JSON.stringify(prev.value), prev.locked, ctx.userId],
         );
-        if (q.scope !== 'user') await audit(tx, ctx, 'setting_reverted', q.scope, scopeId, { key });
+        if (q.scope !== 'user') await audit(tx, ctx, 'setting_reverted', q.scope, scopeId, { key }, q.scope === 'node' ? scopeId : null);
       }
       return { settings: await resolveSettings(tx, ctx.userId, [key]) };
     });

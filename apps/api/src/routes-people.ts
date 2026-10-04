@@ -4,7 +4,7 @@ import { withRequestTx, type Tx } from '@pii/db';
 import { newToken } from '@pii/platform';
 import { audit } from './audit.ts';
 import { hasAcceptedFirstLogin } from './routes-consent.ts';
-import { forbidden, invalid, notFound } from './errors.ts';
+import { HttpError, conflict, forbidden, invalid, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 
 const INVITE_DAYS = 7;
@@ -19,6 +19,10 @@ async function isAdminAbove(tx: Tx, ctx: RequestContext, nodeId: string): Promis
     [nodeId, ctx.adminNodeIds],
   );
   return rows[0]?.ok === true;
+}
+
+async function emailOf(tx: Tx, userId: string): Promise<string | null> {
+  return (await tx.query<{ e: string }>('SELECT email::text AS e FROM app_users WHERE id = $1', [userId])).rows[0]?.e ?? null;
 }
 
 export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -84,20 +88,76 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
           [ctx.tenantId, body.email.trim().toLowerCase(), body.nodeId, role, body.locale ?? 'en', hash, ctx.userId, expiresAt],
         );
         const id = rows[0]!.id;
-        await audit(tx, ctx, 'invitation_created', 'invitation', id, { nodeId: body.nodeId, role });
-        return { id, expiresAt: expiresAt.toISOString(), acceptUrl: `${deps.config.appOrigin}/accept?token=${token}` };
+        await audit(tx, ctx, 'invitation_created', 'invitation', id, { email: body.email.trim().toLowerCase(), nodeId: body.nodeId, role }, body.nodeId);
+        return { id, status: 'created', expiresAt: expiresAt.toISOString(), acceptUrl: `${deps.config.appOrigin}/accept?token=${token}` };
       });
       return reply.code(201).send(out);
     },
   );
 
+  const STATUS_SQL = `CASE WHEN i.accepted_at IS NOT NULL THEN 'accepted' WHEN i.expires_at <= now() THEN 'expired' WHEN i.link_opened_at IS NOT NULL THEN 'opened'
+                           WHEN i.sent_at IS NOT NULL THEN 'sent' WHEN i.delivery_error IS NOT NULL THEN 'not_sent' ELSE 'created' END`;
+  const INVITE_COLS = `i.id, i.email::text AS email, i.node_id AS "nodeId", i.role::text AS role, i.locale::text AS locale, i.expires_at AS "expiresAt", i.accepted_at AS "acceptedAt",
+        i.created_at AS "createdAt", i.sent_at AS "sentAt", i.delivery_method AS "deliveryMethod", i.delivery_error AS "deliveryError", i.attempts, i.last_attempt_at AS "lastAttemptAt",
+        i.link_opened_at AS "linkOpenedAt", coalesce(iu.display_name, iu.email::text) AS "invitedBy", i.invited_by AS "invitedById", ${STATUS_SQL} AS status`;
+
   app.get('/v1/invitations', async (req) => {
     const { ctx } = await deps.authenticate(req);
     return run(ctx, async (tx) => {
       const { rows } = await tx.query(
-        `SELECT id, email::text AS email, node_id AS "nodeId", role::text AS role, expires_at AS "expiresAt", accepted_at AS "acceptedAt" FROM invitations ORDER BY expires_at DESC`,
+        `SELECT ${INVITE_COLS} FROM invitations i LEFT JOIN app_users iu ON iu.id = i.invited_by
+          WHERE i.accepted_at IS NULL OR i.accepted_at > now() - interval '30 days' ORDER BY i.created_at DESC`,
       );
       return { invitations: rows };
+    });
+  });
+
+  async function loadInvite(tx: Tx, ctx: RequestContext, id: string) {
+    const inv = (await tx.query<{ node_id: string; email: string; invited_by: string | null; accepted_at: string | null; attempts: number; last_attempt_at: string | null; role: string; locale: string }>(
+      'SELECT node_id, email::text AS email, invited_by, accepted_at, attempts, last_attempt_at, role::text AS role, locale::text AS locale FROM invitations WHERE id = $1', [id])).rows[0];
+    if (!inv) throw notFound('No invitation with that id');
+    if (!(inv.invited_by === ctx.userId || (await isAdminAbove(tx, ctx, inv.node_id)))) throw forbidden();
+    return inv;
+  }
+
+  // The extension (or the person copying the link) reports what happened when the invitation was sent.
+  app.post('/v1/invitations/:id/delivery', {
+    schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } }, body: { type: 'object', required: ['method', 'ok'], additionalProperties: false, properties: { method: { enum: ['gmail', 'link'] }, ok: { type: 'boolean' }, error: { type: 'string', maxLength: 300 } } } },
+  }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    const b = req.body as { method: 'gmail' | 'link'; ok: boolean; error?: string };
+    await run(ctx, async (tx) => {
+      const inv = await loadInvite(tx, ctx, id);
+      if (inv.accepted_at) throw conflict('This person has already joined');
+      await tx.query(
+        `UPDATE invitations SET attempts = attempts + 1, last_attempt_at = now(), delivery_method = $2,
+                sent_at = CASE WHEN $3 THEN now() ELSE sent_at END, sent_by = CASE WHEN $3 THEN $4::uuid ELSE sent_by END,
+                delivery_error = CASE WHEN $3 THEN NULL ELSE $5 END WHERE id = $1`,
+        [id, b.method, b.ok, ctx.userId, b.error ?? 'Not sent'],
+      );
+      await audit(tx, ctx, b.ok ? 'invitation_sent' : 'invitation_not_sent', 'invitation', id, { email: inv.email, method: b.method, ...(b.ok ? {} : { error: b.error ?? 'Not sent' }) }, inv.node_id);
+    });
+    return reply.code(204).send();
+  });
+
+  // A fresh link: the old one stops working and the state starts again.
+  app.post('/v1/invitations/:id/resend', { schema: { params: { type: 'object', properties: { id: { type: 'string', format: 'uuid' } } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    return run(ctx, async (tx) => {
+      const inv = await loadInvite(tx, ctx, id);
+      if (inv.accepted_at) throw conflict('This person has already joined');
+      if (inv.attempts >= 10) throw new HttpError(429, 'too_many', 'Too many attempts for this invitation. Withdraw it and invite again.');
+      if (inv.last_attempt_at && Date.now() - new Date(inv.last_attempt_at).getTime() < 3000) throw new HttpError(429, 'too_fast', 'Please wait a moment before sending again.');
+      const { token, hash } = newToken();
+      const expiresAt = new Date(Date.now() + INVITE_DAYS * 86_400_000);
+      await tx.query(
+        `UPDATE invitations SET token_hash = $2, expires_at = $3, sent_at = NULL, sent_by = NULL, link_opened_at = NULL, delivery_error = NULL, stale_notified_at = NULL, last_attempt_at = now() WHERE id = $1`,
+        [id, hash, expiresAt],
+      );
+      await audit(tx, ctx, 'invitation_resent', 'invitation', id, { email: inv.email }, inv.node_id);
+      return { id, status: 'created', expiresAt: expiresAt.toISOString(), acceptUrl: `${deps.config.appOrigin}/accept?token=${token}`, email: inv.email, role: inv.role, nodeId: inv.node_id, locale: inv.locale };
     });
   });
 
@@ -142,7 +202,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
       await mayManageRole(tx, ctx, b.nodeId, b.role);
       if (!(await tx.query('SELECT 1 FROM app_users WHERE id = $1', [b.userId])).rowCount) throw notFound('Unknown person');
       await tx.query('INSERT INTO user_node_roles (tenant_id, user_id, node_id, role) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [ctx.tenantId, b.userId, b.nodeId, b.role]);
-      await audit(tx, ctx, 'role_added', 'user', b.userId, { nodeId: b.nodeId, role: b.role });
+      await audit(tx, ctx, 'role_added', 'user', b.userId, { nodeId: b.nodeId, role: b.role, email: await emailOf(tx, b.userId) }, b.nodeId);
     });
     return reply.code(204).send();
   });
@@ -159,7 +219,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
       }
       const r = await tx.query('DELETE FROM user_node_roles WHERE user_id = $1 AND node_id = $2 AND role = $3', [b.userId, b.nodeId, b.role]);
       if (!r.rowCount) throw notFound('No such role');
-      await audit(tx, ctx, 'role_removed', 'user', b.userId, { nodeId: b.nodeId, role: b.role });
+      await audit(tx, ctx, 'role_removed', 'user', b.userId, { nodeId: b.nodeId, role: b.role, email: await emailOf(tx, b.userId) }, b.nodeId);
     });
     return reply.code(204).send();
   });
@@ -175,7 +235,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
       if (u.status === 'invited') throw invalid('This person has not signed in yet; withdraw the invitation instead');
       if (!(await isAdminAbove(tx, ctx, u.home))) throw forbidden('You can only manage people in a branch you administer');
       await tx.query('UPDATE app_users SET status = $2 WHERE id = $1', [id, status]);
-      await audit(tx, ctx, status === 'disabled' ? 'user_disabled' : 'user_enabled', 'user', id);
+      await audit(tx, ctx, status === 'disabled' ? 'user_disabled' : 'user_enabled', 'user', id, { email: await emailOf(tx, id) }, u.home);
     });
     return reply.code(204).send();
   });
@@ -184,11 +244,11 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
     const { ctx } = await deps.authenticate(req);
     const { id } = req.params as { id: string };
     await run(ctx, async (tx) => {
-      const inv = (await tx.query<{ node_id: string }>('SELECT node_id FROM invitations WHERE id = $1 AND accepted_at IS NULL', [id])).rows[0];
+      const inv = (await tx.query<{ node_id: string; email: string }>('SELECT node_id, email::text AS email FROM invitations WHERE id = $1 AND accepted_at IS NULL', [id])).rows[0];
       if (!inv) throw notFound('No pending invitation with that id');
       if (!(await isAdminAbove(tx, ctx, inv.node_id))) throw forbidden();
       await tx.query('DELETE FROM invitations WHERE id = $1', [id]);
-      await audit(tx, ctx, 'invitation_withdrawn', 'invitation', id);
+      await audit(tx, ctx, 'invitation_withdrawn', 'invitation', id, { email: inv.email }, inv.node_id);
     });
     return reply.code(204).send();
   });
