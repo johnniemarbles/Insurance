@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState, useRef } from 'preact/hooks';
 import type { ComposeApi, Locale } from './types.ts';
 import { ActivityTab } from './activity.tsx';
 import { OrgTab } from './org.tsx';
@@ -18,7 +18,7 @@ export const X = {
     status: { created: 'Ready to send', sent: 'Sent', opened: 'Link opened', accepted: 'Active', expired: 'Expired', not_sent: 'Not sent', off: 'Switched off' } as Record<string, string>,
     hint: { created: 'Nothing has been sent yet.', sent: 'Waiting for them to open the link.', opened: 'They opened the link but have not signed in.', expired: 'Nobody joined within 7 days.', not_sent: 'The email did not go out.' } as Record<string, string>,
     invitedBy: 'Invited by', ago: 'ago', via: { gmail: 'from Gmail', link: 'by a copied link' },
-    resend: 'Resend', newLink: 'Get a link', withdraw: 'Withdraw', switchOff: 'Switch off', switchOn: 'Switch back on', giveRole: 'Give a role', removeRole: 'Remove', copy: 'Copy link', copied: 'Copied', sending: 'Sending from your Gmail…',
+    resend: 'Resend', newLink: 'Get a link', withdraw: 'Withdraw', switchOff: 'Switch off', switchOn: 'Switch back on', giveRole: 'Give a role', removeRole: 'Remove', copy: 'Copy link', copied: 'Copied', sending: 'Sending from your Gmail…', sendingNow: 'Sending…', sendingHint: 'Gmail is sending this now.', queued: 'Waiting for Gmail', handedOff: (e: string) => `Handed to Gmail for ${e}. Check your Sent folder if you want to be sure.`, closeKeep: 'Close, sending continues',
     sentOk: (e: string) => `Sent to ${e} from your Gmail.`, linkReady: 'Link ready. Send it to the person yourself.', openGmail: 'Open Gmail with the PII extension to send from your own address.',
     step: ['Who', 'Where', 'Role', 'Send'], next: 'Next', back: 'Back', close: 'Close', cancel: 'Cancel',
     whoT: 'Who are you adding?', whoHelp: 'One email per line. You can paste a list.', whoPh: 'asha@example.com\nraj@example.com', already: (e: string) => `${e} is already in the company. Use Give a role on their row.`, bad: 'That does not look like an email address.',
@@ -41,7 +41,7 @@ export const X = {
     status: { created: 'Prête à envoyer', sent: 'Envoyée', opened: 'Lien ouvert', accepted: 'Active', expired: 'Expirée', not_sent: 'Non envoyée', off: 'Désactivée' } as Record<string, string>,
     hint: { created: 'Rien n’a encore été envoyé.', sent: 'En attente de l’ouverture du lien.', opened: 'Le lien a été ouvert, mais la personne ne s’est pas connectée.', expired: 'Personne ne s’est joint en 7 jours.', not_sent: 'Le courriel n’est pas parti.' } as Record<string, string>,
     invitedBy: 'Invitée par', ago: '', via: { gmail: 'depuis Gmail', link: 'par un lien copié' },
-    resend: 'Renvoyer', newLink: 'Obtenir un lien', withdraw: 'Retirer', switchOff: 'Désactiver', switchOn: 'Réactiver', giveRole: 'Donner un rôle', removeRole: 'Retirer', copy: 'Copier le lien', copied: 'Copié', sending: 'Envoi depuis votre Gmail…',
+    resend: 'Renvoyer', newLink: 'Obtenir un lien', withdraw: 'Retirer', switchOff: 'Désactiver', switchOn: 'Réactiver', giveRole: 'Donner un rôle', removeRole: 'Retirer', copy: 'Copier le lien', copied: 'Copié', sending: 'Envoi depuis votre Gmail…', sendingNow: 'Envoi…', sendingHint: 'Gmail envoie ce message.', queued: 'En attente de Gmail', handedOff: (e: string) => `Remis à Gmail pour ${e}. Vérifiez vos éléments envoyés pour en être certain.`, closeKeep: 'Fermer, l’envoi continue',
     sentOk: (e: string) => `Envoyé à ${e} depuis votre Gmail.`, linkReady: 'Lien prêt. Transmettez-le vous-même à la personne.', openGmail: 'Ouvrez Gmail avec l’extension PII pour envoyer depuis votre adresse.',
     step: ['Qui', 'Où', 'Rôle', 'Envoi'], next: 'Suivant', back: 'Retour', close: 'Fermer', cancel: 'Annuler',
     whoT: 'Qui ajoutez-vous?', whoHelp: 'Un courriel par ligne. Vous pouvez coller une liste.', whoPh: 'asha@exemple.com\nraj@exemple.com', already: (e: string) => `${e} fait déjà partie de l’entreprise. Utilisez Donner un rôle sur sa ligne.`, bad: 'Ceci ne ressemble pas à une adresse courriel.',
@@ -126,6 +126,8 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
   const [linkBox, setLinkBox] = useState<{ email: string; url: string; id: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
+  const [flight, setFlight] = useState<Set<string>>(new Set());
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
 
   const load = async () => {
     try {
@@ -166,15 +168,21 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
   };
   const report = (id: string, method: 'gmail' | 'link', ok: boolean, error?: string) => call('POST', `/v1/invitations/${id}/delivery`, { method, ok, ...(error ? { error: error.slice(0, 300) } : {}) }).catch(() => undefined);
 
+  /** One Gmail window at a time: the message goes out from the person's own Gmail, and the server is told what happened. */
+  const deliver = (id: string, mail: { to: string; subject: string; html: string }) => {
+    setFlight((f) => new Set(f).add(id));
+    const run = queue.current.then(async () => { const sent = await compose!.send(mail); await report(id, 'gmail', sent.ok, sent.error); return sent; });
+    queue.current = run.catch(() => undefined);
+    return run.catch((e) => ({ ok: false as const, error: (e as Error).message, unconfirmed: false, threadId: undefined })).finally(() => { setFlight((f) => { const n = new Set(f); n.delete(id); return n; }); void load(); });
+  };
   const resend = async (inv: Inv, viaGmail = true) => {
     setBusy(inv.id); setErr('');
     try {
       const r = await call('POST', `/v1/invitations/${inv.id}/resend`);
       if (compose && viaGmail) {
-        setToast(x.sending);
-        const sent = await compose.send(email({ email: r.email, role: r.role, nodeId: r.nodeId, acceptUrl: r.acceptUrl, locale: r.locale }));
-        await report(inv.id, 'gmail', sent.ok, sent.error);
-        if (sent.ok) setToast(x.sentOk(inv.email)); else { setToast(''); setErr(sent.error ?? 'Not sent'); setLinkBox({ email: inv.email, url: r.acceptUrl, id: inv.id }); }
+        setBusy(null); setToast(x.sending);
+        const sent = await deliver(inv.id, email({ email: r.email, role: r.role, nodeId: r.nodeId, acceptUrl: r.acceptUrl, locale: r.locale }));
+        if (sent.ok) setToast(sent.unconfirmed ? x.handedOff(inv.email) : x.sentOk(inv.email)); else { setToast(''); setErr(sent.error ?? 'Not sent'); setLinkBox({ email: inv.email, url: r.acceptUrl, id: inv.id }); }
       } else { setLinkBox({ email: inv.email, url: r.acceptUrl, id: inv.id }); setToast(compose ? x.linkReady : x.openGmail); }
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); await load(); }
   };
@@ -184,7 +192,7 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
   const invRows = pending.filter((i) => matches(i.email) && shown({ attn: needs(i), wait: !needs(i), act: false })).sort((a, b) => Number(needs(b)) - Number(needs(a)) || b.createdAt.localeCompare(a.createdAt));
   const peopleRows = people.filter((p) => matches(p.name + ' ' + p.email) && shown({ attn: p.off, wait: false, act: !p.off }));
 
-  const statusChip = (s: string) => <span class={`pill s-${s}`}><i />{x.status[s]}</span>;
+  const statusChip = (s: string, id?: string) => id && flight.has(id) ? <span class="pill s-sending"><i />{x.sendingNow}</span> :  <span class={`pill s-${s}`}><i />{x.status[s]}</span>;
 
   return (
     <div>
@@ -212,15 +220,15 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
           <div class={`prow ${needs(i) ? 'attn' : ''}`} key={i.id}>
             <Avatar name={i.email} />
             <div class="pmain">
-              <div class="pname">{i.email} {statusChip(i.status)}</div>
+              <div class="pname">{i.email} {statusChip(i.status, i.id)}</div>
               <div class="psub">
-                {i.status === 'not_sent' && i.deliveryError ? <span class="why">{i.deliveryError}</span> : <span>{x.hint[i.status]}</span>}
+                {flight.has(i.id) ? <span>{x.sendingHint}</span> : i.status === 'not_sent' && i.deliveryError ? <span class="why">{i.deliveryError}</span> : <span>{x.hint[i.status]}</span>}
                 <span> · {roleLabel(i.role, i.nodeId)} · {placeName(i.nodeId)}</span>
                 <span> · {x.invitedBy} {i.invitedBy ?? '—'}, {ago(i.createdAt, locale)}{i.sentAt && i.deliveryMethod ? ` · ${x.status.sent} ${x.via[i.deliveryMethod]}` : ''}</span>
               </div>
             </div>
             <div class="pact">
-              <button class="btn quiet" disabled={busy === i.id} onClick={() => void resend(i)}>{busy === i.id ? '…' : compose ? x.resend : x.newLink}</button>
+              <button class="btn quiet" disabled={busy === i.id || flight.has(i.id)} onClick={() => void resend(i)}>{busy === i.id ? '…' : flight.has(i.id) ? x.sendingNow : compose ? x.resend : x.newLink}</button>
               <button class="more" aria-label="…" onClick={() => setMenu(menu === i.id ? null : i.id)}>⋯</button>
               {menu === i.id && <div class="menu"><button onClick={() => { setMenu(null); void resend(i, false); }}>{x.newLink}</button><button class="danger" onClick={() => { setMenu(null); void act(() => call('DELETE', `/v1/invitations/${i.id}`)); }}>{x.withdraw}</button></div>}
             </div>
@@ -249,7 +257,7 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
         {counts.all > 0 && invRows.length + peopleRows.length === 0 && <p class="muted pad">—</p>}
       </div>
       {toast && <div class="toast2" role="status">{toast}</div>}
-      {adding && <AddPerson x={x} locale={locale} places={places} members={members} isTenantAdmin={isTenantAdmin} compose={compose} call={call} email={email} report={report} onClose={() => { setAdding(false); void load(); }} reload={load} />}
+      {adding && <AddPerson x={x} locale={locale} places={places} members={members} isTenantAdmin={isTenantAdmin} compose={compose} call={call} email={email} report={report} deliver={deliver} onClose={() => { setAdding(false); void load(); }} reload={load} />}
       {roleFor && <RoleDialog x={x} places={places} person={people.find((p) => p.userId === roleFor)!} isTenantAdmin={isTenantAdmin} roleLabel={(role, t) => (role === 'admin' ? x.roleName.admin[t] : x.roleName[role])} onClose={() => setRoleFor(null)} onSave={async (nodeId, role) => { await act(() => call('POST', '/v1/org/members', { userId: roleFor, nodeId, role })); setRoleFor(null); }} />}
     </div>
   );
@@ -273,12 +281,14 @@ function RoleDialog({ x, places, person, isTenantAdmin, roleLabel, onClose, onSa
   );
 }
 
-interface Outcome { email: string; ok: boolean; via?: 'gmail' | 'link'; error?: string; url?: string; id?: string; skipped?: string }
+interface Outcome { pending?: boolean; unconfirmed?: boolean; email: string; ok: boolean; via?: 'gmail' | 'link'; error?: string; url?: string; id?: string; skipped?: string }
 
-function AddPerson({ x, locale, places, members, isTenantAdmin, compose, call, email, report, onClose, reload }: {
+function AddPerson({ x, locale, places, members, isTenantAdmin, compose, call, email, report, deliver, onClose, reload }: {
   x: Strs; locale: Locale; places: ReturnType<typeof placeList>; members: Member[]; isTenantAdmin: boolean; compose?: ComposeApi; call: Call;
   email: (i: { email: string; role: string; nodeId: string; acceptUrl: string; note?: string; locale?: string }) => { to: string; subject: string; html: string };
-  report: (id: string, method: 'gmail' | 'link', ok: boolean, error?: string) => Promise<unknown>; onClose: () => void; reload: () => Promise<void>;
+  report: (id: string, method: 'gmail' | 'link', ok: boolean, error?: string) => Promise<unknown>;
+  deliver: (id: string, mail: { to: string; subject: string; html: string }) => Promise<{ ok: boolean; error?: string; unconfirmed?: boolean }>;
+  onClose: () => void; reload: () => Promise<void>;
 }) {
   const [step, setStep] = useState(0);
   const [text, setText] = useState('');
@@ -317,16 +327,25 @@ function AddPerson({ x, locale, places, members, isTenantAdmin, compose, call, e
   const run = async (only?: string[]) => {
     setRunning(true); setErr('');
     const results: Outcome[] = (out ?? []).filter((o) => only && !only.includes(o.email));
+    const publish = () => setOut([...results]);
+    const todo: { em: string; inv: { id: string; acceptUrl: string } }[] = [];
+    // 1. Create every invitation first, so each one is on the list straight away whatever happens to the emails.
     for (const em of only ?? fresh) {
       try {
         const inv = await call('POST', '/v1/invitations', { email: em, nodeId, role, locale });
-        if (compose && viaGmail) {
-          const sent = await compose.send(email({ email: em, role, nodeId, acceptUrl: inv.acceptUrl, note: note.trim() || undefined }));
-          await report(inv.id, 'gmail', sent.ok, sent.error);
-          results.push(sent.ok ? { email: em, ok: true, via: 'gmail', id: inv.id } : { email: em, ok: false, error: sent.error ?? 'Not sent', url: inv.acceptUrl, id: inv.id });
-        } else results.push({ email: em, ok: true, via: 'link', url: inv.acceptUrl, id: inv.id });
+        if (compose && viaGmail) { results.push({ email: em, ok: true, via: 'gmail', id: inv.id, url: inv.acceptUrl, pending: true }); todo.push({ em, inv }); }
+        else results.push({ email: em, ok: true, via: 'link', url: inv.acceptUrl, id: inv.id });
       } catch (e) { results.push({ email: em, ok: false, error: (e as Error).message }); }
-      setOut([...results]);
+      publish();
+    }
+    void reload();
+    // 2. Send them one after another from the person's Gmail, updating each line as it finishes.
+    const started = todo.map(({ em, inv }) => ({ em, inv, sent: deliver(inv.id, email({ email: em, role, nodeId, acceptUrl: inv.acceptUrl, note: note.trim() || undefined })) })); // queued at once, sent one at a time
+    for (const { em, inv, sent: p } of started) {
+      const sent = await p;
+      const at = results.findIndex((o) => o.email === em);
+      results[at] = sent.ok ? { email: em, ok: true, via: 'gmail', id: inv.id, unconfirmed: sent.unconfirmed } : { email: em, ok: false, error: sent.error ?? 'Not sent', url: inv.acceptUrl, id: inv.id };
+      publish();
     }
     setRunning(false); await reload();
   };
@@ -336,10 +355,10 @@ function AddPerson({ x, locale, places, members, isTenantAdmin, compose, call, e
       <div>
         <h3>{x.doneT}</h3>
         {out.map((o) => (
-          <div class={`res ${o.ok ? (o.via === 'link' ? 'info' : 'ok') : 'bad'}`} key={o.email}>
-            <span class="resi">{o.ok ? (o.via === 'link' ? '🔗' : '✓') : '!'}</span>
-            <div><b>{o.email}</b><div class="psub">{o.ok ? (o.via === 'gmail' ? x.sentOk(o.email) : x.linkReady) : o.error}</div>
-              {o.url && <div class="erow"><input readOnly value={o.url} onFocus={(e) => (e.target as HTMLInputElement).select()} aria-label={x.copy} /><button class="btn quiet" onClick={() => { void navigator.clipboard?.writeText(o.url!).then(() => report(o.id!, 'link', true), () => undefined); }}>{x.copy}</button></div>}
+          <div class={`res ${o.pending ? 'info' : o.ok ? (o.via === 'link' ? 'info' : 'ok') : 'bad'}`} key={o.email}>
+            <span class="resi">{o.pending ? <i class="spin" /> : o.ok ? (o.via === 'link' ? '🔗' : '✓') : '!'}</span>
+            <div><b>{o.email}</b><div class="psub">{o.pending ? x.queued : o.ok ? (o.via === 'gmail' ? (o.unconfirmed ? x.handedOff(o.email) : x.sentOk(o.email)) : x.linkReady) : o.error}</div>
+              {o.url && !o.pending && <div class="erow"><input readOnly value={o.url} onFocus={(e) => (e.target as HTMLInputElement).select()} aria-label={x.copy} /><button class="btn quiet" onClick={() => { void navigator.clipboard?.writeText(o.url!).then(() => report(o.id!, 'link', true), () => undefined); }}>{x.copy}</button></div>}
             </div>
           </div>
         ))}
@@ -393,14 +412,14 @@ function AddPerson({ x, locale, places, members, isTenantAdmin, compose, call, e
   };
 
   return (
-    <div class="mdl-back" onClick={() => !running && onClose()}>
+    <div class="mdl-back" onClick={() => (!running || out) && onClose()}>
       <div class="mdl" role="dialog" aria-modal="true" aria-label={x.add} onClick={(e) => e.stopPropagation()}>
-        <div class="mdl-top"><b>{x.add}</b><button class="x" aria-label={x.close} onClick={() => !running && onClose()}>×</button></div>
+        <div class="mdl-top"><b>{x.add}</b><button class="x" aria-label={x.close} onClick={() => (!running || out) && onClose()}>×</button></div>
         {!out && <ol class="steps">{x.step.map((s, i) => <li class={i === step ? 'cur' : i < step ? 'done' : ''}><span>{i < step ? '✓' : i + 1}</span>{s}</li>)}</ol>}
         <div class="mdl-body">{body()}</div>
         {err && <p class="err" role="alert">{err}</p>}
         <div class="mdl-foot">
-          {out ? (<>{out.some((o) => !o.ok) && <button class="btn quiet" disabled={running} onClick={() => void run(out.filter((o) => !o.ok).map((o) => o.email))}>{x.retry}</button>}<span class="spacer" /><button class="btn" onClick={onClose}>{x.close}</button></>) : (<>
+          {out ? (<>{out.some((o) => !o.ok) && <button class="btn quiet" disabled={running} onClick={() => void run(out.filter((o) => !o.ok).map((o) => o.email))}>{x.retry}</button>}<span class="spacer" /><button class="btn" onClick={onClose}>{running ? x.closeKeep : x.close}</button></>) : (<>
             {step > 0 ? <button class="link" onClick={() => setStep(step - 1)}>{x.back}</button> : <button class="link" onClick={onClose}>{x.cancel}</button>}
             <span class="spacer" />
             {step < 3 ? <button class="btn" disabled={!canNext} onClick={() => setStep(step + 1)}>{x.next}</button> : <button class="btn big" disabled={running || fresh.length === 0 || !nodeId} onClick={() => void run()}>{running ? x.creating : x.send(fresh.length)}</button>}

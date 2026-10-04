@@ -22,10 +22,26 @@ export function registerPageRoutes(app: FastifyInstance, deps: AppDeps): void {
   const product = deps.config.productDisplayName;
 
   app.get('/', async (req, reply) => {
-    const q = req.query as { signed_in?: string };
-    const body = q.signed_in
-      ? '<p><b>You are signed in.</b></p><p>You can close this tab and return to Gmail. Open an email and use the PII panel.</p>'
-      : '<p>Open Gmail with the PII extension installed to get started.</p>';
+    const q = req.query as { signed_in?: string; welcome?: string };
+    let body = '<p>Open Gmail with the PII extension installed to get started.</p>';
+    let lang: 'en' | 'fr-CA' = 'en';
+    if (q.signed_in) {
+      body = '<p><b>You are signed in.</b></p><p>You can close this tab and return to Gmail. Open an email and use the PII panel.</p>';
+      try {
+        const id = await deps.authenticate(req);
+        lang = id.user.locale === 'fr-CA' ? 'fr-CA' : 'en';
+        const company = (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [id.ctx.tenantId])).rows[0]?.name ?? product;
+        const first = (id.user.displayName ?? '').split(' ')[0] ?? '';
+        const ext = process.env.PII_EXTENSION_URL;
+        const T = lang === 'fr-CA'
+          ? { hi: first ? `Bienvenue, ${esc(first)}` : 'Bienvenue', in: `Vous faites maintenant partie de <b>${esc(company)}</b>.`, s1: 'Installez l’extension Chrome PII', s1x: ext ? 'Installer' : 'Si vous ne l’avez pas encore, demandez-la à la personne qui vous a invité.', s2: 'Ouvrez Gmail', s3: 'Cherchez <b>PII</b> dans le panneau de gauche', go: 'Ouvrir Gmail', back: 'Vous êtes connecté. Vous pouvez fermer cet onglet.' }
+          : { hi: first ? `Welcome, ${esc(first)}` : 'Welcome', in: `You are now part of <b>${esc(company)}</b>.`, s1: 'Install the PII Chrome extension', s1x: ext ? 'Install it' : 'If you do not have it yet, ask the person who invited you.', s2: 'Open Gmail', s3: 'Look for <b>PII</b> in the left panel', go: 'Open Gmail', back: 'You are signed in. You can close this tab.' };
+        body = q.welcome
+          ? `<p>${T.in}</p><ol style="text-align:left;line-height:1.7;padding-left:22px"><li><b>${T.s1}</b><br><span style="color:#6b7280;font-size:14px">${ext ? `<a href="${esc(ext)}">${T.s1x}</a>` : T.s1x}</span></li><li><b>${T.s2}</b></li><li>${T.s3}</li></ol><p><a href="https://mail.google.com" style="display:inline-block;background:#1d4ed8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">${T.go}</a></p>`
+          : `<p>${T.back}</p><p><a href="https://mail.google.com">${T.go}</a></p>`;
+        return reply.type('text/html; charset=utf-8').send(page(product, body, T.hi).replace('<html lang="en">', `<html lang="${lang}">`));
+      } catch { /* not signed in after all: fall through to the plain page */ }
+    }
     return reply.type('text/html; charset=utf-8').send(page(product, body, product));
   });
 
