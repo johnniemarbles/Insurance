@@ -86,18 +86,19 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     // A normal link item (the kind that worked before) with the pages nested under it, each with a Google Material icon.
     const top = sdk.NavMenu.addNavItem({ name: 'PII', iconUrl: icon, routeID: 'pii/:page', routeParams: { page: 'home' }, orderHint: 5 });
     section = top;
-    if (r.status !== 200) return;
-    const nav = r.json as NavData;
+    const fallback: NavData = { items: [['home', 'Home'], ['notifications', 'Notifications'], ['pipelines', 'Pipelines'], ['contacts', 'Contacts'], ['training', 'Training'], ['settings', 'Settings']].map(([id, name]) => ({ id, name, count: 0 })), pipelines: [] };
+    const nav = r.status === 200 && Array.isArray(r.json?.items) ? (r.json as NavData) : fallback;
     const svg = (n: string) => chrome.runtime.getURL(`icons/${n}.svg`);
+    // Each item is added on its own, so one that fails never takes the rest of the menu with it. Two levels only (page > pipeline).
     nav.items.forEach((it, i) => {
-      const child = top.addNavItem({ name: withCount(it.name, it.count), iconUrl: svg(it.id), routeID: 'pii/:page', routeParams: { page: it.id }, orderHint: i });
-      if (it.id === 'pipelines') {
-        nav.pipelines.forEach((p, j) => {
-          const pi = child.addNavItem({ name: p.count > 0 ? `${p.name}  ⚠ ${p.count}` : p.name, iconUrl: svg('view'), routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: p.id }, orderHint: j });
-          // Saved views sit under their pipeline; the route id carries both ("pipelineId:viewId").
-          (p.views ?? []).forEach((v, k) => pi.addNavItem({ name: v.name, iconUrl: svg('filter'), routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: `${p.id}:${v.id}` }, orderHint: k }));
-        });
-      }
+      try {
+        const child = top.addNavItem({ name: withCount(it.name, it.count), iconUrl: svg(it.id), routeID: 'pii/:page', routeParams: { page: it.id }, orderHint: i });
+        if (it.id === 'pipelines') {
+          (nav.pipelines ?? []).forEach((p, j) => {
+            try { child.addNavItem({ name: p.count > 0 ? `${p.name}  ⚠ ${p.count}` : p.name, iconUrl: svg('view'), routeID: 'pii/:page/:id', routeParams: { page: 'pipelines', id: p.id }, orderHint: j }); } catch (e) { console.warn('[PII] pipeline item failed', e); }
+          });
+        }
+      } catch (e) { console.warn('[PII] nav item failed', it.id, e); }
     });
   };
   const redraw = () => { void drawNav().catch((e) => console.warn('[PII] left panel failed', e)); };

@@ -62,7 +62,6 @@ const PAGES: PageId[] = ['home', 'notifications', 'pipelines', 'contacts', 'merg
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
 function Shell({ call, t, locale, canAuthor, meEmail, compose, host }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; compose?: ComposeApi; host: HostOptions }) {
-  const inGmail = !!host.route;
   const [page, setPage] = useState<PageId>(() => {
     if (host.route) return pageOf(host.route.page);
     try { const v = localStorage.getItem('pii.page'); return pageOf(v ?? undefined); } catch { return 'pipelines'; }
@@ -80,9 +79,9 @@ function Shell({ call, t, locale, canAuthor, meEmail, compose, host }: { call: C
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
     <div class="pii" onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
-      {!inGmail && (
+      {(
         <div class="tabs" role="tablist">
-          {PAGES.filter((p) => p !== 'merges').map((p) => <button role="tab" aria-selected={page === p} onClick={() => go(p)}>{label[p]}</button>)}
+          {PAGES.filter((p) => p !== 'merges').map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)}>{label[p]}</button>)}
         </div>
       )}
       {page === 'home' ? <HomePage call={call} locale={locale} go={go} />
