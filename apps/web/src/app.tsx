@@ -58,7 +58,7 @@ export function App({ host }: { host: HostOptions }) {
   if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><button class="btn" onClick={host.onSignIn}>{t.signIn}</button></div></div>;
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
-  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
+  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} meName={me.user.displayName ?? ''} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
 }
 
 class Boundary extends Component<{ msg: string; retry: string; children?: ComponentChildren }, { bad: boolean }> {
@@ -80,7 +80,7 @@ type PageId = 'home' | 'notifications' | 'pipelines' | 'contacts' | 'merges' | '
 const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'contacts', 'merges', 'training', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
-function Shell({ call, t, locale, canAuthor, meEmail, compose, host, minExt, supportEmail }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
+function Shell({ call, t, locale, canAuthor, meEmail, meName, compose, host, minExt, supportEmail }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
   const [page, setPage] = useState<PageId>(() => {
     if (host.route) return pageOf(host.route.page);
     try { const v = localStorage.getItem('pii.page'); return pageOf(v ?? undefined); } catch { return 'pipelines'; }
@@ -108,7 +108,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, compose, host, minExt, sup
         </div>
       )}
       <Boundary key={`${page}:${routeId ?? ''}:${nonce}`} msg={t.crashed} retry={t.retry}>
-      {page === 'home' ? <HomePage call={call} locale={locale} go={go} />
+      {page === 'home' ? <HomePage call={call} t={t} locale={locale} go={go} name={meName} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'contacts' ? <ContactsView call={call} t={t} />
         : page === 'training' && LMS ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />
@@ -124,6 +124,8 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
   const [pipelines, setPipelines] = useState<Pipeline[] | null>(null);
   const [pid, setPid] = useState((initialPid ?? '').split(':')[0] || prefs.defaultPipeline || '');
   const wantView = (initialPid ?? '').split(':')[1] ?? '';
+  const wantAct = (initialPid ?? '').split(':')[2] ?? ''; // set by Home: 'new', 'import' or 'open=<recordId>'
+  const actDone = useRef(false);
   const [scope, setScope] = useState<Scope>('all');
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [sorts, setSorts] = useState<SortSpec[]>(defaultSorts);
@@ -260,6 +262,14 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
     if (v) applyView(`team:${v.id}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantView, teamViews.length]);
+  useEffect(() => {
+    if (actDone.current || !pipeline || !wantAct) return;
+    actDone.current = true;
+    if (wantAct === 'new') setCreating(true);
+    else if (wantAct === 'import') setImporting(true);
+    else if (wantAct.startsWith('open=')) void openById(wantAct.slice(5));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipeline, wantAct]);
   const applyView = (name: string) => {
     const tv = name.startsWith('team:') ? teamViews.find((x) => x.id === name.slice(5)) : undefined;
     const v = tv ? { scope: (tv.config.scope ?? 'all') as Scope, view: (tv.config.view ?? 'table') as 'table' | 'board', ...migrateView(tv.config) } : views.find((x) => x.name === name);

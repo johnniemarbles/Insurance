@@ -73,7 +73,40 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const recent = (await tx.query(
         `SELECT b.id, b.name, b.pipeline_id AS "pipelineId", p.name AS pipeline, s.name AS stage, b.updated_at AS "updatedAt"
            FROM boxes b JOIN pipelines p ON p.id = b.pipeline_id JOIN stages s ON s.id = b.stage_id ORDER BY b.updated_at DESC LIMIT 8`)).rows;
-      return { tasks, upcoming, risks, merges, recent };
+      // Trending: records with the most activity (notes, tasks, stage moves) in the last 7 days.
+      const trending = (await tx.query(
+        `SELECT b.id, b.name, b.pipeline_id AS "pipelineId", p.name AS pipeline, s.name AS stage, b.updated_at AS "updatedAt", a.n::int AS activity
+           FROM (SELECT box_id, count(*) AS n FROM (
+                   SELECT box_id, created_at FROM notes UNION ALL SELECT box_id, created_at FROM tasks WHERE box_id IS NOT NULL UNION ALL SELECT box_id, created_at FROM box_events
+                 ) x WHERE created_at > now() - interval '7 days' GROUP BY box_id) a
+           JOIN boxes b ON b.id = a.box_id JOIN pipelines p ON p.id = b.pipeline_id JOIN stages s ON s.id = b.stage_id
+          ORDER BY a.n DESC, b.updated_at DESC LIMIT 8`)).rows;
+      const pins = (await tx.query(
+        `SELECT v.id, v.name, v.pipeline_id AS "pipelineId", p.name AS pipeline
+           FROM home_pins h JOIN saved_views v ON v.id = h.view_id JOIN pipelines p ON p.id = v.pipeline_id
+          WHERE h.user_id = $1 AND (v.is_shared OR v.user_id = $1) ORDER BY h.position, v.name LIMIT 12`, [ctx.userId])).rows;
+      const views = (await tx.query(
+        `SELECT v.id, v.name, v.pipeline_id AS "pipelineId", p.name AS pipeline, (h.view_id IS NOT NULL) AS pinned
+           FROM saved_views v JOIN pipelines p ON p.id = v.pipeline_id LEFT JOIN home_pins h ON h.view_id = v.id AND h.user_id = $1
+          WHERE v.is_shared OR v.user_id = $1 ORDER BY p.name, v.name`, [ctx.userId])).rows;
+      const defaultPipeline = String((await resolveSettings(tx, ctx.userId, ['ui.defaultPipeline']))['ui.defaultPipeline']?.value ?? '');
+      return { tasks, upcoming, risks, merges, recent, trending, pins, views, defaultPipeline };
     });
+  });
+
+  // Which saved views are pinned to Home, in order. Replaces the whole list.
+  app.put('/v1/home/pins', { schema: { body: { type: 'object', required: ['viewIds'], additionalProperties: false, properties: { viewIds: { type: 'array', maxItems: 12, items: { type: 'string', format: 'uuid' } } } } } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    const { viewIds } = req.body as { viewIds: string[] };
+    await withRequestTx(deps.appPool, ctx, async (tx) => {
+      await tx.query('DELETE FROM home_pins WHERE user_id = $1', [ctx.userId]);
+      for (const [i, id] of viewIds.entries()) {
+        await tx.query(
+          `INSERT INTO home_pins (tenant_id, user_id, view_id, position)
+           SELECT $1, $2, v.id, $4 FROM saved_views v WHERE v.id = $3 AND (v.is_shared OR v.user_id = $2) ON CONFLICT DO NOTHING`, [ctx.tenantId, ctx.userId, id, i]);
+      }
+    });
+    return reply.code(204).send();
   });
 }

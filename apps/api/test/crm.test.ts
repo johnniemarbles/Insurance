@@ -879,6 +879,15 @@ test('left panel and home: layout drives the items, the layout is per person, co
   const home = (await call(P1U, 'GET', '/v1/home')).json;
   assert.ok(Array.isArray(home.tasks) && Array.isArray(home.risks) && Array.isArray(home.merges) && Array.isArray(home.recent));
   assert.ok(home.recent.length > 0);
+  const viewId = (home.views as { id: string; name: string }[]).find((v) => v.name === 'Nav view')!.id;
+  assert.equal((await call(P1U, 'PUT', '/v1/home/pins', { viewIds: [viewId] })).status, 204);
+  const pinned = (await call(P1U, 'GET', '/v1/home')).json;
+  assert.deepEqual(pinned.pins.map((v: { name: string }) => v.name), ['Nav view'], 'a pinned view shows as a shortcut');
+  assert.ok(pinned.views.find((v: { id: string }) => v.id === viewId).pinned);
+  assert.equal((await call(P2U, 'GET', '/v1/home')).json.pins.length, 0, 'pins are personal');
+  assert.equal((await call(P1U, 'PUT', '/v1/home/pins', { viewIds: [] })).status, 204);
+  assert.equal((await call(P1U, 'GET', '/v1/home')).json.pins.length, 0, 'and can be removed');
+  assert.ok(Array.isArray(home.trending) && typeof home.defaultPipeline === 'string');
   assert.equal((await call(P2U, 'GET', '/v1/home')).json.recent.every((r: { id: string }) => !home.recent.some((x: { id: string }) => x.id === r.id)), true, 'a sibling sees none of the same records');
   await call(P1U, 'DELETE', '/v1/settings/nav.layout?scope=user');
 });
