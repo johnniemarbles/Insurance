@@ -9,6 +9,7 @@ type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, 
 interface TaskRow { id: string; title: string; dueAt: string | null; boxId: string | null; boxName: string | null; pipelineId: string | null }
 interface RecRow { id: string; name: string; pipelineId: string; pipeline: string; stage: string; updatedAt: string; activity?: number }
 interface HomeData {
+  renewals?: { id: string; name: string; pipelineId: string; pipeline: string; stage: string; renewalDate: string; daysLeft: number; policyType: string | null }[];
   week?: { ring: boolean; goal: number; done: number };
   upcoming: TaskRow[];
   tasks: TaskRow[];
@@ -29,6 +30,7 @@ const X = {
     newRecord: 'Create record', newTask: 'Create task', merge: 'Start mail merge', import: 'Import',
     recent: 'Recent records', recents: 'Recents', trending: 'Trending', noRecent: 'Records you create or update show up here.', noTrending: 'Nothing busy this week.', ago: 'updated', moves: (n: number) => `${n} ${n === 1 ? 'update' : 'updates'} this week`,
     snapshot: 'Pipeline', openPipe: 'Open pipeline', noStages: 'No pipelines yet.', records: (n: number) => `${n} ${n === 1 ? 'record' : 'records'}`,
+    radar: 'Renewals coming up', radarAll: 'See all renewals', noRadar: 'No renewals in the next 45 days.', rLeft: (n: number) => (n < 0 ? `${-n} d overdue` : n === 0 ? 'Today' : `in ${n} d`),
     title: 'My day', due: 'Due today and overdue', noTasks: 'Nothing due. Nice.', later: 'Coming up and no date', noDate: 'No date', attention: 'Needs attention', noRisk: 'Nothing looks stuck.', merges: 'Mail merges in progress', noMerges: 'No merge is running.',
     overdue: 'Overdue', today: 'Today', sent: (a: number, b: number) => `${a} of ${b} sent`, paused: 'paused', days: (n: number) => `${n} days in stage`,
     why: { stalled: 'Stalled', overdue: 'Overdue task', past_close: 'Past close date', no_next_step: 'No next step', unowned: 'No owner' } as Record<string, string>,
@@ -42,6 +44,7 @@ const X = {
     newRecord: 'Créer un dossier', newTask: 'Créer une tâche', merge: 'Lancer un publipostage', import: 'Importer',
     recent: 'Dossiers récents', recents: 'Récents', trending: 'Populaires', noRecent: 'Les dossiers que vous créez ou modifiez apparaissent ici.', noTrending: 'Rien de très actif cette semaine.', ago: 'modifié', moves: (n: number) => `${n} ${n === 1 ? 'mise à jour' : 'mises à jour'} cette semaine`,
     snapshot: 'Pipeline', openPipe: 'Ouvrir le pipeline', noStages: 'Aucun pipeline pour l’instant.', records: (n: number) => `${n} ${n === 1 ? 'dossier' : 'dossiers'}`,
+    radar: 'Renouvellements à venir', radarAll: 'Voir tous les renouvellements', noRadar: 'Aucun renouvellement dans les 45 prochains jours.', rLeft: (n: number) => (n < 0 ? `${-n} j de retard` : n === 0 ? 'Aujourd’hui' : `dans ${n} j`),
     title: 'Ma journée', due: 'À faire aujourd’hui et en retard', noTasks: 'Rien à faire. Parfait.', later: 'À venir et sans date', noDate: 'Sans date', attention: 'À surveiller', noRisk: 'Rien ne semble bloqué.', merges: 'Publipostages en cours', noMerges: 'Aucun publipostage en cours.',
     overdue: 'En retard', today: 'Aujourd’hui', sent: (a: number, b: number) => `${a} sur ${b} envoyés`, paused: 'en pause', days: (n: number) => `${n} jours dans l’étape`,
     why: { stalled: 'Bloqué', overdue: 'Tâche en retard', past_close: 'Clôture dépassée', no_next_step: 'Aucune prochaine étape', unowned: 'Sans responsable' } as Record<string, string>,
@@ -99,7 +102,7 @@ export function HomePage({ call, t, locale, go, name }: { call: Call; t: Strings
         {d.week?.ring && (() => { const w = d.week; const pct = Math.min(100, Math.round((w.done / Math.max(1, w.goal)) * 100)); return (
           <div class="goal" title={`${w.done} / ${w.goal}`}><div class="ring" role="img" aria-label={`${w.done} / ${w.goal}`} style={{ '--p': pct } as any}><span>{w.done}/{w.goal}</span></div><small class="muted">{locale === 'fr-CA' ? (pct >= 100 ? 'Objectif atteint !' : 'Cette semaine') : (pct >= 100 ? 'Goal reached!' : 'This week')}</small></div>); })()}
       </div>
-      <p class="muted hsum">{x.summary(d.tasks.length, d.risks.length)}</p>
+      <p class="muted hsum">{x.summary(d.tasks.length, d.risks.length)}{(() => { const n = (d.renewals ?? []).filter((r) => r.daysLeft <= 30).length; return n ? (locale === 'fr-CA' ? ` · ${n} renouvellement${n === 1 ? '' : 's'} d’ici 30 jours` : ` · ${n} renewal${n === 1 ? '' : 's'} within 30 days`) : ''; })()}</p>
 
       <section class="hsec" aria-label={x.quick}>
         <div class="hsec-h"><h3>{x.quick}</h3><button class="link" onClick={() => setEditOpen(true)}>{x.edit}</button></div>
@@ -171,6 +174,15 @@ export function HomePage({ call, t, locale, go, name }: { call: Call; t: Strings
             <button class="hrow" key={k.id} onClick={() => openTask(k)}>
               <span>{k.title}</span><small class="muted">{k.boxName ?? ''}</small>
               <span class="chip">{k.dueAt ? new Date(k.dueAt).toLocaleDateString(locale) : x.noDate}</span>
+            </button>
+          ))}
+        </section>
+        <section class="hcard"><div class="hsec-h"><h3>{x.radar}</h3><button class="link" onClick={() => go('renewals')}>{x.radarAll}</button></div>
+          {(d.renewals ?? []).length === 0 && <p class="muted">{x.noRadar}</p>}
+          {(d.renewals ?? []).map((r) => (
+            <button class="hrow" key={r.id} onClick={() => openRec(r)}>
+              <span>{r.name}{r.policyType ? <span class="chip" style={{ marginLeft: '8px' }}>{r.policyType}</span> : null}</span><small class="muted">{r.pipeline}</small>
+              <span class={`due ${r.daysLeft < 0 ? 'bad' : r.daysLeft <= 30 ? 'warn' : 'ok'}`}>{x.rLeft(r.daysLeft)}</span>
             </button>
           ))}
         </section>

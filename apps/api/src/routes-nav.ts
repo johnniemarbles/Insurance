@@ -3,6 +3,7 @@ import { withRequestTx } from '@pii/db';
 import { NAV_ITEMS, type NavLayout } from '@pii/domain';
 import { requireCrm } from './crm-helpers.ts';
 import { listRisks } from './risk.ts';
+import { listRenewals } from './renewals.ts';
 import { unreadCount } from './routes-notifications.ts';
 import { resolveSettings } from './settings.ts';
 import type { AppDeps } from './app.ts';
@@ -11,6 +12,7 @@ const NAMES: Record<string, Record<'en' | 'fr-CA', string>> = {
   home: { en: 'Home', 'fr-CA': 'Accueil' },
   notifications: { en: 'Notifications', 'fr-CA': 'Notifications' },
   pipelines: { en: 'Pipelines', 'fr-CA': 'Pipelines' },
+  renewals: { en: 'Renewals', 'fr-CA': 'Renouvellements' },
   contacts: { en: 'Contacts', 'fr-CA': 'Contacts' },
   merges: { en: 'Mail merges', 'fr-CA': 'Publipostages' },
   training: { en: 'Training', 'fr-CA': 'Formation' },
@@ -93,7 +95,8 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const st = await resolveSettings(tx, ctx.userId, ['ui.goalRing', 'ui.weeklyGoal']);
       const done = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM tasks WHERE assignee_id = $1 AND done_at >= date_trunc('week', now())`, [ctx.userId])).rows[0]!.n;
       const week = { ring: st['ui.goalRing']?.value !== false, goal: Number(st['ui.weeklyGoal']?.value ?? 10), done };
-      return { week, tasks, upcoming, risks, merges, recent, trending, pins, views, defaultPipeline };
+      const renewals = (await listRenewals(tx, { daysAhead: 45, daysBack: 14, limit: 6 })).items;
+      return { week, renewals, tasks, upcoming, risks, merges, recent, trending, pins, views, defaultPipeline };
     });
   });
 

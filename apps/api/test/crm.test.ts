@@ -856,7 +856,7 @@ test('settings: layered values, locks held by the database, and nothing leaks si
   // Nav layout is cleaned: unknown items are refused, missing ones are appended.
   assert.equal((await call(S1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['bogus'], hidden: [] } })).status, 422);
   const lay = await call(S1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['training', 'home'], hidden: ['contacts'] } });
-  assert.deepEqual(lay.json.settings['nav.layout'].value.order, ['training', 'home', 'notifications', 'pipelines', 'contacts', 'merges', 'settings']);
+  assert.deepEqual(lay.json.settings['nav.layout'].value.order, ['training', 'home', 'notifications', 'pipelines', 'renewals', 'contacts', 'merges', 'settings']);
   const hist = (await call(S1U, 'GET', '/v1/settings/history')).json.history;
   assert.ok(hist.some((h: { key: string }) => h.key === 'merge.dailyCap'));
   assert.ok(!hist.some((h: { scopeType: string; changedBy: string }) => h.scopeType === 'user' && /p1@|admin@/.test(h.changedBy)), "others' personal history is not visible");
@@ -865,7 +865,7 @@ test('settings: layered values, locks held by the database, and nothing leaks si
 test('left panel and home: layout drives the items, the layout is per person, counts are live', async () => {
   const nav = async (u: string) => (await call(u, 'GET', '/v1/nav')).json;
   const base = await nav(P1U);
-  assert.deepEqual(base.items.map((i: { id: string }) => i.id), ['home', 'notifications', 'pipelines', 'contacts', 'merges', 'settings']);
+  assert.deepEqual(base.items.map((i: { id: string }) => i.id), ['home', 'notifications', 'pipelines', 'renewals', 'contacts', 'merges', 'settings']);
   assert.ok(base.pipelines.some((p: { id: string }) => p.id === pipe1));
   const mk = await call(P1U, 'POST', `/v1/pipelines/${pipe1}/views`, { name: 'Nav view', shared: true, config: { scope: 'all' } });
   assert.ok(mk.status < 300, JSON.stringify(mk.json));
@@ -874,8 +874,8 @@ test('left panel and home: layout drives the items, the layout is per person, co
   assert.ok(!(await nav(P2U)).pipelines.some((p: { views: { name: string }[] }) => p.views.some((v) => v.name === 'Nav view')), 'a sibling does not see it');
   assert.equal((await call(P1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['training', 'home'], hidden: ['merges', 'settings'] } })).status, 200);
   const mine = await nav(P1U);
-  assert.deepEqual(mine.items.map((i: { id: string }) => i.id), ['home', 'notifications', 'pipelines', 'contacts', 'settings'], 'settings can never be hidden');
-  assert.equal((await nav(LRN)).items.length, 6, 'everyone is a partner, learners included');
+  assert.deepEqual(mine.items.map((i: { id: string }) => i.id), ['home', 'notifications', 'pipelines', 'renewals', 'contacts', 'settings'], 'settings can never be hidden');
+  assert.equal((await nav(LRN)).items.length, 7, 'everyone is a partner, learners included');
   const home = (await call(P1U, 'GET', '/v1/home')).json;
   assert.ok(Array.isArray(home.tasks) && Array.isArray(home.risks) && Array.isArray(home.merges) && Array.isArray(home.recent));
   assert.ok(home.recent.length > 0);
@@ -890,6 +890,30 @@ test('left panel and home: layout drives the items, the layout is per person, co
   assert.ok(Array.isArray(home.trending) && typeof home.defaultPipeline === 'string');
   assert.equal((await call(P2U, 'GET', '/v1/home')).json.recent.every((r: { id: string }) => !home.recent.some((x: { id: string }) => x.id === r.id)), true, 'a sibling sees none of the same records');
   await call(P1U, 'DELETE', '/v1/settings/nav.layout?scope=user');
+});
+
+test('renewals: tasks at 90/60/30 days once each, owner only, decided records skipped, list and counts', async () => {
+  const pl = (await call(P1U, 'POST', '/v1/pipelines', { name: 'Renewals T', fields: [{ key: 'renewal_date', labels: { en: 'Renewal date' }, type: 'date' }, { key: 'policy_type', labels: { en: 'Policy type' }, type: 'text' }] })).json;
+  const day = (n: number) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const mk = async (name: string, n: number) => (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pl.id, name, contextNodeId: X, custom: { renewal_date: day(n), policy_type: 'Auto' } })).json.id as string;
+  const a = await mk('Ren 50', 50), b = await mk('Ren 20', 20), far = await mk('Ren 200', 200);
+  for (const id of [a, b, far]) await ownerSql(`UPDATE boxes SET owner_user_id = (SELECT id FROM app_users WHERE email = $2) WHERE id = $1`, [id, P1U]);
+  const { sweepRenewals } = await import('../src/renewals.ts');
+  assert.equal(await sweepRenewals(sweepDeps) >= 2, true);
+  const title = async (id: string) => ((await call(P1U, 'GET', `/v1/tasks?boxId=${id}`)).json.tasks as { title: string }[]).map((t) => t.title);
+  assert.deepEqual((await title(a)).map((x) => x.split(':')[0]), ['Renewal in 50 days']);
+  assert.deepEqual((await title(b)).map((x) => x.split(':')[0]), ['Renewal in 20 days']);
+  assert.equal((await title(far)).length, 0, 'beyond 90 days: nothing yet');
+  await sweepRenewals(sweepDeps);
+  assert.equal((await title(a)).length, 1, 'once only');
+  await ownerSql(`UPDATE boxes SET custom = jsonb_set(custom, '{renewal_date}', to_jsonb($2::text)) WHERE id = $1`, [a, day(25)]);
+  await sweepRenewals(sweepDeps);
+  assert.equal((await title(a)).length, 2, 'a new window (30) makes one more task');
+  const r = (await call(P1U, 'GET', '/v1/renewals?days=90')).json;
+  assert.ok(r.items.some((i: { name: string; daysLeft: number }) => i.name === 'Ren 20' && i.daysLeft === 20));
+  assert.ok(!r.items.some((i: { name: string }) => i.name === 'Ren 200'));
+  assert.ok(r.counts.d30 >= 2);
+  assert.equal((await call(P2U, 'GET', '/v1/renewals?days=90')).json.items.some((i: { name: string }) => i.name === 'Ren 20'), false, 'siblings cannot see them');
 });
 
 test('call log: a call is a note with an outcome and minutes, shown in the timeline, and bad outcomes are refused', async () => {

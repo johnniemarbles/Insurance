@@ -41,7 +41,7 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Default pipeline', 'fr-CA': 'Pipeline par défaut' }, help: { en: 'Opens first when you click Pipelines.', 'fr-CA': 'S’ouvre en premier quand vous cliquez sur Pipelines.' }, keywords: 'pipeline default first open home',
   },
   {
-    key: 'nav.layout', tab: 'leftPanel', type: 'json', default: { order: ['home', 'notifications', 'pipelines', 'contacts', 'merges', 'training', 'settings'], hidden: [] }, scopes: ALL, lockable: true,
+    key: 'nav.layout', tab: 'leftPanel', type: 'json', default: { order: ['home', 'notifications', 'pipelines', 'renewals', 'contacts', 'merges', 'training', 'settings'], hidden: [] }, scopes: ALL, lockable: true,
     label: { en: 'Left panel layout', 'fr-CA': 'Disposition du panneau de gauche' }, help: { en: 'Which items appear in Gmail’s left panel, and in what order.', 'fr-CA': 'Les éléments affichés dans le panneau de gauche de Gmail, et leur ordre.' }, keywords: 'left panel navigation menu sidebar order hide reorder',
   },
   {
@@ -94,7 +94,7 @@ export const SETTINGS: readonly SettingDef[] = [
   },
 ] as const;
 
-export const NAV_ITEMS = ['home', 'notifications', 'pipelines', 'contacts', 'merges', 'training', 'settings'] as const;
+export const NAV_ITEMS = ['home', 'notifications', 'pipelines', 'renewals', 'contacts', 'merges', 'training', 'settings'] as const;
 export type NavItemId = (typeof NAV_ITEMS)[number];
 export interface NavLayout { order: string[]; hidden: string[] }
 

@@ -22,6 +22,7 @@ import { registerMergeRoutes } from './routes-merge.ts';
 import { registerAiRoutes } from './routes-ai.ts';
 import { registerSettingRoutes } from './routes-settings.ts';
 import { registerNavRoutes } from './routes-nav.ts';
+import { registerRenewalRoutes } from './renewals.ts';
 import { registerNotificationRoutes } from './routes-notifications.ts';
 import { registerPrivacyRoutes } from './routes-privacy.ts';
 import { registerActivityRoutes } from './routes-activity.ts';
@@ -116,6 +117,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerAiRoutes(app, deps);
   registerSettingRoutes(app, deps);
   registerNavRoutes(app, deps);
+  registerRenewalRoutes(app, deps);
   registerNotificationRoutes(app, deps);
   registerPrivacyRoutes(app, deps);
   registerActivityRoutes(app, deps);

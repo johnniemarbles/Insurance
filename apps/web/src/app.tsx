@@ -16,6 +16,7 @@ import { AttentionPanel } from './ai.tsx';
 import { NewRecord, RecordPanel } from './record.tsx';
 import { HomePage } from './home.tsx';
 import { NotificationsPage } from './notifications.tsx';
+import { RenewalsPage } from './renewals.tsx';
 import { SettingsPage, useSettings, type SettingsApi } from './settings.tsx';
 import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
 import { buildColumns, Cell, ColumnPicker, loadColumns, saveColumns, type Ctx } from './columns.tsx';
@@ -76,8 +77,8 @@ const older = (have?: string, need?: string) => {
   return false;
 };
 
-type PageId = 'home' | 'notifications' | 'pipelines' | 'contacts' | 'merges' | 'training' | 'settings';
-const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'contacts', 'merges', 'training', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
+type PageId = 'home' | 'notifications' | 'pipelines' | 'renewals' | 'contacts' | 'merges' | 'training' | 'settings';
+const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'renewals', 'contacts', 'merges', 'training', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
 function Shell({ call, t, locale, canAuthor, meEmail, meName, compose, host, minExt, supportEmail }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
@@ -96,7 +97,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, meName, compose, host, min
     const next = pageOf(p); setPage(next); setRouteId(id);
     try { localStorage.setItem('pii.page', next); } catch { /* private window */ }
   };
-  const label: Record<PageId, string> = { home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
+  const label: Record<PageId, string> = { home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
     <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
@@ -110,6 +111,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, meName, compose, host, min
       <Boundary key={`${page}:${routeId ?? ''}:${nonce}`} msg={t.crashed} retry={t.retry}>
       {page === 'home' ? <HomePage call={call} t={t} locale={locale} go={go} name={meName} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
+        : page === 'renewals' ? <RenewalsPage call={call} locale={locale} go={go} />
         : page === 'contacts' ? <ContactsView call={call} t={t} />
         : page === 'training' && LMS ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />
         : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} compose={compose} /> : <div class="msg">{t.loading}</div>)
