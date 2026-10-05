@@ -1,5 +1,5 @@
 import { useDialogFocus } from './a11y.ts';
-import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Board } from './board.tsx';
 import { ImportDialog } from './import.tsx';
 import { NewPipeline, PipelineEditor } from './editor.tsx';
@@ -9,7 +9,8 @@ import { IntegrationsPanel } from './integrations.tsx';
 import { MergePanel } from './merge.tsx';
 import { SnippetsPanel } from './snippets.tsx';
 import { FilterBar } from './filterbar.tsx';
-import { AiBox, AttentionPanel } from './ai.tsx';
+import { AttentionPanel } from './ai.tsx';
+import { NewRecord, RecordPanel } from './record.tsx';
 import { HomePage } from './home.tsx';
 import { NotificationsPage } from './notifications.tsx';
 import { SettingsPage, useSettings, type SettingsApi } from './settings.tsx';
@@ -291,6 +292,14 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
   const cur = boxes[0]?.currency ?? 'CAD';
   const opened = boxes.find((b) => b.id === openId) ?? (extraBox && extraBox.id === openId ? extraBox : undefined);
   const cols = (colIds ?? []).map((id) => allCols.find((c) => c.id === id)).filter((c): c is NonNullable<typeof c> => !!c);
+  const wrapEl = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const el = wrapEl.current; if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setNarrow(el.clientWidth < 760));
+    ro.observe(el); setNarrow(el.clientWidth < 760);
+    return () => ro.disconnect();
+  }, [view, pipeline?.id]);
   const cellCtx: Ctx = { t, locale, stages, stageColor: (id) => stageById.get(id)?.color ?? '#6b7280', people, open: setOpenId, commit };
   const openById = async (id: string) => {
     if (boxes.some((b) => b.id === id)) { setOpenId(id); return; }
@@ -435,7 +444,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
         {view === 'board' ? (
           <div class="wrap"><Board pipeline={pipeline!} boxes={boxes} summary={summary} t={t} locale={locale} onOpen={setOpenId} onMove={move} /></div>
         ) : (
-        <div class="wrap">
+        <div class="wrap" ref={wrapEl}>
           {viz !== 'none' && (viz === 'line'
             ? (weekly ? <WeeklyLine weekly={weekly} t={t} /> : null)
             : <StageChart mode={viz} t={t} locale={locale} currency={cur} data={stages.map((s) => ({ name: s.name, color: stageById.get(s.id)!.color, count: summary[s.id]?.count ?? 0, value: summary[s.id]?.value ?? 0 }))} />)}
@@ -454,7 +463,20 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
             {quickLocs.length > 1 && <select aria-label={t.location} value={quickLoc} onChange={(e) => setQuickLoc((e.target as HTMLSelectElement).value)}><option value="">{t.chooseLocation}</option>{quickLocs.map((l) => <option value={l.id}>{l.name}</option>)}</select>}
             <button class="btn" disabled={quickBusy || !quickName.trim() || (quickLocs.length > 1 && !quickLoc)}>{t.addHere}</button>
           </form>
-          {boxes.length === 0 ? (!showStart && <div class="msg">{t.empty}</div>) : (
+          {boxes.length === 0 ? (!showStart && <div class="msg">{t.empty}</div>) : narrow ? (
+            <ul class="cards">
+              {boxes.map((b) => (
+                <li class="card" tabIndex={0} key={b.id} onClick={() => setOpenId(b.id)} onKeyDown={(e) => { if (e.key === 'Enter') setOpenId(b.id); }}>
+                  <div class="card-top"><b>{b.name}</b>{allCols.find((c) => c.id === 'stage')?.render(b, cellCtx)}</div>
+                  <div class="card-meta">
+                    {allCols.find((c) => c.id === 'owner')?.render(b, cellCtx)}
+                    <span>{money(b.valueAmount, b.currency, locale)}</span>
+                    {b.nextTaskDue && <span class={new Date(b.nextTaskDue) < new Date() ? 'overdue' : ''}>{t.cNextTask}: {new Date(b.nextTaskDue).toLocaleDateString(locale)}</span>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
             <table>
               <thead>
                 <tr>
@@ -502,7 +524,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
           {boxes.length < total && <div class="msg"><button class="btn quiet" onClick={loadMore}>{t.loadMore}</button></div>}
         </div>
         )}
-        {opened && pipeline && <Drawer key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setOpenId('')} onChanged={refresh} />}
+        {opened && pipeline && <RecordPanel key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} people={people} onClose={() => setOpenId('')} onChanged={refresh} />}
         {mergeIds && <MergePanel call={call} locale={locale} compose={compose} boxIds={mergeIds} onClose={() => setMergeIds(null)} onOpenBox={(id) => { if (id) { setMergeIds(null); void openById(id); } }} />}
         {snippetsOpen && <SnippetsPanel call={call} locale={locale} onClose={() => setSnippetsOpen(false)} />}
         {integrationsOpen && pipeline && <IntegrationsPanel pipeline={pipeline} call={call} t={t} locale={locale} onAutomations={() => { setIntegrationsOpen(false); setEditing(true); }} onExport={() => void exportCsv()} onImport={() => { setIntegrationsOpen(false); setImporting(true); }} onOpenBox={(id) => { setIntegrationsOpen(false); void openById(id); }} onClose={() => setIntegrationsOpen(false)} />}
@@ -526,7 +548,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
         {editing && pipeline && <PipelineEditor pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setEditing(false)} onChanged={refresh} />}
         {newPipe && <NewPipeline call={call} t={t} locale={locale} onClose={() => setNewPipe(false)} onCreated={(id) => { setNewPipe(false); setPid(id); setFilters(emptyFilters); refresh(); }} />}
         {importing && pipeline && <ImportDialog pipeline={pipeline} call={call} t={t} onClose={() => setImporting(false)} onDone={refresh} />}
-        {creating && pipeline && <Create pipeline={pipeline} call={call} t={t} onClose={() => setCreating(false)} onCreated={() => { setCreating(false); refresh(); }} />}
+        {creating && pipeline && <NewRecord pipeline={pipeline} call={call} t={t} locale={locale} people={people} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); refresh(); void openById(id); }} />}
       </div>
     </div>
   );
@@ -536,130 +558,3 @@ interface TaskRow { id: string; boxId: string; boxName: string | null; title: st
 const label = (f: FieldDef, locale: Locale) => f.labels[locale] ?? f.labels.en ?? f.key;
 const cell = (v: unknown) => (v == null ? '' : typeof v === 'boolean' ? (v ? '✓' : '') : String(v));
 
-function Drawer({ box, pipeline, call, t, locale, onClose, onChanged }: { box: Box; pipeline: Pipeline; call: Call; t: Strings; locale: Locale; onClose: () => void; onChanged: () => void }) {
-  const dlg = useDialogFocus<HTMLElement>();
-  const [events, setEvents] = useState<BoxEvent[]>([]);
-  const [canEdit, setCanEdit] = useState(true);
-  const [contacts, setContacts] = useState<{ id: string; fullName: string | null; email: string | null }[]>([]);
-  const [notes, setNotes] = useState<{ id: string; authorName: string | null; body: string; createdAt: string }[]>([]);
-  const [tasks, setTasks] = useState<TaskRow[]>([]);
-  const [noteText, setNoteText] = useState('');
-  const [taskText, setTaskText] = useState('');
-  const [taskDue, setTaskDue] = useState('');
-  const [reload, setReload] = useState(0);
-  const [stageId, setStageId] = useState(box.stageId);
-  const [msg, setMsg] = useState('');
-  const [err, setErr] = useState('');
-  useEffect(() => {
-    call('GET', `/v1/boxes/${box.id}/events`).then((r) => setEvents(r.events), () => undefined);
-    call('GET', `/v1/boxes/${box.id}`).then((r) => { setCanEdit(Boolean(r.canEdit)); setContacts(r.contacts ?? []); }, () => undefined);
-    call('GET', `/v1/boxes/${box.id}/notes`).then((r) => setNotes(r.notes), () => undefined);
-    call('GET', `/v1/tasks?boxId=${box.id}`).then((r) => setTasks(r.tasks), () => undefined);
-  }, [call, box.id, msg, reload]);
-  const addNote = async (e: Event) => { e.preventDefault(); const b = noteText.trim(); if (!b) return; setNoteText(''); try { await call('POST', `/v1/boxes/${box.id}/notes`, { body: b }); setReload((n) => n + 1); } catch (x) { setErr((x as Error).message); } };
-  const addTask = async (e: Event) => {
-    e.preventDefault(); const title = taskText.trim(); if (!title) return;
-    const due = taskDue ? new Date(`${taskDue}T09:00:00`).toISOString() : undefined;
-    setTaskText(''); setTaskDue('');
-    try { await call('POST', `/v1/boxes/${box.id}/tasks`, { title, ...(due ? { dueAt: due } : {}) }); setReload((n) => n + 1); } catch (x) { setErr((x as Error).message); }
-  };
-  const toggleTask = async (id: string, done: boolean) => { try { await call('PATCH', `/v1/tasks/${id}`, { done }); setReload((n) => n + 1); } catch (x) { setErr((x as Error).message); } };
-  const move = async (id: string) => {
-    setStageId(id); setErr(''); setMsg('');
-    try { await call('PATCH', `/v1/boxes/${box.id}`, { stageId: id }); setMsg(t.saved); onChanged(); } catch (e) { setErr((e as Error).message); setStageId(box.stageId); }
-  };
-  return (
-    <aside ref={dlg} tabIndex={-1} class="drawer" role="dialog" aria-label={box.name}>
-      <h2>{box.name}</h2>
-      {!canEdit && <p class="muted">{t.readOnly}</p>}
-      <label for="stg">{t.stage}</label>
-      <select id="stg" value={stageId} disabled={!canEdit} onChange={(e) => void move((e.target as HTMLSelectElement).value)}>
-        {pipeline.stages.map((s) => <option value={s.id}>{s.name}</option>)}
-      </select>
-      {msg && <div class="ok" role="status">{msg}</div>}{err && <div class="err" role="alert">{err}</div>}
-      <dl class="kv">
-        <dt>{t.value}</dt><dd>{money(box.valueAmount, box.currency, locale)}</dd>
-        <dt>{t.closeDate}</dt><dd>{box.closeDate ?? ''}</dd>
-        {pipeline.fields.map((f) => <><dt>{label(f, locale)}</dt><dd>{cell(box.custom[f.key])}</dd></>)}
-      </dl>
-      {contacts.length > 0 && <><h3>{t.contacts}</h3>{contacts.map((c) => <div class="ev" key={c.id}>{c.fullName ?? c.email}<small>{c.fullName ? c.email : ''}</small></div>)}</>}
-      <h3>{t.tasks}</h3>
-      {tasks.map((k) => (
-        <label class="task" key={k.id}>
-          <input type="checkbox" checked={Boolean(k.doneAt)} onChange={(e) => void toggleTask(k.id, (e.target as HTMLInputElement).checked)} />
-          <span class={k.doneAt ? 'strike' : ''}>{k.title}{k.dueAt && <small class={!k.doneAt && new Date(k.dueAt) < new Date() ? 'overdue' : ''}> · {new Date(k.dueAt).toLocaleDateString(locale)}</small>}</span>
-        </label>
-      ))}
-      <form class="erow" onSubmit={addTask}>
-        <input placeholder={t.addTask} aria-label={t.addTask} value={taskText} onInput={(e) => setTaskText((e.target as HTMLInputElement).value)} />
-        <input type="date" aria-label={t.dueDate} value={taskDue} onInput={(e) => setTaskDue((e.target as HTMLInputElement).value)} style={{ flex: '0 0 140px' }} />
-        <button class="btn quiet" disabled={!taskText.trim()}>+</button>
-      </form>
-      <AiBox boxId={box.id} call={call} locale={locale} />
-      <h3>{t.notes}</h3>
-      <form onSubmit={addNote}>
-        <textarea rows={3} placeholder={t.addNote} aria-label={t.addNote} value={noteText} onInput={(e) => setNoteText((e.target as HTMLTextAreaElement).value)} />
-        <div class="actions"><button class="btn quiet" disabled={!noteText.trim()}>{t.addNote}</button></div>
-      </form>
-      {notes.map((n) => <div class="ev" key={n.id}>{n.body}<small>{n.authorName ?? ''} · {new Date(n.createdAt).toLocaleString(locale)}</small></div>)}
-      <h3>{t.history}</h3>
-      {events.map((e) => (
-        <div class="ev" key={e.id}>
-          {e.kind === 'created' ? `${t.created} ${e.toStage ?? '—'}` : t.movedTo(e.fromStage, e.toStage)}
-          <small>{new Date(e.createdAt).toLocaleString(locale)}</small>
-        </div>
-      ))}
-      <div class="actions"><button class="btn quiet" onClick={onClose}>{t.close}</button></div>
-    </aside>
-  );
-}
-
-function Create({ pipeline, call, t, onClose, onCreated }: { pipeline: Pipeline; call: Call; t: Strings; onClose: () => void; onCreated: () => void }) {
-  const dlg = useDialogFocus<HTMLElement>();
-  const [name, setName] = useState('');
-  const [stageId, setStageId] = useState(pipeline.stages[0]?.id ?? '');
-  const [value, setValue] = useState('');
-  const [locs, setLocs] = useState<{ id: string; name: string }[]>([]);
-  const [loc, setLoc] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  useEffect(() => {
-    call('GET', '/v1/org/contexts').then((r) => {
-      const l = (r.locations ?? []) as { id: string; name: string }[];
-      setLocs(l); if (l.length === 1) setLoc(l[0]!.id);
-    }, () => undefined);
-  }, [call]);
-  const submit = async (e: Event) => {
-    e.preventDefault(); setBusy(true); setErr('');
-    try {
-      await call('POST', '/v1/boxes', {
-        pipelineId: pipeline.id, name: name.trim(), stageId,
-        ...(value ? { valueAmount: Number(value) } : {}), ...(loc ? { contextNodeId: loc } : {}),
-      });
-      onCreated();
-    } catch (x) { setErr((x as Error).message); setBusy(false); }
-  };
-  return (
-    <aside ref={dlg} tabIndex={-1} class="drawer" role="dialog" aria-label={t.newBox}>
-      <h2>{t.newBox}</h2>
-      <form onSubmit={submit}>
-        <label for="nm">{t.name}</label>
-        <input id="nm" required maxLength={200} placeholder={t.newPlaceholder} value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} autofocus />
-        <label for="sg">{t.stage}</label>
-        <select id="sg" value={stageId} onChange={(e) => setStageId((e.target as HTMLSelectElement).value)}>{pipeline.stages.map((s: Stage) => <option value={s.id}>{s.name}</option>)}</select>
-        <label for="vl">{t.value}</label>
-        <input id="vl" type="number" min="0" step="0.01" value={value} onInput={(e) => setValue((e.target as HTMLInputElement).value)} />
-        {locs.length > 1 && (
-          <>
-            <label for="lc">{t.location}</label>
-            <select id="lc" required value={loc} onChange={(e) => setLoc((e.target as HTMLSelectElement).value)}>
-              <option value="">{t.chooseLocation}</option>{locs.map((l) => <option value={l.id}>{l.name}</option>)}
-            </select>
-          </>
-        )}
-        {err && <div class="err" role="alert">{err}</div>}
-        <div class="actions"><button class="btn" disabled={busy || !name.trim()}>{t.create}</button><button type="button" class="btn quiet" onClick={onClose}>{t.cancel}</button></div>
-      </form>
-    </aside>
-  );
-}

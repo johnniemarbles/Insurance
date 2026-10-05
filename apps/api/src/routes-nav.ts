@@ -58,6 +58,11 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
         `SELECT t.id, t.title, t.due_at AS "dueAt", t.box_id AS "boxId", b.name AS "boxName", b.pipeline_id AS "pipelineId"
            FROM tasks t LEFT JOIN boxes b ON b.id = t.box_id
           WHERE t.assignee_id = $1 AND t.done_at IS NULL AND t.due_at < (date_trunc('day', now()) + interval '1 day') ORDER BY t.due_at LIMIT 12`, [ctx.userId])).rows;
+      const upcoming = (await tx.query(
+        `SELECT t.id, t.title, t.due_at AS "dueAt", t.box_id AS "boxId", b.name AS "boxName", b.pipeline_id AS "pipelineId"
+           FROM tasks t LEFT JOIN boxes b ON b.id = t.box_id
+          WHERE t.assignee_id = $1 AND t.done_at IS NULL AND (t.due_at IS NULL OR t.due_at >= (date_trunc('day', now()) + interval '1 day'))
+          ORDER BY t.due_at NULLS LAST, t.created_at DESC LIMIT 12`, [ctx.userId])).rows;
       const risks = (await listRisks(tx, null)).slice(0, 8);
       const merges = (await tx.query(
         `SELECT m.id, m.name, m.status,
@@ -67,7 +72,7 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const recent = (await tx.query(
         `SELECT b.id, b.name, b.pipeline_id AS "pipelineId", p.name AS pipeline, s.name AS stage, b.updated_at AS "updatedAt"
            FROM boxes b JOIN pipelines p ON p.id = b.pipeline_id JOIN stages s ON s.id = b.stage_id ORDER BY b.updated_at DESC LIMIT 8`)).rows;
-      return { tasks, risks, merges, recent };
+      return { tasks, upcoming, risks, merges, recent };
     });
   });
 }

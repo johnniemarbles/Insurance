@@ -3,6 +3,7 @@ import type { Locale } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface HomeData {
+  upcoming: { id: string; title: string; dueAt: string | null; boxId: string | null; boxName: string | null; pipelineId: string | null }[];
   tasks: { id: string; title: string; dueAt: string | null; boxId: string | null; boxName: string | null; pipelineId: string | null }[];
   risks: { id: string; pipelineId: string; pipeline: string; name: string; stage: string; days: number; reasons: string[] }[];
   merges: { id: string; name: string; status: string; total: number; sent: number; failed: number }[];
@@ -11,12 +12,12 @@ interface HomeData {
 
 const X = {
   'en': {
-    title: 'My day', due: 'Due today and overdue', noTasks: 'Nothing due. Nice.', attention: 'Needs attention', noRisk: 'Nothing looks stuck.', merges: 'Mail merges in progress', noMerges: 'No merge is running.',
+    title: 'My day', due: 'Due today and overdue', noTasks: 'Nothing due. Nice.', later: 'Coming up and no date', noDate: 'No date', attention: 'Needs attention', noRisk: 'Nothing looks stuck.', merges: 'Mail merges in progress', noMerges: 'No merge is running.',
     recent: 'Recently updated', overdue: 'Overdue', today: 'Today', sent: (a: number, b: number) => `${a} of ${b} sent`, paused: 'paused', days: (n: number) => `${n} days in stage`,
     why: { stalled: 'Stalled', overdue: 'Overdue task', past_close: 'Past close date', no_next_step: 'No next step', unowned: 'No owner' } as Record<string, string>, all: 'See all',
   },
   'fr-CA': {
-    title: 'Ma journée', due: 'À faire aujourd’hui et en retard', noTasks: 'Rien à faire. Parfait.', attention: 'À surveiller', noRisk: 'Rien ne semble bloqué.', merges: 'Publipostages en cours', noMerges: 'Aucun publipostage en cours.',
+    title: 'Ma journée', due: 'À faire aujourd’hui et en retard', noTasks: 'Rien à faire. Parfait.', later: 'À venir et sans date', noDate: 'Sans date', attention: 'À surveiller', noRisk: 'Rien ne semble bloqué.', merges: 'Publipostages en cours', noMerges: 'Aucun publipostage en cours.',
     recent: 'Récemment modifiés', overdue: 'En retard', today: 'Aujourd’hui', sent: (a: number, b: number) => `${a} sur ${b} envoyés`, paused: 'en pause', days: (n: number) => `${n} jours dans l’étape`,
     why: { stalled: 'Bloqué', overdue: 'Tâche en retard', past_close: 'Clôture dépassée', no_next_step: 'Aucune prochaine étape', unowned: 'Sans responsable' } as Record<string, string>, all: 'Tout voir',
   },
@@ -41,6 +42,15 @@ export function HomePage({ call, locale, go }: { call: Call; locale: Locale; go:
             <button class="hrow" key={t.id} onClick={() => t.pipelineId && t.boxId ? go('pipelines', t.pipelineId) : undefined}>
               <span>{t.title}</span><small class="muted">{t.boxName ?? ''}</small>
               <span class={`chip${late(t.dueAt) ? ' warn' : ''}`}>{late(t.dueAt) ? x.overdue : x.today}</span>
+            </button>
+          ))}
+        </section>
+        <section class="hcard"><h3>{x.later}</h3>
+          {(d.upcoming ?? []).length === 0 && <p class="muted">—</p>}
+          {(d.upcoming ?? []).map((t) => (
+            <button class="hrow" key={t.id} onClick={() => t.pipelineId && t.boxId ? go('pipelines', t.pipelineId) : undefined}>
+              <span>{t.title}</span><small class="muted">{t.boxName ?? ''}</small>
+              <span class="chip">{t.dueAt ? new Date(t.dueAt).toLocaleDateString(locale) : x.noDate}</span>
             </button>
           ))}
         </section>

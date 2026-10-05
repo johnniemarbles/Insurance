@@ -44,6 +44,7 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
           for (const u of mentioned) await notify(tx, { tenantId: ctx.tenantId, userId: u, actorId: ctx.userId, kind: 'mention', boxId: id, data: { boxName: bx?.name, text: b.body.slice(0, 160) } });
           if (bx?.owner_user_id && !mentioned.includes(bx.owner_user_id)) await notify(tx, { tenantId: ctx.tenantId, userId: bx.owner_user_id, actorId: ctx.userId, kind: 'note', boxId: id, data: { boxName: bx.name, text: b.body.slice(0, 160) } });
         }
+        await tx.query('UPDATE boxes SET updated_at = now() WHERE id = $1', [id]);
         await audit(tx, ctx, 'note_added', 'note', noteId, { boxId: id });
         return { id: noteId };
       });
@@ -75,6 +76,28 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
     return reply.code(204).send();
   });
 
+  // ---- one feed: notes, tasks and stage moves, newest first ----
+  app.get('/v1/boxes/:id/timeline', { schema: { params: boxParams } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    const { id } = req.params as { id: string };
+    return run(ctx, async (tx) => {
+      await boxScope(tx, id);
+      const items = (await tx.query(
+        `SELECT * FROM (
+           SELECT 'note' AS kind, n.id, n.created_at AS at, u.display_name AS "by", n.body AS text, NULL::timestamptz AS "dueAt", NULL::timestamptz AS "doneAt", NULL AS "fromStage", NULL AS "toStage", NULL::uuid AS "assigneeId", NULL AS "assignee"
+             FROM notes n LEFT JOIN app_users u ON u.id = n.author_id WHERE n.box_id = $1
+           UNION ALL
+           SELECT 'task', t.id, t.created_at, NULL, t.title, t.due_at, t.done_at, NULL, NULL, t.assignee_id, coalesce(a.display_name, a.email::text)
+             FROM tasks t LEFT JOIN app_users a ON a.id = t.assignee_id WHERE t.box_id = $1
+           UNION ALL
+           SELECT CASE e.kind WHEN 'created' THEN 'created' ELSE 'stage' END, e.id, e.created_at, u.display_name, NULL, NULL, NULL, fs.name, ts.name, NULL, NULL
+             FROM box_events e LEFT JOIN stages fs ON fs.id = e.from_stage_id LEFT JOIN stages ts ON ts.id = e.to_stage_id LEFT JOIN app_users u ON u.id = e.actor_id WHERE e.box_id = $1
+         ) x ORDER BY at DESC, id LIMIT 200`, [id])).rows;
+      return { items };
+    });
+  });
+
   // ---- tasks ----
   app.post(
     '/v1/boxes/:id/tasks',
@@ -95,6 +118,7 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
           const bx = (await tx.query<{ name: string }>('SELECT name FROM boxes WHERE id = $1', [id])).rows[0];
           await notify(tx, { tenantId: ctx.tenantId, userId: assignee, actorId: ctx.userId, kind: 'task_assigned', boxId: id, data: { boxName: bx?.name, title: b.title.slice(0, 160) } });
         }
+        await tx.query('UPDATE boxes SET updated_at = now() WHERE id = $1', [id]);
         await audit(tx, ctx, 'task_created', 'task', taskId, { boxId: id });
         return { id: taskId };
       });

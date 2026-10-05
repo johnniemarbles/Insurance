@@ -104,3 +104,9 @@ Plan doc: Claude Docs "PII – Pipeline Plan: Streak parity + modern CRM".
 - Settings > Company and people: People (list, Add person dialog), Structure, Activity (audit log with filters and CSV, branch-scoped).
 - Not verified in real Gmail: sending from the compose window and reporting back.
 - Later: Gmail connect + gmail.send for server-sent mail.
+
+## Phase R: record screen and data entry (2026-10-05)
+- New record panel (`apps/web/src/record.tsx`): Details tab is an editable form with a pinned Save and Cancel and an unsaved-changes guard; Activity tab has the Note/Task composer on top and one feed (`GET /v1/boxes/:id/timeline`). New items appear at once; the table row refreshes; the panel is pinned to the visible part of the host (`--pii-top`).
+- New record form carries every field (owner, value, close date, custom fields, branch, a contact).
+- Notes and tasks bump the record's updated time. Home shows undated and later tasks under "Coming up and no date".
+- Table: 6 default columns plus the first two custom fields, cards under 760px, one click opens the record, double-click edits a cell, sticky Name no longer covers the Stage header. Column choices use a new storage key (`pii.cols2.*`).

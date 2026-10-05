@@ -51,15 +51,15 @@ export function buildColumns(pipeline: Pipeline, t: Strings, locale: Locale): Co
     { id: 'value', label: t.value, kind: 'core', sort: 'value', defaultOn: true,
       render: (b) => money(b.valueAmount, b.currency, locale),
       edit: () => ({ type: 'number', value: (b) => (b.valueAmount == null ? '' : String(b.valueAmount)), body: (v) => ({ valueAmount: v === '' ? null : Number(v) }), back: (b) => ({ valueAmount: b.valueAmount }) }) },
-    { id: 'closeDate', label: t.closeDate, kind: 'core', sort: 'closeDate', defaultOn: true,
+    { id: 'closeDate', label: t.closeDate, kind: 'core', sort: 'closeDate', defaultOn: false,
       render: (b) => b.closeDate ?? '',
       edit: () => ({ type: 'date', value: (b) => b.closeDate ?? '', body: (v) => ({ closeDate: v || null }), back: (b) => ({ closeDate: b.closeDate }) }) },
-    { id: 'daysInStage', label: t.inStage, kind: 'core', sort: 'daysInStage', defaultOn: true,
+    { id: 'daysInStage', label: t.inStage, kind: 'core', sort: 'daysInStage', defaultOn: false,
       render: (b) => <span class={`age${b.daysInStage >= 30 ? ' bad' : b.daysInStage >= 14 ? ' warn' : ''}`}>{b.daysInStage === 0 ? t.today : t.days(b.daysInStage)}</span> },
-    { id: 'lastEmail', label: t.lastEmail, kind: 'magic', sort: 'lastEmail', defaultOn: true, render: (b) => date(b.lastEmailAt) },
+    { id: 'lastEmail', label: t.lastEmail, kind: 'magic', sort: 'lastEmail', defaultOn: false, render: (b) => date(b.lastEmailAt) },
     { id: 'lastEmailFrom', label: t.lastEmailFrom, kind: 'magic', defaultOn: false, render: (b) => b.lastEmailFrom ?? '' },
-    { id: 'lastInteraction', label: t.cLastInteraction, kind: 'magic', sort: 'lastInteraction', defaultOn: false, render: (b) => { const v = lastInteractionOf(b); return v ? new Date(v).toLocaleDateString(locale) : ''; } },
-    { id: 'freshness', label: t.cFreshness, kind: 'magic', defaultOn: true,
+    { id: 'lastInteraction', label: t.cLastInteraction, kind: 'magic', sort: 'lastInteraction', defaultOn: true, render: (b) => { const v = lastInteractionOf(b); return v ? new Date(v).toLocaleDateString(locale) : ''; } },
+    { id: 'freshness', label: t.cFreshness, kind: 'magic', defaultOn: false,
       render: (b) => {
         const v = lastInteractionOf(b);
         if (v == null) return <span class="muted">—</span>;
@@ -68,9 +68,9 @@ export function buildColumns(pipeline: Pipeline, t: Strings, locale: Locale): Co
         return <span class={`fresh ${cls}`}><i />{text}</span>;
       } },
     { id: 'emailCount', label: t.cEmails, kind: 'magic', sort: 'emailCount', defaultOn: false, render: (b) => b.emailCount || '' },
-    { id: 'openTasks', label: t.cOpenTasks, kind: 'magic', sort: 'openTasks', defaultOn: true, render: (b) => b.openTasks || '' },
+    { id: 'openTasks', label: t.cOpenTasks, kind: 'magic', sort: 'openTasks', defaultOn: false, render: (b) => b.openTasks || '' },
     { id: 'overdueTasks', label: t.cOverdue, kind: 'magic', defaultOn: false, render: (b) => (b.overdueTasks ? <span class="overdue">{b.overdueTasks}</span> : '') },
-    { id: 'nextTaskDue', label: t.cNextTask, kind: 'magic', sort: 'nextTaskDue', defaultOn: false,
+    { id: 'nextTaskDue', label: t.cNextTask, kind: 'magic', sort: 'nextTaskDue', defaultOn: true,
       render: (b) => (b.nextTaskDue ? <span class={new Date(b.nextTaskDue) < new Date() ? 'overdue' : ''}>{date(b.nextTaskDue)}</span> : '') },
     { id: 'taskProgress', label: t.cTaskProgress, kind: 'magic', defaultOn: false,
       render: (b) => { const done = b.doneTasks ?? 0, all = done + (b.openTasks ?? 0); return all ? <span class="mini" title={`${done}/${all}`}><i style={{ width: `${Math.round((done / all) * 100)}%` }} /></span> : ''; } },
@@ -81,7 +81,7 @@ export function buildColumns(pipeline: Pipeline, t: Strings, locale: Locale): Co
   for (const f of pipeline.fields) {
     const key = f.key;
     const val = (b: Box) => b.custom[key];
-    const base = { id: `cf:${key}`, label: fieldLabel(f, locale), kind: 'custom' as const, defaultOn: true };
+    const base = { id: `cf:${key}`, label: fieldLabel(f, locale), kind: 'custom' as const, defaultOn: pipeline.fields.indexOf(f) < 2 }; // the first two fields are the key fields
     if (f.type === 'checkbox') cols.push({ ...base, render: (b) => (val(b) ? '✓' : ''), edit: () => ({ type: 'checkbox', value: (b) => Boolean(val(b)), body: (v) => ({ custom: { [key]: v } }), back: (b) => ({ custom: { [key]: val(b) ?? null } }) }) });
     else if (f.type === 'dropdown') cols.push({ ...base, render: (b) => String(val(b) ?? ''), edit: () => ({ type: 'select', options: [{ value: '', label: '—' }, ...(f.options ?? []).map((o) => ({ value: o, label: o }))], value: (b) => String(val(b) ?? ''), body: (v) => ({ custom: { [key]: v || null } }), back: (b) => ({ custom: { [key]: val(b) ?? null } }) }) });
     else {
@@ -95,13 +95,13 @@ export function buildColumns(pipeline: Pipeline, t: Strings, locale: Locale): Co
 /** The saved choice of visible columns and their order for one pipeline. */
 export function loadColumns(pid: string, all: ColDef[]): string[] {
   try {
-    const saved = JSON.parse(localStorage.getItem(`pii.cols.${pid}`) ?? 'null') as string[] | null;
+    const saved = JSON.parse(localStorage.getItem(`pii.cols2.${pid}`) ?? 'null') as string[] | null;
     if (saved) { const known = new Set(all.map((c) => c.id)); const list = saved.filter((id) => known.has(id)); if (!list.includes('name')) list.unshift('name'); return list; }
   } catch { /* private window */ }
   return all.filter((c) => c.defaultOn).map((c) => c.id);
 }
 export function saveColumns(pid: string, ids: string[] | null): void {
-  try { if (ids) localStorage.setItem(`pii.cols.${pid}`, JSON.stringify(ids)); else localStorage.removeItem(`pii.cols.${pid}`); } catch { /* private window */ }
+  try { if (ids) localStorage.setItem(`pii.cols2.${pid}`, JSON.stringify(ids)); else localStorage.removeItem(`pii.cols2.${pid}`); } catch { /* private window */ }
 }
 
 export function ColumnPicker({ all, visible, onChange, onReset, t }: { all: ColDef[]; visible: string[]; onChange: (ids: string[]) => void; onReset: () => void; t: Strings }) {
@@ -149,7 +149,7 @@ export function ColumnPicker({ all, visible, onChange, onReset, t }: { all: ColD
   );
 }
 
-/** One table cell. Click to edit when the column allows it; Enter or leaving the cell saves, Esc cancels. */
+/** One table cell. Double-click (or Enter) to edit when the column allows it; one click opens the record; Enter or leaving the cell saves, Esc cancels. */
 export function Cell({ box, col, x }: { box: Box; col: ColDef; x: Ctx }) {
   const [editing, setEditing] = useState(false);
   const spec = col.edit?.(x);
@@ -167,7 +167,7 @@ export function Cell({ box, col, x }: { box: Box; col: ColDef; x: Ctx }) {
   }
   if (!editing) {
     return (
-      <td class="ed" tabIndex={0} title={col.label} onClick={(e) => { e.stopPropagation(); setEditing(true); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); setEditing(true); } }}>
+      <td class="ed" tabIndex={0} title={col.label} onDblClick={(e) => { e.stopPropagation(); setEditing(true); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); setEditing(true); } }}>
         {col.render(box, x)}
       </td>
     );

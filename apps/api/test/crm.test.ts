@@ -1062,3 +1062,22 @@ test('activity: readable by the right admin, scoped by branch, filterable, expor
   await o.end();
   assert.deepEqual(r.rows[0], { u: false, d: false });
 });
+
+test('record screen: one feed, undated tasks on Home, adding a note or task moves the record up', async () => {
+  const id = (await call(P1U, 'GET', '/v1/boxes')).json.boxes[0].id;
+  const before = (await call(P1U, 'GET', `/v1/boxes/${id}`)).json.updatedAt;
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal((await call(P1U, 'POST', `/v1/boxes/${id}/notes`, { body: 'Wants a quote by Friday' })).status, 201);
+  const t = await call(P1U, 'POST', `/v1/boxes/${id}/tasks`, { title: 'Send quote' });
+  assert.equal(t.status, 201);
+  const after = (await call(P1U, 'GET', `/v1/boxes/${id}`)).json.updatedAt;
+  assert.ok(new Date(after) > new Date(before), 'the record counts as updated');
+  const feed = (await call(P1U, 'GET', `/v1/boxes/${id}/timeline`)).json.items;
+  assert.ok(feed.some((i: { kind: string; text: string }) => i.kind === 'note' && i.text === 'Wants a quote by Friday'));
+  assert.ok(feed.some((i: { kind: string; text: string; dueAt: string | null }) => i.kind === 'task' && i.text === 'Send quote' && i.dueAt === null));
+  assert.ok(feed.some((i: { kind: string }) => i.kind === 'created'));
+  const home = (await call(P1U, 'GET', '/v1/home')).json;
+  assert.ok(home.upcoming.some((x: { title: string }) => x.title === 'Send quote'), 'a task with no date still shows on Home');
+  assert.ok(!home.tasks.some((x: { title: string }) => x.title === 'Send quote'), 'and is not claimed to be due today');
+  assert.equal((await call(P2U, 'GET', `/v1/boxes/${id}/timeline`)).status, 404, 'a sibling cannot read the feed');
+});
