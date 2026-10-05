@@ -90,7 +90,10 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
            FROM saved_views v JOIN pipelines p ON p.id = v.pipeline_id LEFT JOIN home_pins h ON h.view_id = v.id AND h.user_id = $1
           WHERE v.is_shared OR v.user_id = $1 ORDER BY p.name, v.name`, [ctx.userId])).rows;
       const defaultPipeline = String((await resolveSettings(tx, ctx.userId, ['ui.defaultPipeline']))['ui.defaultPipeline']?.value ?? '');
-      return { tasks, upcoming, risks, merges, recent, trending, pins, views, defaultPipeline };
+      const st = await resolveSettings(tx, ctx.userId, ['ui.goalRing', 'ui.weeklyGoal']);
+      const done = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM tasks WHERE assignee_id = $1 AND done_at >= date_trunc('week', now())`, [ctx.userId])).rows[0]!.n;
+      const week = { ring: st['ui.goalRing']?.value !== false, goal: Number(st['ui.weeklyGoal']?.value ?? 10), done };
+      return { week, tasks, upcoming, risks, merges, recent, trending, pins, views, defaultPipeline };
     });
   });
 

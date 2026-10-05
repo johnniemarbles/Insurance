@@ -25,6 +25,14 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Show getting-started tips', 'fr-CA': 'Afficher les conseils de démarrage' }, help: { en: 'The short guide at the top of an empty pipeline.', 'fr-CA': 'Le court guide au haut d’un pipeline vide.' }, keywords: 'tips help guide onboarding start',
   },
   {
+    key: 'ui.goalRing', tab: 'me', type: 'bool', default: true, scopes: ['user', 'tenant'], lockable: false,
+    label: { en: 'Show my weekly goal on Home', 'fr-CA': 'Afficher mon objectif de la semaine sur l’accueil' }, help: { en: 'A ring that fills as you finish tasks this week.', 'fr-CA': 'Un anneau qui se remplit à mesure que vous terminez des tâches cette semaine.' }, keywords: 'goal ring weekly target progress home',
+  },
+  {
+    key: 'ui.weeklyGoal', tab: 'me', type: 'int', default: 10, min: 1, max: 200, scopes: ['user', 'tenant'], lockable: false,
+    label: { en: 'Weekly goal: tasks to finish', 'fr-CA': 'Objectif hebdomadaire : tâches à terminer' }, help: { en: 'How many tasks you aim to finish each week.', 'fr-CA': 'Le nombre de tâches que vous visez chaque semaine.' }, keywords: 'goal weekly target tasks',
+  },
+  {
     key: 'ui.defaultPipeline', tab: 'me', type: 'string', default: '', maxLength: 40, scopes: ['user', 'node', 'tenant'], lockable: false,
     label: { en: 'Default pipeline', 'fr-CA': 'Pipeline par défaut' }, help: { en: 'Opens first when you click Pipelines.', 'fr-CA': 'S’ouvre en premier quand vous cliquez sur Pipelines.' }, keywords: 'pipeline default first open home',
   },

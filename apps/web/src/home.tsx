@@ -9,6 +9,7 @@ type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, 
 interface TaskRow { id: string; title: string; dueAt: string | null; boxId: string | null; boxName: string | null; pipelineId: string | null }
 interface RecRow { id: string; name: string; pipelineId: string; pipeline: string; stage: string; updatedAt: string; activity?: number }
 interface HomeData {
+  week?: { ring: boolean; goal: number; done: number };
   upcoming: TaskRow[];
   tasks: TaskRow[];
   risks: { id: string; pipelineId: string; pipeline: string; name: string; stage: string; days: number; reasons: string[] }[];
@@ -94,7 +95,10 @@ export function HomePage({ call, t, locale, go, name }: { call: Call; t: Strings
   const actPipe = pid || d.defaultPipeline || pipes[0]?.id || '';
   return (
     <div class="home">
-      <div class="hwelcome"><h2>{x.welcome(first)}</h2><span class="muted">{today}</span></div>
+      <div class="hwelcome"><div><h2>{x.welcome(first)}</h2><span class="muted">{today}</span></div><span class="spacer" />
+        {d.week?.ring && (() => { const w = d.week; const pct = Math.min(100, Math.round((w.done / Math.max(1, w.goal)) * 100)); return (
+          <div class="goal" title={`${w.done} / ${w.goal}`}><div class="ring" role="img" aria-label={`${w.done} / ${w.goal}`} style={{ '--p': pct } as any}><span>{w.done}/{w.goal}</span></div><small class="muted">{locale === 'fr-CA' ? (pct >= 100 ? 'Objectif atteint !' : 'Cette semaine') : (pct >= 100 ? 'Goal reached!' : 'This week')}</small></div>); })()}
+      </div>
       <p class="muted hsum">{x.summary(d.tasks.length, d.risks.length)}</p>
 
       <section class="hsec" aria-label={x.quick}>

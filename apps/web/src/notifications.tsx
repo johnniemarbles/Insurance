@@ -3,9 +3,9 @@ import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
-interface N { id: string; kind: string; boxId: string | null; pipelineId: string | null; data: Record<string, any>; createdAt: string; readAt: string | null; actorName: string | null }
+export interface N { id: string; kind: string; boxId: string | null; pipelineId: string | null; data: Record<string, any>; createdAt: string; readAt: string | null; actorName: string | null }
 
-const X = {
+export const X = {
   'en': {
     title: 'Notifications', none: 'You are all caught up.', markAll: 'Mark all read', settings: 'Choose what you are told about',
     text: (n: N) => {

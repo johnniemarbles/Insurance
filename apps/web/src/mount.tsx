@@ -19,3 +19,4 @@ export function mountPii(el: HTMLElement, host: HostOptions): () => void {
   render(<App host={host} />, mount);
   return () => { clearInterval(timer); window.removeEventListener('resize', pin); window.removeEventListener('scroll', pin, true); render(null, mount); };
 }
+export { mountHeader } from './header.tsx';

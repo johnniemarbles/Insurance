@@ -103,7 +103,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, meName, compose, host, min
       {older(host.extVersion, minExt) && <div class="banner warn" role="alert">{t.updateNeeded}</div>}
       {(
         <div class="tabs" role="tablist">
-          {PAGES.filter((p) => p !== 'merges').map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)}>{label[p]}</button>)}
+          {PAGES.filter((p) => p !== 'merges' && p !== 'notifications').map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)}>{label[p]}</button>)}
           {supportEmail && <a class="tabs-fb" href={`mailto:${supportEmail}?subject=PII%20feedback`}>{t.sendFeedback}</a>}
         </div>
       )}

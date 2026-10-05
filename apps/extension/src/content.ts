@@ -1,6 +1,6 @@
 import * as InboxSDK from '@inboxsdk/core';
 import { mountSidebar, type CapturedMessage } from './sidebar';
-import { mountPii } from '../../web/src/mount';
+import { mountPii, mountHeader } from '../../web/src/mount';
 import type { ComposeApi, Transport } from '../../web/src/types';
 
 const transport: Transport = async (method, path, body) => {
@@ -71,6 +71,27 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
   sdk.Router.handleCustomRoute('pii/:page', mountRoute);
   sdk.Router.handleCustomRoute('pii/:page/:id', mountRoute);
 
+  // The PII mark and the bell in Gmail's top bar, next to the account area. If Gmail's layout changes and the spot is not found, they float top right instead.
+  const hostEl = document.createElement('div');
+  hostEl.id = 'pii-header';
+  mountHeader(hostEl, { extVersion: chrome.runtime.getManifest().version, transport, onSignIn: () => void chrome.runtime.sendMessage({ type: 'pii:signin' }), navigate: goto }, chrome.runtime.getURL('nav-icon.png'));
+  const place = () => {
+    const acct = document.querySelector('header[role="banner"] a[aria-label*="Google Account"], header[role="banner"] [aria-label*="Google Account"]');
+    let anchor: HTMLElement | null = acct as HTMLElement | null;
+    while (anchor && anchor.parentElement && anchor.parentElement.tagName !== 'HEADER' && anchor.parentElement.children.length < 3) anchor = anchor.parentElement;
+    const parent = anchor?.parentElement;
+    if (anchor && parent && parent.tagName !== 'BODY') {
+      hostEl.style.cssText = 'display:inline-flex;align-items:center;margin-right:4px';
+      if (hostEl.parentElement !== parent || hostEl.nextElementSibling !== anchor) parent.insertBefore(hostEl, anchor);
+    } else if (hostEl.parentElement !== document.body) {
+      hostEl.style.cssText = 'position:fixed;top:10px;right:210px;z-index:1000;background:#fff;border-radius:22px;box-shadow:0 1px 4px rgba(10,31,92,.25)';
+      document.body.appendChild(hostEl);
+    }
+  };
+  place();
+  let placeTimer: ReturnType<typeof setTimeout> | undefined;
+  new MutationObserver(() => { if (placeTimer) return; placeTimer = setTimeout(() => { placeTimer = undefined; if (!hostEl.isConnected || hostEl.style.position === 'fixed') place(); }, 500); }).observe(document.body, { childList: true, subtree: true });
+
   // The left panel is drawn from the person's own layout (Settings > Left panel), limited to what they can use, with live counts.
   interface NavData { items: { id: string; name: string; count: number }[]; pipelines: { id: string; name: string; count: number; views?: { id: string; name: string }[] }[] }
   let section: { remove(): void } | null = null;
@@ -90,7 +111,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     const nav = r.status === 200 && Array.isArray(r.json?.items) ? (r.json as NavData) : fallback;
     const svg = (n: string) => chrome.runtime.getURL(`icons/${n}.svg`);
     // Each item is added on its own, so one that fails never takes the rest of the menu with it. Two levels only (page > pipeline).
-    nav.items.forEach((it, i) => {
+    nav.items.filter((it) => it.id !== 'notifications').forEach((it, i) => { // notifications live in the bell in Gmail's top bar
       try {
         const child = top.addNavItem({ name: withCount(it.name, it.count), iconUrl: svg(it.id), routeID: 'pii/:page', routeParams: { page: it.id }, orderHint: i });
         if (it.id === 'pipelines') {
