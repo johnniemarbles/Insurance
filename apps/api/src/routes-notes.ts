@@ -24,12 +24,12 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
   // ---- notes ----
   app.post(
     '/v1/boxes/:id/notes',
-    { schema: { params: boxParams, body: { type: 'object', required: ['body'], additionalProperties: false, properties: { body: { type: 'string', minLength: 1, maxLength: 20000 }, mentions: { type: 'array', items: uuid, maxItems: 20 } } } } },
+    { schema: { params: boxParams, body: { type: 'object', required: ['body'], additionalProperties: false, properties: { body: { type: 'string', minLength: 1, maxLength: 20000 }, kind: { enum: ['note', 'call'] }, outcome: { enum: ['connected', 'voicemail', 'no_answer', 'wrong_number'] }, minutes: { type: 'integer', minimum: 0, maximum: 600 }, mentions: { type: 'array', items: uuid, maxItems: 20 } } } } },
     async (req, reply) => {
       const { ctx } = await deps.authenticate(req);
       requireCrm(ctx);
       const { id } = req.params as { id: string };
-      const b = req.body as { body: string; mentions?: string[] };
+      const b = req.body as { body: string; mentions?: string[]; kind?: 'note' | 'call'; outcome?: string; minutes?: number };
       const out = await run(ctx, async (tx) => {
         const s = await boxScope(tx, id);
         if (b.mentions?.length) {
@@ -37,7 +37,7 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
           if (m.rows[0]!.n !== new Set(b.mentions).size) throw invalid('A mentioned person is not visible to you');
         }
         const noteId = randomUUID();
-        await tx.query('INSERT INTO notes (id, tenant_id, box_id, owner_node_id, context_node_id, author_id, body, mentions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [noteId, ctx.tenantId, id, s.owner_node_id, s.context_node_id, ctx.userId, b.body, b.mentions ?? []]);
+        await tx.query('INSERT INTO notes (id, tenant_id, box_id, owner_node_id, context_node_id, author_id, body, mentions, kind, call_outcome, call_minutes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)', [noteId, ctx.tenantId, id, s.owner_node_id, s.context_node_id, ctx.userId, b.body, b.mentions ?? [], b.kind ?? 'note', b.kind === 'call' ? (b.outcome ?? 'connected') : null, b.kind === 'call' ? (b.minutes ?? null) : null]);
         {
           const bx = (await tx.query<{ name: string; owner_user_id: string | null }>('SELECT name, owner_user_id FROM boxes WHERE id = $1', [id])).rows[0];
           const mentioned = [...new Set(b.mentions ?? [])];
@@ -85,13 +85,13 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
       await boxScope(tx, id);
       const items = (await tx.query(
         `SELECT * FROM (
-           SELECT 'note' AS kind, n.id, n.created_at AS at, u.display_name AS "by", n.body AS text, NULL::timestamptz AS "dueAt", NULL::timestamptz AS "doneAt", NULL AS "fromStage", NULL AS "toStage", NULL::uuid AS "assigneeId", NULL AS "assignee"
+           SELECT n.kind AS kind, n.id, n.created_at AS at, u.display_name AS "by", n.body AS text, NULL::timestamptz AS "dueAt", NULL::timestamptz AS "doneAt", NULL AS "fromStage", NULL AS "toStage", NULL::uuid AS "assigneeId", NULL AS "assignee", n.call_outcome AS outcome, n.call_minutes AS minutes
              FROM notes n LEFT JOIN app_users u ON u.id = n.author_id WHERE n.box_id = $1
            UNION ALL
-           SELECT 'task', t.id, t.created_at, NULL, t.title, t.due_at, t.done_at, NULL, NULL, t.assignee_id, coalesce(a.display_name, a.email::text)
+           SELECT 'task', t.id, t.created_at, NULL, t.title, t.due_at, t.done_at, NULL, NULL, t.assignee_id, coalesce(a.display_name, a.email::text), NULL, NULL::int
              FROM tasks t LEFT JOIN app_users a ON a.id = t.assignee_id WHERE t.box_id = $1
            UNION ALL
-           SELECT CASE e.kind WHEN 'created' THEN 'created' ELSE 'stage' END, e.id, e.created_at, u.display_name, NULL, NULL, NULL, fs.name, ts.name, NULL, NULL
+           SELECT CASE e.kind WHEN 'created' THEN 'created' ELSE 'stage' END, e.id, e.created_at, u.display_name, NULL, NULL, NULL, fs.name, ts.name, NULL, NULL, NULL, NULL::int
              FROM box_events e LEFT JOIN stages fs ON fs.id = e.from_stage_id LEFT JOIN stages ts ON ts.id = e.to_stage_id LEFT JOIN app_users u ON u.id = e.actor_id WHERE e.box_id = $1
          ) x ORDER BY at DESC, id LIMIT 200`, [id])).rows;
       return { items };

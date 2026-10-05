@@ -892,6 +892,18 @@ test('left panel and home: layout drives the items, the layout is per person, co
   await call(P1U, 'DELETE', '/v1/settings/nav.layout?scope=user');
 });
 
+test('call log: a call is a note with an outcome and minutes, shown in the timeline, and bad outcomes are refused', async () => {
+  const box = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'CallBox', contextNodeId: X, custom: { policy_no: 'C1' } })).json.id as string;
+  assert.equal((await call(P1U, 'POST', `/v1/boxes/${box}/notes`, { body: 'Renewal quote discussed', kind: 'call', outcome: 'connected', minutes: 12 })).status, 201);
+  assert.equal((await call(P1U, 'POST', `/v1/boxes/${box}/notes`, { body: 'x', kind: 'call', outcome: 'bogus' })).status, 400);
+  assert.equal((await call(P1U, 'POST', `/v1/boxes/${box}/notes`, { body: 'plain' })).status, 201);
+  const items = (await call(P1U, 'GET', `/v1/boxes/${box}/timeline`)).json.items as { kind: string; outcome: string | null; minutes: number | null }[];
+  const c = items.find((i) => i.kind === 'call');
+  assert.ok(c && c.outcome === 'connected' && c.minutes === 12);
+  assert.equal(items.filter((i) => i.kind === 'note').length, 1);
+  assert.equal((await call(P2U, 'GET', `/v1/boxes/${box}/timeline`)).status, 404, 'siblings cannot see it');
+});
+
 test('notifications: told only about others, private to the person, filtered by their own settings', async () => {
   const box = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'NotifyBox', contextNodeId: X, custom: { policy_no: 'N1' } })).json.id as string;
   assert.equal((await call(P1U, 'POST', `/v1/boxes/${box}/tasks`, { title: 'Call back', assigneeId: s1UserId })).status, 201);

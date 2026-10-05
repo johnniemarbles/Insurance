@@ -99,7 +99,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, meName, compose, host, min
   const label: Record<PageId, string> = { home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
-    <div class="pii" onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
+    <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
       {older(host.extVersion, minExt) && <div class="banner warn" role="alert">{t.updateNeeded}</div>}
       {(
         <div class="tabs" role="tablist">
@@ -301,6 +301,15 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
     try { await call('PATCH', `/v1/boxes/${id}`, { stageId, position }); refresh(); } catch (e) { setToast({ msg: (e as Error).message, bad: true }); refresh(); }
   };
   const togglePick = (id: string) => setPicked((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const [bulkOwner, setBulkOwner] = useState('');
+  const bulkEach = async (ids: string[], fn: (id: string) => Promise<unknown>) => {
+    const failed: string[] = [];
+    for (const id of ids) { try { await fn(id); } catch { failed.push(id); } }
+    if (failed.length) setError(t.bulkFailed(failed.length));
+    refresh();
+  };
+  const bulkAssign = async () => { if (!bulkOwner) return; const ids = [...picked]; const who = bulkOwner === '-' ? null : bulkOwner; setPicked(new Set()); setBulkOwner(''); await bulkEach(ids, (id) => call('PATCH', `/v1/boxes/${id}`, { ownerUserId: who })); };
+  const bulkDelete = async () => { const ids = [...picked]; if (!confirm(t.confirmDelete(ids.length))) return; setPicked(new Set()); await bulkEach(ids, (id) => call('DELETE', `/v1/boxes/${id}`)); };
   const bulkMove = async () => {
     if (!bulkStage) return;
     const ids = [...picked]; setPicked(new Set()); setBulkStage('');
@@ -467,6 +476,11 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
             <option value="">{t.moveTo}…</option>{stages.map((s) => <option value={s.id}>{s.name}</option>)}
           </select>
           <button class="btn" disabled={!bulkStage} onClick={bulkMove}>{t.apply}</button>
+          <select class="sel" aria-label={t.assignTo} value={bulkOwner} onChange={(e) => setBulkOwner((e.target as HTMLSelectElement).value)}>
+            <option value="">{t.assignTo}…</option><option value="-">—</option>{people.map((p) => <option value={p.id}>{p.displayName ?? p.email}</option>)}
+          </select>
+          <button class="btn" disabled={!bulkOwner} onClick={() => void bulkAssign()}>{t.apply}</button>
+          <button class="btn quiet danger" onClick={() => void bulkDelete()}>{t.deleteSel}</button>
           <button class="btn quiet" onClick={() => { setMergeIds([...picked]); setPicked(new Set()); }}>✉ {t.mailMerge}</button>
           <button class="btn quiet" onClick={() => setPicked(new Set())}>{t.cancel}</button>
         </div>

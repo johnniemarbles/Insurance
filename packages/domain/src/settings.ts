@@ -25,6 +25,10 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Show getting-started tips', 'fr-CA': 'Afficher les conseils de démarrage' }, help: { en: 'The short guide at the top of an empty pipeline.', 'fr-CA': 'Le court guide au haut d’un pipeline vide.' }, keywords: 'tips help guide onboarding start',
   },
   {
+    key: 'ui.compact', tab: 'me', type: 'bool', default: false, scopes: ['user', 'tenant'], lockable: false,
+    label: { en: 'Compact rows', 'fr-CA': 'Lignes compactes' }, help: { en: 'Tighter tables and lists so more fits on screen.', 'fr-CA': 'Tableaux et listes plus serrés pour en voir davantage.' }, keywords: 'compact dense density rows tight',
+  },
+  {
     key: 'ui.goalRing', tab: 'me', type: 'bool', default: true, scopes: ['user', 'tenant'], lockable: false,
     label: { en: 'Show my weekly goal on Home', 'fr-CA': 'Afficher mon objectif de la semaine sur l’accueil' }, help: { en: 'A ring that fills as you finish tasks this week.', 'fr-CA': 'Un anneau qui se remplit à mesure que vous terminez des tâches cette semaine.' }, keywords: 'goal ring weekly target progress home',
   },

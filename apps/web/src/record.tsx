@@ -6,23 +6,25 @@ import type { Box, FieldDef, Locale, Pipeline, Stage } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Person { id: string; displayName: string | null; email: string }
-interface Item { kind: 'note' | 'task' | 'stage' | 'created'; id: string; at: string; by: string | null; text: string | null; dueAt: string | null; doneAt: string | null; fromStage: string | null; toStage: string | null; assignee: string | null; fresh?: boolean }
+interface Item { kind: 'note' | 'call' | 'task' | 'stage' | 'created'; outcome?: string | null; minutes?: number | null; id: string; at: string; by: string | null; text: string | null; dueAt: string | null; doneAt: string | null; fromStage: string | null; toStage: string | null; assignee: string | null; fresh?: boolean }
 
 const R = {
   'en': {
     details: 'Details', activity: 'Activity', save: 'Save', saving: 'Saving…', cancel: 'Cancel', close: 'Close', create: 'Create', creating: 'Creating…', saved: 'Saved', unsaved: 'You have changes that are not saved', discard: 'Discard your changes?',
     name: 'Name', stage: 'Stage', owner: 'Owner', value: 'Value', closeDate: 'Close date', deal: 'Deal', fields: 'Fields', contacts: 'Contacts', noContacts: 'No contacts linked yet.', location: 'Branch', chooseLocation: 'Choose a branch',
+    call: 'Call', callPh: 'What was discussed?', logCall: 'Log call', callAdded: 'Call logged', minutes: 'Minutes', outcome: 'Outcome', outcomes: { connected: 'Spoke with them', voicemail: 'Left a voicemail', no_answer: 'No answer', wrong_number: 'Wrong number' } as Record<string, string>, copyLink: 'Copy link', linkCopied: 'Link copied',
     note: 'Note', task: 'Task', notePh: 'Write a note for the team…', addNote: 'Add note', taskPh: 'What needs doing?', due: 'Due', assignee: 'Assigned to', addTask: 'Add task', noDate: 'No date',
     noteAdded: 'Note added', taskAdded: 'Task added', empty: 'Nothing yet. Add the first note or task above.', readOnly: 'View only: this record belongs to another branch.', moved: (a: string | null, b: string | null) => `Moved ${a ? `from ${a} ` : ''}to ${b ?? '—'}`, createdIn: (s: string | null) => `Created in ${s ?? '—'}`,
-    filters: { all: 'All', note: 'Notes', task: 'Tasks', stage: 'Moves' } as Record<string, string>, newRecord: 'New record', pickContact: 'Link a contact (optional)', noneContact: 'No contact', yes: 'Yes', required: 'required', you: 'You',
+    filters: { all: 'All', call: 'Calls', note: 'Notes', task: 'Tasks', stage: 'Moves' } as Record<string, string>, newRecord: 'New record', pickContact: 'Link a contact (optional)', noneContact: 'No contact', yes: 'Yes', required: 'required', you: 'You',
     overdue: 'Overdue', moveFailed: 'Could not move the record',
   },
   'fr-CA': {
     details: 'Détails', activity: 'Activité', save: 'Enregistrer', saving: 'Enregistrement…', cancel: 'Annuler', close: 'Fermer', create: 'Créer', creating: 'Création…', saved: 'Enregistré', unsaved: 'Vous avez des changements non enregistrés', discard: 'Abandonner vos changements?',
     name: 'Nom', stage: 'Étape', owner: 'Responsable', value: 'Valeur', closeDate: 'Date de clôture', deal: 'Dossier', fields: 'Champs', contacts: 'Contacts', noContacts: 'Aucun contact lié.', location: 'Succursale', chooseLocation: 'Choisir une succursale',
+    call: 'Appel', callPh: 'De quoi a-t-on discuté?', logCall: 'Consigner l’appel', callAdded: 'Appel consigné', minutes: 'Minutes', outcome: 'Résultat', outcomes: { connected: 'Conversation', voicemail: 'Message laissé', no_answer: 'Sans réponse', wrong_number: 'Mauvais numéro' } as Record<string, string>, copyLink: 'Copier le lien', linkCopied: 'Lien copié',
     note: 'Note', task: 'Tâche', notePh: 'Écrire une note pour l’équipe…', addNote: 'Ajouter la note', taskPh: 'Que faut-il faire?', due: 'Échéance', assignee: 'Assignée à', addTask: 'Ajouter la tâche', noDate: 'Sans date',
     noteAdded: 'Note ajoutée', taskAdded: 'Tâche ajoutée', empty: 'Rien pour l’instant. Ajoutez la première note ou tâche ci-dessus.', readOnly: 'Lecture seule : ce dossier appartient à une autre succursale.', moved: (a: string | null, b: string | null) => `Déplacé ${a ? `de ${a} ` : ''}à ${b ?? '—'}`, createdIn: (s: string | null) => `Créé à ${s ?? '—'}`,
-    filters: { all: 'Tout', note: 'Notes', task: 'Tâches', stage: 'Déplacements' } as Record<string, string>, newRecord: 'Nouveau dossier', pickContact: 'Lier un contact (facultatif)', noneContact: 'Aucun contact', yes: 'Oui', required: 'requis', you: 'Vous',
+    filters: { all: 'Tout', call: 'Appels', note: 'Notes', task: 'Tâches', stage: 'Déplacements' } as Record<string, string>, newRecord: 'Nouveau dossier', pickContact: 'Lier un contact (facultatif)', noneContact: 'Aucun contact', yes: 'Oui', required: 'requis', you: 'Vous',
     overdue: 'En retard', moveFailed: 'Impossible de déplacer le dossier',
   },
 };
@@ -60,7 +62,9 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
   const [err, setErr] = useState('');
   const [items, setItems] = useState<Item[]>([]);
   const [filter, setFilter] = useState('all');
-  const [kind, setKind] = useState<'note' | 'task'>('note');
+  const [kind, setKind] = useState<'note' | 'call' | 'task'>('note');
+  const [outcome, setOutcome] = useState('connected');
+  const [minutes, setMinutes] = useState('');
   const [noteText, setNoteText] = useState('');
   const [taskText, setTaskText] = useState('');
   const [taskDue, setTaskDue] = useState('');
@@ -116,9 +120,10 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
     const body = noteText.trim(); if (!body || busy) return;
     setBusy(true); setErr('');
     try {
-      const r = await call('POST', `/v1/boxes/${box.id}/notes`, { body });
-      setItems((cur) => [{ kind: 'note', id: r.id, at: new Date().toISOString(), by: x.you, text: body, dueAt: null, doneAt: null, fromStage: null, toStage: null, assignee: null, fresh: true }, ...cur]);
-      setNoteText(''); say(x.noteAdded); onChanged(); void loadFeed();
+      const isCall = kind === 'call';
+      const r = await call('POST', `/v1/boxes/${box.id}/notes`, { body, ...(isCall ? { kind: 'call', outcome, ...(minutes ? { minutes: Math.min(600, Math.max(0, Math.round(Number(minutes)))) } : {}) } : {}) });
+      setItems((cur) => [{ kind: isCall ? 'call' : 'note', outcome: isCall ? outcome : null, minutes: isCall && minutes ? Number(minutes) : null, id: r.id, at: new Date().toISOString(), by: x.you, text: body, dueAt: null, doneAt: null, fromStage: null, toStage: null, assignee: null, fresh: true }, ...cur]);
+      setNoteText(''); setMinutes(''); say(kind === 'call' ? x.callAdded : x.noteAdded); onChanged(); void loadFeed();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
   const addTask = async () => {
@@ -138,13 +143,13 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
   };
 
   const shown = items.filter((i) => filter === 'all' || i.kind === filter || (filter === 'stage' && i.kind === 'created'));
-  const counts = { note: items.filter((i) => i.kind === 'note').length, task: items.filter((i) => i.kind === 'task').length };
+  const counts = { note: items.filter((i) => i.kind === 'note' || i.kind === 'call').length, task: items.filter((i) => i.kind === 'task').length };
   const stage: Stage | undefined = pipeline.stages.find((s) => s.id === stageId);
 
   return (
     <aside ref={dlg} tabIndex={-1} class="drawer rec" role="dialog" aria-label={full.name} onKeyDown={(e) => { if (e.key === 'Escape') { if (dirty && !confirm(x.discard)) { e.stopPropagation(); } } }}>
       <header class="rec-head">
-        <div class="rec-top"><h2>{full.name}</h2><button class="x" aria-label={x.close} onClick={requestClose}>×</button></div>
+        <div class="rec-top"><h2>{full.name}</h2><button class="link" title={x.copyLink} onClick={() => { const url = `${location.href.split('#')[0]}#pii/pipelines/${full.pipelineId}::open=${full.id}`; void (navigator.clipboard?.writeText(url) ?? Promise.reject()).then(() => say(x.linkCopied), () => say(url)); }}>🔗 {x.copyLink}</button><button class="x" aria-label={x.close} onClick={requestClose}>×</button></div>
         {!canEdit && <p class="muted">{x.readOnly}</p>}
         <div class="rec-stage">
           <label for="rec-stg">{x.stage}</label>
@@ -186,12 +191,19 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
               <div class="composer">
                 <div class="seg" role="tablist">
                   <button role="tab" aria-selected={kind === 'note'} class={kind === 'note' ? 'on' : ''} onClick={() => setKind('note')}>{x.note}</button>
+                  <button role="tab" aria-selected={kind === 'call'} class={kind === 'call' ? 'on' : ''} onClick={() => setKind('call')}>{x.call}</button>
                   <button role="tab" aria-selected={kind === 'task'} class={kind === 'task' ? 'on' : ''} onClick={() => setKind('task')}>{x.task}</button>
                 </div>
-                {kind === 'note' ? (
+                {kind === 'note' || kind === 'call' ? (
                   <>
-                    <textarea rows={3} placeholder={x.notePh} aria-label={x.note} value={noteText} onInput={(e) => setNoteText((e.target as HTMLTextAreaElement).value)} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void addNote(); }} />
-                    <div class="comp-actions"><button class="btn" disabled={!noteText.trim() || busy} onClick={() => void addNote()}>{x.addNote}</button></div>
+                    {kind === 'call' && (
+                      <div class="two">
+                        <label class="fld" for="c-out">{x.outcome}<select id="c-out" value={outcome} onChange={(e) => setOutcome((e.target as HTMLSelectElement).value)}>{Object.entries(x.outcomes).map(([k, v]) => <option value={k}>{v}</option>)}</select></label>
+                        <label class="fld" for="c-min">{x.minutes}<input id="c-min" type="number" min="0" max="600" value={minutes} onInput={(e) => setMinutes((e.target as HTMLInputElement).value)} /></label>
+                      </div>
+                    )}
+                    <textarea rows={3} placeholder={kind === 'call' ? x.callPh : x.notePh} aria-label={kind === 'call' ? x.call : x.note} value={noteText} onInput={(e) => setNoteText((e.target as HTMLTextAreaElement).value)} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') void addNote(); }} />
+                    <div class="comp-actions"><button class="btn" disabled={!noteText.trim() || busy} onClick={() => void addNote()}>{kind === 'call' ? x.logCall : x.addNote}</button></div>
                   </>
                 ) : (
                   <>
@@ -206,12 +218,13 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
                 )}
               </div>
             )}
-            <div class="feed-filter">{(['all', 'note', 'task', 'stage'] as const).map((k) => <button class={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{x.filters[k]}</button>)}</div>
+            <div class="feed-filter">{(['all', 'call', 'note', 'task', 'stage'] as const).map((k) => <button class={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{x.filters[k]}</button>)}</div>
             {shown.length === 0 && <p class="muted">{x.empty}</p>}
             <ol class="feed">
               {shown.map((i) => (
                 <li key={`${i.kind}${i.id}`} class={`fi fi-${i.kind}${i.fresh ? ' fresh' : ''}`}>
                   {i.kind === 'note' && <><div class="fi-text">{i.text}</div><small>{i.by ?? ''} · {when(i.at, locale)}</small></>}
+                  {i.kind === 'call' && <><div class="fi-call"><b>{x.call}: {x.outcomes[i.outcome ?? 'connected']}{i.minutes ? ` · ${i.minutes} min` : ''}</b></div><div class="fi-text">{i.text}</div><small>{i.by ?? ''} · {when(i.at, locale)}</small></>}
                   {i.kind === 'task' && (
                     <>
                       <label class="task"><input type="checkbox" disabled={!canEdit} checked={Boolean(i.doneAt)} onChange={(e) => void toggle(i, (e.target as HTMLInputElement).checked)} />
