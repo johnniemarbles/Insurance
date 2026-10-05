@@ -1,9 +1,12 @@
+import { ErrorBar } from './errorbar.tsx';
 import { useDialogFocus } from './a11y.ts';
+import { Component, type ComponentChildren } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Board } from './board.tsx';
 import { ImportDialog } from './import.tsx';
 import { NewPipeline, PipelineEditor } from './editor.tsx';
 import { TrainingView } from './training.tsx';
+import { LMS } from './features.ts';
 import { ContactsView } from './contacts.tsx';
 import { IntegrationsPanel } from './integrations.tsx';
 import { MergePanel } from './merge.tsx';
@@ -34,6 +37,7 @@ export function App({ host }: { host: HostOptions }) {
   const call: Call = useCallback(async (method, path, body) => {
     const r = await host.transport(method, path, body);
     if (r.status >= 200 && r.status < 300) return r.json;
+    if (r.status === 401) setMe('out');
     throw new ApiErr(r.status, r.status === -1 ? t.reloadNeeded : r.status === 0 ? t.offline : (r.json?.error?.message ?? `Error ${r.status}`));
   }, [host, t.offline]);
 
@@ -54,19 +58,36 @@ export function App({ host }: { host: HostOptions }) {
   if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><button class="btn" onClick={host.onSignIn}>{t.signIn}</button></div></div>;
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
-  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} compose={host.compose} host={host} />;
+  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
 }
 
+class Boundary extends Component<{ msg: string; retry: string; children?: ComponentChildren }, { bad: boolean }> {
+  state = { bad: false };
+  componentDidCatch(e: unknown) { console.warn('[PII] screen crashed', e); this.setState({ bad: true }); }
+  render() {
+    return this.state.bad ? <div class="msg"><p>{this.props.msg}</p><button class="btn" onClick={() => this.setState({ bad: false })}>{this.props.retry}</button></div> : this.props.children;
+  }
+}
+
+const older = (have?: string, need?: string) => {
+  if (!have || !need) return false;
+  const a = have.split('.').map(Number), b = need.split('.').map(Number);
+  for (let i = 0; i < 3; i++) { if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0); }
+  return false;
+};
+
 type PageId = 'home' | 'notifications' | 'pipelines' | 'contacts' | 'merges' | 'training' | 'settings';
-const PAGES: PageId[] = ['home', 'notifications', 'pipelines', 'contacts', 'merges', 'training', 'settings'];
+const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'contacts', 'merges', 'training', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
-function Shell({ call, t, locale, canAuthor, meEmail, compose, host }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; compose?: ComposeApi; host: HostOptions }) {
+function Shell({ call, t, locale, canAuthor, meEmail, compose, host, minExt, supportEmail }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
   const [page, setPage] = useState<PageId>(() => {
     if (host.route) return pageOf(host.route.page);
     try { const v = localStorage.getItem('pii.page'); return pageOf(v ?? undefined); } catch { return 'pipelines'; }
   });
   const [routeId, setRouteId] = useState<string | undefined>(host.route?.id);
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => { const f = () => setNonce((n) => n + 1); window.addEventListener('pii-retry', f); return () => window.removeEventListener('pii-retry', f); }, []);
   const settings = useSettings(call);
   const [pipeList, setPipeList] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { call('GET', '/v1/pipelines').then((r) => setPipeList((r.pipelines as Pipeline[]).map((p) => ({ id: p.id, name: p.name }))), () => undefined); }, [call]);
@@ -79,18 +100,22 @@ function Shell({ call, t, locale, canAuthor, meEmail, compose, host }: { call: C
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
     <div class="pii" onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
+      {older(host.extVersion, minExt) && <div class="banner warn" role="alert">{t.updateNeeded}</div>}
       {(
         <div class="tabs" role="tablist">
           {PAGES.filter((p) => p !== 'merges').map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)}>{label[p]}</button>)}
+          {supportEmail && <a class="tabs-fb" href={`mailto:${supportEmail}?subject=PII%20feedback`}>{t.sendFeedback}</a>}
         </div>
       )}
+      <Boundary key={`${page}:${routeId ?? ''}:${nonce}`} msg={t.crashed} retry={t.retry}>
       {page === 'home' ? <HomePage call={call} locale={locale} go={go} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'contacts' ? <ContactsView call={call} t={t} />
-        : page === 'training' ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />
+        : page === 'training' && LMS ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />
         : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} compose={compose} /> : <div class="msg">{t.loading}</div>)
         : !prefs ? <div class="msg">{t.loading}</div>
         : <PipelineView key={`${page}:${routeId ?? ''}`} call={call} t={t} locale={locale} meEmail={meEmail} compose={compose} initialPid={routeId} prefs={prefs} openMerges={page === 'merges'} onStartTipsOff={() => void (settings as SettingsApi).set('ui.startTips', 'user', false)} />}
+      </Boundary>
     </div>
   );
 }
@@ -275,7 +300,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
     refresh();
   };
 
-  if (error && !pipelines) return <div class="pii"><div class="err" role="alert">{error}</div></div>;
+  if (error && !pipelines) return <div class="pii"><ErrorBar msg={error} retry={t.retry} /></div>;
   if (!pipelines) return <div class="pii"><div class="msg">{t.loading}</div></div>;
   if (pipelines.length === 0) return <div class="pii"><div class="msg">{t.noPipelines}</div></div>;
 

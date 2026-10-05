@@ -63,7 +63,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     host.style.cssText = 'height:calc(100vh - 130px);min-height:480px;background:#fff';
     view.getElement().appendChild(host);
     const unmount = mountPii(host, {
-      transport, onSignIn: () => void chrome.runtime.sendMessage({ type: 'pii:signin' }), compose: { send: sendOne(sdk) },
+      extVersion: chrome.runtime.getManifest().version, transport, onSignIn: () => void chrome.runtime.sendMessage({ type: 'pii:signin' }), compose: { send: sendOne(sdk) },
       route: { page: params.page ?? 'pipelines', id: params.id }, navigate: goto,
     });
     view.on('destroy', unmount);
@@ -86,7 +86,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     // A normal link item (the kind that worked before) with the pages nested under it, each with a Google Material icon.
     const top = sdk.NavMenu.addNavItem({ name: 'PII', iconUrl: icon, routeID: 'pii/:page', routeParams: { page: 'home' }, orderHint: 5 });
     section = top;
-    const fallback: NavData = { items: [['home', 'Home'], ['notifications', 'Notifications'], ['pipelines', 'Pipelines'], ['contacts', 'Contacts'], ['training', 'Training'], ['settings', 'Settings']].map(([id, name]) => ({ id, name, count: 0 })), pipelines: [] };
+    const fallback: NavData = { items: [['home', 'Home'], ['notifications', 'Notifications'], ['pipelines', 'Pipelines'], ['contacts', 'Contacts'], ['settings', 'Settings']].map(([id, name]) => ({ id, name, count: 0 })), pipelines: [] };
     const nav = r.status === 200 && Array.isArray(r.json?.items) ? (r.json as NavData) : fallback;
     const svg = (n: string) => chrome.runtime.getURL(`icons/${n}.svg`);
     // Each item is added on its own, so one that fails never takes the rest of the menu with it. Two levels only (page > pipeline).

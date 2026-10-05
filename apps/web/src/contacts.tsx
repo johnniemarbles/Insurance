@@ -1,3 +1,4 @@
+import { ErrorBar } from './errorbar.tsx';
 import { useEffect, useState } from 'preact/hooks';
 import type { Strings } from './i18n.ts';
 
@@ -21,8 +22,8 @@ export function ContactsView({ call, t }: { call: Call; t: Strings }) {
         <h1>{t.contacts}</h1>
         <input class="search" type="search" placeholder={t.search} aria-label={t.search} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
       </div>
-      {err && <div class="err" role="alert">{err}</div>}
-      {!rows ? <div class="msg">{t.loading}</div> : rows.length === 0 ? <div class="msg">{t.empty}</div> : (
+      {err && <ErrorBar msg={err} retry={t.retry} />}
+      {!rows ? (err ? null : <div class="msg">{t.loading}</div>) : rows.length === 0 ? <div class="msg">{t.empty}</div> : (
         <table>
           <caption class="sr">{t.contacts}</caption>
           <thead><tr><th>{t.name}</th><th>Email</th><th>{t.phone}</th><th>{t.jobTitle}</th></tr></thead>

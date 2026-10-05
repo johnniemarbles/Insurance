@@ -1,3 +1,4 @@
+import { ErrorBar } from './errorbar.tsx';
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
 
@@ -29,7 +30,7 @@ export function HomePage({ call, locale, go }: { call: Call; locale: Locale; go:
   const [d, setD] = useState<HomeData | null>(null);
   const [err, setErr] = useState('');
   useEffect(() => { call('GET', '/v1/home').then(setD, (e) => setErr((e as Error).message)); }, [call]);
-  if (err) return <div class="err" role="alert">{err}</div>;
+  if (err) return <ErrorBar msg={err} retry={locale === 'fr-CA' ? 'Réessayer' : 'Try again'} />;
   if (!d) return <div class="msg">…</div>;
   const late = (iso: string | null) => (iso ? new Date(iso) < new Date(new Date().setHours(0, 0, 0, 0)) : false);
   return (

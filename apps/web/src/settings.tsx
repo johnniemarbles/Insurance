@@ -1,6 +1,7 @@
 import { PrivacyTab } from './privacy.tsx';
 import { PeopleHub } from './people.tsx';
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
+import { LMS } from './features.ts';
 import { NAV_ITEMS, SETTINGS, type NavLayout, type SettingDef, type SettingScope, type SettingTab } from '../../../packages/domain/src/settings.ts';
 import type { ComposeApi, Locale } from './types.ts';
 import { AiAdminCard } from './ai.tsx';
@@ -51,6 +52,7 @@ const X = {
     you: 'Set by you', company: 'Company setting', branch: (n: string) => `Set by ${n}`, def: 'Default', lockedBy: (n: string) => `Locked by ${n}`, useDefault: 'Use the default', useTeam: 'Use the team setting',
     saved: 'Saved', undo: 'Undo', failed: 'Could not save', history: 'Recent changes', noHistory: 'No changes yet.',
     layoutHelp: 'Choose what appears in Gmail’s left panel and drag to reorder. Settings always stays, so you can find your way back here.', preview: 'Preview', moveUp: 'Move up', moveDown: 'Move down', show: 'Show',
+    unsaved: 'You have unsaved changes', discard: 'Discard', saveChanges: 'Save changes',
     nav: { home: 'Home', notifications: 'Notifications', pipelines: 'Pipelines', contacts: 'Contacts', merges: 'Mail merges', training: 'Training', settings: 'Settings' } as Record<string, string>,
     none: 'No default',
     teamHelp: 'Set a value for a whole branch or for the company. Everyone beneath it gets that value; lock it to stop people changing it.',
@@ -63,6 +65,7 @@ const X = {
     you: 'Défini par vous', company: 'Paramètre de l’entreprise', branch: (n: string) => `Défini par ${n}`, def: 'Par défaut', lockedBy: (n: string) => `Verrouillé par ${n}`, useDefault: 'Utiliser la valeur par défaut', useTeam: 'Utiliser le paramètre de l’équipe',
     saved: 'Enregistré', undo: 'Annuler', failed: 'Enregistrement impossible', history: 'Changements récents', noHistory: 'Aucun changement.',
     layoutHelp: 'Choisissez ce qui s’affiche dans le panneau de gauche de Gmail et glissez pour réordonner. Paramètres reste toujours affiché.', preview: 'Aperçu', moveUp: 'Monter', moveDown: 'Descendre', show: 'Afficher',
+    unsaved: 'Vous avez des modifications non enregistrées', discard: 'Annuler', saveChanges: 'Enregistrer',
     nav: { home: 'Accueil', notifications: 'Notifications', pipelines: 'Pipelines', contacts: 'Contacts', merges: 'Publipostages', training: 'Formation', settings: 'Paramètres' } as Record<string, string>,
     none: 'Aucun par défaut',
     teamHelp: 'Définissez une valeur pour une succursale entière ou pour l’entreprise. Tous ceux en dessous la reçoivent; verrouillez-la pour empêcher les changements.',
@@ -90,7 +93,7 @@ function Control({ def, value, onChange, disabled, locale, pipelines, x }: { def
 
 function LayoutEditor({ layout, onChange, disabled, x }: { layout: NavLayout; onChange: (l: NavLayout) => void; disabled: boolean; x: Strs }) {
   const [drag, setDrag] = useState<string | null>(null);
-  const order = layout.order.filter((id) => (NAV_ITEMS as readonly string[]).includes(id));
+  const order = layout.order.filter((id) => (NAV_ITEMS as readonly string[]).includes(id) && (LMS || id !== 'training'));
   const hidden = new Set(layout.hidden);
   const move = (id: string, to: number) => { const o = order.filter((i) => i !== id); o.splice(Math.max(0, Math.min(o.length, to)), 0, id); onChange({ order: o, hidden: layout.hidden }); };
   const toggle = (id: string) => { const h = new Set(hidden); if (h.has(id)) h.delete(id); else h.add(id); onChange({ order, hidden: [...h] }); };
@@ -135,6 +138,20 @@ export function SettingsPage({ api, call, locale, initialTab, isManager, pipelin
   useEffect(() => { call('GET', '/v1/settings/history').then((r) => setHist(r.history), () => setHist([])); }, [call, api]);
 
   const label = (d: SettingDef) => d.label[locale];
+  // Changes are held as a draft until Save is pressed; Discard drops them.
+  const [draft, setDraft] = useState<Record<string, unknown>>({});
+  const [busy, setBusy] = useState(false);
+  const dirtyKeys = Object.keys(draft);
+  const saveAll = async () => {
+    setBusy(true); setErr('');
+    const undo: { key: string; before: unknown }[] = [];
+    try {
+      for (const k of dirtyKeys) { undo.push({ key: k, before: api.values[k]?.own }); await api.set(k, 'user', draft[k]); }
+      setDraft({});
+      setToast({ text: `${dirtyKeys.length === 1 ? label(SETTINGS.find((d) => d.key === dirtyKeys[0])!) : `${dirtyKeys.length}`}: ${x.saved}`, undo: async () => { for (const u of undo) { if (u.before === undefined) await api.clear(u.key, 'user'); else await api.set(u.key, 'user', u.before); } setToast(null); } });
+    } catch (e) { setErr(`${x.failed}: ${(e as Error).message}`); }
+    setBusy(false);
+  };
   const save = async (d: SettingDef, value: unknown) => {
     setErr('');
     const before = api.values[d.key]?.own;
@@ -155,8 +172,8 @@ export function SettingsPage({ api, call, locale, initialTab, isManager, pipelin
         <div class="srow-h"><strong id={`s-${d.key}`}>{label(d)}</strong> <SourceChip r={r} x={x} /></div>
         <p class="muted">{d.help[locale]}</p>
         {d.key === 'nav.layout'
-          ? <LayoutEditor layout={r.value as NavLayout} disabled={r.locked || !canOwn} x={x} onChange={(l) => void save(d, l)} />
-          : <Control def={d} value={r.value} disabled={r.locked || !canOwn} locale={locale} pipelines={pipelines} x={x} onChange={(v) => void save(d, v)} />}
+          ? <LayoutEditor layout={(d.key in draft ? draft[d.key] : r.value) as NavLayout} disabled={r.locked || !canOwn} x={x} onChange={(l) => setDraft((m) => ({ ...m, [d.key]: l }))} />
+          : <Control def={d} value={d.key in draft ? draft[d.key] : r.value} disabled={r.locked || !canOwn} locale={locale} pipelines={pipelines} x={x} onChange={(v) => setDraft((m) => ({ ...m, [d.key]: v }))} />}
         {hasInherited && !r.locked && r.own !== undefined && <button class="link" onClick={() => void revert(d)}>{r.inheritedSource.type === 'default' ? x.useDefault : x.useTeam}</button>}
       </div>
     );
@@ -188,6 +205,13 @@ export function SettingsPage({ api, call, locale, initialTab, isManager, pipelin
           {tab === 'privacy' && <PrivacyTab call={call} locale={locale} />}
           {tab === 'team' && <TeamTab api={api} call={call} locale={locale} pipelines={pipelines} isManager={isManager} x={x} onError={setErr} />}
         </>
+      )}
+      {dirtyKeys.length > 0 && (
+        <div class="savebar" role="region" aria-label={x.unsaved}>
+          <span>{x.unsaved}</span><span class="spacer" />
+          <button class="btn quiet" disabled={busy} onClick={() => setDraft({})}>{x.discard}</button>
+          <button class="btn" disabled={busy} onClick={() => void saveAll()}>{busy ? '…' : x.saveChanges}</button>
+        </div>
       )}
       {toast && <div class="toast" role="status">{toast.text}{toast.undo && <button class="link" onClick={() => void toast.undo!()}>{x.undo}</button>}</div>}
     </div>

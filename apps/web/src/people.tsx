@@ -8,7 +8,8 @@ export interface Node { id: string; type: 'tenant' | 'location' | 'partner'; nam
 export interface Link { parentId: string; childId: string }
 interface Member { nodeId: string; role: string; userId: string; email: string; displayName: string | null; status: string }
 interface Inv { id: string; email: string; nodeId: string; role: string; locale: string; expiresAt: string; acceptedAt: string | null; createdAt: string; sentAt: string | null; deliveryMethod: 'gmail' | 'link' | null; deliveryError: string | null; gmailThreadId: string | null; attempts: number; linkOpenedAt: string | null; invitedBy: string | null; status: 'created' | 'sent' | 'opened' | 'accepted' | 'expired' | 'not_sent' }
-const ROLES = ['admin', 'manager', 'trainer', 'member', 'learner'] as const;
+import { LMS } from './features.ts';
+const ROLES = (['admin', 'manager', 'trainer', 'member', 'learner'] as const).filter((r) => LMS || (r !== 'trainer' && r !== 'learner'));
 
 export const X = {
   'en': {

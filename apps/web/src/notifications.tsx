@@ -1,3 +1,4 @@
+import { ErrorBar } from './errorbar.tsx';
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
 
@@ -60,7 +61,7 @@ export function NotificationsPage({ call, locale, go }: { call: Call; locale: Lo
     else void load();
   };
   const markAll = async () => { try { await call('POST', '/v1/notifications/read', { all: true }); changed(); await load(); } catch (e) { setErr((e as Error).message); } };
-  if (err) return <div class="err" role="alert">{err}</div>;
+  if (err) return <ErrorBar msg={err} retry={locale === 'fr-CA' ? 'Réessayer' : 'Try again'} />;
   if (!list) return <div class="msg">…</div>;
   return (
     <div class="home">

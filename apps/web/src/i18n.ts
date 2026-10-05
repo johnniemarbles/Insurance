@@ -1,7 +1,7 @@
 import type { Locale } from './types.ts';
 
 const en = {
-  needConsent: 'Open the PII panel on any email in Gmail to read and accept the privacy notice first.', reloadNeeded: 'PII was updated. Refresh this Gmail tab (Ctrl/Cmd+R) to continue.', loading: 'Loading…', retry: 'Try again', signedOut: 'Sign in to use PII.', signIn: 'Sign in with Google', offline: 'Cannot reach the server.',
+  needConsent: 'Open the PII panel on any email in Gmail to read and accept the privacy notice first.', reloadNeeded: 'PII was updated. Refresh this Gmail tab (Ctrl/Cmd+R) to continue.', loading: 'Loading…', retry: 'Try again', signedOut: 'Sign in to use PII.', signIn: 'Sign in with Google', offline: 'Cannot reach the server.', updateNeeded: 'A newer PII extension is needed. Open chrome://extensions, find PII, click Update, then refresh Gmail.', sendFeedback: 'Send feedback', crashed: 'Something went wrong on this screen.', sessionEnded: 'Your session ended. Sign in again to continue.',
   noPipelines: 'No pipelines yet. Ask your administrator to create one.', pipeline: 'Pipeline',
   all: 'All', mine: 'Mine', below: 'My team', search: 'Search', newBox: 'New', name: 'Name', stage: 'Stage', value: 'Value',
   closeDate: 'Close date', inStage: 'In stage', days: (n: number) => (n === 1 ? '1 day' : `${n} days`), today: 'Today',
@@ -61,7 +61,7 @@ const en = {
   copy: 'Copy', copied: 'Copied', never: 'never', uses: (n: number) => (n === 1 ? '1 submission' : `${n} submissions`), confirmRemoveLink: 'Remove this link? Anything using it will stop working.', webhookUrl: 'Address to send to', addWebhook: 'Add address', neverSent: 'nothing sent yet', failed: 'failed', autoPaused: 'paused after repeated failures',
 };
 const frCA: typeof en = {
-  needConsent: 'Ouvrez le panneau PII sur un courriel dans Gmail pour lire et accepter l’avis de confidentialité.', reloadNeeded: 'PII a été mis à jour. Actualisez cet onglet Gmail (Ctrl/Cmd+R) pour continuer.', loading: 'Chargement…', retry: 'Réessayer', signedOut: 'Connectez-vous pour utiliser PII.', signIn: 'Se connecter avec Google', offline: 'Impossible de joindre le serveur.',
+  needConsent: 'Ouvrez le panneau PII sur un courriel dans Gmail pour lire et accepter l’avis de confidentialité.', reloadNeeded: 'PII a été mis à jour. Actualisez cet onglet Gmail (Ctrl/Cmd+R) pour continuer.', loading: 'Chargement…', retry: 'Réessayer', signedOut: 'Connectez-vous pour utiliser PII.', signIn: 'Se connecter avec Google', offline: 'Impossible de joindre le serveur.', updateNeeded: 'Une version plus récente de l’extension PII est requise. Ouvrez chrome://extensions, trouvez PII, cliquez sur Mettre à jour, puis actualisez Gmail.', sendFeedback: 'Envoyer des commentaires', crashed: 'Un problème est survenu sur cet écran.', sessionEnded: 'Votre session a pris fin. Reconnectez-vous pour continuer.',
   noPipelines: 'Aucun pipeline pour l’instant. Demandez à votre administrateur d’en créer un.', pipeline: 'Pipeline',
   all: 'Tous', mine: 'Les miens', below: 'Mon équipe', search: 'Rechercher', newBox: 'Nouveau', name: 'Nom', stage: 'Étape', value: 'Valeur',
   closeDate: 'Date de clôture', inStage: 'À cette étape', days: (n: number) => (n === 1 ? '1 jour' : `${n} jours`), today: 'Aujourd’hui',

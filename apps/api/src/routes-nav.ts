@@ -28,7 +28,8 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const hidden = new Set(layout.hidden);
       const order = layout.order.filter((id) => (NAV_ITEMS as readonly string[]).includes(id));
       for (const id of NAV_ITEMS) if (!order.includes(id)) order.push(id); // items added since the layout was saved
-      const ids = order.filter((id) => !hidden.has(id));
+      const lms = process.env.LMS_ENABLED === '1';
+      const ids = order.filter((id) => !hidden.has(id) && (lms || id !== 'training'));
       if (!ids.includes('settings')) ids.push('settings'); // there is always a way back to Settings
       let tasksDue = 0;
       let pipelines: { id: string; name: string; count: number; views: { id: string; name: string }[] }[] = [];

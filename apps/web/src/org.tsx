@@ -6,7 +6,8 @@ interface Node { id: string; type: 'tenant' | 'location' | 'partner'; name: stri
 interface Link { parentId: string; childId: string }
 interface Member { nodeId: string; role: string; userId: string; email: string; displayName: string | null; status: string }
 interface Inv { id: string; email: string; nodeId: string; role: string; expiresAt: string; acceptedAt: string | null }
-const ROLES = ['admin', 'manager', 'trainer', 'member', 'learner'] as const;
+import { LMS } from './features.ts';
+const ROLES = (['admin', 'manager', 'trainer', 'member', 'learner'] as const).filter((r) => LMS || (r !== 'trainer' && r !== 'learner'));
 
 const X = {
   'en': {

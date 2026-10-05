@@ -36,6 +36,8 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
       user: { id: user.userId, email: user.email, displayName: user.displayName, locale: user.locale },
       tenant: { id: user.tenantId, name: user.tenantName },
       region: deps.config.region,
+      minExtension: process.env.MIN_EXT_VERSION ?? '0.0.0',
+      supportEmail: process.env.SUPPORT_EMAIL ?? '',
       product: { name: deps.config.productDisplayName, logoUrl: `${deps.config.appOrigin}/brand/logo.png` },
       isTenantAdmin: ctx.isTenantAdmin,
       roles: ctx.roles,

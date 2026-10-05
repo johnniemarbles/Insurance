@@ -10,7 +10,7 @@ export interface Box {
   threadCount?: number; emailCount?: number; openTasks?: number; overdueTasks?: number; doneTasks?: number; nextTaskDue?: string | null; noteCount?: number; lastNoteAt?: string | null;
 }
 export interface BoxEvent { id: string; kind: 'created' | 'stage_changed'; fromStage: string | null; toStage: string | null; createdAt: string }
-export interface Me { needsConsent: boolean; user: { displayName: string | null; email: string; locale: Locale }; tenant: { name: string }; product: { name: string; logoUrl: string } }
+export interface Me { minExtension?: string; supportEmail?: string; needsConsent: boolean; user: { displayName: string | null; email: string; locale: Locale }; tenant: { name: string }; product: { name: string; logoUrl: string } }
 export type Scope = 'all' | 'mine' | 'below';
 export type SortKey = 'updated' | 'name' | 'value' | 'closeDate' | 'daysInStage' | 'created' | 'lastEmail';
 
@@ -21,4 +21,4 @@ export type Transport = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', pa
 export interface ComposeApi { send(m: { to: string; subject: string; html: string; review?: boolean }): Promise<{ ok: boolean; threadId?: string; error?: string; unconfirmed?: boolean }> }
 /** Which page the host opened, for example { page: 'pipelines', id: '…' } from the Gmail left panel. */
 export interface PiiRoute { page: string; id?: string }
-export interface HostOptions { transport: Transport; onSignIn: () => void; assetBase?: string; compose?: ComposeApi; route?: PiiRoute; navigate?: (page: string, id?: string) => void }
+export interface HostOptions { extVersion?: string; transport: Transport; onSignIn: () => void; assetBase?: string; compose?: ComposeApi; route?: PiiRoute; navigate?: (page: string, id?: string) => void }
