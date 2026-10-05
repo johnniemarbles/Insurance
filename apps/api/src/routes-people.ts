@@ -75,7 +75,8 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
     async (req, reply) => {
       const { ctx } = await deps.authenticate(req);
       const body = req.body as { email: string; nodeId: string; role?: string; locale?: string };
-      const role = body.role ?? 'member';
+      const role = body.role ?? 'partner';
+      if (role === 'learner') throw invalid('Learner is added automatically when someone takes a course; invite them as a Partner');
       const out = await run(ctx, async (tx) => {
         const node = await tx.query<{ type: string }>('SELECT type FROM org_nodes WHERE id = $1', [body.nodeId]);
         if (!node.rows[0]) throw notFound('Unknown organization node');

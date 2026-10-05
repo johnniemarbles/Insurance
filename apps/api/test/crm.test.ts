@@ -53,7 +53,7 @@ before(async () => {
   S1 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Sub One', parentId: P1 })).json.id;
   await seedUser(P1U, P1, 'admin');
   await seedUser(P2U, P2, 'admin');
-  s1UserId = await seedUser(S1U, S1, 'member');
+  s1UserId = await seedUser(S1U, S1, 'partner');
   await seedUser(LRN, S1, 'learner');
 });
 after(async () => {
@@ -951,7 +951,7 @@ test('organization: rename, switch off, roles, people and invitations are contro
   const adm = members.find((m) => m.email === ADMIN && m.role === 'admin')!;
   assert.equal((await call(ADMIN, 'DELETE', `/v1/org/members?userId=${adm.userId}&nodeId=${adm.nodeId}&role=admin`)).status, 422, 'the last company admin stays');
 
-  const inv = (await call(ADMIN, 'POST', '/v1/invitations', { email: 'new.person@crm.test', nodeId: P1, role: 'member' })).json;
+  const inv = (await call(ADMIN, 'POST', '/v1/invitations', { email: 'new.person@crm.test', nodeId: P1, role: 'partner' })).json;
   assert.ok(inv.acceptUrl);
   assert.equal((await call(P2U, 'DELETE', `/v1/invitations/${inv.id}`)).status, 404, 'a sibling cannot withdraw it');
   assert.equal((await call(ADMIN, 'DELETE', `/v1/invitations/${inv.id}`)).status, 204);
@@ -968,7 +968,7 @@ test('organization: rename, switch off, roles, people and invitations are contro
 });
 
 test('invitations: honest status, delivery report, the link page, resend and expiry', async () => {
-  const mk = async (email: string) => (await call(ADMIN, 'POST', '/v1/invitations', { email, nodeId: P1, role: 'member' })).json;
+  const mk = async (email: string) => (await call(ADMIN, 'POST', '/v1/invitations', { email, nodeId: P1, role: 'partner' })).json;
   const get = async (u: string, id: string) => ((await call(u, 'GET', '/v1/invitations')).json.invitations as any[]).find((i) => i.id === id);
   const tokenOf = (url: string) => new URL(url).searchParams.get('token')!;
 

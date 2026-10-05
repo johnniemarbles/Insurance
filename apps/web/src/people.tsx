@@ -9,7 +9,7 @@ export interface Link { parentId: string; childId: string }
 interface Member { nodeId: string; role: string; userId: string; email: string; displayName: string | null; status: string }
 interface Inv { id: string; email: string; nodeId: string; role: string; locale: string; expiresAt: string; acceptedAt: string | null; createdAt: string; sentAt: string | null; deliveryMethod: 'gmail' | 'link' | null; deliveryError: string | null; gmailThreadId: string | null; attempts: number; linkOpenedAt: string | null; invitedBy: string | null; status: 'created' | 'sent' | 'opened' | 'accepted' | 'expired' | 'not_sent' }
 import { LMS } from './features.ts';
-const ROLES = (['admin', 'manager', 'trainer', 'member', 'learner'] as const).filter((r) => LMS || (r !== 'trainer' && r !== 'learner'));
+const ROLES = (['admin', 'manager', 'trainer', 'partner', 'learner'] as const).filter((r) => r !== 'learner' && (LMS || r !== 'trainer'));
 
 export const X = {
   'en': {
@@ -25,8 +25,8 @@ export const X = {
     whoT: 'Who are you adding?', whoHelp: 'One email per line. You can paste a list.', whoPh: 'asha@example.com\nraj@example.com', already: (e: string) => `${e} is already in the company. Use Give a role on their row.`, bad: 'That does not look like an email address.',
     whereT: 'Where do they belong?', whereHelp: 'Their records and the people above them follow this choice.', searchPlace: 'Search places', company: 'Whole company', notListed: 'Not listed? Add a partner here', partnerName: 'Partner name', create: 'Create',
     roleT: 'What can they do?', roleHelp: 'You can change this later.',
-    roleName: { admin: { tenant: 'Company admin', location: 'Branch admin', partner: 'Partner owner' }, manager: 'Manager', trainer: 'Trainer', member: 'Member', learner: 'Learner' } as any,
-    roleDesc: { admin: 'Runs this place: adds people, sets it up, sees everything below it.', manager: 'Builds pipelines and training, manages the team’s work.', trainer: 'Creates and assigns courses.', member: 'Works records and email in the CRM.', learner: 'Takes the courses assigned to them.' } as Record<string, string>,
+    roleName: { admin: { tenant: 'Company admin', location: 'Branch admin', partner: 'Partner owner' }, manager: 'Manager', trainer: 'Trainer', partner: 'Partner', learner: 'Learner' } as any,
+    roleDesc: { admin: 'Runs this place: adds people, sets it up, sees everything below it.', manager: 'Builds pipelines and training, manages the team’s work.', trainer: 'Creates and assigns courses.', partner: 'Works records and email in the CRM. Everyone you invite starts here.', learner: 'Added automatically when someone takes a course.' } as Record<string, string>,
     adminLocked: 'Only a company admin can choose this here.',
     sendT: 'How should they get it?', viaGmail: 'Send from my Gmail', viaGmailD: 'The email comes from your own address, so they recognise it.', viaLink: 'Only create a link', viaLinkD: 'You send it yourself, by chat or any other way.', noteL: 'Add a personal line (optional)', notePh: 'Looking forward to working with you.',
     review: (n: number, p: string, r: string, g: boolean) => `Invite ${n} ${n === 1 ? 'person' : 'people'} to ${p} as ${r}, ${g ? 'sent from your Gmail' : 'with a link you send yourself'}.`,
@@ -48,8 +48,8 @@ export const X = {
     whoT: 'Qui ajoutez-vous?', whoHelp: 'Un courriel par ligne. Vous pouvez coller une liste.', whoPh: 'asha@exemple.com\nraj@exemple.com', already: (e: string) => `${e} fait déjà partie de l’entreprise. Utilisez Donner un rôle sur sa ligne.`, bad: 'Ceci ne ressemble pas à une adresse courriel.',
     whereT: 'Où cette personne se situe-t-elle?', whereHelp: 'Ses dossiers et les gens au-dessus d’elle suivent ce choix.', searchPlace: 'Chercher un endroit', company: 'Toute l’entreprise', notListed: 'Absent? Ajoutez un partenaire ici', partnerName: 'Nom du partenaire', create: 'Créer',
     roleT: 'Que peut-elle faire?', roleHelp: 'Vous pourrez le changer plus tard.',
-    roleName: { admin: { tenant: 'Admin de l’entreprise', location: 'Admin de la succursale', partner: 'Propriétaire du partenaire' }, manager: 'Gestionnaire', trainer: 'Formateur', member: 'Membre', learner: 'Apprenant' } as any,
-    roleDesc: { admin: 'Dirige cet endroit : ajoute des gens, le configure, voit tout ce qui est en dessous.', manager: 'Crée les pipelines et la formation, gère le travail de l’équipe.', trainer: 'Crée et assigne des cours.', member: 'Travaille les dossiers et les courriels dans le CRM.', learner: 'Suit les cours qui lui sont assignés.' } as Record<string, string>,
+    roleName: { admin: { tenant: 'Admin de l’entreprise', location: 'Admin de la succursale', partner: 'Propriétaire du partenaire' }, manager: 'Gestionnaire', trainer: 'Formateur', partner: 'Partenaire', learner: 'Apprenant' } as any,
+    roleDesc: { admin: 'Dirige cet endroit : ajoute des gens, le configure, voit tout ce qui est en dessous.', manager: 'Crée les pipelines et la formation, gère le travail de l’équipe.', trainer: 'Crée et assigne des cours.', partner: 'Travaille les dossiers et les courriels dans le CRM. Toute personne invitée commence ici.', learner: 'Ajouté automatiquement quand une personne suit un cours.' } as Record<string, string>,
     adminLocked: 'Seul un admin de l’entreprise peut choisir ceci ici.',
     sendT: 'Comment la personne le reçoit-elle?', viaGmail: 'Envoyer depuis mon Gmail', viaGmailD: 'Le courriel vient de votre propre adresse, donc elle le reconnaît.', viaLink: 'Créer seulement un lien', viaLinkD: 'Vous l’envoyez vous-même, par clavardage ou autrement.', noteL: 'Ajouter un mot personnel (facultatif)', notePh: 'Au plaisir de travailler avec vous.',
     review: (n: number, p: string, r: string, g: boolean) => `Inviter ${n} ${n === 1 ? 'personne' : 'personnes'} à ${p} comme ${r}, ${g ? 'envoyé depuis votre Gmail' : 'avec un lien que vous transmettez'}.`,
@@ -272,7 +272,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 
 function RoleDialog({ x, places, person, isTenantAdmin, roleLabel, onClose, onSave }: { x: Strs; places: ReturnType<typeof placeList>; person: { name: string }; isTenantAdmin: boolean; roleLabel: (r: string, t: string) => string; onClose: () => void; onSave: (nodeId: string, role: string) => Promise<void> }) {
   const [nodeId, setNodeId] = useState(places.find((p) => p.node.type !== 'tenant')?.node.id ?? places[0]?.node.id ?? '');
-  const [role, setRole] = useState('member');
+  const [role, setRole] = useState('partner');
   const t = places.find((p) => p.node.id === nodeId)?.node.type ?? 'partner';
   const locked = role === 'admin' && !isTenantAdmin && t !== 'partner';
   return (
@@ -299,7 +299,7 @@ function AddPerson({ x, locale, places, members, isTenantAdmin, compose, call, e
   const [step, setStep] = useState(0);
   const [text, setText] = useState('');
   const [nodeId, setNodeId] = useState('');
-  const [role, setRole] = useState('member');
+  const [role, setRole] = useState('partner');
   const [viaGmail, setViaGmail] = useState(Boolean(compose));
   const [note, setNote] = useState('');
   const [find, setFind] = useState('');

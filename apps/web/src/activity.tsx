@@ -7,8 +7,8 @@ type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, 
 interface Ev { id: number; createdAt: string; action: string; area: string; actorId: string | null; actorName: string | null; entityType: string | null; detail: Record<string, any>; placeName: string | null; detailPlaceName: string | null }
 type Area = '' | 'invitations' | 'people' | 'structure' | 'settings' | 'privacy' | 'records';
 
-const RN_EN: Record<string,string> = { admin: 'admin', manager: 'manager', trainer: 'trainer', member: 'member', learner: 'learner' };
-const RN_FR: Record<string,string> = { admin: 'admin', manager: 'gestionnaire', trainer: 'formateur', member: 'membre', learner: 'apprenant' };
+const RN_EN: Record<string,string> = { admin: 'admin', manager: 'manager', trainer: 'trainer', partner: 'partner', learner: 'learner' };
+const RN_FR: Record<string,string> = { admin: 'admin', manager: 'gestionnaire', trainer: 'formateur', partner: 'partenaire', learner: 'apprenant' };
 const X = {
   'en': {
     areas: { '': 'Everything', invitations: 'Invitations', people: 'People', structure: 'Structure', settings: 'Settings', privacy: 'Privacy', records: 'Records' } as Record<string, string>,

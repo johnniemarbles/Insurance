@@ -153,7 +153,7 @@ test('expired invitations are refused', async () => {
   const { Client } = (await import('pg')).default;
   const o = new Client({ connectionString: db.ownerUrl });
   await o.connect();
-  await o.query(`INSERT INTO invitations (tenant_id,email,node_id,role,token_hash,expires_at) VALUES ($1,'late@x.test',$2,'member',$3,now() - interval '1 hour')`, [tenant.tenantId, tenant.rootNodeId, hash]);
+  await o.query(`INSERT INTO invitations (tenant_id,email,node_id,role,token_hash,expires_at) VALUES ($1,'late@x.test',$2,'partner',$3,now() - interval '1 hour')`, [tenant.tenantId, tenant.rootNodeId, hash]);
   await o.end();
   const r = await signIn({ sub: 'g-late', email: 'late@x.test', emailVerified: true }, `?invite=${token}`);
   assert.match(r.location, /error=invitation_invalid/);

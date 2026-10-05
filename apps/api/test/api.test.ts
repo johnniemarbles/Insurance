@@ -153,7 +153,7 @@ test('removing links: partners may remove sub-partner links beneath them, not lo
 
 test('invitations: scoped to the branch you administer', async () => {
   const l2 = (await call('p1@pii.test', 'GET', '/v1/org/links')).json.links.find((l: any) => l.kind === 'partner_link' && l.parentId === P1).childId;
-  const ok = await call('p1@pii.test', 'POST', '/v1/invitations', { email: 'New.Hire@Example.com', nodeId: l2, role: 'member', locale: 'fr-CA' });
+  const ok = await call('p1@pii.test', 'POST', '/v1/invitations', { email: 'New.Hire@Example.com', nodeId: l2, role: 'partner', locale: 'fr-CA' });
   assert.equal(ok.status, 201);
   assert.match(ok.json.acceptUrl, /^https:\/\/app\.punjabinsurance\.net\/accept\?token=/);
   assert.equal((await call('p1@pii.test', 'POST', '/v1/invitations', { email: 'a@b.co', nodeId: P2 })).status, 404);

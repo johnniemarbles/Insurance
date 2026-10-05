@@ -83,7 +83,7 @@ test('identity tables are branch-scoped: siblings cannot see each other', async 
   const mkUser = async (email: string, home: string, role: string) => {
     const u = (await ins(`INSERT INTO app_users (tenant_id,email,home_node_id,status) VALUES ($1,$2,$3,'active') RETURNING id`, [t.tenantId, email, home])).id;
     await o.query(`INSERT INTO user_node_roles (tenant_id,user_id,node_id,role) VALUES ($1,$2,$3,$4)`, [t.tenantId, u, home, role]);
-    await o.query(`INSERT INTO invitations (tenant_id,email,node_id,role,token_hash,invited_by,expires_at) VALUES ($1,$2,$3,'member',gen_random_bytes(32),$4,now()+interval '1 day')`, [t.tenantId, `inv-${email}`, home, u]);
+    await o.query(`INSERT INTO invitations (tenant_id,email,node_id,role,token_hash,invited_by,expires_at) VALUES ($1,$2,$3,'partner',gen_random_bytes(32),$4,now()+interval '1 day')`, [t.tenantId, `inv-${email}`, home, u]);
     return u;
   };
   const u1 = await mkUser('p1@x.ca', P1, 'admin');

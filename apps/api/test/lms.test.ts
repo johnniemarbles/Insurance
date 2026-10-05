@@ -44,7 +44,7 @@ before(async () => {
   S1 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Sub One', parentId: P1 })).json.id;
   await seedUser(P1U, P1, 'manager');
   await seedUser(P2U, P2, 'manager');
-  await seedUser(S1U, S1, 'member');
+  await seedUser(S1U, S1, 'partner');
   await seedUser(LRN, S1, 'learner');
 });
 after(async () => {
@@ -117,6 +117,20 @@ test('assigning and watching: due dates reach everyone beneath, progress is visi
   assert.ok(prog.some((p: any) => p.email === S1U && p.status === 'assigned'));
   assert.equal((await call(S1U, 'GET', `/v1/courses/${course}/progress`)).status, 403);
   assert.equal((await call(P2U, 'GET', `/v1/courses/${course}/progress`)).status, 404);
+});
+
+test('roles: enrolling adds Learner, keeps Partner and the CRM; Learner is never an invite choice', async () => {
+  const me = (await call(S1U, 'GET', '/v1/me')).json;
+  const roles = me.roles.map((r: { role: string }) => r.role).sort();
+  assert.deepEqual(roles, ['learner', 'partner'], 'assigned and enrolled: both roles');
+  const nav = (await call(S1U, 'GET', '/v1/nav')).json;
+  assert.ok(nav.items.some((i: { id: string }) => i.id === 'pipelines'), 'CRM access is unchanged');
+  const inv = await call(ADMIN, 'POST', '/v1/invitations', { email: 'x.learner@lms.test', nodeId: P1, role: 'learner' });
+  assert.equal(inv.status, 422, 'learner cannot be invited directly');
+  const def = await call(ADMIN, 'POST', '/v1/invitations', { email: 'x.default@lms.test', nodeId: P1 });
+  assert.equal(def.status, 201);
+  const list = (await call(ADMIN, 'GET', '/v1/invitations')).json;
+  assert.equal((list.invitations ?? list).find((i: { email: string }) => i.email === 'x.default@lms.test').role, 'partner', 'an invite defaults to Partner');
 });
 
 test('quiz attempts are limited when the course says so', async () => {
