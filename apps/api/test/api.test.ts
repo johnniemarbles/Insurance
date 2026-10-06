@@ -190,6 +190,7 @@ test('landing pages exist for sign-in return, errors and privacy', async () => {
       const en = await app.inject({ method: 'GET', url: u }); assert.equal(en.statusCode, 200); assert.match(en.body, /lang="en"/);
       const fr = await app.inject({ method: 'GET', url: `${u}?lang=fr` }); assert.equal(fr.statusCode, 200); assert.match(fr.body, /lang="fr-CA"/);
     }
+    assert.match((await app.inject({ method: 'GET', url: '/terms' })).body, /Province of Ontario|State of California/);
     const p = (await app.inject({ method: 'GET', url: '/privacy' })).body;
     assert.match(p, /Google API Services User Data Policy/); assert.match(p, /United States/); assert.ok(!/in Canada \(Quebec\)/.test(p));
   }

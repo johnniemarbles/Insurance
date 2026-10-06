@@ -64,7 +64,9 @@ export function privacy(i: LegalInfo, l: Lang): Doc {
 }
 
 export function terms(i: LegalInfo, l: Lang): Doc {
-  const gov = i.governing ?? (l === 'fr-CA' ? 'les lois applicables au siège de l’entreprise exploitante' : 'the laws that apply at the registered office of the operating company');
+  const gov = i.governing ?? (i.country === 'US'
+    ? (l === 'fr-CA' ? 'les lois de l’État de la Californie' : 'the laws of the State of California')
+    : (l === 'fr-CA' ? 'les lois de la province de l’Ontario et les lois fédérales du Canada qui s’y appliquent' : 'the laws of the Province of Ontario and the federal laws of Canada applicable therein'));
   if (l === 'fr-CA') {
     return {
       title: 'Conditions d’utilisation',
