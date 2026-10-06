@@ -205,3 +205,34 @@ test('the full-page app shell is served', async () => {
   assert.equal(r.statusCode, 200);
   assert.match(r.body, /pii-root/);
 });
+
+test('rate limits: public pages and sign-in are capped per address, with a retry hint', async () => {
+  const { createLimiter, RULES } = await import('../src/rate-limit.ts');
+  const check = createLimiter(RULES);
+  let blocked = 0;
+  for (let i = 0; i < 125; i++) if (check('9.9.9.9', 'GET', '/privacy').limited) blocked++;
+  assert.equal(blocked, 5, 'the 121st to 125th request in a minute are refused');
+  assert.equal(check('8.8.8.8', 'GET', '/privacy').limited, false, 'another address is unaffected');
+  let signin = 0;
+  for (let i = 0; i < 65; i++) if (check('7.7.7.7', 'GET', '/auth/google/start').limited) signin++;
+  assert.equal(signin, 5, 'sign-in allows 60 requests in ten minutes');
+  const r = check('7.7.7.7', 'GET', '/auth/google/callback');
+  assert.ok(r.limited && r.retryAfter >= 1);
+  assert.equal(check('7.7.7.7', 'GET', '/healthz').limited, false, 'health checks are never limited');
+  assert.equal(check('7.7.7.7', 'POST', '/v1/hooks/abc').limited, false, 'forms and webhooks keep their own limits');
+});
+
+test('rate limit answers 429 JSON with Retry-After through the server', async () => {
+  let last;
+  for (let i = 0; i < 125; i++) last = await app.inject({ method: 'GET', url: '/support', remoteAddress: '10.1.1.1' });
+  assert.equal(last!.statusCode, 429);
+  assert.ok(Number(last!.headers['retry-after']) >= 1);
+  assert.equal(JSON.parse(last!.body).error.code, 'rate_limited');
+  assert.equal((await app.inject({ method: 'GET', url: '/support', remoteAddress: '10.2.2.2' })).statusCode, 200);
+});
+
+test('rate limit cannot be dodged by forging X-Forwarded-For', async () => {
+  let last;
+  for (let i = 0; i < 125; i++) last = await app.inject({ method: 'GET', url: '/terms', remoteAddress: '10.3.3.3', headers: { 'x-forwarded-for': `${i + 1}.${i + 1}.${i + 1}.${i + 1}, 4.4.4.4` } });
+  assert.equal(last!.statusCode, 429, 'the address the hosting proxy saw is used, not the one the caller claims');
+});

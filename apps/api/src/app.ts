@@ -29,6 +29,7 @@ import { registerNotificationRoutes } from './routes-notifications.ts';
 import { registerPrivacyRoutes } from './routes-privacy.ts';
 import { registerActivityRoutes } from './routes-activity.ts';
 import { registerAuthRoutes, originGuard } from './routes-auth.ts';
+import { registerRateLimit } from './rate-limit.ts';
 import { registerConsentRoutes, hasAcceptedFirstLogin } from './routes-consent.ts';
 import { withRequestTx } from '@pii/db';
 
@@ -56,7 +57,10 @@ export function buildApp(input: AppDeps): FastifyInstance {
       return p;
     },
   };
+  const proxyHops: number = Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10) || 1;
   const app = Fastify({
+    // Behind the hosting proxy: take the address the nearest proxy saw, so one visitor is one address and a spoofed header cannot choose it.
+    trustProxy: (_addr: string, hop: number) => hop < proxyHops,
     ajv: { customOptions: { allowUnionTypes: true } },
     logger: deps.config.appEnv === 'test' ? false : {
       level: deps.config.logLevel,
@@ -81,6 +85,8 @@ export function buildApp(input: AppDeps): FastifyInstance {
     req.log.error({ err }, 'unhandled error');
     return reply.code(500).send({ error: { code: 'internal', message: 'Something went wrong' } });
   });
+
+  registerRateLimit(app);
 
   // Which country this server holds data for. Public and harmless: it lets the extension confirm a sign-in picker choice.
   app.get('/v1/region', async () => ({ region: deps.config.region, country: deps.config.region === 'us' ? 'US' : 'CA' }));

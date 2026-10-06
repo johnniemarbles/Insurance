@@ -162,3 +162,16 @@ test('expired invitations are refused', async () => {
 test('the application role cannot read sessions at all', async () => {
   await assert.rejects(appPool.query('SELECT 1 FROM sessions'), /permission denied/);
 });
+
+test('origin guard: our app and our extension may write with a cookie; everything else, and no origin, may not', async () => {
+  const { originGuard, SESSION_COOKIE } = await import('../src/routes-auth.ts');
+  const guard = originGuard({ config: { appOrigin: 'https://ca.punjabinsurance.co', extensionOrigins: ['chrome-extension://abcdefghijklmnop'] } } as never);
+  const call = (method: string, origin?: string, cookie = `${SESSION_COOKIE}=t`) => guard({ method, headers: { origin, cookie } } as never);
+  await call('POST', 'https://ca.punjabinsurance.co');
+  await call('PATCH', 'chrome-extension://abcdefghijklmnop');
+  await call('GET', 'https://evil.example'); // reads carry no state change
+  for (const o of ['https://evil.example', 'https://ca.punjabinsurance.co.evil.example', 'http://ca.punjabinsurance.co', 'chrome-extension://someoneelse', undefined]) {
+    await assert.rejects(() => call('DELETE', o), (e: { status?: number }) => e.status === 403, `refused: ${o}`);
+  }
+  await call('POST', 'https://evil.example', ''); // no cookie: not cookie-authenticated, so nothing for a forged site to ride on
+});
