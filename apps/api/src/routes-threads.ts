@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { linkThreadNotice, type RequestContext } from '@pii/domain';
-import { withRequestTx, type Tx } from '@pii/db';
+import { findLoginCandidates, withRequestTx, type Tx } from '@pii/db';
+import { candidateToIdentity } from './auth.ts';
 import { open, seal } from '@pii/platform';
 import { audit } from './audit.ts';
-import { HttpError, notFound } from './errors.ts';
+import { HttpError, invalid, notFound } from './errors.ts';
 import { requireCrm, requireEdit, uuid } from './crm-helpers.ts';
 import { currentNoticeVersion } from './routes-consent.ts';
+import { notify } from './notify.ts';
 import { fireAutomations } from './automation-engine.ts';
 import { flushEffects, type Effect } from './effects.ts';
 import { emitEvent } from './webhooks.ts';
@@ -203,6 +205,37 @@ export function registerThreadRoutes(app: FastifyInstance, deps: AppDeps): void 
         })),
       };
     });
+  });
+
+  // Point teammates at a conversation linked to a record. They already see it through the record; this tells them it is worth a look.
+  app.post('/v1/threads/:id/share', { schema: { params: idParams, body: { type: 'object', required: ['userIds'], additionalProperties: false, properties: { userIds: { type: 'array', items: uuid, minItems: 1, maxItems: 20 }, boxId: uuid, message: { type: 'string', maxLength: 300 } } } } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    const { id } = req.params as { id: string };
+    const b = req.body as { userIds: string[]; boxId?: string; message?: string };
+    const who = [...new Set(b.userIds)].filter((u) => u !== ctx.userId);
+    if (who.length === 0) throw invalid('Choose a teammate to share with');
+    const found = await run(ctx, async (tx) => {
+      const t = (await tx.query<{ subject: string | null }>('SELECT subject FROM email_threads WHERE id = $1', [id])).rows[0];
+      if (!t) throw notFound('Conversation not found');
+      const link = (await tx.query<{ box_id: string; name: string }>(
+        `SELECT bt.box_id, b.name FROM box_threads bt JOIN boxes b ON b.id = bt.box_id WHERE bt.thread_id = $1 AND ($2::uuid IS NULL OR bt.box_id = $2) ORDER BY b.name LIMIT 1`, [id, b.boxId ?? null])).rows[0];
+      if (!link) throw notFound('That conversation is not linked to a record you can see');
+      const people = (await tx.query<{ id: string; email: string }>('SELECT id, email::text AS email FROM app_users WHERE id = ANY($1::uuid[])', [who])).rows;
+      if (people.length !== who.length) throw invalid('A person you chose is not visible to you');
+      return { subject: t.subject, boxId: link.box_id, boxName: link.name, people };
+    });
+    // each person must be able to open the record themselves: look at it as them
+    for (const p of found.people) {
+      const cand = (await findLoginCandidates(deps.authPool, p.email)).find((c) => c.tenantId === ctx.tenantId && c.userId === p.id);
+      const sees = cand ? await withRequestTx(deps.appPool, candidateToIdentity(cand).ctx, async (tx) => (await tx.query('SELECT 1 FROM boxes WHERE id = $1', [found.boxId])).rowCount === 1) : false;
+      if (!sees) throw invalid('That person cannot see this record, so they cannot open the conversation');
+    }
+    await run(ctx, async (tx) => {
+      for (const u of who) await notify(tx, { tenantId: ctx.tenantId, userId: u, actorId: ctx.userId, kind: 'thread_shared', boxId: found.boxId, data: { boxName: found.boxName, subject: found.subject, message: b.message?.trim() || undefined } });
+      await audit(tx, ctx, 'thread_shared', 'box', found.boxId, { threadId: id, with: who.length });
+    });
+    return reply.code(204).send();
   });
 
   app.delete('/v1/boxes/:id/threads/:threadId', { schema: { params: { type: 'object', properties: { id: uuid, threadId: uuid } } } }, async (req, reply) => {

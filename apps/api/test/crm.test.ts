@@ -1203,3 +1203,43 @@ test('alias rules: managers map an address to a pipeline; others read them; one 
   assert.equal((await call(P1U, 'DELETE', `${P}/aliases/${made.json.id}`)).status, 204);
   assert.equal((await call(P1U, 'GET', '/v1/alias-rules')).json.rules.length, 0);
 });
+
+test('documents on a record: allowed types only, encrypted, seen down the chain, edited by the owning branch', async () => {
+  const subId = (await call(S1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'Doc box', contextNodeId: X, custom: { policy_no: 'D-1' } })).json.id as string;
+  const pdf = Buffer.from('%PDF-1.4 SECRET-DOC-555 body').toString('base64');
+  const up = await call(S1U, 'POST', `/v1/boxes/${subId}/documents`, { name: 'policy.pdf', mime: 'application/pdf', dataBase64: pdf });
+  assert.equal(up.status, 201);
+  assert.equal((await call(S1U, 'POST', `/v1/boxes/${subId}/documents`, { name: 'run.exe', mime: 'application/x-msdownload', dataBase64: pdf })).status, 422, 'type not allowed');
+  assert.equal((await call(S1U, 'POST', `/v1/boxes/${subId}/documents`, { name: 'policy.exe', mime: 'application/pdf', dataBase64: pdf })).status, 422, 'name does not match type');
+  assert.equal((await call(S1U, 'POST', `/v1/boxes/${subId}/documents`, { name: 'x.pdf', mime: 'application/pdf', dataBase64: '***' })).status, 400, 'not base64 (rejected by the schema or the check)');
+  assert.equal((await call(S1U, 'POST', `/v1/boxes/${subId}/documents`, { name: 'big.pdf', mime: 'application/pdf', dataBase64: Buffer.alloc(8 * 1024 * 1024 + 1, 1).toString('base64') })).status, 422, 'over 8 MB');
+  assert.equal((await call(P2U, 'POST', `/v1/boxes/${subId}/documents`, { name: 'a.pdf', mime: 'application/pdf', dataBase64: pdf })).status, 404, 'sibling branch cannot see the record');
+  assert.equal((await call(P1U, 'POST', `/v1/boxes/${subId}/documents`, { name: 'a.pdf', mime: 'application/pdf', dataBase64: pdf })).status, 403, 'ancestor can read, not edit');
+  const list = (await call(P1U, 'GET', `/v1/boxes/${subId}/documents`)).json.documents;
+  assert.equal(list.length, 1);
+  assert.equal(list[0].name, 'policy.pdf');
+  assert.equal((await call(P2U, 'GET', `/v1/boxes/${subId}/documents`)).status, 404);
+  const got = await call(P1U, 'GET', `/v1/documents/${up.json.id}`);
+  assert.equal(Buffer.from(got.json.dataBase64, 'base64').toString(), '%PDF-1.4 SECRET-DOC-555 body', 'round trip');
+  assert.equal((await call(P2U, 'GET', `/v1/documents/${up.json.id}`)).status, 404);
+  const stored = await ownerSql(`SELECT data_enc FROM box_documents WHERE id = $1`, [up.json.id]);
+  assert.equal(Buffer.from(stored[0].data_enc).includes('SECRET-DOC-555'), false, 'encrypted at rest');
+  assert.equal((await call(P1U, 'DELETE', `/v1/documents/${up.json.id}`)).status, 403);
+  assert.equal((await call(S1U, 'DELETE', `/v1/documents/${up.json.id}`)).status, 204);
+  assert.equal((await call(S1U, 'GET', `/v1/boxes/${subId}/documents`)).json.documents.length, 0);
+});
+
+test('sharing a conversation: teammates who can see the record are notified; others are refused', async () => {
+  const subId = (await call(S1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'Share box', contextNodeId: X, custom: { policy_no: 'SH-1' } })).json.id as string;
+  const threadId = (await call(S1U, 'POST', `/v1/boxes/${subId}/threads`, { gmailThreadId: 'thr-share', acceptedNotice: true, subject: 'Hello', messages: [{ gmailMessageId: 'ms1', from: 'amy@client.example', to: [{ email: 's1@crm.test' }], body: 'Hi' }] })).json.threadId as string;
+  const users = (await call(S1U, 'GET', '/v1/users')).json.users as { id: string; email: string }[];
+  const lrnId = users.find((u) => u.email === LRN)?.id;
+  assert.ok(lrnId, 'the learner in the same branch is visible');
+  assert.equal((await call(S1U, 'POST', `/v1/threads/${threadId}/share`, { userIds: [lrnId], message: 'Please check' })).status, 204);
+  const n = (await call(LRN, 'GET', '/v1/notifications')).json.notifications as any[];
+  assert.ok(n.some((x) => x.kind === 'thread_shared' && x.data.boxName === 'Share box' && x.data.message === 'Please check'));
+  assert.equal((await call(S1U, 'POST', `/v1/threads/${threadId}/share`, { userIds: [s1UserId] })).status, 422, 'sharing with yourself is nothing to do');
+  assert.equal((await call(P2U, 'POST', `/v1/threads/${threadId}/share`, { userIds: [lrnId] })).status, 404, 'a sibling branch cannot see the conversation');
+  const p2Id = (await ownerSql(`SELECT id FROM app_users WHERE email = $1`, [P2U]))[0].id as string;
+  assert.equal((await call(S1U, 'POST', `/v1/threads/${threadId}/share`, { userIds: [p2Id] })).status, 422, 'a person from another branch is not visible to you');
+});

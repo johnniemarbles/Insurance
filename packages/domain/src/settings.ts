@@ -110,6 +110,14 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'A compliance file is submitted or reviewed', 'fr-CA': 'Un dossier de conformité est soumis ou examiné' }, help: { en: 'Head office approves or sends back a file, or a partner sends one for review.', 'fr-CA': 'Le siège social approuve ou renvoie un dossier, ou un partenaire en soumet un.' }, keywords: 'notification alert compliance review approved onboarding',
   },
   {
+    key: 'notify.thread_shared', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'A teammate shares a conversation with me', 'fr-CA': 'Un collègue partage une conversation avec moi' }, help: { en: 'Someone points you to an email linked to a record.', 'fr-CA': 'Quelqu’un vous signale un courriel lié à un dossier.' }, keywords: 'notification alert share conversation email thread',
+  },
+  {
+    key: 'notify.document_added', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'A document is added to my record', 'fr-CA': 'Un document est ajouté à mon dossier' }, help: { en: 'A teammate attaches a file to a record you own.', 'fr-CA': 'Un collègue joint un fichier à un dossier dont vous êtes responsable.' }, keywords: 'notification alert document file attachment',
+  },
+  {
     key: 'notify.appointment_request', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
     label: { en: 'A carrier appointment is requested', 'fr-CA': 'Une nomination auprès d’un assureur est demandée' }, help: { en: 'A partner asks head office to appoint them with a carrier.', 'fr-CA': 'Un partenaire demande au siège social de le faire nommer auprès d’un assureur.' }, keywords: 'notification alert carrier appointment',
   },

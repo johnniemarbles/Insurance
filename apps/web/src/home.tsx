@@ -5,6 +5,7 @@ import { stageColor, money } from './theme.ts';
 import type { Locale, Pipeline } from './types.ts';
 import type { Strings } from './i18n.ts';
 import { OverviewPanel, overviewLabels } from './overview.tsx';
+import type { ComposeApi } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface TaskRow { id: string; title: string; dueAt: string | null; boxId: string | null; boxName: string | null; pipelineId: string | null }
@@ -36,6 +37,9 @@ const X = {
     overdue: 'Overdue', today: 'Today', sent: (a: number, b: number) => `${a} of ${b} sent`, paused: 'paused', days: (n: number) => `${n} days in stage`,
     why: { stalled: 'Stalled', overdue: 'Overdue task', past_close: 'Past close date', no_next_step: 'No next step', unowned: 'No owner' } as Record<string, string>,
     taskTitle: 'What needs doing?', taskFor: 'For which record', taskDue: 'Due', add: 'Add task', cancel: 'Cancel', save: 'Save', saved: 'Task added', pick: 'Choose a record', noneYet: 'Create a record first.',
+    greet: (h: number, n: string) => `${h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'}${n ? `, ${n}` : ''}`,
+    focus: 'Start here', focusEmpty: 'You are all caught up. Nothing is overdue or stuck.', fTask: 'Overdue task', fToday: 'Due today', fRisk: 'Needs attention', fRenew: 'Renewal', fTasks: 'Tasks', fRenewals: 'Renewals',
+    emailDay: 'Email me my day', emailDone: 'A draft is open in Gmail. Press Send to email it to yourself.', emailFail: 'Could not open Gmail to write the email', digestSubject: (d: string) => `My day, ${d}`, digestNone: 'Nothing here.',
     editTitle: 'Shortcuts on Home', editHelp: 'Pick up to 12 saved views to show as cards.', noViews: 'You have no saved views yet. Save one from a pipeline first.', close: 'Close',
   },
   'fr-CA': {
@@ -50,12 +54,15 @@ const X = {
     overdue: 'En retard', today: 'Aujourd’hui', sent: (a: number, b: number) => `${a} sur ${b} envoyés`, paused: 'en pause', days: (n: number) => `${n} jours dans l’étape`,
     why: { stalled: 'Bloqué', overdue: 'Tâche en retard', past_close: 'Clôture dépassée', no_next_step: 'Aucune prochaine étape', unowned: 'Sans responsable' } as Record<string, string>,
     taskTitle: 'Que faut-il faire?', taskFor: 'Pour quel dossier', taskDue: 'Échéance', add: 'Ajouter la tâche', cancel: 'Annuler', save: 'Enregistrer', saved: 'Tâche ajoutée', pick: 'Choisir un dossier', noneYet: 'Créez d’abord un dossier.',
+    greet: (h: number, n: string) => `${h < 12 ? 'Bonjour' : h < 18 ? 'Bon après-midi' : 'Bonsoir'}${n ? `, ${n}` : ''}`,
+    focus: 'Commencez ici', focusEmpty: 'Tout est à jour. Rien n’est en retard ni bloqué.', fTask: 'Tâche en retard', fToday: 'À faire aujourd’hui', fRisk: 'À surveiller', fRenew: 'Renouvellement', fTasks: 'Tâches', fRenewals: 'Renouvellements',
+    emailDay: 'M’envoyer ma journée par courriel', emailDone: 'Un brouillon est ouvert dans Gmail. Appuyez sur Envoyer pour vous l’envoyer.', emailFail: 'Impossible d’ouvrir Gmail pour écrire le courriel', digestSubject: (d: string) => `Ma journée, ${d}`, digestNone: 'Rien.',
     editTitle: 'Raccourcis de l’accueil', editHelp: 'Choisissez jusqu’à 12 vues enregistrées à afficher en cartes.', noViews: 'Vous n’avez pas encore de vue enregistrée. Enregistrez-en une depuis un pipeline.', close: 'Fermer',
   },
 };
 
 /** The first page: shortcuts, recent work, one pipeline at a glance, and what needs the person today. */
-export function HomePage({ call, t, locale, go, name, isAdmin, currency }: { call: Call; t: Strings; locale: Locale; go: (page: string, id?: string) => void; name: string; isAdmin?: boolean; currency?: string }) {
+export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose, meEmail }: { call: Call; t: Strings; locale: Locale; go: (page: string, id?: string) => void; name: string; isAdmin?: boolean; currency?: string; compose?: ComposeApi; meEmail?: string }) {
   const x = X[locale];
   const ol = overviewLabels(locale);
   const [view, setView] = useState<'overview' | 'mine'>(() => { try { const v = localStorage.getItem('pii.homeview'); return v === 'mine' ? 'mine' : 'overview'; } catch { return 'overview'; } });
@@ -108,14 +115,41 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency }: { cal
   const rows = tab === 'recents' ? d.recent : d.trending;
   const today = new Date().toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' });
   const actPipe = pid || d.defaultPipeline || pipes[0]?.id || '';
+  // Home v2: the three things most worth doing now, in order: overdue work, stuck records, renewals this week, then what is due today.
+  type Focus = { key: string; label: string; title: string; sub: string; open: () => void };
+  const focus: Focus[] = [
+    ...d.tasks.filter((k) => late(k.dueAt)).map((k): Focus => ({ key: `t${k.id}`, label: x.fTask, title: k.title, sub: k.boxName ?? '', open: () => openTask(k) })),
+    ...d.risks.map((r): Focus => ({ key: `r${r.id}`, label: x.fRisk, title: r.name, sub: r.reasons.map((w) => x.why[w] ?? w).join(' · '), open: () => openRec(r) })),
+    ...(d.renewals ?? []).filter((r) => r.daysLeft <= 7).map((r): Focus => ({ key: `n${r.id}`, label: x.fRenew, title: r.name, sub: x.rLeft(r.daysLeft), open: () => openRec(r) })),
+    ...d.tasks.filter((k) => !late(k.dueAt)).map((k): Focus => ({ key: `d${k.id}`, label: x.fToday, title: k.title, sub: k.boxName ?? '', open: () => openTask(k) })),
+  ].slice(0, 3);
+  const emailDay = async () => {
+    if (!compose || !meEmail) return;
+    const e = (v: string) => v.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+    const list = (h: string, items: string[]) => `<h3>${e(h)}</h3>${items.length ? `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>` : `<p>${e(x.digestNone)}</p>`}`;
+    const html = `<div style="font-family:system-ui,sans-serif">${list(x.due, d.tasks.map((k) => `${e(k.title)}${k.boxName ? ` <i>(${e(k.boxName)})</i>` : ''}${late(k.dueAt) ? ` <b>${e(x.overdue)}</b>` : ''}`))}${list(x.attention, d.risks.map((r) => `${e(r.name)} <i>(${e(r.pipeline)})</i>: ${e(r.reasons.map((w) => x.why[w] ?? w).join(', '))}`))}${list(x.radar, (d.renewals ?? []).map((r) => `${e(r.name)}: ${e(x.rLeft(r.daysLeft))}`))}</div>`;
+    // Review mode leaves the Gmail window open for the person to press Send; the result only arrives once they do or give up.
+    setToast(x.emailDone);
+    void compose.send({ to: meEmail, subject: x.digestSubject(today), html, review: true }).then((r) => { if (!r.ok && r.error?.startsWith('Could not open')) setToast(x.emailFail); }, () => setToast(x.emailFail));
+  };
   return (
     <div class="home">
       {switcher}
-      <div class="hwelcome"><div><h2>{x.welcome(first)}</h2><span class="muted">{today}</span></div><span class="spacer" />
+      <div class="hwelcome"><div><h2>{x.greet(new Date().getHours(), first)}</h2><span class="muted">{today}</span></div><span class="spacer" />
         {d.week?.ring && (() => { const w = d.week; const pct = Math.min(100, Math.round((w.done / Math.max(1, w.goal)) * 100)); return (
           <div class="goal" title={`${w.done} / ${w.goal}`}><div class="ring" role="img" aria-label={`${w.done} / ${w.goal}`} style={{ '--p': pct } as any}><span>{w.done}/{w.goal}</span></div><small class="muted">{locale === 'fr-CA' ? (pct >= 100 ? 'Objectif atteint !' : 'Cette semaine') : (pct >= 100 ? 'Goal reached!' : 'This week')}</small></div>); })()}
       </div>
       <p class="muted hsum">{x.summary(d.tasks.length, d.risks.length)}{(() => { const n = (d.renewals ?? []).filter((r) => r.daysLeft <= 30).length; return n ? (locale === 'fr-CA' ? ` · ${n} renouvellement${n === 1 ? '' : 's'} d’ici 30 jours` : ` · ${n} renewal${n === 1 ? '' : 's'} within 30 days`) : ''; })()}</p>
+
+      <section class="hsec hfocus" aria-label={x.focus}>
+        <div class="hsec-h"><h3>{x.focus}</h3>{compose && meEmail && <button class="link" onClick={() => void emailDay()}>{x.emailDay}</button>}</div>
+        {focus.length === 0 && <p class="muted">{x.focusEmpty}</p>}
+        <div class="fgrid">
+          {focus.map((f) => (
+            <button class="fcard" key={f.key} onClick={f.open}><small class="muted">{f.label}</small><b>{f.title}</b>{f.sub && <span class="muted">{f.sub}</span>}</button>
+          ))}
+        </div>
+      </section>
 
       <section class="hsec" aria-label={x.quick}>
         <div class="hsec-h"><h3>{x.quick}</h3><button class="link" onClick={() => setEditOpen(true)}>{x.edit}</button></div>

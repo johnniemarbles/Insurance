@@ -45,6 +45,7 @@ export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
   const app = el('div', { class: 'pii' });
   root.append(app);
   let t: Strings = strings('en');
+  let myEmail = '';
 
   const show = (...nodes: Node[]) => { app.replaceChildren(...nodes); };
   const errText = (e: unknown) => (e instanceof ApiError && e.status === 0 ? t.offline : e instanceof ApiError && e.code === 'keys_unavailable' ? t.keysOff : (e as Error).message);
@@ -75,6 +76,7 @@ export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
   }
 
   async function main(me: Me): Promise<void> {
+    myEmail = me.user.email.toLowerCase();
     const threadId = await thread.getThreadId();
     const [{ pipelines }, { boxes: recent }, linked, aliasRules, recipients] = await Promise.all([
       api<{ pipelines: Pipeline[] }>('GET', '/v1/pipelines'),
@@ -208,7 +210,30 @@ export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
       if (!confirm(t.confirmUnlink)) return;
       try { await api('DELETE', `/v1/boxes/${b.id}/threads/${b.threadId}`); await load(); } catch (e) { alert(errText(e)); }
     };
-    card.append(el('h3', { textContent: t.notes }), noteBox, noteBtn, notes, el('h3', { textContent: t.tasks }), taskIn, taskBtn, tasks, el('div', {}, unlink));
+    // Point a teammate at this conversation. They can already open it through the record; this tells them it is worth a look.
+    const shareBox = el('div');
+    const shareBtn = el('button', { class: 'quiet', textContent: t.share });
+    shareBtn.onclick = async () => {
+      shareBtn.disabled = true;
+      try {
+        const { users } = await api<{ users: { id: string; displayName: string | null; email: string }[] }>('GET', '/v1/users');
+        const others = users.filter((u) => u.email.toLowerCase() !== myEmail);
+        const pick = el('select', { multiple: true, size: Math.min(5, Math.max(2, others.length)) });
+        for (const u of others) pick.append(el('option', { value: u.id, textContent: u.displayName ? `${u.displayName} (${u.email})` : u.email }));
+        const note = el('input', { placeholder: t.shareNote, maxLength: 300 });
+        const msg = el('div');
+        const send = el('button', { textContent: t.shareSend });
+        send.onclick = async () => {
+          const ids = [...pick.selectedOptions].map((o) => o.value);
+          if (ids.length === 0) return;
+          send.disabled = true;
+          try { await api('POST', `/v1/threads/${b.threadId}/share`, { userIds: ids, boxId: b.id, message: note.value.trim() || undefined }); shareBox.replaceChildren(el('div', { class: 'ok', textContent: t.shareDone })); }
+          catch (e) { send.disabled = false; msg.replaceChildren(el('div', { class: 'err', textContent: errText(e) })); }
+        };
+        shareBox.replaceChildren(...(others.length ? [el('label', { textContent: t.shareWho }), pick, note, send, msg] : [el('div', { class: 'muted', textContent: t.shareNone })]));
+      } catch (e) { shareBtn.disabled = false; shareBox.replaceChildren(el('div', { class: 'err', textContent: errText(e) })); }
+    };
+    card.append(el('h3', { textContent: t.notes }), noteBox, noteBtn, notes, el('h3', { textContent: t.tasks }), taskIn, taskBtn, tasks, el('div', {}, shareBtn, unlink), shareBox);
     void loadNotes().catch(() => undefined);
     void loadTasks().catch(() => undefined);
     return card;

@@ -9,6 +9,7 @@ const en = {
   linked: 'Conversation added', unlink: 'Remove conversation', notes: 'Notes', addNote: 'Add note', notePh: 'Write a note…', tasks: 'Tasks', addTask: 'Add task',
   taskPh: 'New task…', skipped: (n: number) => `${n} collapsed message(s) were not included. Expand them and add again to include them.`, confirmUnlink: 'Remove this conversation and delete the stored copy?',
   keysOff: 'Adding conversations is not available on this server yet.',
+  share: 'Share with a teammate', shareWho: 'Who should look at this?', shareNote: 'Add a short note (optional)', shareSend: 'Send', shareDone: 'Shared. They will see it in their notifications.', shareNone: 'No teammates found.',
   aliasHint: (alias: string, pipeline: string) => `Sent to ${alias}, so this looks like a ${pipeline} lead. The pipeline is chosen for you.`,
 };
 export type Strings = typeof en;
@@ -22,6 +23,7 @@ const frCA: Strings = {
   linked: 'Conversation ajoutée', unlink: 'Retirer la conversation', notes: 'Notes', addNote: 'Ajouter une note', notePh: 'Écrire une note…', tasks: 'Tâches', addTask: 'Ajouter une tâche',
   taskPh: 'Nouvelle tâche…', skipped: (n: number) => `${n} message(s) réduit(s) n’ont pas été inclus. Développez-les et ajoutez de nouveau pour les inclure.`, confirmUnlink: 'Retirer cette conversation et supprimer la copie conservée?',
   keysOff: 'L’ajout de conversations n’est pas encore disponible sur ce serveur.',
+  share: 'Partager avec un collègue', shareWho: 'Qui devrait regarder ceci?', shareNote: 'Ajoutez une courte note (facultatif)', shareSend: 'Envoyer', shareDone: 'Partagé. La personne le verra dans ses notifications.', shareNone: 'Aucun collègue trouvé.',
   aliasHint: (alias: string, pipeline: string) => `Envoyé à ${alias}: il s’agit sans doute d’une piste « ${pipeline} ». Le pipeline est choisi pour vous.`,
 };
 export const strings = (l: Locale): Strings => (l === 'fr-CA' ? frCA : en);

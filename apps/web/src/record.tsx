@@ -50,10 +50,68 @@ function FieldInput({ f, value, onChange, locale, disabled }: { f: FieldDef; val
   );
 }
 
+const DX = {
+  'en': { tab: 'Files', h: 'Documents', none: 'No documents yet.', add: 'Add a document', help: 'PDF, images, Word, Excel, PowerPoint, text or CSV, up to 8 MB. Stored in PII only, encrypted, and seen by whoever can see this record.', del: 'Remove', confirm: 'Remove this document for everyone?', big: 'That file is over 8 MB.', by: 'added by', open: 'Download', busy: 'Working…' },
+  'fr-CA': { tab: 'Fichiers', h: 'Documents', none: 'Aucun document pour l’instant.', add: 'Ajouter un document', help: 'PDF, images, Word, Excel, PowerPoint, texte ou CSV, jusqu’à 8 Mo. Conservé dans PII seulement, chiffré, et visible par toute personne qui voit ce dossier.', del: 'Retirer', confirm: 'Retirer ce document pour tout le monde?', big: 'Ce fichier dépasse 8 Mo.', by: 'ajouté par', open: 'Télécharger', busy: 'En cours…' },
+};
+interface Doc { id: string; name: string; mime: string; sizeBytes: number; createdAt: string; uploadedBy: string | null }
+const MIME_BY_EXT: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', txt: 'text/plain', csv: 'text/csv', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
+const size = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call; locale: Locale; canEdit: boolean }) {
+  const x = DX[locale];
+  const [docs, setDocs] = useState<Doc[]>([]);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = () => call('GET', `/v1/boxes/${boxId}/documents`).then((r) => setDocs(r.documents), (e) => setErr((e as Error).message));
+  useEffect(() => { void load(); }, [boxId]);
+  const pick = async (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    const f = input.files?.[0]; input.value = '';
+    if (!f) return;
+    setErr('');
+    if (f.size > 8 * 1024 * 1024) { setErr(x.big); return; }
+    const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+    const mime = MIME_BY_EXT[ext] ?? f.type;
+    setBusy(true);
+    try {
+      const dataBase64 = await new Promise<string>((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] ?? ''); r.onerror = () => no(new Error('read')); r.readAsDataURL(f); });
+      await call('POST', `/v1/boxes/${boxId}/documents`, { name: f.name, mime, dataBase64 });
+      await load();
+    } catch (x2) { setErr((x2 as Error).message); } finally { setBusy(false); }
+  };
+  const download = async (d: Doc) => {
+    setErr('');
+    try {
+      const r = await call('GET', `/v1/documents/${d.id}`);
+      const bin = atob(r.dataBase64); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: r.mime }));
+      const a = document.createElement('a'); a.href = url; a.download = r.name; document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (x2) { setErr((x2 as Error).message); }
+  };
+  const remove = async (d: Doc) => { if (!confirm(x.confirm)) return; try { await call('DELETE', `/v1/documents/${d.id}`); await load(); } catch (x2) { setErr((x2 as Error).message); } };
+  return (
+    <div class="rec-form">
+      <h3>{x.h}</h3>
+      <p class="muted">{x.help}</p>
+      {err && <div class="err" role="alert">{err}</div>}
+      {canEdit && <label class="btn quiet" style={{ display: 'inline-block', cursor: 'pointer' }}>{busy ? x.busy : x.add}<input type="file" hidden disabled={busy} accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={(e) => void pick(e)} /></label>}
+      {docs.length === 0 && <p class="muted">{x.none}</p>}
+      {docs.map((d) => (
+        <div class="ev" key={d.id}>
+          <button class="link" onClick={() => void download(d)} aria-label={`${x.open} ${d.name}`}>{d.name}</button>
+          <small>{size(d.sizeBytes)} · {x.by} {d.uploadedBy ?? '—'} · {when(d.createdAt, locale)}</small>
+          {canEdit && <button class="ib danger" aria-label={`${x.del} ${d.name}`} onClick={() => void remove(d)}>✕</button>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, onChanged }: { box: Box; pipeline: Pipeline; call: Call; t: Strings; locale: Locale; people: Person[]; onClose: () => void; onChanged: () => void }) {
   const x = R[locale];
   const dlg = useDialogFocus<HTMLElement>();
-  const [tab, setTab] = useState<'details' | 'activity'>('details');
+  const [tab, setTab] = useState<'details' | 'activity' | 'files'>('details');
   const [full, setFull] = useState<Box & { canEdit?: boolean; contacts?: { id: string; fullName: string | null; email: string | null }[] }>(box);
   const [draft, setDraft] = useState({ name: box.name, ownerUserId: box.ownerUserId ?? '', valueAmount: box.valueAmount == null ? '' : String(box.valueAmount), closeDate: box.closeDate ?? '', custom: { ...box.custom } as Record<string, unknown> });
   const [stageId, setStageId] = useState(box.stageId);
@@ -159,6 +217,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
         <div class="rec-tabs" role="tablist">
           <button role="tab" aria-selected={tab === 'details'} class={tab === 'details' ? 'on' : ''} onClick={() => setTab('details')}>{x.details}{dirty ? ' •' : ''}</button>
           <button role="tab" aria-selected={tab === 'activity'} class={tab === 'activity' ? 'on' : ''} onClick={() => setTab('activity')}>{x.activity}{counts.note + counts.task > 0 ? ` (${counts.note + counts.task})` : ''}</button>
+          <button role="tab" aria-selected={tab === 'files'} class={tab === 'files' ? 'on' : ''} onClick={() => setTab('files')}>{DX[locale].tab}</button>
         </div>
       </header>
 
@@ -184,6 +243,8 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
             {(full.contacts ?? []).map((c) => <div class="ev" key={c.id}>{c.fullName ?? c.email}<small>{c.fullName ? c.email : ''}</small></div>)}
           </div>
         )}
+
+        {tab === 'files' && <Documents boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
 
         {tab === 'activity' && (
           <div>

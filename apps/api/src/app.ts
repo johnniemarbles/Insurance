@@ -18,6 +18,7 @@ import { registerLmsRoutes } from './routes-lms.ts';
 import { registerInsightRoutes } from './routes-insights.ts';
 import { registerAutomationRoutes } from './routes-automation.ts';
 import { registerAliasRoutes } from './routes-alias.ts';
+import { registerDocumentRoutes } from './routes-documents.ts';
 import { registerIntegrationRoutes } from './routes-integrations.ts';
 import { registerMergeRoutes } from './routes-merge.ts';
 import { registerAiRoutes } from './routes-ai.ts';
@@ -125,6 +126,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerInsightRoutes(app, deps);
   registerAutomationRoutes(app, deps);
   registerAliasRoutes(app, deps);
+  registerDocumentRoutes(app, deps);
   registerIntegrationRoutes(app, deps);
   registerMergeRoutes(app, deps);
   registerAiRoutes(app, deps);
