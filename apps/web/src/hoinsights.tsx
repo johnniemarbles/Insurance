@@ -120,14 +120,14 @@ export function Widgets({ i, locale }: { i: Insights; locale: Locale }) {
   return (
     <div class="charts">
       <section class="hcard chartcard"><h4>{x.backlog}</h4>
-        {b.waiting === 0 ? <p class="muted">{x.backlogNone}</p> : <Stack parts={[{ n: b.fresh, c: 'var(--pri)', l: x.fresh }, { n: b.aging, c: '#d97706', l: x.aging }, { n: b.stale, c: '#b45309', l: x.stale }]} />}
+        {b.waiting === 0 ? <p class="muted">{x.backlogNone}</p> : <Stack parts={[{ n: b.fresh, c: 'var(--pri)', l: x.fresh }, { n: b.aging, c: 'var(--warn2)', l: x.aging }, { n: b.stale, c: 'var(--warn)', l: x.stale }]} />}
         {b.avgDaysToApprove != null && <p class="muted" style={{ margin: '8px 0 0' }}>{x.avg(b.avgDaysToApprove)}</p>}
       </section>
       <section class="hcard chartcard"><h4>{x.coverage}</h4>
-        <Stack parts={[{ n: c.meets, c: 'var(--pri)', l: x.meets }, { n: c.below, c: '#b45309', l: x.belowL }, { n: c.none, c: '#98a1bd', l: x.noneL }]} />
+        <Stack parts={[{ n: c.meets, c: 'var(--pri)', l: x.meets }, { n: c.below, c: 'var(--warn)', l: x.belowL }, { n: c.none, c: 'var(--gray)', l: x.noneL }]} />
       </section>
       <section class="hcard chartcard"><h4>{x.appts}</h4>
-        <Stack parts={[{ n: a.requested, c: '#d97706', l: x.req }, { n: a.inProgress, c: 'var(--pri)', l: x.prog }, { n: a.appointed, c: '#0f7b4a', l: x.done }, { n: a.declined, c: '#98a1bd', l: x.declined }]} />
+        <Stack parts={[{ n: a.requested, c: 'var(--warn2)', l: x.req }, { n: a.inProgress, c: 'var(--pri)', l: x.prog }, { n: a.appointed, c: 'var(--okc)', l: x.done }, { n: a.declined, c: 'var(--gray)', l: x.declined }]} />
       </section>
     </div>
   );

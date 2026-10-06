@@ -68,14 +68,14 @@ export function OverviewPanel({ call, locale, go, currency }: { call: Call; loca
         {pt.partners > 0 ? <div class="hstat"><b>{pt.approved}/{pt.partners}</b><span>{x.partners}</span></div> : <div class="hstat"><b>{d.team}</b><span>{x.team}</span></div>}
       </div>
       <div class="charts">
-        <section class="hcard chartcard"><h4>{x.byStage}</h4>
+        <section class="hcard chartcard" aria-label={x.byStage}><h4>{x.byStage}</h4>
           {p.stages.every((z) => z.count === 0) ? <div class="calm"><b>{x.noStage}</b></div> : p.stages.map((z) => (
             <div class="hb" key={z.name} style={{ gridTemplateColumns: '110px 1fr 28px', margin: '3px 0' }}><span>{z.name}</span><span class="tr"><i style={{ width: `${Math.round((z.count / maxV) * 100)}%` }} /></span><b>{z.count}</b></div>
           ))}
         </section>
         <section class="hcard chartcard"><h4>{x.renew}</h4><ExpiryBars e={{ overdue: d.renewals.expired, within30: d.renewals.d30, within14: 0, weeks: d.renewals.weeks }} locale={locale} /></section>
         <section class="hcard chartcard"><h4>{x.active}</h4>
-          {d.activity.length === 0 ? <p class="muted">{x.noAct}</p> : d.activity.map((a) => (
+          {d.activity.length === 0 ? <div class="calm"><b>{x.noAct}</b></div> : d.activity.map((a) => (
             <div class="hb" key={a.name} style={{ gridTemplateColumns: '110px 1fr 28px', margin: '3px 0' }}><span>{a.name}</span><span class="tr"><i style={{ width: `${Math.round((a.count / maxA) * 100)}%` }} /></span><b>{a.count}</b></div>
           ))}
         </section>

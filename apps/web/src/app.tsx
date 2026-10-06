@@ -19,6 +19,7 @@ import { NotificationsPage } from './notifications.tsx';
 import { RenewalsPage } from './renewals.tsx';
 import { CompliancePage } from './compliance.tsx';
 import { setHeadOffice } from './ho.ts';
+import { tabArrows } from './a11y.ts';
 import { DuplicatesDialog } from './duplicates.tsx';
 import { SettingsPage, useSettings, type SettingsApi } from './settings.tsx';
 import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
@@ -117,7 +118,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, canAuthor, meEmail, meN
   const label: Record<PageId, string> = { home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
-    <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
+    <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
       {older(host.extVersion, minExt) && <div class="banner warn" role="alert">{t.updateNeeded}</div>}
       {(
         <div class="tabs" role="tablist">

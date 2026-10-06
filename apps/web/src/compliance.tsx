@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
 import type { HostOptions, Locale } from './types.ts';
 import { ExpiryBars, Funnel, needsOf, NeedsYou, titles, Widgets, type Insights, type NeedTab } from './hoinsights.tsx';
@@ -19,7 +19,7 @@ interface File {
 const X = {
   'en': {
     connectL: (l: string) => `Connect ${l}`, noticeL: (l: string) => `Accept the ${l} privacy notice`, noticeT: 'Privacy notice', noticeOk: 'I accept', noticeErr: 'Could not load the notice. Try again.',
-    jump: 'Jump to a company or partner', jumpNone: 'No match', jCo: 'Company', jPa: 'Partner',
+    jumpN: (n: number) => `${n} ${n === 1 ? 'result' : 'results'}`, jump: 'Jump to a company or partner', jumpNone: 'No match', jCo: 'Company', jPa: 'Partner',
     title: 'Compliance', sub: 'Licences, E&O insurance and paperwork for each partner. PII keeps the status and copies of documents, never SIN, SSN or bank details.',
     headTitle: 'Compliance review', headSub: 'Files from every company in this country. You see compliance information only, never CRM records.',
     allC: 'All countries', allCos: 'All companies', headSubC: (c: string) => `Compliance files for ${c}. You see compliance only, never CRM records.`, chooseSub: 'Choose a country or a company to open its files.', calmReview: 'All caught up', calmReviewSub: 'No files are waiting for review.', calmAll: 'No partners yet', calmAllSub: 'Partners appear here once a company adds them.', calmExp: 'Nothing expiring soon', calmExpSub: 'No licence or E&O policy runs out in the next 60 days.', hPartners: 'Partners', hWaiting: 'Waiting for review', hExpiring: 'Expiring in 60 days', hCompanies: 'Companies', cTot: (c: number, split: string) => `${c} compan${c === 1 ? 'y' : 'ies'} ${split}`, cCo: (n: number) => `${n} compan${n === 1 ? 'y' : 'ies'}`, cWait: (n: number) => `${n} waiting`, cExp: (n: number) => `${n} expiring`, cPart: (n: number) => `${n} partner${n === 1 ? '' : 's'}`, addTo: 'Country', coIn: (c: string) => `Companies in ${c}`, showing: 'Showing', clear: 'Show all',
@@ -44,7 +44,7 @@ const X = {
   },
   'fr-CA': {
     connectL: (l: string) => `Se connecter : ${l}`, noticeL: (l: string) => `Accepter l’avis de confidentialité : ${l}`, noticeT: 'Avis de confidentialité', noticeOk: 'J’accepte', noticeErr: 'Impossible de charger l’avis. Réessayez.',
-    jump: 'Aller à une entreprise ou un partenaire', jumpNone: 'Aucun résultat', jCo: 'Entreprise', jPa: 'Partenaire',
+    jumpN: (n: number) => `${n} ${n === 1 ? 'résultat' : 'résultats'}`, jump: 'Aller à une entreprise ou un partenaire', jumpNone: 'Aucun résultat', jCo: 'Entreprise', jPa: 'Partenaire',
     title: 'Conformité', sub: 'Permis, assurance E&O et documents de chaque partenaire. PII conserve l’état et les copies des documents, jamais le NAS, le SSN ni les données bancaires.',
     headTitle: 'Examen de conformité', headSub: 'Dossiers de toutes les entreprises de ce pays. Vous voyez la conformité seulement, jamais les dossiers du CRM.',
     allC: 'Tous les pays', allCos: 'Toutes les entreprises', headSubC: (c: string) => `Dossiers de conformité : ${c}. Vous voyez la conformité seulement, jamais les dossiers du CRM.`, chooseSub: 'Choisissez un pays ou une entreprise pour ouvrir ses dossiers.', calmReview: 'Tout est à jour', calmReviewSub: 'Aucun dossier n’attend d’examen.', calmAll: 'Aucun partenaire pour l’instant', calmAllSub: 'Les partenaires apparaissent ici dès qu’une entreprise les ajoute.', calmExp: 'Aucune échéance proche', calmExpSub: 'Aucun permis ni aucune police E&O n’expire d’ici 60 jours.', hPartners: 'Partenaires', hWaiting: 'En attente d’examen', hExpiring: 'À échéance dans 60 jours', hCompanies: 'Entreprises', cTot: (c: number, split: string) => `${c} entreprise${c === 1 ? '' : 's'} ${split}`, cCo: (n: number) => `${n} entreprise${n === 1 ? '' : 's'}`, cWait: (n: number) => `${n} en attente`, cExp: (n: number) => `${n} à échéance`, cPart: (n: number) => `${n} partenaire${n === 1 ? '' : 's'}`, addTo: 'Pays', coIn: (c: string) => `Entreprises : ${c}`, showing: 'Affichage', clear: 'Tout afficher',
@@ -486,6 +486,7 @@ function ConnectStrip({ host, locale }: { host: HostOptions; locale: Locale }) {
 function JumpTo({ host, locale, open }: { host: HostOptions; locale: Locale; open: (region: string, f?: { tab?: NeedTab; company?: string; node?: string }) => void }) {
   const x = X[locale];
   const regions = host.regions ?? [];
+  const inp = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<{ region: string; label: string; kind: 'co' | 'pa'; name: string; sub?: string; node?: string }[] | null>(null);
   useEffect(() => {
@@ -507,9 +508,16 @@ function JumpTo({ host, locale, open }: { host: HostOptions; locale: Locale; ope
   const pick = (h: NonNullable<typeof hits>[number]) => { setQ(''); setHits(null); open(h.region, h.kind === 'co' ? { tab: 'all', company: h.name } : { tab: 'all', node: h.node }); };
   return (
     <div class="jump">
-      <input type="search" value={q} placeholder={x.jump} aria-label={x.jump} onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={(e) => { if (e.key === 'Escape') { setQ(''); setHits(null); } }} />
+      <input ref={inp} type="search" role="combobox" aria-expanded={Boolean(hits)} aria-controls="pii-jump" aria-autocomplete="list" value={q} placeholder={x.jump} aria-label={x.jump} onInput={(e) => setQ((e.target as HTMLInputElement).value)}
+        onKeyDown={(e) => { if (e.key === 'Escape') { setQ(''); setHits(null); } else if (e.key === 'ArrowDown') { e.preventDefault(); (e.currentTarget.parentElement?.querySelector('.jumplist button') as HTMLElement | null)?.focus(); } }} />
+      <span class="sr" role="status" aria-live="polite">{hits ? (hits.length ? x.jumpN(hits.length) : x.jumpNone) : ''}</span>
       {hits && (
-        <div class="jumplist" role="listbox">
+        <div class="jumplist" id="pii-jump" role="listbox" onKeyDown={(e) => {
+          const bs = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button')); const i = bs.indexOf(e.target as HTMLElement);
+          if (e.key === 'ArrowDown') { e.preventDefault(); bs[Math.min(bs.length - 1, i + 1)]?.focus(); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); if (i <= 0) inp.current?.focus(); else bs[i - 1]?.focus(); }
+          else if (e.key === 'Escape') { setQ(''); setHits(null); inp.current?.focus(); }
+        }}>
           {hits.length === 0 && <div class="calm">{x.jumpNone}</div>}
           {hits.map((h) => <button role="option" class="hrow" key={h.region + h.kind + (h.node ?? h.name)} onClick={() => pick(h)}><span class="rname">{h.name}{h.sub ? <small class="muted"> · {h.sub}</small> : null}</span><small class="muted">{h.kind === 'co' ? x.jCo : x.jPa} · {h.label}</small></button>)}
         </div>
