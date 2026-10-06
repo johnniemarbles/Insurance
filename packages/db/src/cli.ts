@@ -45,12 +45,41 @@ try {
         console.log(`bootstrapped head office ${t.tenantId}`);
       }
     }
+    // Promote an existing company to head office (once): the company whose administrator has this email. Optionally rename it.
+    const promote = process.env.PROMOTE_TO_HEAD_OFFICE_EMAIL?.trim().toLowerCase();
+    if (promote) {
+      const c = new pg.Client({ connectionString: url });
+      await c.connect();
+      try {
+        const has = (await c.query<{ n: number }>('SELECT count(*)::int AS n FROM tenants WHERE is_head_office')).rows[0]!.n;
+        const t = (await c.query<{ id: string; root: string }>(
+          `SELECT u.tenant_id AS id, n.id AS root FROM app_users u JOIN org_nodes n ON n.tenant_id = u.tenant_id AND n.type = 'tenant' WHERE u.email = $1 LIMIT 1`, [promote])).rows[0];
+        if (has === 0 && t) {
+          const name = process.env.HEAD_OFFICE_NAME?.trim();
+          await c.query('UPDATE tenants SET is_head_office = true WHERE id = $1', [t.id]);
+          if (name) { await c.query('UPDATE tenants SET name = $2 WHERE id = $1', [t.id, name]); await c.query('UPDATE org_nodes SET name = $2 WHERE id = $1', [t.root, name]); }
+          console.log(`promoted ${t.id} to head office`);
+        }
+      } finally { await c.end(); }
+    }
+    // Optional extra company, created once by name (for example the first company under a new head office).
+    const co = { name: process.env.BOOTSTRAP_COMPANY_NAME?.trim(), email: process.env.BOOTSTRAP_COMPANY_ADMIN_EMAIL?.trim() };
+    if (co.name && co.email) {
+      const c = new pg.Client({ connectionString: url });
+      await c.connect();
+      const exists = (await c.query('SELECT 1 FROM tenants WHERE name = $1 UNION ALL SELECT 1 FROM app_users WHERE email = lower($2)', [co.name, co.email])).rowCount;
+      await c.end();
+      if (!exists) {
+        const t = await bootstrapTenant(url, { name: co.name, countryCode: region === 'us' ? 'US' : 'CA', adminEmail: co.email });
+        console.log(`bootstrapped company ${t.tenantId}`);
+      }
+    }
     // Optional first-tenant bootstrap from the environment, only while the database has no tenants.
     const bt = { name: process.env.BOOTSTRAP_TENANT_NAME, country: process.env.BOOTSTRAP_TENANT_COUNTRY, email: process.env.BOOTSTRAP_ADMIN_EMAIL };
     if (bt.name && bt.email && (bt.country === 'CA' || bt.country === 'US')) {
       const c = new pg.Client({ connectionString: url });
       await c.connect();
-      const n = (await c.query<{ n: number }>('SELECT count(*)::int AS n FROM tenants WHERE NOT is_head_office')).rows[0]!.n;
+      const n = (await c.query<{ n: number }>(`SELECT count(*)::int AS n FROM tenants WHERE NOT is_head_office OR EXISTS (SELECT 1 FROM app_users WHERE email = lower($1))`, [bt.email])).rows[0]!.n;
       await c.end();
       if (n === 0) {
         const t = await bootstrapTenant(url, { name: bt.name, countryCode: bt.country, adminEmail: bt.email, defaultLocale: (process.env.BOOTSTRAP_TENANT_LOCALE as 'en' | 'fr-CA') ?? 'en' });
