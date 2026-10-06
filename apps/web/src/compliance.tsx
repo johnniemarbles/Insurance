@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
 import type { HostOptions, Locale } from './types.ts';
+import { ExpiryBars, Funnel, needsOf, NeedsYou, titles, Widgets, type Insights, type NeedTab } from './hoinsights.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Step { id: string; done: boolean; hint?: string }
@@ -90,6 +91,8 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
   const [coName, setCoName] = useState(''); const [coMail, setCoMail] = useState(''); const [coErr, setCoErr] = useState('');
   const loadCos = () => call('GET', '/v1/ho/companies').then((r) => setCos(r.companies), () => undefined);
   const [q, setQ] = useState('');
+  const [ins, setIns] = useState<Insights | null>(null);
+  const [needAll, setNeedAll] = useState(false);
   const regions = host?.regions ?? [];
   const multi = ho && regions.length > 1;
   const here = host?.region ?? regions[0]?.id;
@@ -128,7 +131,7 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
   ) : null;
   useEffect(() => {
     call('GET', `${base}/partners`).then((r) => setRows(r.partners), (e) => setErr((e as Error).message));
-    if (ho) { call('GET', '/v1/ho/expiring?days=60').then((r) => setExp(r.items), () => undefined); void loadCos(); }
+    if (ho) { call('GET', '/v1/ho/expiring?days=60').then((r) => setExp(r.items), () => undefined); call('GET', '/v1/ho/insights').then((r) => setIns(r as Insights), () => undefined); void loadCos(); }
   }, [call]);
   const shown = useMemo(() => (rows ?? []).filter((r) => (tab !== 'review' || r.status === 'submitted') && `${r.name} ${r.company ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())), [rows, tab, q]);
   if (multi && scope === 'all' && host) return <div class="home"><div class="hwelcome"><div><h2 style={{ margin: 0 }}>{x.headTitle}</h2><span class="muted">{x.chooseSub}</span></div></div>{scopeBar}<AllCountries host={host} locale={locale} open={openCountry} /></div>;
@@ -139,6 +142,8 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
     <div class="home">
       <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{ho ? x.headTitle : x.title}</h2><span class="muted">{ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub}</span></div></div>
       {scopeBar}
+      {ho && ins && <NeedsYou locale={locale} openAll={needAll} setOpenAll={setNeedAll}
+        needs={needsOf(ins, locale).map((need) => ({ need, go: () => { if (need.tab) setTab(need.tab); } }))} />}
       {ho && <>
         <div class="hstats">
           <div class={`hstat ${waiting ? 'warn' : ''}`}><b>{waiting}</b><span>{x.hWaiting}</span></div>
@@ -146,6 +151,13 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
           <div class="hstat"><b>{rows.length}</b><span>{x.hPartners}</span></div>
           <div class="hstat"><b>{cos.length}</b><span>{x.hCompanies}</span></div>
         </div>
+        {ins && <>
+          <div class="charts">
+            <section class="hcard chartcard"><h4>{titles(locale).funnel}</h4><Funnel f={ins.funnel} locale={locale} /></section>
+            <section class="hcard chartcard"><h4>{titles(locale).expiry}</h4><ExpiryBars e={ins.expiry} locale={locale} /></section>
+          </div>
+          <Widgets i={ins} locale={locale} />
+        </>}
         <div class="seg" role="tablist" aria-label={x.title} style={{ margin: '8px 0' }}>
           {([['review', x.review], ['all', x.all], ['expiring', x.expiring], ...(multi ? [] : [['companies', x.companies] as const])] as const).map(([k, l]) => <button role="tab" aria-selected={tab === k} onClick={() => setTab(k as typeof tab)}>{l}</button>)}
         </div>
@@ -332,7 +344,7 @@ function Appointment({ x, onAsk }: { x: typeof X['en']; onAsk: (carrier: string)
   );
 }
 
-interface RegionData { state: 'loading' | 'out' | 'no' | 'consent' | 'err' | 'ok'; companies: any[]; expiring: any[] }
+interface RegionData { state: 'loading' | 'out' | 'no' | 'consent' | 'err' | 'ok'; companies: any[]; expiring: any[]; ins?: Insights }
 const EMPTY: RegionData = { state: 'loading', companies: [], expiring: [] };
 
 /** Global admin home: every country and its companies at once. Each country is its own server and login, so each is asked separately. */
@@ -341,6 +353,7 @@ function AllCountries({ host, locale, open }: { host: HostOptions; locale: Local
   const regions = host.regions ?? [];
   const [d, setD] = useState<Record<string, RegionData>>({});
   const [adding, setAdding] = useState(false);
+  const [needAll, setNeedAll] = useState(false);
   const [aReg, setAReg] = useState(host.region ?? regions[0]?.id ?? '');
   const [aName, setAName] = useState(''); const [aMail, setAMail] = useState(''); const [aErr, setAErr] = useState('');
   const set = (id: string, v: RegionData) => setD((o) => ({ ...o, [id]: v }));
@@ -351,9 +364,9 @@ function AllCountries({ host, locale, open }: { host: HostOptions; locale: Local
     if (me.status === 401 || me.status === 0 || me.status === -1) return set(r.id, { ...EMPTY, state: 'out' });
     if (me.status === 200 && me.json?.needsConsent) return set(r.id, { ...EMPTY, state: 'consent' });
     if (me.status !== 200 || !me.json?.isHeadOffice) return set(r.id, { ...EMPTY, state: 'no' });
-    const [co, ex] = await Promise.all([ask('/v1/ho/companies'), ask('/v1/ho/expiring?days=60')]);
+    const [co, ex, ig] = await Promise.all([ask('/v1/ho/companies'), ask('/v1/ho/expiring?days=60'), ask('/v1/ho/insights')]);
     if (co.status !== 200 || ex.status !== 200) return set(r.id, { ...EMPTY, state: 'err' });
-    set(r.id, { state: 'ok', companies: co.json?.companies ?? [], expiring: ex.json?.items ?? [] });
+    set(r.id, { state: 'ok', companies: co.json?.companies ?? [], expiring: ex.json?.items ?? [], ins: ig.status === 200 ? (ig.json as Insights) : undefined });
   });
   useEffect(() => { load(); }, []);
   const ok = regions.map((r) => ({ r, v: d[r.id] })).filter((e) => e.v?.state === 'ok');
@@ -364,6 +377,8 @@ function AllCountries({ host, locale, open }: { host: HostOptions; locale: Local
     [x.review, sum(waiting), waiting, 'review'], [x.expiring, sum((v) => v.expiring.length), (v) => v.expiring.length, 'expiring'], [x.companies, sum((v) => v.companies.length), (v) => v.companies.length, 'companies']];
   return (
     <>
+      <NeedsYou locale={locale} openAll={needAll} setOpenAll={setNeedAll}
+        needs={ok.flatMap((e) => (e.v!.ins ? needsOf(e.v!.ins, locale, e.r.label).map((need) => ({ need, go: () => open(e.r.id, { tab: need.tab as NeedTab }) })) : []))} />
       <div class="hstats">{tiles.map(([l, n, f, tab]) => <div class={`hstat ${tab === 'expiring' && n ? 'warn' : ''}`}><b>{n}</b><span>{l}</span>{ok.length > 1 && <small>{split(f)}</small>}</div>)}</div>
       {regions.map((r) => {
         const v = d[r.id] ?? EMPTY;
@@ -379,6 +394,7 @@ function AllCountries({ host, locale, open }: { host: HostOptions; locale: Local
             {v.state === 'consent' && <p><small class="muted">{x.cConsent}</small> <button class="btn" onClick={() => host.onSignIn(r.id)}>{x.cSwitch}</button></p>}
             {v.state === 'no' && <p class="muted">{x.cNo}</p>}
             {v.state === 'err' && <p class="muted">{x.cErr}</p>}
+            {v.state === 'ok' && v.ins && v.ins.funnel.partners > 0 && <div style={{ margin: '8px 0 4px' }}><Funnel f={v.ins.funnel} locale={locale} compact /></div>}
             {v.state === 'ok' && v.companies.length === 0 && <p class="muted">{x.coNone}</p>}
             {v.state === 'ok' && v.companies.map((c) => {
               const ex = v.expiring.filter((i) => i.company === c.name).length;

@@ -446,6 +446,12 @@ export function registerComplianceRoutes(app: FastifyInstance, deps: AppDeps): v
     return reply.code(204).send();
   });
 
+  // Counts only: the funnel, the review backlog, E&O coverage, expiries by week and appointment requests, for every company in this country.
+  app.get('/v1/ho/insights', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    return ho(ctx, async (tx) => (await tx.query<{ r: Record<string, unknown> }>('SELECT ho_insights($1) AS r', [Number(process.env.EO_MIN_LIMIT ?? 0)])).rows[0]!.r);
+  });
+
   app.get('/v1/ho/expiring', { schema: { querystring: { type: 'object', properties: { days: { type: 'integer', minimum: 0, maximum: 365 } } } } }, async (req) => {
     const { ctx } = await deps.authenticate(req);
     const days = (req.query as { days?: number }).days ?? 60;

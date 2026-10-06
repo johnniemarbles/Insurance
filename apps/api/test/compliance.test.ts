@@ -126,6 +126,15 @@ test('expiry reminders go out at 30, 15 and 0 days, once each', async () => {
   assert.equal(n.length, 1); assert.equal(n[0].data.threshold, 30);
   assert.ok((await call(HO, 'GET', '/v1/notifications')).json.notifications.some((x: { kind: string }) => x.kind === 'compliance_expiry'));
   assert.equal((await call(HO, 'GET', '/v1/ho/expiring?days=30')).json.items.length, 1);
+  { // insights: counts only, head office only
+    assert.equal((await call(AG, 'GET', '/v1/ho/insights')).status, 403);
+    const r = await call(HO, 'GET', '/v1/ho/insights'); assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.ok(r.json.funnel.partners >= 3 && r.json.funnel.approved <= r.json.funnel.submitted && r.json.funnel.submitted <= r.json.funnel.partners);
+    assert.equal(r.json.expiry.weeks.length, 13);
+    assert.equal(typeof r.json.backlog.waiting, 'number');
+    assert.equal(r.json.coverage.meets + r.json.coverage.below + r.json.coverage.none, r.json.funnel.partners);
+    assert.ok(!JSON.stringify(r.json).includes('Agency'), 'no names, only counts');
+  }
 });
 
 test('head office administrators create companies for their country; nobody else can', async () => {
