@@ -52,7 +52,10 @@ export function registerPageRoutes(app: FastifyInstance, deps: AppDeps): void {
     const q = (req.query as { lang?: string }).lang;
     const lang: Lang = q ? (q.startsWith('fr') ? 'fr-CA' : 'en') : (String(req.headers['accept-language'] ?? '').toLowerCase().startsWith('fr') ? 'fr-CA' : 'en');
     const fr = lang === 'fr-CA', l = fr ? 'fr' : 'en';
-    const entity = deps.config.region === 'us' ? 'Punjab Insurance Broker Inc' : 'Punjab Insurance Agency Inc';
+    const host = String(req.hostname ?? '').toLowerCase().split(':')[0] ?? '';
+    const neutral = (process.env.HOME_HOSTS ?? 'punjabinsurance.co,www.punjabinsurance.co').split(',').map((h) => h.trim().toLowerCase()).includes(host);
+    const entity = neutral ? 'Punjab Insurance Agency Inc (Canada) and Punjab Insurance Broker Inc (US)' : deps.config.region === 'us' ? 'Punjab Insurance Broker Inc' : 'Punjab Insurance Agency Inc';
+    const entityFr = neutral ? 'Punjab Insurance Agency Inc (Canada) et Punjab Insurance Broker Inc (É.-U.)' : entity;
     const ext = process.env.PII_EXTENSION_URL;
     const T = fr ? {
       tag: 'Le CRM d’assurance qui vit dans Gmail',
@@ -63,7 +66,7 @@ export function registerPageRoutes(app: FastifyInstance, deps: AppDeps): void {
       f: [['Pipelines', 'Suivez chaque piste, police et renouvellement par étape, dans Gmail.'], ['Liez vos courriels', 'Reliez une conversation à un dossier d’un clic. Rien n’est lié sans votre geste.'], ['Rappels et tâches', 'Notes, échéances et suivis sur chaque dossier, partagés avec votre équipe.'], ['Pour toute l’organisation', 'Siège social, sociétés, succursales, partenaires et producteurs, chacun voit ce qui le concerne.']],
       hp: 'Votre vie privée',
       pt: `La connexion Google ne demande que votre nom et votre adresse courriel. ${product} n’accède pas à votre boîte Gmail par l’API de Google et ne lit que la conversation que vous choisissez de lier. Aucune vente de données, aucune publicité. Les données sont hébergées sur des serveurs sécurisés aux États-Unis.`,
-      nav: [['/privacy', 'Confidentialité'], ['/terms', 'Conditions'], ['/support', 'Soutien']], other: ['English', 'en'], by: `Exploité par ${entity}.`,
+      nav: [['/privacy', 'Confidentialité'], ['/terms', 'Conditions'], ['/support', 'Soutien']], other: ['English', 'en'], by: `Exploité par ${entityFr}.`,
     } : {
       tag: 'The insurance CRM that lives in Gmail',
       lead: `${product} helps insurance teams track clients, leads and renewals right inside Gmail, without leaving the inbox.`,

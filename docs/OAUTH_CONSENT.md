@@ -31,13 +31,13 @@ Why there is no Gmail scope: the Chrome extension shows the PII panel inside the
 
 | Field | Answer |
 |---|---|
-| Application home page | https://ca.punjabinsurance.co/  (public product page: what the app is, what it reads, links to privacy, terms and support, English and French) |
-| Application privacy policy link | https://ca.punjabinsurance.co/privacy |
-| Application terms of service link | https://ca.punjabinsurance.co/terms |
+| Application home page | https://punjabinsurance.co/  (public product page: what the app is, what it reads, links to privacy, terms and support, English and French) |
+| Application privacy policy link | https://punjabinsurance.co/privacy |
+| Application terms of service link | https://punjabinsurance.co/terms |
 | Authorized domains | punjabinsurance.co |
 
 Notes:
-- Google requires the home page, privacy and terms links to sit on an authorized domain. All three are on `punjabinsurance.co`, so only that domain is needed. Add punjabinsurance.ca and punjabinsurance.com only if you point those links at the country websites instead.
+- Google requires the home page, privacy and terms links to sit on an authorized domain. All three are on the `punjabinsurance.co` home (served by the Canada server; `ca.` and `us.` stay as the sign-in addresses), so only that domain is needed. Add punjabinsurance.ca and punjabinsurance.com only if you point those links at the country websites instead.
 - Verify domain ownership of `punjabinsurance.co` in Google Search Console with the same Google account that owns the Cloud project (add a DNS TXT record, like you did for Railway).
 - The privacy policy already contains Google's required statement that use of information received from Google APIs follows the Google API Services User Data Policy, including the Limited Use requirements.
 

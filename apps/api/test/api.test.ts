@@ -190,6 +190,9 @@ test('landing pages exist for sign-in return, errors and privacy', async () => {
     assert.equal(h.statusCode, 200); assert.match(h.body, /lang="en"/); assert.match(h.body, /href="\/privacy\?lang=en"/); assert.match(h.body, /href="\/terms\?lang=en"/); assert.match(h.body, /Gmail/);
     const hf = await app.inject({ method: 'GET', url: '/?lang=fr' });
     assert.match(hf.body, /lang="fr-CA"/); assert.match(hf.body, /Confidentialité/);
+    const ap = await app.inject({ method: 'GET', url: '/', headers: { host: 'punjabinsurance.co' } });
+    assert.equal(ap.statusCode, 200); assert.match(ap.body, /Punjab Insurance Broker Inc \(US\)/); assert.match(ap.body, /Punjab Insurance Agency Inc \(Canada\)/);
+    assert.equal(/Broker Inc/.test(h.body), false);
   }
   { // privacy, terms and support: real pages, both languages, honest about where data is kept
     for (const u of ['/privacy', '/terms', '/support']) {
