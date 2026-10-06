@@ -25,6 +25,11 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Show getting-started tips', 'fr-CA': 'Afficher les conseils de démarrage' }, help: { en: 'The short guide at the top of an empty pipeline.', 'fr-CA': 'Le court guide au haut d’un pipeline vide.' }, keywords: 'tips help guide onboarding start',
   },
   {
+    key: 'ui.theme', tab: 'me', type: 'enum', default: 'light', scopes: ['user', 'tenant'], lockable: false,
+    options: [{ value: 'light', label: { en: 'Light', 'fr-CA': 'Clair' } }, { value: 'dark', label: { en: 'Dark', 'fr-CA': 'Sombre' } }, { value: 'auto', label: { en: 'Match my computer', 'fr-CA': 'Selon mon ordinateur' } }],
+    label: { en: 'Appearance', 'fr-CA': 'Apparence' }, help: { en: 'Light or dark colours for PII pages. Gmail keeps its own theme.', 'fr-CA': 'Couleurs claires ou sombres pour les pages PII. Gmail garde son propre thème.' }, keywords: 'dark mode light theme appearance night colours',
+  },
+  {
     key: 'ui.compact', tab: 'me', type: 'bool', default: false, scopes: ['user', 'tenant'], lockable: false,
     label: { en: 'Compact rows', 'fr-CA': 'Lignes compactes' }, help: { en: 'Tighter tables and lists so more fits on screen.', 'fr-CA': 'Tableaux et listes plus serrés pour en voir davantage.' }, keywords: 'compact dense density rows tight',
   },

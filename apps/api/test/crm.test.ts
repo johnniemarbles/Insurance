@@ -916,6 +916,32 @@ test('renewals: tasks at 90/60/30 days once each, owner only, decided records sk
   assert.equal((await call(P2U, 'GET', '/v1/renewals?days=90')).json.items.some((i: { name: string }) => i.name === 'Ren 20'), false, 'siblings cannot see them');
 });
 
+test('duplicates: found by name and by shared contact, merged with notes, tasks and contacts moved, isolated from siblings', async () => {
+  const pl = (await call(P1U, 'POST', '/v1/pipelines', { name: 'Dup T', fields: [{ key: 'phone_no', labels: { en: 'Phone' }, type: 'text' }] })).json;
+  const mk = async (name: string, extra: object = {}) => (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pl.id, name, contextNodeId: X, ...extra })).json.id as string;
+  const a = await mk('Singh  Auto', { valueAmount: 500 }), b = await mk('singh auto', { custom: { phone_no: '555' } }), solo = await mk('Unrelated');
+  await call(P1U, 'POST', `/v1/boxes/${a}/notes`, { body: 'first' });
+  await call(P1U, 'POST', `/v1/boxes/${b}/notes`, { body: 'second' });
+  await call(P1U, 'POST', `/v1/boxes/${b}/tasks`, { title: 'call back' });
+  const ct = (await call(P1U, 'POST', '/v1/contacts', { email: 'shared@dup.example', fullName: 'Shared', contextNodeId: X })).json.id as string;
+  await call(P1U, 'PUT', `/v1/boxes/${b}/contacts/${ct}`);
+  const g = (await call(P1U, 'GET', `/v1/pipelines/${pl.id}/duplicates`)).json.groups as { reason: string; boxes: { id: string }[] }[];
+  assert.equal(g.length, 1);
+  assert.deepEqual(g[0]!.boxes.map((x) => x.id).sort(), [a, b].sort());
+  assert.equal((await call(P2U, 'GET', `/v1/pipelines/${pl.id}/duplicates`)).status === 200 ? ((await call(P2U, 'GET', `/v1/pipelines/${pl.id}/duplicates`)).json.groups as unknown[]).length : 0, 0, 'siblings see nothing');
+  assert.equal((await call(P2U, 'POST', `/v1/boxes/${a}/merge`, { ids: [b] })).status === 404, true);
+  assert.equal((await call(P1U, 'POST', `/v1/boxes/${a}/merge`, { ids: [a] })).status, 422);
+  const mr = await call(P1U, 'POST', `/v1/boxes/${a}/merge`, { ids: [b] }); assert.equal(mr.status, 200, JSON.stringify(mr.json));
+  assert.equal((await call(P1U, 'GET', `/v1/boxes/${b}`)).status, 404, 'the other record is gone');
+  const notes = (await call(P1U, 'GET', `/v1/boxes/${a}/notes`)).json.notes as { body: string }[];
+  assert.ok(notes.some((n) => n.body === 'second') && notes.some((n) => n.body.startsWith('Merged 1')));
+  assert.equal(((await call(P1U, 'GET', `/v1/tasks?boxId=${a}`)).json.tasks as unknown[]).length, 1);
+  const kept = (await call(P1U, 'GET', `/v1/boxes/${a}`)).json;
+  assert.equal(kept.custom.phone_no, '555', 'empty field filled from the merged record');
+  assert.equal(Number(kept.valueAmount), 500);
+  assert.ok(solo);
+});
+
 test('call log: a call is a note with an outcome and minutes, shown in the timeline, and bad outcomes are refused', async () => {
   const box = (await call(P1U, 'POST', '/v1/boxes', { pipelineId: pipe1, name: 'CallBox', contextNodeId: X, custom: { policy_no: 'C1' } })).json.id as string;
   assert.equal((await call(P1U, 'POST', `/v1/boxes/${box}/notes`, { body: 'Renewal quote discussed', kind: 'call', outcome: 'connected', minutes: 12 })).status, 201);

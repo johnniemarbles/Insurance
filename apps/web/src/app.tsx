@@ -17,6 +17,7 @@ import { NewRecord, RecordPanel } from './record.tsx';
 import { HomePage } from './home.tsx';
 import { NotificationsPage } from './notifications.tsx';
 import { RenewalsPage } from './renewals.tsx';
+import { DuplicatesDialog } from './duplicates.tsx';
 import { SettingsPage, useSettings, type SettingsApi } from './settings.tsx';
 import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
 import { buildColumns, Cell, ColumnPicker, loadColumns, saveColumns, type Ctx } from './columns.tsx';
@@ -100,7 +101,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, meName, compose, host, min
   const label: Record<PageId, string> = { home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
-    <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
+    <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
       {older(host.extVersion, minExt) && <div class="banner warn" role="alert">{t.updateNeeded}</div>}
       {(
         <div class="tabs" role="tablist">
@@ -304,6 +305,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
   };
   const togglePick = (id: string) => setPicked((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [bulkOwner, setBulkOwner] = useState('');
+  const [dupOpen, setDupOpen] = useState(false);
   const bulkEach = async (ids: string[], fn: (id: string) => Promise<unknown>) => {
     const failed: string[] = [];
     for (const id of ids) { try { await fn(id); } catch { failed.push(id); } }
@@ -469,6 +471,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
             <option value="none">{t.chartLabel}: {t.vizNone}</option><option value="pie">{t.chartLabel}: {t.vizPie}</option><option value="column">{t.chartLabel}: {t.vizColumn}</option><option value="line">{t.chartLabel}: {t.vizLine}</option>
           </select>
         )}
+        <button class="btn quiet" onClick={() => setDupOpen(true)}>⧉ {locale === 'fr-CA' ? 'Doublons' : 'Duplicates'}</button>
         <span class="spacer" /><small title={t.shortcuts}>⌨ {t.shortcuts}</small>
       </div>
       {picked.size > 0 && (
@@ -574,6 +577,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
           {boxes.length < total && <div class="msg"><button class="btn quiet" onClick={loadMore}>{t.loadMore}</button></div>}
         </div>
         )}
+        {dupOpen && pipeline && <DuplicatesDialog call={call} locale={locale} pipelineId={pipeline.id} onClose={() => setDupOpen(false)} onChanged={refresh} />}
         {opened && pipeline && <RecordPanel key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} people={people} onClose={() => setOpenId('')} onChanged={refresh} />}
         {mergeIds && <MergePanel call={call} locale={locale} compose={compose} boxIds={mergeIds} onClose={() => setMergeIds(null)} onOpenBox={(id) => { if (id) { setMergeIds(null); void openById(id); } }} />}
         {snippetsOpen && <SnippetsPanel call={call} locale={locale} onClose={() => setSnippetsOpen(false)} />}
