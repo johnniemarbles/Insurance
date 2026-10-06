@@ -5,6 +5,7 @@ import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { forbidden, invalid, notFound } from './errors.ts';
 import { uuid } from './crm-helpers.ts';
+import { recordCeForCompletion } from './routes-ce.ts';
 import type { AppDeps } from './app.ts';
 
 type Locale = 'en' | 'fr-CA';
@@ -68,6 +69,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (completed) {
       const lang = (await tx.query<{ locale: string }>('SELECT locale FROM app_users WHERE id = $1', [ctx.userId])).rows[0]?.locale ?? 'en';
       await tx.query('INSERT INTO certificates (tenant_id, enrollment_id, locale) VALUES ($1,$2,$3) ON CONFLICT (enrollment_id) DO NOTHING', [ctx.tenantId, enrollmentId, lang]);
+      await recordCeForCompletion(tx, ctx, enrollmentId, courseId);
     }
     return { progressPct: pct, completed };
   }
@@ -99,7 +101,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     const l = loc(req.query as { locale?: string });
     return run(ctx, async (tx) => {
       const rows = (await tx.query(
-        `SELECT c.id, c.status, c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description,
+        `SELECT c.id, c.status, c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description,
                 (SELECT count(*)::int FROM lessons x WHERE x.course_id = c.id) AS "lessonCount",
                 e.status AS "myStatus", e.progress_pct::float8 AS "myProgress", e.due_at AS "myDueAt"
            FROM courses c LEFT JOIN enrollments e ON e.course_id = c.id AND e.user_id = $1
@@ -113,7 +115,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { id } = req.params as { id: string };
     const l = loc(req.query as { locale?: string });
     return run(ctx, async (tx) => {
-      const c = (await tx.query(`SELECT c.id, c.status, c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
+      const c = (await tx.query(`SELECT c.id, c.status, c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
       if (!c) throw notFound('Course not found');
       const e = (await tx.query(`SELECT id, status, progress_pct::float8 AS "progressPct", due_at AS "dueAt", completed_at AS "completedAt" FROM enrollments WHERE course_id = $1 AND user_id = $2`, [id, ctx.userId])).rows[0] ?? null;
       const lessons = (await tx.query(
@@ -121,6 +123,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
            FROM lessons l LEFT JOIN lesson_progress p ON p.lesson_id = l.id AND p.enrollment_id = $2
           WHERE l.course_id = $1 ORDER BY l.position`, [id, e?.id ?? null])).rows;
       const cert = e ? (await tx.query(`SELECT id, verification_code AS "verificationCode", issued_at AS "issuedAt" FROM certificates WHERE enrollment_id = $1`, [e.id])).rows[0] ?? null : null;
+      if (cert) cert.url = `${deps.config.appOrigin}/c/${cert.verificationCode}`;
       const canEdit = canAuthorAt(ctx, c.ownerNodeId);
       const locales = canEdit ? (await tx.query(`SELECT locale, title, description FROM course_locales WHERE course_id = $1`, [id])).rows : undefined;
       return { ...c, canEdit, enrollment: e, certificate: cert, lessons: lessons.map((x) => ({ ...x, done: Boolean(x.done) })), locales };
@@ -129,11 +132,11 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.patch(
     '/v1/courses/:id',
-    { schema: { params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { title: { type: 'string', minLength: 1, maxLength: 200 }, description: { type: 'string', maxLength: 4000 }, locale: localeProp, status: { enum: ['draft', 'published', 'archived'] }, quebecFacing: { type: 'boolean' } } } } },
+    { schema: { params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { title: { type: 'string', minLength: 1, maxLength: 200 }, description: { type: 'string', maxLength: 4000 }, locale: localeProp, status: { enum: ['draft', 'published', 'archived'] }, quebecFacing: { type: 'boolean' }, ce: { anyOf: [{ type: 'null' }, { type: 'object', required: ['pack', 'hours', 'category'], additionalProperties: false, properties: { pack: { type: 'string', maxLength: 30 }, hours: { type: 'number', minimum: 0.5, maximum: 40 }, category: { enum: ['technical', 'management', 'ethics', 'professional_development', 'general'] } } }] } } } } },
     async (req, reply) => {
       const { ctx } = await deps.authenticate(req);
       const { id } = req.params as { id: string };
-      const b = req.body as { title?: string; description?: string; locale?: Locale; status?: string; quebecFacing?: boolean };
+      const b = req.body as { title?: string; description?: string; locale?: Locale; status?: string; quebecFacing?: boolean; ce?: { pack: string; hours: number; category: string } | null };
       await run(ctx, async (tx) => {
         const c = await loadCourse(tx, id);
         requireAuthor(ctx, c.owner_node_id);
@@ -154,6 +157,11 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
         }
         if (b.status !== undefined || b.quebecFacing !== undefined) {
           await tx.query('UPDATE courses SET status = coalesce($2::course_status, status), quebec_facing = coalesce($3, quebec_facing), updated_at = now() WHERE id = $1', [id, b.status ?? null, b.quebecFacing ?? null]);
+        }
+        if (b.ce !== undefined) {
+          if (b.ce && Math.round(b.ce.hours * 2) !== b.ce.hours * 2) throw invalid('Hours go in half-hour steps');
+          if (b.ce && !(await tx.query('SELECT 1 FROM ce_rule_packs WHERE code = $1 AND active', [b.ce.pack])).rowCount) throw invalid('Unknown regulator');
+          await tx.query('UPDATE courses SET ce_pack = $2, ce_hours = $3, ce_category = $4, updated_at = now() WHERE id = $1', [id, b.ce?.pack ?? null, b.ce?.hours ?? null, b.ce?.category ?? null]);
         }
         await audit(tx, ctx, b.status ? `course_${b.status}` : 'course_updated', 'course', id);
       });
@@ -414,9 +422,10 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { ctx } = await deps.authenticate(req);
     const l = loc(req.query as { locale?: string });
     return run(ctx, async (tx) => ({
+      origin: deps.config.appOrigin,
       enrollments: (await tx.query(
         `SELECT e.id, e.course_id AS "courseId", ${courseText('title', l)} AS title, e.status, e.progress_pct::float8 AS "progressPct", e.due_at AS "dueAt", e.completed_at AS "completedAt",
-                ct.verification_code AS "certificateCode"
+                ct.verification_code AS "certificateCode", c.ce_hours::float8 AS "ceHours"
            FROM enrollments e JOIN courses c ON c.id = e.course_id LEFT JOIN certificates ct ON ct.enrollment_id = e.id
           WHERE e.user_id = $1 ORDER BY (e.status = 'completed'), e.due_at NULLS LAST, e.started_at DESC NULLS LAST`, [ctx.userId])).rows,
     }));

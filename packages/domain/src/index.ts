@@ -5,3 +5,4 @@ export * from './consent.ts';
 export * from './fields.ts';
 export * from './settings.ts';
 export * from './compliance.ts';
+export * from './ce.ts';

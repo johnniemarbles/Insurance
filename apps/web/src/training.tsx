@@ -1,23 +1,32 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { Strings } from './i18n.ts';
 import type { Locale } from './types.ts';
+import { CourseCe, MyCe, PeopleCe, ceStrings } from './ce.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface CourseRow { id: string; status: string; title: string; description: string; lessonCount: number; myStatus: string | null; myProgress: number | null; myDueAt: string | null; canEdit: boolean }
 interface LessonRow { id: string; type: string; title: string; required: boolean; done: boolean }
-interface CourseDetail { id: string; status: string; title: string; description: string; canEdit: boolean; enrollment: { status: string; progressPct: number; dueAt: string | null } | null; certificate: { verificationCode: string; issuedAt: string } | null; lessons: LessonRow[]; locales?: { locale: string; title: string; description: string | null }[] }
+interface CourseDetail { id: string; status: string; title: string; description: string; cePack: string | null; ceHours: number | null; ceCategory: string | null; canEdit: boolean; enrollment: { status: string; progressPct: number; dueAt: string | null } | null; certificate: { verificationCode: string; issuedAt: string; url?: string } | null; lessons: LessonRow[]; locales?: { locale: string; title: string; description: string | null }[] }
 type View = { k: 'list' } | { k: 'course'; id: string } | { k: 'lesson'; courseId: string; id: string };
 
 const move = <T,>(a: T[], i: number, d: number): T[] => { const b = [...a]; const j = i + d; if (j < 0 || j >= b.length) return b; [b[i], b[j]] = [b[j]!, b[i]!]; return b; };
 const Bar = ({ pct }: { pct: number }) => <div class="pbar" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.min(100, pct)}%` }} /></div>;
 
-export function TrainingView({ call, t, locale, canAuthor }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean }) {
+export function TrainingView({ call, t, locale, canAuthor, isHeadOffice = false, isAdmin = false }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; isHeadOffice?: boolean; isAdmin?: boolean }) {
+  const k = ceStrings(locale);
+  const tabs = isHeadOffice ? (['officer', 'my'] as const) : (canAuthor || isAdmin ? (['courses', 'my', 'team'] as const) : (['courses', 'my'] as const));
+  const [tab, setTab] = useState<string>(tabs[0]);
   const [view, setView] = useState<View>({ k: 'list' });
+  const label: Record<string, string> = { courses: k.courses, my: k.my, team: k.team, officer: k.officer };
   return (
     <div class="train">
-      {view.k === 'list' && <CourseList call={call} t={t} locale={locale} canAuthor={canAuthor} onOpen={(id) => setView({ k: 'course', id })} />}
-      {view.k === 'course' && <CoursePage key={view.id} id={view.id} call={call} t={t} locale={locale} onBack={() => setView({ k: 'list' })} onLesson={(id) => setView({ k: 'lesson', courseId: (view as { id: string }).id, id })} />}
-      {view.k === 'lesson' && <LessonPage key={view.id} id={view.id} call={call} t={t} locale={locale} onBack={() => setView({ k: 'course', id: view.courseId })} />}
+      {(view.k === 'list' || tab !== 'courses') && <div class="tpad" style={{ paddingBottom: 0 }}><div class="seg" role="tablist">{tabs.map((x) => <button role="tab" aria-selected={tab === x} onClick={() => { setTab(x); setView({ k: 'list' }); }}>{label[x]}</button>)}</div></div>}
+      {tab === 'my' && <MyCe call={call} locale={locale} />}
+      {tab === 'team' && <PeopleCe call={call} locale={locale} officer={false} />}
+      {tab === 'officer' && <PeopleCe call={call} locale={locale} officer={true} />}
+      {tab === 'courses' && view.k === 'list' && <CourseList call={call} t={t} locale={locale} canAuthor={canAuthor} onOpen={(id) => setView({ k: 'course', id })} />}
+      {tab === 'courses' && view.k === 'course' && <CoursePage key={view.id} id={view.id} call={call} t={t} locale={locale} onBack={() => setView({ k: 'list' })} onLesson={(id) => setView({ k: 'lesson', courseId: (view as { id: string }).id, id })} />}
+      {tab === 'courses' && view.k === 'lesson' && <LessonPage key={view.id} id={view.id} call={call} t={t} locale={locale} onBack={() => setView({ k: 'course', id: view.courseId })} />}
     </div>
   );
 }
@@ -87,7 +96,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
       <h1>{c.title} {c.status === 'draft' && <span class="tag">{t.draft}</span>}</h1>
       <p class="muted">{c.description}</p>
       {c.enrollment && <><Bar pct={c.enrollment.progressPct} /><small>{c.enrollment.status === 'completed' ? `✓ ${t.completed}` : `${Math.round(c.enrollment.progressPct)}%`}{c.enrollment.dueAt && c.enrollment.status !== 'completed' ? ` · ${t.due} ${new Date(c.enrollment.dueAt).toLocaleDateString(locale)}` : ''}</small></>}
-      {c.certificate && <p class="ok">🎓 {t.certificate}: <b>{c.certificate.verificationCode}</b> · {new Date(c.certificate.issuedAt).toLocaleDateString(locale)}</p>}
+      {c.certificate && <p class="ok">🎓 {t.certificate}: <b>{c.certificate.verificationCode}</b> · {new Date(c.certificate.issuedAt).toLocaleDateString(locale)}{c.certificate.url && <> · <a href={c.certificate.url} target="_blank" rel="noopener noreferrer">{ceStrings(locale).certOpen}</a></>}</p>}
       {err && <div class="err">{err}</div>}{note && <div class="ok">{note}</div>}
 
       <h3>{t.lessonsTitle}</h3>
@@ -122,6 +131,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
               : <button class="btn quiet" onClick={() => void act(() => call('PATCH', `/v1/courses/${id}`, { status: 'draft' }))}>{t.unpublish}</button>}
           </div>
 
+          <CourseCe call={call} locale={locale} courseId={id} value={c} onSaved={load} />
           {c.status === 'published' && (
             <>
               <h3>{t.assign}</h3>
@@ -160,6 +170,7 @@ function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t
   const [text, setText] = useState('');
   const [url, setUrl] = useState('');
   const [editing, setEditing] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
   const load = useCallback(() => { call('GET', `/v1/lessons/${id}?locale=${locale}`).then((r) => { setL(r); setText(r.body?.text ?? ''); setUrl(r.body?.url ?? ''); }, (e) => setErr((e as Error).message)); }, [call, id, locale]);
   useEffect(load, [load]);
   if (!l) return <div class="msg">{err || t.loading}</div>;
@@ -204,7 +215,8 @@ function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t
           <div class="actions"><button class="btn quiet" onClick={() => setEditing((v) => !v)}>{t.edit}</button></div>
           {editing && (
             <div>
-              {l.type === 'richtext' && <><label for="lt">{t.lessonText}</label><textarea id="lt" class="wide" rows={8} value={text} onInput={(e) => setText((e.target as HTMLTextAreaElement).value)} /></>}
+              {l.type === 'richtext' && <><label for="lt">{t.lessonText}</label><textarea id="lt" class="wide" rows={8} value={text} onInput={(e) => setText((e.target as HTMLTextAreaElement).value)} />
+                <div class="actions"><button class="btn quiet" disabled={aiBusy} onClick={async () => { const topic = prompt(ceStrings(locale).aiTopic, l.title); if (!topic) return; setAiBusy(true); setErr(''); try { const r = await call('POST', '/v1/lessons/draft', { topic, locale, ...(text.trim() ? { notes: text.slice(0, 5000) } : {}) }); setText(r.text); } catch (e) { setErr((e as Error).message); } setAiBusy(false); }}>{aiBusy ? ceStrings(locale).aiBusy : `✨ ${ceStrings(locale).aiLesson}`}</button><small class="muted">{ceStrings(locale).aiNote}</small></div></>}
               {(l.type === 'link' || l.type === 'video') && <><label for="lu">https://</label><input id="lu" class="wide" value={url} onInput={(e) => setUrl((e.target as HTMLInputElement).value)} /></>}
               <div class="actions"><button class="btn" onClick={async () => { try { await call('PATCH', `/v1/lessons/${id}`, { locale, ...(l.type === 'richtext' ? { text } : { url }) }); setEditing(false); load(); } catch (e) { setErr((e as Error).message); } }}>{t.saveBtn}</button></div>
             </div>
@@ -221,6 +233,7 @@ function QuizEditor({ lessonId, call, t, locale, existing, onSaved }: { lessonId
   const [qs, setQs] = useState<Draft[]>(existing.map((q) => ({ prompt: q.prompt, type: q.type, options: q.options.map((o) => o.text), correct: (q.correct ?? []).map(Number) })));
   const [open, setOpen] = useState(false);
   const [msg, setMsg] = useState('');
+  const [aiBusy, setAiBusy] = useState(false); const [aiNote, setAiNote] = useState(false);
   const set = (i: number, patch: Partial<Draft>) => setQs((cur) => cur.map((q, k) => (k === i ? { ...q, ...patch } : q)));
   const save = async () => {
     setMsg('');
@@ -252,8 +265,10 @@ function QuizEditor({ lessonId, call, t, locale, existing, onSaved }: { lessonId
           ))}
           <div class="actions">
             <button class="btn quiet" onClick={() => setQs((cur) => [...cur, { prompt: '', type: 'single', options: ['', ''], correct: [0] }])}>+ {t.question}</button>
+            <button class="btn quiet" disabled={aiBusy} onClick={async () => { setMsg(''); setAiBusy(true); try { const r = await call('POST', `/v1/lessons/${lessonId}/quiz/draft`, { locale }); setQs((cur) => [...cur, ...(r.questions as Draft[])]); setAiNote(true); } catch (e) { setMsg((e as Error).message); } setAiBusy(false); }}>{aiBusy ? ceStrings(locale).aiBusy : `✨ ${ceStrings(locale).aiQuiz}`}</button>
             <button class="btn" onClick={save} disabled={qs.length === 0 || qs.some((q) => !q.prompt.trim() || q.options.some((o) => !o.trim()) || q.correct.length === 0)}>{t.saveBtn}</button>
           </div>
+          {aiNote && <p class="muted">⚠ {ceStrings(locale).aiNote}</p>}
           {msg && <p class={msg === t.saved ? 'ok' : 'err'}>{msg}</p>}
         </div>
       )}

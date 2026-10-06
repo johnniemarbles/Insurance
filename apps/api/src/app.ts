@@ -26,6 +26,7 @@ import { registerSettingRoutes } from './routes-settings.ts';
 import { registerNavRoutes } from './routes-nav.ts';
 import { registerRenewalRoutes } from './renewals.ts';
 import { registerComplianceRoutes } from './routes-compliance.ts';
+import { registerCeRoutes } from './routes-ce.ts';
 import { registerDuplicateRoutes } from './routes-duplicates.ts';
 import { registerPublicApiRoutes } from './routes-publicapi.ts';
 import { registerDashboardRoutes } from './routes-dashboard.ts';
@@ -138,6 +139,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerNavRoutes(app, deps);
   registerRenewalRoutes(app, deps);
   registerComplianceRoutes(app, deps);
+  registerCeRoutes(app, deps);
   registerDuplicateRoutes(app, deps);
   registerNotificationRoutes(app, deps);
   registerPrivacyRoutes(app, deps);
