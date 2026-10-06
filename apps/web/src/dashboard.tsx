@@ -44,7 +44,7 @@ function Bars({ rows, fmt, color }: { rows: { label: string; v: number; sub?: st
   );
 }
 
-export function DashboardPanel({ call, locale, currency }: { call: Call; locale: Locale; currency: string }) {
+export function DashboardPanel({ call, locale, currency, slim }: { call: Call; locale: Locale; currency: string; slim?: boolean }) {
   const x = X[locale];
   const [days, setDays] = useState(30);
   const [pid, setPid] = useState('');
@@ -68,10 +68,10 @@ export function DashboardPanel({ call, locale, currency }: { call: Call; locale:
         <label>{x.pipeline} <select value={pid} onChange={(e) => setPid((e.target as HTMLSelectElement).value)}><option value="">{x.allP}</option>{d.pipelines.map((p) => <option value={p.id}>{p.name}</option>)}</select></label>
       </div>
       <div class="kpis">
-        <div><b>{t.openCount}</b><span>{x.open}</span><small>{m(t.openValue)}</small></div>
-        <div><b>{t.won}</b><span>{x.won}</span><small>{m(t.wonValue)}</small></div>
+        {!slim && <div><b>{t.openCount}</b><span>{x.open}</span><small>{m(t.openValue)}</small></div>}
+        {!slim && <div><b>{t.won}</b><span>{x.won}</span><small>{m(t.wonValue)}</small></div>}
         <div><b>{t.lost}</b><span>{x.lost}</span></div>
-        <div><b>{pct(t.winRate)}</b><span>{x.winRate}</span></div>
+        {!slim && <div><b>{pct(t.winRate)}</b><span>{x.winRate}</span></div>}
         <div><b>{t.daysToWin == null ? '—' : Math.round(t.daysToWin)}</b><span>{x.days2win}</span></div>
         <div><b>{t.created}</b><span>{x.created}</span></div>
       </div>

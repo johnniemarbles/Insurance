@@ -25,6 +25,11 @@ interface HomeData {
   defaultPipeline: string;
 }
 
+const K = {
+  'en': { open: 'Open', won: 'Won (30 days)', win: 'Win rate', due: 'Due today', ren: 'Renewals (30 days)', stuck: 'Need attention', doNow: 'Do now', empty: 'Nothing is overdue or stuck. You are all caught up.', first: 'Add your first record', first2: 'or import a spreadsheet', activity: 'Team activity', noAct: 'Activity shows up here as your team works.', perf: 'Performance', company: 'Company overview', moved: (n: string) => `moved to ${n}`, created: 'added', note: 'wrote a note', later: 'Upcoming', quick: 'Quick actions' },
+  'fr-CA': { open: 'Ouverts', won: 'Gagnés (30 jours)', win: 'Taux de réussite', due: 'À faire aujourd’hui', ren: 'Renouvellements (30 jours)', stuck: 'À surveiller', doNow: 'À faire maintenant', empty: 'Rien n’est en retard ni bloqué. Tout est à jour.', first: 'Ajoutez votre premier dossier', first2: 'ou importez un chiffrier', activity: 'Activité de l’équipe', noAct: 'L’activité s’affiche ici au fil du travail de l’équipe.', perf: 'Performance', company: 'Vue d’ensemble de l’entreprise', moved: (n: string) => `a déplacé vers ${n}`, created: 'a ajouté', note: 'a écrit une note', later: 'À venir', quick: 'Actions rapides' },
+};
+
 const X = {
   'en': {
     welcome: (n: string) => (n ? `Welcome, ${n}` : 'Welcome'),
@@ -66,8 +71,6 @@ const X = {
 export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose, meEmail }: { call: Call; t: Strings; locale: Locale; go: (page: string, id?: string) => void; name: string; isAdmin?: boolean; currency?: string; compose?: ComposeApi; meEmail?: string }) {
   const x = X[locale];
   const ol = overviewLabels(locale);
-  const [view, setView] = useState<'overview' | 'mine'>(() => { try { const v = localStorage.getItem('pii.homeview'); return v === 'overview' || v === 'mine' ? v : isAdmin ? 'overview' : 'mine'; } catch { return isAdmin ? 'overview' : 'mine'; } });
-  const pick = (v: 'overview' | 'mine') => { setView(v); try { localStorage.setItem('pii.homeview', v); } catch { /* private window */ } };
   const [d, setD] = useState<HomeData | null>(null);
   const [err, setErr] = useState('');
   const [pipes, setPipes] = useState<Pipeline[]>([]);
@@ -77,9 +80,13 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
   const [taskOpen, setTaskOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [toast, setToast] = useState('');
+  const [kp, setKp] = useState<{ totals: { openCount: number; openValue: number; won: number; wonValue: number; winRate: number | null } } | null>(null);
+  const [feed, setFeed] = useState<{ id: string; kind: string; at: string; boxId: string; boxName: string; actor: string | null; fromStage: string | null; toStage: string | null; body: string | null }[]>([]);
   const load = () => call('GET', '/v1/home').then(setD, (e) => setErr((e as Error).message));
   useEffect(() => {
     void load();
+    call('GET', '/v1/dashboard?days=30').then(setKp, () => undefined);
+    call('GET', '/v1/newsfeed?scope=all&limit=8').then((r) => setFeed(r.items), () => undefined);
     call('GET', '/v1/pipelines').then((r) => setPipes(r.pipelines as Pipeline[]), () => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [call]);
@@ -98,14 +105,6 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
     for (const p of pipes) p.stages.forEach((s, i) => m.set(`${p.id}|${s.name}`, stageColor(p.colorTheme, s, i)));
     return (pipelineId: string, stage: string) => m.get(`${pipelineId}|${stage}`) ?? '#6b7280';
   }, [pipes]);
-  const adminView = view === 'overview';
-  const switcher = (
-    <div class="seg" role="tablist" aria-label={ol.title} style={{ margin: '0 0 8px' }}>
-      <button role="tab" aria-selected={view === 'overview'} onClick={() => pick('overview')}>{ol.title}</button>
-      <button role="tab" aria-selected={view === 'mine'} onClick={() => pick('mine')}>{ol.mine}</button>
-    </div>
-  );
-  if (adminView) return <div class="home">{switcher}{isAdmin && <OverviewPanel call={call} locale={locale} go={go} currency={currency ?? 'CAD'} />}<DashboardPanel call={call} locale={locale} currency={currency ?? 'CAD'} /></div>;
   if (err) return <ErrorBar msg={err} retry={t.retry} />;
   if (!d) return <div class="msg">…</div>;
   const late = (iso: string | null) => (iso ? new Date(iso) < new Date(new Date().setHours(0, 0, 0, 0)) : false);
@@ -133,54 +132,57 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
     setToast(x.emailDone);
     void compose.send({ to: meEmail, subject: x.digestSubject(today), html, review: true }).then((r) => { if (!r.ok && r.error?.startsWith('Could not open')) setToast(x.emailFail); }, () => setToast(x.emailFail));
   };
+  const k = K[locale];
+  const pct = (n: number | null | undefined) => (n == null ? '—' : `${Math.round(n * 100)}%`);
+  const renSoon = (d.renewals ?? []).filter((r) => r.daysLeft <= 30).length;
+  const dueToday = d.tasks.length;
+  type Row = { key: string; label: string; tone: string; title: string; sub: string; open: () => void };
+  const doNow: Row[] = [
+    ...d.tasks.filter((t0) => late(t0.dueAt)).map((t0): Row => ({ key: `t${t0.id}`, label: x.fTask, tone: 'warn', title: t0.title, sub: t0.boxName ?? '', open: () => openTask(t0) })),
+    ...d.risks.map((r): Row => ({ key: `r${r.id}`, label: x.fRisk, tone: 'warn', title: r.name, sub: r.reasons.map((w) => x.why[w] ?? w).join(' · '), open: () => openRec(r) })),
+    ...(d.renewals ?? []).filter((r) => r.daysLeft <= 7).map((r): Row => ({ key: `n${r.id}`, label: x.fRenew, tone: '', title: r.name, sub: x.rLeft(r.daysLeft), open: () => openRec(r) })),
+    ...d.tasks.filter((t0) => !late(t0.dueAt)).map((t0): Row => ({ key: `d${t0.id}`, label: x.fToday, tone: '', title: t0.title, sub: t0.boxName ?? '', open: () => openTask(t0) })),
+  ].slice(0, 8);
+  const brandNew = d.recent.length === 0 && pipes.length > 0;
+  const act = (f: (typeof feed)[number]) => (f.kind === 'note' ? k.note : f.toStage && f.fromStage ? k.moved(f.toStage) : f.toStage ? k.created : k.created);
   return (
     <div class="home">
-      {switcher}
-      <div class="hwelcome"><div><h2>{x.greet(new Date().getHours(), first)}</h2><span class="muted">{today}</span></div><span class="spacer" />
-        {d.week?.ring && (() => { const w = d.week; const pct = Math.min(100, Math.round((w.done / Math.max(1, w.goal)) * 100)); return (
-          <div class="goal" title={`${w.done} / ${w.goal}`}><div class="ring" role="img" aria-label={`${w.done} / ${w.goal}`} style={{ '--p': pct } as any}><span>{w.done}/{w.goal}</span></div><small class="muted">{locale === 'fr-CA' ? (pct >= 100 ? 'Objectif atteint !' : 'Cette semaine') : (pct >= 100 ? 'Goal reached!' : 'This week')}</small></div>); })()}
+      <div class="hhead">
+        <div><h2>{x.greet(new Date().getHours(), first)}</h2><span class="muted">{today}</span></div>
+        <span class="spacer" />
+        {compose && meEmail && <button class="link" onClick={() => void emailDay()}>{x.emailDay}</button>}
+        {d.week?.ring && (() => { const w = d.week; const p = Math.min(100, Math.round((w.done / Math.max(1, w.goal)) * 100)); return (
+          <div class="goal" title={`${w.done} / ${w.goal}`}><div class="ring" role="img" aria-label={`${w.done} / ${w.goal}`} style={{ '--p': p } as any}><span>{w.done}/{w.goal}</span></div></div>
+        ); })()}
       </div>
-      <p class="muted hsum">{x.summary(d.tasks.length, d.risks.length)}{(() => { const n = (d.renewals ?? []).filter((r) => r.daysLeft <= 30).length; return n ? (locale === 'fr-CA' ? ` · ${n} renouvellement${n === 1 ? '' : 's'} d’ici 30 jours` : ` · ${n} renewal${n === 1 ? '' : 's'} within 30 days`) : ''; })()}</p>
 
-      <section class="hsec hfocus" aria-label={x.focus}>
-        <div class="hsec-h"><h3>{x.focus}</h3>{compose && meEmail && <button class="link" onClick={() => void emailDay()}>{x.emailDay}</button>}</div>
-        {focus.length === 0 && <p class="muted">{x.focusEmpty}</p>}
-        <div class="fgrid">
-          {focus.map((f) => (
-            <button class="fcard" key={f.key} onClick={f.open}><small class="muted">{f.label}</small><b>{f.title}</b>{f.sub && <span class="muted">{f.sub}</span>}</button>
-          ))}
-        </div>
-      </section>
+      <div class="qbar" role="toolbar" aria-label={k.quick}>
+        <button class="qchip act" onClick={() => actPipe && go('pipelines', `${actPipe}::new`)}>＋ {x.newRecord}</button>
+        <button class="qchip act" onClick={() => setTaskOpen(true)}>✓ {x.newTask}</button>
+        <button class="qchip act" onClick={() => go('merges')}>✉ {x.merge}</button>
+        <button class="qchip act" onClick={() => actPipe && go('pipelines', `${actPipe}::import`)}>⇪ {x.import}</button>
+        {d.pins.map((v) => <button class="qchip" key={v.id} onClick={() => go('pipelines', `${v.pipelineId}:${v.id}`)} title={v.pipeline}>▤ {v.name}</button>)}
+        <button class="link" onClick={() => setEditOpen(true)}>{x.edit}</button>
+      </div>
 
-      <section class="hsec" aria-label={x.quick}>
-        <div class="hsec-h"><h3>{x.quick}</h3><button class="link" onClick={() => setEditOpen(true)}>{x.edit}</button></div>
-        <div class="qa">
-          {d.pins.map((v) => (
-            <button class="qcard" key={v.id} onClick={() => go('pipelines', `${v.pipelineId}:${v.id}`)}>
-              <span class="qico" aria-hidden="true">▤</span><span class="qname">{v.name}</span><small class="muted">{v.pipeline}</small>
-            </button>
-          ))}
-          {d.pins.length === 0 && <p class="muted qhint">{x.noPins}</p>}
-          <span class="qsep" aria-hidden="true" />
-          <button class="qcard act" onClick={() => actPipe && go('pipelines', `${actPipe}::new`)}><span class="qico" aria-hidden="true">＋</span><span class="qname">{x.newRecord}</span></button>
-          <button class="qcard act" onClick={() => setTaskOpen(true)}><span class="qico" aria-hidden="true">✓</span><span class="qname">{x.newTask}</span></button>
-          <button class="qcard act" onClick={() => go('merges')}><span class="qico" aria-hidden="true">✉</span><span class="qname">{x.merge}</span></button>
-          <button class="qcard act" onClick={() => actPipe && go('pipelines', `${actPipe}::import`)}><span class="qico" aria-hidden="true">⇪</span><span class="qname">{x.import}</span></button>
-        </div>
-      </section>
+      <div class="kstrip">
+        <button class="ktile" onClick={() => go('pipelines')}><b>{kp ? kp.totals.openCount : '…'}</b><span>{k.open}</span><small>{kp ? money(kp.totals.openValue, currency ?? 'CAD', locale) : ''}</small></button>
+        <button class="ktile" onClick={() => go('pipelines')}><b>{kp ? kp.totals.won : '…'}</b><span>{k.won}</span><small>{kp ? money(kp.totals.wonValue, currency ?? 'CAD', locale) : ''}</small></button>
+        <button class="ktile" onClick={() => go('pipelines')}><b>{kp ? pct(kp.totals.winRate) : '…'}</b><span>{k.win}</span></button>
+        <div class={`ktile${dueToday ? ' hot' : ''}`}><b>{dueToday}</b><span>{k.due}</span></div>
+        <button class="ktile" onClick={() => go('renewals')}><b>{renSoon}</b><span>{k.ren}</span></button>
+        <div class={`ktile${d.risks.length ? ' hot' : ''}`}><b>{d.risks.length}</b><span>{k.stuck}</span></div>
+      </div>
 
-      <div class="homegrid">
-        <section class="hcard"><div class="hsec-h"><h3>{x.recent}</h3>
-          <div class="seg2" role="tablist">
-            <button role="tab" aria-selected={tab === 'recents'} onClick={() => setTab('recents')}>{x.recents}</button>
-            <button role="tab" aria-selected={tab === 'trending'} onClick={() => setTab('trending')}>{x.trending}</button>
-          </div></div>
-          {rows.length === 0 && <p class="muted">{tab === 'recents' ? x.noRecent : x.noTrending}</p>}
-          {rows.map((r) => (
-            <button class="hrow" key={r.id} onClick={() => openRec(r)}>
-              <span class="rname">{r.name}</span>
-              <span class="stagechip" style={{ background: colorOf(r.pipelineId, r.stage) }}>{r.stage}</span>
-              <small class="muted">{r.pipeline} · {tab === 'trending' && r.activity ? x.moves(r.activity) : `${x.ago} ${new Date(r.updatedAt).toLocaleDateString(locale)}`}</small>
+      <div class="hcols">
+        <section class="hcard" aria-label={k.doNow}>
+          <div class="hsec-h"><h3>{k.doNow}</h3></div>
+          {doNow.length === 0 && (brandNew
+            ? <div class="nudge"><p>{k.first}</p><div class="erow"><button class="btn" onClick={() => actPipe && go('pipelines', `${actPipe}::new`)}>＋ {x.newRecord}</button><span class="muted">{k.first2}</span><button class="btn quiet" onClick={() => actPipe && go('pipelines', `${actPipe}::import`)}>⇪ {x.import}</button></div></div>
+            : <p class="muted">{k.empty}</p>)}
+          {doNow.map((r) => (
+            <button class="hrow" key={r.key} onClick={r.open}>
+              <span class="rname">{r.title}</span><small class="muted">{r.sub}</small><span class={`chip${r.tone ? ` ${r.tone}` : ''}`}>{r.label}</span>
             </button>
           ))}
         </section>
@@ -191,13 +193,13 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
           {pipes.length === 0 && <p class="muted">{x.noStages}</p>}
           {pipe && (
             <>
-              <div class="snap">
+              <div class="snap vsnap">
                 {pipe.stages.map((s, i) => {
                   const m = sum?.find((z) => z.stageId === s.id);
                   return (
                     <button class="snapstage" key={s.id} style={{ borderTopColor: stageColor(pipe.colorTheme, s, i) }} onClick={() => go('pipelines', pipe.id)}>
                       <b>{sum ? m?.count ?? 0 : '…'}</b><span>{s.name}</span>
-                      {m && m.value > 0 && <small class="muted">{money(m.value, 'CAD', locale)}</small>}
+                      {m && m.value > 0 && <small class="muted">{money(m.value, currency ?? 'CAD', locale)}</small>}
                     </button>
                   );
                 })}
@@ -206,53 +208,65 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
             </>
           )}
         </section>
+      </div>
 
-        <section class="hcard"><h3>{x.due}</h3>
-          {d.tasks.length === 0 && <p class="muted">{x.noTasks}</p>}
-          {d.tasks.map((k) => (
-            <button class="hrow" key={k.id} onClick={() => openTask(k)}>
-              <span>{k.title}</span><small class="muted">{k.boxName ?? ''}</small>
-              <span class={`chip${late(k.dueAt) ? ' warn' : ''}`}>{late(k.dueAt) ? x.overdue : x.today}</span>
-            </button>
-          ))}
-        </section>
-        <section class="hcard"><h3>{x.later}</h3>
-          {(d.upcoming ?? []).length === 0 && <p class="muted">—</p>}
-          {(d.upcoming ?? []).map((k) => (
-            <button class="hrow" key={k.id} onClick={() => openTask(k)}>
-              <span>{k.title}</span><small class="muted">{k.boxName ?? ''}</small>
-              <span class="chip">{k.dueAt ? new Date(k.dueAt).toLocaleDateString(locale) : x.noDate}</span>
-            </button>
-          ))}
-        </section>
-        <section class="hcard"><div class="hsec-h"><h3>{x.radar}</h3><button class="link" onClick={() => go('renewals')}>{x.radarAll}</button></div>
-          {(d.renewals ?? []).length === 0 && <p class="muted">{x.noRadar}</p>}
-          {(d.renewals ?? []).map((r) => (
+      <div class="h3grid">
+        <section class="hcard"><div class="hsec-h"><h3>{x.recent}</h3>
+          <div class="seg2" role="tablist">
+            <button role="tab" aria-selected={tab === 'recents'} onClick={() => setTab('recents')}>{x.recents}</button>
+            <button role="tab" aria-selected={tab === 'trending'} onClick={() => setTab('trending')}>{x.trending}</button>
+          </div></div>
+          {rows.length === 0 && <p class="muted">{tab === 'recents' ? x.noRecent : x.noTrending}</p>}
+          {rows.slice(0, 6).map((r) => (
             <button class="hrow" key={r.id} onClick={() => openRec(r)}>
-              <span>{r.name}{r.policyType ? <span class="chip" style={{ marginLeft: '8px' }}>{r.policyType}</span> : null}</span><small class="muted">{r.pipeline}</small>
+              <span class="rname">{r.name}</span>
+              <span class="stagechip" style={{ background: colorOf(r.pipelineId, r.stage) }}>{r.stage}</span>
+              <small class="muted">{r.pipeline} · {tab === 'trending' && r.activity ? x.moves(r.activity) : `${x.ago} ${new Date(r.updatedAt).toLocaleDateString(locale)}`}</small>
+            </button>
+          ))}
+        </section>
+
+        <section class="hcard"><h3>{k.later}</h3>
+          {(d.upcoming ?? []).length === 0 && (d.renewals ?? []).length === 0 && <p class="muted">{x.noRadar}</p>}
+          {(d.renewals ?? []).slice(0, 4).map((r) => (
+            <button class="hrow" key={r.id} onClick={() => openRec(r)}>
+              <span>{r.name}{r.policyType ? <span class="chip" style={{ marginLeft: '8px' }}>{r.policyType}</span> : null}</span>
               <span class={`due ${r.daysLeft < 0 ? 'bad' : r.daysLeft <= 30 ? 'warn' : 'ok'}`}>{x.rLeft(r.daysLeft)}</span>
             </button>
           ))}
+          {(d.upcoming ?? []).slice(0, 4).map((u) => (
+            <button class="hrow" key={u.id} onClick={() => openTask(u)}>
+              <span>{u.title}</span><small class="muted">{u.boxName ?? ''}</small>
+              <span class="chip">{u.dueAt ? new Date(u.dueAt).toLocaleDateString(locale) : x.noDate}</span>
+            </button>
+          ))}
+          <button class="link" onClick={() => go('renewals')}>{x.radarAll}</button>
         </section>
-        <section class="hcard"><h3>{x.attention}</h3>
-          {d.risks.length === 0 && <p class="muted">{x.noRisk}</p>}
-          {d.risks.map((r) => (
-            <button class="hrow" key={r.id} onClick={() => openRec(r)}>
-              <span>{r.name}</span><small class="muted">{r.pipeline} · {r.stage} · {x.days(r.days)}</small>
-              <span>{r.reasons.map((k) => <span class="chip">{x.why[k] ?? k}</span>)}</span>
+
+        <section class="hcard"><h3>{k.activity}</h3>
+          {feed.length === 0 && <p class="muted">{k.noAct}</p>}
+          {feed.slice(0, 6).map((f) => (
+            <button class="hrow" key={`${f.kind}${f.id}`} onClick={() => go('pipelines')}>
+              <span><b>{f.actor ?? '—'}</b> {act(f)}</span><small class="muted">{f.boxName} · {new Date(f.at).toLocaleDateString(locale)}</small>
             </button>
           ))}
         </section>
-        <section class="hcard"><h3>{x.merges}</h3>
-          {d.merges.length === 0 && <p class="muted">{x.noMerges}</p>}
-          {d.merges.map((m) => (
-            <button class="hrow" key={m.id} onClick={() => go('merges')}>
-              <span>{m.name}</span><small class="muted">{x.sent(m.sent, m.total)}{m.status === 'paused' ? ` · ${x.paused}` : ''}{m.failed ? ` · ${m.failed} ✕` : ''}</small>
-              <progress max={m.total || 1} value={m.sent} />
-            </button>
-          ))}
-        </section>
+
+        {d.merges.length > 0 && (
+          <section class="hcard"><h3>{x.merges}</h3>
+            {d.merges.map((m) => (
+              <button class="hrow" key={m.id} onClick={() => go('merges')}>
+                <span>{m.name}</span><small class="muted">{x.sent(m.sent, m.total)}{m.status === 'paused' ? ` · ${x.paused}` : ''}{m.failed ? ` · ${m.failed} ✕` : ''}</small>
+                <progress max={m.total || 1} value={m.sent} />
+              </button>
+            ))}
+          </section>
+        )}
       </div>
+
+      <h3 class="hpart">{k.perf}</h3>
+      <DashboardPanel slim call={call} locale={locale} currency={currency ?? 'CAD'} />
+      {isAdmin && (<><h3 class="hpart">{k.company}</h3><OverviewPanel call={call} locale={locale} go={go} currency={currency ?? 'CAD'} /></>)}
 
       {taskOpen && <TaskDialog call={call} x={x} options={[...d.recent, ...d.trending.filter((r) => !d.recent.some((q) => q.id === r.id))]} onClose={() => setTaskOpen(false)} onDone={() => { setTaskOpen(false); setToast(x.saved); void load(); }} />}
       {editOpen && <PinsDialog call={call} x={x} views={d.views} onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); void load(); }} />}
