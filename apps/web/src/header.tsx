@@ -37,8 +37,8 @@ export const HEADER_CSS = `
 
 interface NavItem { id: string; name: string; count: number }
 const T = {
-  en: { bell: 'Notifications', all: 'See all in settings', markAll: 'Mark all read', clear: 'Nothing new', clearSub: 'We will tell you when something needs you.', open: 'Open PII', retry: 'Could not load. Try again', ago: (m: number) => (m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`) },
-  'fr-CA': { bell: 'Notifications', all: 'Tout voir dans les paramètres', markAll: 'Tout marquer comme lu', clear: 'Rien de nouveau', clearSub: 'Nous vous aviserons quand quelque chose vous attend.', open: 'Ouvrir PII', retry: 'Chargement impossible. Réessayer', ago: (m: number) => (m < 1 ? 'à l’instant' : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`) },
+  en: { bell: 'Notifications', all: 'See all in settings', markAll: 'Mark all read', clear: 'Nothing new', clearSub: 'We will tell you when something needs you.', open: 'Open PII', noticeT: 'Privacy notice', noticeRead: 'Read the privacy notice', noticeOk: 'I accept', retry: 'Could not load. Try again', ago: (m: number) => (m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`) },
+  'fr-CA': { bell: 'Notifications', all: 'Tout voir dans les paramètres', markAll: 'Tout marquer comme lu', clear: 'Rien de nouveau', clearSub: 'Nous vous aviserons quand quelque chose vous attend.', open: 'Ouvrir PII', noticeT: 'Avis de confidentialité', noticeRead: 'Lire l’avis de confidentialité', noticeOk: 'J’accepte', retry: 'Chargement impossible. Réessayer', ago: (m: number) => (m < 1 ? 'à l’instant' : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`) },
 };
 const changed = () => { try { window.dispatchEvent(new CustomEvent('pii-settings-changed')); } catch { /* ignore */ } };
 
@@ -50,6 +50,8 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
   const [open, setOpen] = useState<'' | 'bell' | 'menu'>('');
   const [bad, setBad] = useState(false);
   const [signedIn, setSignedIn] = useState(true);
+  const [consent, setConsent] = useState<string | null>(null);
+  const [needs, setNeeds] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const pos = useRef({ right: 8, top: 56 });
   const t = T[locale];
@@ -57,6 +59,7 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
     const [n, nav, me] = await Promise.all([host.transport('GET', '/v1/notifications?limit=20'), host.transport('GET', '/v1/nav'), host.transport('GET', '/v1/me')]);
     if (me.status === 401 || n.status === 401) { setSignedIn(false); return; }
     setSignedIn(true);
+    setNeeds(me.status === 200 && Boolean(me.json?.needsConsent));
     if (me.status === 200 && me.json?.user?.locale === 'fr-CA') setLocale('fr-CA');
     if (n.status === 200) { setList(n.json.notifications as N[]); setUnread(n.json.unread ?? 0); setBad(false); } else setBad(true);
     if (nav.status === 200) setItems((nav.json.items as NavItem[]).filter((i) => i.id !== 'notifications'));
@@ -90,7 +93,15 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8" /><path d="M10.3 20a2 2 0 0 0 3.4 0" /></svg>
         {unread > 0 && <span class="dot">{unread > 9 ? '9+' : unread}</span>}
       </button>
-      {open === 'menu' && (
+      {open === 'menu' && needs && (
+        <div class="pop" role="dialog" style={{ right: `${pos.current.right}px`, top: `${pos.current.top}px`, padding: '14px 16px' }}>
+          <b style={{ color: 'var(--navy)' }}>{t.noticeT}</b>
+          {consent === null ? <p><button class="lk" onClick={async () => { const r = await host.transport('GET', '/v1/consent/first-login'); setConsent(r.status === 200 ? String(r.json?.text ?? '') : t.retry); }}>{t.noticeRead}</button></p>
+            : <><p style={{ whiteSpace: 'pre-wrap', overflow: 'auto', maxHeight: '260px', fontSize: '13px' }}>{consent}</p>
+              <button class="lk" style={{ background: 'var(--pri)', color: '#fff' }} onClick={async () => { await host.transport('POST', '/v1/consent/first-login'); setConsent(null); await load().catch(() => undefined); changed(); }}>{t.noticeOk}</button></>}
+        </div>
+      )}
+      {open === 'menu' && !needs && (
         <div class="pop menu" role="menu" style={{ right: `${pos.current.right}px`, top: `${pos.current.top}px` }}>
           <div class="mh">PII · Punjab Insurance</div>
           {items.map((i) => <button class="mi" role="menuitem" onClick={() => go(i.id)}>{i.name}{i.count > 0 && i.id === 'home' && <small>{i.count}</small>}</button>)}
