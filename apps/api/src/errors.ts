@@ -27,6 +27,6 @@ export function mapDbError(err: unknown): HttpError | null {
   }
   if (e.code === '23505') return conflict('That already exists');
   if (e.code === '23503') return invalid('A referenced record does not exist');
-  if (e.code === '42501') return forbidden();
+  if (e.code === '42501') { if (process.env.PII_DEBUG_DB) console.error('42501', msg); return forbidden(); }
   return null;
 }

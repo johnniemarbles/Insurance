@@ -23,6 +23,7 @@ import { registerAiRoutes } from './routes-ai.ts';
 import { registerSettingRoutes } from './routes-settings.ts';
 import { registerNavRoutes } from './routes-nav.ts';
 import { registerRenewalRoutes } from './renewals.ts';
+import { registerComplianceRoutes } from './routes-compliance.ts';
 import { registerDuplicateRoutes } from './routes-duplicates.ts';
 import { registerNotificationRoutes } from './routes-notifications.ts';
 import { registerPrivacyRoutes } from './routes-privacy.ts';
@@ -80,6 +81,8 @@ export function buildApp(input: AppDeps): FastifyInstance {
     return reply.code(500).send({ error: { code: 'internal', message: 'Something went wrong' } });
   });
 
+  // Which country this server holds data for. Public and harmless: it lets the extension confirm a sign-in picker choice.
+  app.get('/v1/region', async () => ({ region: deps.config.region, country: deps.config.region === 'us' ? 'US' : 'CA' }));
   app.get('/healthz', async () => ({ ok: true }));
   app.get('/readyz', async (_req, reply) => {
     try {
@@ -119,6 +122,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerSettingRoutes(app, deps);
   registerNavRoutes(app, deps);
   registerRenewalRoutes(app, deps);
+  registerComplianceRoutes(app, deps);
   registerDuplicateRoutes(app, deps);
   registerNotificationRoutes(app, deps);
   registerPrivacyRoutes(app, deps);

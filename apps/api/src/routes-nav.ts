@@ -13,6 +13,7 @@ const NAMES: Record<string, Record<'en' | 'fr-CA', string>> = {
   notifications: { en: 'Notifications', 'fr-CA': 'Notifications' },
   pipelines: { en: 'Pipelines', 'fr-CA': 'Pipelines' },
   renewals: { en: 'Renewals', 'fr-CA': 'Renouvellements' },
+  compliance: { en: 'Compliance', 'fr-CA': 'Conformité' },
   contacts: { en: 'Contacts', 'fr-CA': 'Contacts' },
   merges: { en: 'Mail merges', 'fr-CA': 'Publipostages' },
   training: { en: 'Training', 'fr-CA': 'Formation' },
@@ -31,7 +32,7 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const order = layout.order.filter((id) => (NAV_ITEMS as readonly string[]).includes(id));
       for (const id of NAV_ITEMS) if (!order.includes(id)) order.push(id); // items added since the layout was saved
       const lms = process.env.LMS_ENABLED === '1';
-      const ids = order.filter((id) => !hidden.has(id) && (id !== 'training' || (lms && ctx.roles.some((r) => r.role !== 'partner')))); // Training: switched on, and only for people who are more than a plain Partner
+      const ids = order.filter((id) => !hidden.has(id) && (id !== 'compliance' || ctx.canUseCrm) && (id !== 'training' || (lms && ctx.roles.some((r) => r.role !== 'partner')))); // Training: switched on, and only for people who are more than a plain Partner
       if (!ids.includes('settings')) ids.push('settings'); // there is always a way back to Settings
       let tasksDue = 0;
       let pipelines: { id: string; name: string; count: number; views: { id: string; name: string }[] }[] = [];

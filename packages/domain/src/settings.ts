@@ -46,7 +46,7 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Default pipeline', 'fr-CA': 'Pipeline par défaut' }, help: { en: 'Opens first when you click Pipelines.', 'fr-CA': 'S’ouvre en premier quand vous cliquez sur Pipelines.' }, keywords: 'pipeline default first open home',
   },
   {
-    key: 'nav.layout', tab: 'leftPanel', type: 'json', default: { order: ['home', 'notifications', 'pipelines', 'renewals', 'contacts', 'merges', 'training', 'settings'], hidden: [] }, scopes: ALL, lockable: true,
+    key: 'nav.layout', tab: 'leftPanel', type: 'json', default: { order: ['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings'], hidden: [] }, scopes: ALL, lockable: true,
     label: { en: 'Left panel layout', 'fr-CA': 'Disposition du panneau de gauche' }, help: { en: 'Which items appear in Gmail’s left panel, and in what order.', 'fr-CA': 'Les éléments affichés dans le panneau de gauche de Gmail, et leur ordre.' }, keywords: 'left panel navigation menu sidebar order hide reorder',
   },
   {
@@ -56,6 +56,10 @@ export const SETTINGS: readonly SettingDef[] = [
   {
     key: 'merge.dailyCap', tab: 'email', type: 'int', default: 400, min: 10, max: 400, scopes: ALL, lockable: true,
     label: { en: 'Mail merge: emails per day', 'fr-CA': 'Publipostage : courriels par jour' }, help: { en: 'The most merge emails sent from your Gmail in one day. 400 is the highest allowed.', 'fr-CA': 'Le maximum de courriels de publipostage envoyés par jour depuis votre Gmail. 400 est le plafond.' }, keywords: 'mail merge limit cap daily send quota',
+  },
+  {
+    key: 'compliance.eoMinLimit', tab: 'organization', type: 'int', default: 0, min: 0, max: 100_000_000, scopes: ['tenant'], lockable: false,
+    label: { en: 'Smallest E&O coverage limit allowed', 'fr-CA': 'Plus petite limite de garantie E&O permise' }, help: { en: 'Partners must hold errors and omissions cover of at least this amount (in your country’s currency). 0 means no minimum. The country’s own minimum, if there is one, still applies.', 'fr-CA': 'Les partenaires doivent détenir une assurance responsabilité professionnelle d’au moins ce montant (dans la devise de votre pays). 0 signifie aucun minimum. Le minimum du pays, s’il y en a un, s’applique toujours.' }, keywords: 'compliance E&O errors omissions insurance limit minimum coverage',
   },
   {
     key: 'notify.assigned', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
@@ -97,9 +101,21 @@ export const SETTINGS: readonly SettingDef[] = [
     key: 'notify.invite_stale', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
     label: { en: 'An invitation is stuck', 'fr-CA': 'Une invitation est bloquée' }, help: { en: 'Nothing has happened 3 days after you invited someone.', 'fr-CA': 'Rien ne s’est passé 3 jours après votre invitation.' }, keywords: 'notification alert notify bell invitation stale waiting',
   },
+  {
+    key: 'notify.compliance_expiry', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'A licence or E&O policy is about to expire', 'fr-CA': 'Un permis ou une police E&O arrive à échéance' }, help: { en: 'Reminders come 30, 15 and 0 days before the date.', 'fr-CA': 'Des rappels sont envoyés 30, 15 et 0 jour avant la date.' }, keywords: 'notification alert compliance licence expiry E&O insurance reminder',
+  },
+  {
+    key: 'notify.compliance_review', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'A compliance file is submitted or reviewed', 'fr-CA': 'Un dossier de conformité est soumis ou examiné' }, help: { en: 'Head office approves or sends back a file, or a partner sends one for review.', 'fr-CA': 'Le siège social approuve ou renvoie un dossier, ou un partenaire en soumet un.' }, keywords: 'notification alert compliance review approved onboarding',
+  },
+  {
+    key: 'notify.appointment_request', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'A carrier appointment is requested', 'fr-CA': 'Une nomination auprès d’un assureur est demandée' }, help: { en: 'A partner asks head office to appoint them with a carrier.', 'fr-CA': 'Un partenaire demande au siège social de le faire nommer auprès d’un assureur.' }, keywords: 'notification alert carrier appointment',
+  },
 ] as const;
 
-export const NAV_ITEMS = ['home', 'notifications', 'pipelines', 'renewals', 'contacts', 'merges', 'training', 'settings'] as const;
+export const NAV_ITEMS = ['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings'] as const;
 export type NavItemId = (typeof NAV_ITEMS)[number];
 export interface NavLayout { order: string[]; hidden: string[] }
 

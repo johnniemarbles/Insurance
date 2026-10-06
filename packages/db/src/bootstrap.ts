@@ -6,6 +6,9 @@ export interface DeploymentInit {
   region: 'ca-qc' | 'us';
   environment: 'dev' | 'staging' | 'prod';
   physicalRegionVerified?: boolean;
+  /** The host is outside the companies' own region by decision (for example Canadian companies on a US host). Recorded and shown on the privacy page. */
+  hostedIn?: 'ca' | 'us';
+  residencyAcknowledged?: boolean;
 }
 
 /** One row per database, written once. The tenant region guard reads it. */
@@ -17,12 +20,20 @@ export async function bootstrapDeployment(databaseUrl: string, init: DeploymentI
     const row = existing.rows[0];
     if (row) {
       if (row.region !== init.region) throw new Error(`Database is already set up for region ${row.region}`);
+      // Where the host really is can be recorded (or corrected) later; the region itself never changes.
+      if (init.hostedIn !== undefined || init.residencyAcknowledged !== undefined || init.physicalRegionVerified !== undefined) {
+        await client.query(
+          `UPDATE deployment_info SET hosted_in = coalesce($1, hosted_in), residency_acknowledged = coalesce($2, residency_acknowledged), physical_region_verified = coalesce($3, physical_region_verified), environment = $4`,
+          [init.hostedIn ?? null, init.residencyAcknowledged ?? null, init.physicalRegionVerified ?? null, init.environment]);
+      }
       return;
     }
-    await client.query('INSERT INTO deployment_info (region, environment, physical_region_verified) VALUES ($1, $2, $3)', [
+    await client.query('INSERT INTO deployment_info (region, environment, physical_region_verified, hosted_in, residency_acknowledged) VALUES ($1, $2, $3, $4, $5)', [
       init.region,
       init.environment,
       init.physicalRegionVerified ?? false,
+      init.hostedIn ?? null,
+      init.residencyAcknowledged ?? false,
     ]);
   } finally {
     await client.end();
@@ -35,6 +46,8 @@ export interface TenantInit {
   defaultLocale?: 'en' | 'fr-CA';
   adminEmail: string;
   adminName?: string;
+  /** The country's head office: its Compliance people can review every other company's partners in this deployment. */
+  headOffice?: boolean;
 }
 
 export interface TenantCreated {
@@ -66,8 +79,8 @@ export async function bootstrapTenant(databaseUrl: string, init: TenantInit): Pr
     ] as const) {
       await client.query('SELECT set_config($1, $2, true)', [k, v]);
     }
-    await client.query('INSERT INTO tenants (id, name, country_code, region, default_locale) VALUES ($1, $2, $3, $4, $5)', [
-      tenantId, init.name, init.countryCode, region, init.defaultLocale ?? 'en',
+    await client.query('INSERT INTO tenants (id, name, country_code, region, default_locale, is_head_office) VALUES ($1, $2, $3, $4, $5, $6)', [
+      tenantId, init.name, init.countryCode, region, init.defaultLocale ?? 'en', init.headOffice ?? false,
     ]);
     await client.query('INSERT INTO tenant_settings (tenant_id, max_partner_levels) VALUES ($1, $2)', [tenantId, MAX_PARTNER_LEVELS]);
     await client.query(`INSERT INTO org_nodes (id, tenant_id, type, name) VALUES ($1, $2, 'tenant', $3)`, [rootNodeId, tenantId, init.name]);

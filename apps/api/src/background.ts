@@ -3,6 +3,7 @@ import { fireAutomations, runOne, type Trigger } from './automation-engine.ts';
 import { actingAs, flushEffects, type Effect } from './effects.ts';
 import { buildDigest } from './digest.ts';
 import { sweepRenewals } from './renewals.ts';
+import { sweepCompliance } from './routes-compliance.ts';
 import { emitEventNow } from './webhooks.ts';
 import type { AppDeps } from './app.ts';
 
@@ -81,7 +82,7 @@ export function startBackgroundJobs(deps: AppDeps): () => void {
   const tick = async () => {
     if (running) return;
     running = true;
-    try { await sweepStale(deps); await sweepDigests(deps); await sweepStaleInvitations(deps); await sweepRenewals(deps); } catch { /* next tick */ } finally { running = false; }
+    try { await sweepStale(deps); await sweepDigests(deps); await sweepStaleInvitations(deps); await sweepRenewals(deps); await sweepCompliance(deps); } catch { /* next tick */ } finally { running = false; }
   };
   const t = setInterval(() => void tick(), 10 * 60_000);
   t.unref();

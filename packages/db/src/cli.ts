@@ -27,13 +27,30 @@ try {
     if (!appRuntime || !appAuth) throw new Error('APP_DB_PASSWORD and AUTH_DB_PASSWORD are required');
     await ensureRoles(url, { appRuntime, appAuth });
     const r = await migrate(url);
-    await bootstrapDeployment(url, { region, environment, physicalRegionVerified: process.env.PHYSICAL_REGION_VERIFIED === 'true' });
+    const hostedIn = process.env.HOSTED_IN === 'us' || process.env.HOSTED_IN === 'ca' ? process.env.HOSTED_IN : undefined;
+    await bootstrapDeployment(url, {
+      region, environment, physicalRegionVerified: process.env.PHYSICAL_REGION_VERIFIED === 'true',
+      // HOSTED_IN=us on the Canadian deployment records the decision to host Canadian companies in the US.
+      ...(hostedIn ? { hostedIn, residencyAcknowledged: process.env.RESIDENCY_ACKNOWLEDGED === 'true' } : {}),
+    });
+    // Optional head office for this country, created once.
+    const ho = { name: process.env.BOOTSTRAP_HEAD_OFFICE_NAME, email: process.env.BOOTSTRAP_HEAD_OFFICE_ADMIN_EMAIL };
+    if (ho.name && ho.email) {
+      const c = new pg.Client({ connectionString: url });
+      await c.connect();
+      const has = (await c.query<{ n: number }>('SELECT count(*)::int AS n FROM tenants WHERE is_head_office')).rows[0]!.n;
+      await c.end();
+      if (has === 0) {
+        const t = await bootstrapTenant(url, { name: ho.name, countryCode: region === 'us' ? 'US' : 'CA', adminEmail: ho.email, headOffice: true });
+        console.log(`bootstrapped head office ${t.tenantId}`);
+      }
+    }
     // Optional first-tenant bootstrap from the environment, only while the database has no tenants.
     const bt = { name: process.env.BOOTSTRAP_TENANT_NAME, country: process.env.BOOTSTRAP_TENANT_COUNTRY, email: process.env.BOOTSTRAP_ADMIN_EMAIL };
     if (bt.name && bt.email && (bt.country === 'CA' || bt.country === 'US')) {
       const c = new pg.Client({ connectionString: url });
       await c.connect();
-      const n = (await c.query<{ n: number }>('SELECT count(*)::int AS n FROM tenants')).rows[0]!.n;
+      const n = (await c.query<{ n: number }>('SELECT count(*)::int AS n FROM tenants WHERE NOT is_head_office')).rows[0]!.n;
       await c.end();
       if (n === 0) {
         const t = await bootstrapTenant(url, { name: bt.name, countryCode: bt.country, adminEmail: bt.email, defaultLocale: (process.env.BOOTSTRAP_TENANT_LOCALE as 'en' | 'fr-CA') ?? 'en' });
@@ -49,19 +66,20 @@ try {
     const region = flag('region') as 'ca-qc' | 'us' | undefined;
     const environment = (flag('environment') ?? 'dev') as 'dev' | 'staging' | 'prod';
     if (region !== 'ca-qc' && region !== 'us') throw new Error('--region ca-qc|us is required');
-    await bootstrapDeployment(url, { region, environment, physicalRegionVerified: args.includes('--verified') });
+    const hostedIn = flag('hosted-in') as 'ca' | 'us' | undefined;
+    await bootstrapDeployment(url, { region, environment, physicalRegionVerified: args.includes('--verified'), ...(hostedIn ? { hostedIn, residencyAcknowledged: args.includes('--acknowledge') } : {}) });
     console.log(`deployment set: ${region} / ${environment}`);
   } else if (cmd === 'create-tenant') {
     const name = flag('name');
     const country = flag('country') as 'CA' | 'US' | undefined;
     const adminEmail = flag('admin-email');
     if (!name || !adminEmail || (country !== 'CA' && country !== 'US')) {
-      throw new Error('usage: create-tenant --name "<company>" --country CA|US --admin-email <email> [--admin-name <name>] [--locale en|fr-CA]');
+      throw new Error('usage: create-tenant --name "<company>" --country CA|US --admin-email <email> [--admin-name <name>] [--locale en|fr-CA] [--head-office]');
     }
-    const t = await bootstrapTenant(url, { name, countryCode: country, adminEmail, adminName: flag('admin-name'), defaultLocale: (flag('locale') as 'en' | 'fr-CA') ?? 'en' });
+    const t = await bootstrapTenant(url, { name, countryCode: country, adminEmail, adminName: flag('admin-name'), defaultLocale: (flag('locale') as 'en' | 'fr-CA') ?? 'en', headOffice: args.includes('--head-office') });
     console.log(JSON.stringify(t, null, 2));
   } else {
-    console.error('commands: migrate | bootstrap-deployment --region ca-qc|us [--environment dev|staging|prod] [--verified] | create-tenant ...');
+    console.error('commands: migrate | bootstrap-deployment --region ca-qc|us [--environment dev|staging|prod] [--verified] [--hosted-in ca|us --acknowledge] | create-tenant ...');
     process.exit(2);
   }
 } catch (err) {

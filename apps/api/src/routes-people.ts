@@ -21,6 +21,12 @@ async function isAdminAbove(tx: Tx, ctx: RequestContext, nodeId: string): Promis
   return rows[0]?.ok === true;
 }
 
+/** The Compliance role belongs to head office only, and head office has no use for the CRM roles. */
+async function requireRoleFits(tx: Tx, role: string): Promise<void> {
+  const ho = (await tx.query<{ h: boolean }>('SELECT coalesce(bool_or(is_head_office), false) AS h FROM tenants WHERE id = app_tenant_id()')).rows[0]!.h;
+  if (role === 'compliance' && !ho) throw invalid('The Compliance role is for head office only');
+}
+
 async function emailOf(tx: Tx, userId: string): Promise<string | null> {
   return (await tx.query<{ e: string }>('SELECT email::text AS e FROM app_users WHERE id = $1', [userId])).rows[0]?.e ?? null;
 }
@@ -41,6 +47,8 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
       product: { name: deps.config.productDisplayName, logoUrl: `${deps.config.appOrigin}/brand/logo.png` },
       isTenantAdmin: ctx.isTenantAdmin,
       roles: ctx.roles,
+      isHeadOffice: (await run(ctx, async (tx) => (await tx.query<{ h: boolean }>('SELECT app_is_head_office() AS h')).rows[0]!.h)),
+      country: deps.config.region === 'us' ? 'US' : 'CA',
       canAdminister: ctx.isTenantAdmin || ctx.adminNodeIds.length > 0,
     };
   });
@@ -82,6 +90,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
         if (!node.rows[0]) throw notFound('Unknown organization node');
         if (node.rows[0].type === 'tenant' && !ctx.isTenantAdmin) throw forbidden();
         if (!(await isAdminAbove(tx, ctx, body.nodeId))) throw forbidden('You can only invite people into a branch you administer');
+        await requireRoleFits(tx, role);
         if (role === 'admin' && !ctx.isTenantAdmin && node.rows[0].type === 'location') throw forbidden('Only a tenant admin can add a location admin');
         const { token, hash } = newToken();
         const expiresAt = new Date(Date.now() + INVITE_DAYS * 86_400_000);
@@ -195,6 +204,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
     const node = (await tx.query<{ type: string }>('SELECT type FROM org_nodes WHERE id = $1', [nodeId])).rows[0];
     if (!node) throw notFound('Unknown organization node');
     if (!(await isAdminAbove(tx, ctx, nodeId))) throw forbidden('You can only change roles in a branch you administer');
+    await requireRoleFits(tx, role);
     if (role === 'admin' && !ctx.isTenantAdmin && node.type !== 'partner') throw forbidden('Only a company administrator can make someone an admin here');
   }
 

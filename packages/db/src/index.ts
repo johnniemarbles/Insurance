@@ -34,16 +34,16 @@ export async function withRequestTx<T>(pool: Db, ctx: RequestContext, fn: (tx: T
 }
 
 /** Refuses to run if this database belongs to a different region than the app is configured for. */
-export async function assertDeployment(pool: Db, expectedRegion: string): Promise<{ region: string; environment: string; verified: boolean }> {
-  const { rows } = await pool.query<{ region: string; environment: string; physical_region_verified: boolean }>(
-    'SELECT region, environment, physical_region_verified FROM deployment_info',
+export async function assertDeployment(pool: Db, expectedRegion: string): Promise<{ region: string; environment: string; verified: boolean; hostedIn: 'ca' | 'us' | null; residencyAcknowledged: boolean }> {
+  const { rows } = await pool.query<{ region: string; environment: string; physical_region_verified: boolean; hosted_in: 'ca' | 'us' | null; residency_acknowledged: boolean }>(
+    'SELECT region, environment, physical_region_verified, hosted_in, residency_acknowledged FROM deployment_info',
   );
   const row = rows[0];
   if (!row) throw new Error('deployment_info is empty: run bootstrap-deployment first');
   if (row.region !== expectedRegion) {
     throw new Error(`Residency violation: database region is ${row.region} but app is configured for ${expectedRegion}`);
   }
-  return { region: row.region, environment: row.environment, verified: row.physical_region_verified };
+  return { region: row.region, environment: row.environment, verified: row.physical_region_verified, hostedIn: row.hosted_in, residencyAcknowledged: row.residency_acknowledged };
 }
 
 export interface LoginCandidate {
