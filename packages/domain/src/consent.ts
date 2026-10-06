@@ -6,14 +6,17 @@ export type Region = 'ca-qc' | 'us';
 
 export const NOTICE_VERSION = 'v1';
 
-export function regionText(locale: Locale, region: Region): string {
-  if (locale === 'fr-CA') return region === 'ca-qc' ? 'au Québec' : 'aux États-Unis';
-  return region === 'ca-qc' ? 'in Canada (Quebec)' : 'in the United States';
+/** Where the data physically is. Both countries run on servers in the United States today; set stored: 'CA' when a Canadian host is used. */
+export function regionText(locale: Locale, region: Region, stored: 'US' | 'CA' = 'US'): string {
+  const inCanada = stored === 'CA' && region === 'ca-qc';
+  if (locale === 'fr-CA') return inCanada ? 'au Canada' : 'sur des serveurs sécurisés aux États-Unis';
+  return inCanada ? 'in Canada' : 'on secure servers in the United States';
 }
 
 export interface FirstLoginParams {
   locale: Locale;
   region: Region;
+  stored?: 'US' | 'CA';
   companyName: string;
   locationName?: string;
   privacyEmail: string;
@@ -25,7 +28,7 @@ function above(params: { companyName: string; locationName?: string }): string {
 }
 
 export function firstLoginNotice(p: FirstLoginParams): string {
-  const region = regionText(p.locale, p.region);
+  const region = regionText(p.locale, p.region, p.stored);
   if (p.locale === 'fr-CA') {
     return (
       `Votre organisation (${p.companyName}) utilise ce système pour gérer les relations avec la clientèle et la formation. ` +
@@ -52,23 +55,24 @@ export function firstLoginNotice(p: FirstLoginParams): string {
 export interface LinkThreadParams {
   locale: Locale;
   region: Region;
+  stored?: 'US' | 'CA';
   recordName: string;
   companyName: string;
   locationName?: string;
 }
 
 export function linkThreadNotice(p: LinkThreadParams): string {
-  const region = regionText(p.locale, p.region);
+  const region = regionText(p.locale, p.region, p.stored);
   if (p.locale === 'fr-CA') {
     return (
       `Ajouter cette conversation à ${p.recordName}? Une copie de ce fil de courriels (contenu des messages et noms des pièces jointes) ` +
-      `sera conservée de façon sécurisée ${region} et sera visible par vous et par les personnes qui vous supervisent dans votre organisation (${above(p)}). ` +
+      `sera conservée ${region} et sera visible par vous et par les personnes qui vous supervisent dans votre organisation (${above(p)}). ` +
       `Vos autres courriels ne sont ni conservés en entier ni partagés. Vous pouvez retirer la conversation en tout temps; la copie conservée sera alors supprimée.`
     );
   }
   return (
     `Add this conversation to ${p.recordName}? A copy of this email thread (message content and attachment names) ` +
-    `will be stored securely ${region} and will be visible to you and to the people above you in your organization (${above(p)}). ` +
+    `will be stored ${region} and will be visible to you and to the people above you in your organization (${above(p)}). ` +
     `Your other emails are not stored in full or shared. You can remove the conversation at any time, which deletes the stored copy.`
   );
 }

@@ -185,6 +185,14 @@ test('landing pages exist for sign-in return, errors and privacy', async () => {
   assert.equal(home.statusCode, 200);
   assert.match(home.body, /You are signed in/);
   assert.equal((await app.inject({ method: 'GET', url: '/privacy' })).statusCode, 200);
+  { // privacy, terms and support: real pages, both languages, honest about where data is kept
+    for (const u of ['/privacy', '/terms', '/support']) {
+      const en = await app.inject({ method: 'GET', url: u }); assert.equal(en.statusCode, 200); assert.match(en.body, /lang="en"/);
+      const fr = await app.inject({ method: 'GET', url: `${u}?lang=fr` }); assert.equal(fr.statusCode, 200); assert.match(fr.body, /lang="fr-CA"/);
+    }
+    const p = (await app.inject({ method: 'GET', url: '/privacy' })).body;
+    assert.match(p, /Google API Services User Data Policy/); assert.match(p, /United States/); assert.ok(!/in Canada \(Quebec\)/.test(p));
+  }
   assert.equal((await app.inject({ method: 'GET', url: '/login?error=<script>' })).statusCode, 403);
   const logo = await app.inject({ method: 'GET', url: '/brand/logo.png' });
   assert.equal(logo.statusCode, 200);

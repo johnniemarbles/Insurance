@@ -27,6 +27,8 @@ export interface Config {
   supportEmail: string;
   supportUrl: string;
   termsUrl: string;
+  /** Country of the servers that hold the data, stated to people in the notices. */
+  dataCountry: 'US' | 'CA';
 }
 
 function req(env: Record<string, string | undefined>, name: string): string {
@@ -66,6 +68,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     supportEmail: env.SUPPORT_EMAIL ?? `support@${site}`,
     supportUrl: env.SUPPORT_URL ?? `https://${site}/support`,
     termsUrl: env.TERMS_URL ?? `https://${site}/terms`,
+    dataCountry: env.DATA_COUNTRY === 'CA' ? 'CA' : 'US',
     appEnv,
     region,
     productName: env.PRODUCT_NAME ?? 'PII',

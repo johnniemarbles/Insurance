@@ -27,6 +27,7 @@ export function registerConsentRoutes(app: FastifyInstance, deps: AppDeps): void
     return firstLoginNotice({
       locale: id.user.locale,
       region,
+      stored: deps.config.dataCountry,
       companyName: id.user.tenantName,
       locationName: locs.rows.map((r) => r.name).join(', ') || undefined,
       privacyEmail: deps.config.privacyEmail,

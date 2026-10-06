@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
 import { hashToken } from '@pii/platform';
 import type { AppDeps } from './app.ts';
+import { privacy, support, terms, type Lang, type LegalInfo } from './legal.ts';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
@@ -91,11 +92,34 @@ ${deps.google ? `<a class="btn" href="${esc(href)}">${t.go}</a>` : `<a class="bt
     return reply.code(q.error ? 403 : 200).type('text/html; charset=utf-8').send(page('Sign-in', `<p>${esc(msg)}</p>`, product));
   });
 
-  app.get('/privacy', async (_req, reply) =>
-    reply.type('text/html; charset=utf-8').send(
-      page('Privacy', `<p>The full privacy policy is being finalized. For questions or requests about your information, contact <a href="mailto:${esc(deps.config.privacyEmail)}">${esc(deps.config.privacyEmail)}</a>.</p>`, product),
-    ),
-  );
+  // Public pages: privacy, terms and support. English and French; ?lang=fr (or a French browser) picks French.
+  const info: LegalInfo = {
+    country: deps.config.region === 'us' ? 'US' : 'CA',
+    entity: deps.config.region === 'us' ? 'Punjab Insurance Broker Inc' : 'Punjab Insurance Agency Inc',
+    product: product,
+    privacyEmail: deps.config.privacyEmail,
+    supportEmail: deps.config.supportEmail,
+    stored: deps.config.dataCountry,
+    governing: process.env.TERMS_GOVERNING_LAW || undefined,
+    updated: process.env.LEGAL_UPDATED ?? '6 October 2026',
+  };
+  const doc = (kind: 'privacy' | 'terms' | 'support', build: typeof privacy) => async (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
+    const q = (req.query as { lang?: string }).lang;
+    const lang: Lang = q ? (q.startsWith('fr') ? 'fr-CA' : 'en') : (String(req.headers['accept-language'] ?? '').toLowerCase().startsWith('fr') ? 'fr-CA' : 'en');
+    const d = build(lang === 'fr-CA' ? { ...info, updated: process.env.LEGAL_UPDATED ?? '6 octobre 2026' } : info, lang);
+    const other = lang === 'fr-CA' ? { href: `/${kind}?lang=en`, label: 'English' } : { href: `/${kind}?lang=fr`, label: 'Français' };
+    const nav = lang === 'fr-CA' ? [['/privacy', 'Confidentialité'], ['/terms', 'Conditions'], ['/support', 'Soutien']] : [['/privacy', 'Privacy'], ['/terms', 'Terms'], ['/support', 'Support']];
+    const html = `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(d.title)} · ${esc(product)}</title>
+<style>:root{color-scheme:light dark}body{margin:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;color:#0f172a;background:#f8fafc}@media(prefers-color-scheme:dark){body{color:#e5e7eb;background:#0b1020}a{color:#8ab4ff}.nav a{color:#9aa6d1}}
+main{max-width:720px;margin:0 auto;padding:32px 20px 64px}header{display:flex;align-items:center;gap:12px;margin-bottom:8px}header img{width:40px;height:40px;border-radius:10px}.nav{margin-left:auto;display:flex;gap:14px;font-size:14px}.nav a{color:#475569;text-decoration:none}.nav a[aria-current]{font-weight:600;text-decoration:underline}
+h1{font-size:28px;margin:18px 0 8px;letter-spacing:-.01em}h2{font-size:18px;margin:28px 0 4px}p{margin:8px 0}a{color:#1d4ed8}</style></head>
+<body><main><header><img src="/brand/logo.png" alt=""><b>${esc(product)}</b><nav class="nav" aria-label="${lang === 'fr-CA' ? 'Pages' : 'Pages'}">${nav.map(([h, t]) => `<a href="${h}?lang=${lang === 'fr-CA' ? 'fr' : 'en'}"${h === '/' + kind ? ' aria-current="page"' : ''}>${t}</a>`).join('')}<a href="${other.href}" lang="${lang === 'fr-CA' ? 'en' : 'fr'}">${other.label}</a></nav></header>
+<h1>${esc(d.title)}</h1><p>${esc(d.intro)}</p>${d.sections.map((x) => `<h2>${esc(x.h)}</h2>${x.p.map((t) => `<p>${esc(t)}</p>`).join('')}`).join('')}</main></body></html>`;
+    return reply.type('text/html; charset=utf-8').header('cache-control', 'public, max-age=300').send(html);
+  };
+  app.get('/privacy', doc('privacy', privacy));
+  app.get('/terms', doc('terms', terms));
+  app.get('/support', doc('support', support));
 
   // The full-page PII app. The same bundle is also built into the Gmail extension.
   app.get('/app', async (_req, reply) =>

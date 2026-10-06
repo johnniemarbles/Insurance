@@ -40,7 +40,7 @@ export function registerThreadRoutes(app: FastifyInstance, deps: AppDeps): void 
       const box = await loadBox(tx, id);
       return {
         version: await currentNoticeVersion(tx),
-        text: linkThreadNotice({ locale: identity.user.locale, region: deps.config.region, recordName: box.name, companyName: identity.user.tenantName, locationName: box.location ?? undefined }),
+        text: linkThreadNotice({ locale: identity.user.locale, region: deps.config.region, stored: deps.config.dataCountry, recordName: box.name, companyName: identity.user.tenantName, locationName: box.location ?? undefined }),
       };
     });
   });
@@ -52,7 +52,7 @@ export function registerThreadRoutes(app: FastifyInstance, deps: AppDeps): void 
     const q = req.query as { recordName: string; locationName?: string };
     return run(identity.ctx, async (tx) => ({
       version: await currentNoticeVersion(tx),
-      text: linkThreadNotice({ locale: identity.user.locale, region: deps.config.region, recordName: q.recordName, companyName: identity.user.tenantName, locationName: q.locationName }),
+      text: linkThreadNotice({ locale: identity.user.locale, region: deps.config.region, stored: deps.config.dataCountry, recordName: q.recordName, companyName: identity.user.tenantName, locationName: q.locationName }),
     }));
   });
 
