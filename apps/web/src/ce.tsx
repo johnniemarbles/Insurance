@@ -21,7 +21,7 @@ const K = {
     officerHead: 'CE across the country', ofCompanies: 'Companies', met: 'Complete', risk: 'At risk', over: 'Overdue',
     ceCourse: 'Counts as continuing education', ceNo: 'Not CE', ceNote: 'Counts only if the regulator accepts the course. Completing it adds these hours to each learner’s record.', ceSave: 'Save',
     aiQuiz: 'Draft questions with AI', aiLesson: 'Draft with AI', aiNote: 'AI draft. Check every answer and fact before you save.', aiBusy: 'Drafting…', aiTopic: 'What should this lesson cover?',
-    certOpen: 'Open certificate',
+    certOpen: 'Open certificate', noPacks: 'No regulators are set up for your country yet. Your compliance officer will add them.',
   },
   'fr-CA': {
     my: 'Ma FC', team: 'FC de l’équipe', officer: 'Conformité', courses: 'Cours',
@@ -41,7 +41,7 @@ const K = {
     officerHead: 'FC dans tout le pays', met: 'Complété', risk: 'À risque', over: 'En retard',
     ceCourse: 'Compte comme formation continue', ceNo: 'Pas de FC', ceNote: 'Ne compte que si l’organisme accepte le cours. Le terminer ajoute ces heures au dossier de chaque apprenant.', ceSave: 'Enregistrer',
     aiQuiz: 'Rédiger des questions avec l’IA', aiLesson: 'Rédiger avec l’IA', aiNote: 'Brouillon IA. Vérifiez chaque réponse et chaque fait avant d’enregistrer.', aiBusy: 'Rédaction…', aiTopic: 'Que doit couvrir cette leçon?',
-    certOpen: 'Ouvrir l’attestation',
+    certOpen: 'Ouvrir l’attestation', noPacks: 'Aucun organisme n’est encore configuré pour votre pays. Votre responsable de la conformité les ajoutera.',
   },
 };
 export type CeStrings = (typeof K)['en'];
@@ -100,7 +100,8 @@ export function MyCe({ call, locale }: { call: Call; locale: Locale }) {
     <div class="tpad">
       <h1>{k.title}</h1><p class="muted">{k.intro}</p>
       {err && <div class="err">{err}</div>}{note && <div class="ok">{note}</div>}
-      {(!hasLic || editLic) && <><h3>{k.setup}</h3>{licForm}</>}
+      {packs.length === 0 && <p class="muted">{k.noPacks}</p>}
+      {packs.length > 0 && (!hasLic || editLic) && <><h3>{k.setup}</h3>{licForm}</>}
       {d.licences.map((l: any) => {
         const p = pack(l.packCode); const c = p?.classes.find((x) => x.key === l.licenceClass);
         return (

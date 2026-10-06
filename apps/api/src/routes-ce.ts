@@ -15,8 +15,10 @@ const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '
 
 interface PackRow { code: string; country: string; name: string; name_fr: string; source_url: string; term_start_month: number; term_start_day: number; term_months: number; requirements: { classes: any[] }; new_licensee_exempt: boolean; retention_years: number; retention_note: string; notes: string; notes_fr: string; as_of: string }
 
+/** The country this server belongs to: its people are only ever held to that country's regulators. */
+let deployCountry: 'CA' | 'US' = 'CA';
 export async function loadPacks(tx: Tx): Promise<PackRow[]> {
-  return (await tx.query<PackRow>(`SELECT code, country, name, name_fr, source_url, term_start_month, term_start_day, term_months, requirements, new_licensee_exempt, retention_years, retention_note, notes, notes_fr, as_of::text FROM ce_rule_packs WHERE active ORDER BY country, name`)).rows;
+  return (await tx.query<PackRow>(`SELECT code, country, name, name_fr, source_url, term_start_month, term_start_day, term_months, requirements, new_licensee_exempt, retention_years, retention_note, notes, notes_fr, as_of::text FROM ce_rule_packs WHERE active AND country = $1 ORDER BY name`, [deployCountry])).rows;
 }
 const packOut = (p: PackRow) => ({
   code: p.code, name: p.name, nameFr: p.name_fr, sourceUrl: p.source_url, classes: p.requirements.classes, retentionYears: p.retention_years, retentionNote: p.retention_note,
@@ -62,6 +64,7 @@ const csvCell = (v: unknown) => { const s = String(v ?? ''); return /[",\n\r]/.t
 const csv = (rows: unknown[][]) => rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
 export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
+  deployCountry = deps.config.region === 'us' ? 'US' : 'CA';
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
   const manages = (ctx: RequestContext) => ctx.isTenantAdmin || ctx.roles.some((r) => ['admin', 'manager', 'partner', 'trainer'].includes(r.role));
 
