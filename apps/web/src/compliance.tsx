@@ -19,7 +19,7 @@ const X = {
   'en': {
     title: 'Compliance', sub: 'Licences, E&O insurance and paperwork for each partner. PII keeps the status and copies of documents, never SIN, SSN or bank details.',
     headTitle: 'Compliance review', headSub: 'Files from every company in this country. You see compliance information only, never CRM records.',
-    countries: 'Countries', cTitle: 'All countries', cSub: 'Totals only. Each country is its own server, so you sign in to each once. Partner files stay inside their country.', cSign: 'Sign in', cOff: 'Not signed in', cNo: 'No head-office access in this account', cTotals: (c: number, p: number, w: number, e: number) => `${c} compan${c === 1 ? 'y' : 'ies'} · ${p} partner${p === 1 ? '' : 's'} · ${w} waiting · ${e} expiring`, cOpen: 'Open this country', cRefresh: 'Refresh',
+    countries: 'Countries', cTitle: 'All countries', cSub: 'Totals only. Each country is its own server, so you sign in to each once. Partner files stay inside their country.', cSign: 'Sign in', cOff: 'Not signed in', cNo: 'No head-office access in this account', cTotals: (c: number, p: number, w: number, e: number) => `${c} compan${c === 1 ? 'y' : 'ies'} · ${p} partner${p === 1 ? '' : 's'} · ${w} waiting · ${e} expiring`, cOpen: 'Open this country', cRefresh: 'Refresh', cConsent: 'Accept the privacy notice once in this country, then come back.', cSwitch: 'Switch to this country', cErr: 'This country refused the request. Try again, or ask support.',
     companies: 'Companies', newCo: 'Add a company', coName: 'Company name', coAdmin: 'Administrator email', coHelp: 'The administrator is invited by email. They sign in with Google, then set up their branches and partners.', coAdd: 'Create company', coNone: 'No companies yet.', coStat: (p: number, s: number, a: number) => `${p} partner${p === 1 ? '' : 's'} · ${s} waiting · ${a} approved`, invited: 'Not signed in yet', active: 'Active',
     review: 'To review', expiring: 'Expiring', all: 'All partners', search: 'Search partners or companies', none: 'Nothing here.', retry: 'Try again', back: 'All partners',
     status: { incomplete: 'Incomplete', submitted: 'Waiting for review', approved: 'Approved', rejected: 'Sent back' } as Record<string, string>,
@@ -41,7 +41,7 @@ const X = {
   'fr-CA': {
     title: 'Conformité', sub: 'Permis, assurance E&O et documents de chaque partenaire. PII conserve l’état et les copies des documents, jamais le NAS, le SSN ni les données bancaires.',
     headTitle: 'Examen de conformité', headSub: 'Dossiers de toutes les entreprises de ce pays. Vous voyez la conformité seulement, jamais les dossiers du CRM.',
-    countries: 'Pays', cTitle: 'Tous les pays', cSub: 'Totaux seulement. Chaque pays est un serveur distinct : connectez-vous à chacun une fois. Les dossiers des partenaires restent dans leur pays.', cSign: 'Se connecter', cOff: 'Non connecté', cNo: 'Aucun accès au siège social avec ce compte', cTotals: (c: number, p: number, w: number, e: number) => `${c} entreprise${c === 1 ? '' : 's'} · ${p} partenaire${p === 1 ? '' : 's'} · ${w} en attente · ${e} à échéance`, cOpen: 'Ouvrir ce pays', cRefresh: 'Actualiser',
+    countries: 'Pays', cTitle: 'Tous les pays', cSub: 'Totaux seulement. Chaque pays est un serveur distinct : connectez-vous à chacun une fois. Les dossiers des partenaires restent dans leur pays.', cSign: 'Se connecter', cOff: 'Non connecté', cNo: 'Aucun accès au siège social avec ce compte', cTotals: (c: number, p: number, w: number, e: number) => `${c} entreprise${c === 1 ? '' : 's'} · ${p} partenaire${p === 1 ? '' : 's'} · ${w} en attente · ${e} à échéance`, cOpen: 'Ouvrir ce pays', cRefresh: 'Actualiser', cConsent: 'Acceptez l’avis de confidentialité une fois dans ce pays, puis revenez.', cSwitch: 'Passer à ce pays', cErr: 'Ce pays a refusé la demande. Réessayez ou contactez le soutien.',
     companies: 'Entreprises', newCo: 'Ajouter une entreprise', coName: 'Nom de l’entreprise', coAdmin: 'Courriel de l’administrateur', coHelp: 'L’administrateur est invité par courriel. Il se connecte avec Google, puis configure ses succursales et ses partenaires.', coAdd: 'Créer l’entreprise', coNone: 'Aucune entreprise pour l’instant.', coStat: (p: number, s: number, a: number) => `${p} partenaire${p === 1 ? '' : 's'} · ${s} en attente · ${a} approuvé${a === 1 ? '' : 's'}`, invited: 'Pas encore connecté', active: 'Actif',
     review: 'À examiner', expiring: 'Échéances', all: 'Tous les partenaires', search: 'Chercher un partenaire ou une entreprise', none: 'Rien ici.', retry: 'Réessayer', back: 'Tous les partenaires',
     status: { incomplete: 'Incomplet', submitted: 'En attente d’examen', approved: 'Approuvé', rejected: 'Renvoyé' } as Record<string, string>,
@@ -285,7 +285,7 @@ function Appointment({ x, onAsk }: { x: typeof X['en']; onAsk: (carrier: string)
   );
 }
 
-interface Totals { state: 'loading' | 'out' | 'no' | 'ok'; companies: number; partners: number; waiting: number; expiring: number }
+interface Totals { state: 'loading' | 'out' | 'no' | 'consent' | 'err' | 'ok'; companies: number; partners: number; waiting: number; expiring: number }
 
 /** Main Admin view: one row per country with totals only. Each country is its own server and login, so each is asked separately. */
 function Countries({ host, locale }: { host: HostOptions; locale: Locale }) {
@@ -297,8 +297,10 @@ function Countries({ host, locale }: { host: HostOptions; locale: Locale }) {
     setT((o) => ({ ...o, [r.id]: { state: 'loading', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
     const me = await ask('/v1/me');
     if (me.status === 401 || me.status === 0 || me.status === -1) return setT((o) => ({ ...o, [r.id]: { state: 'out', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
+    if (me.status === 200 && me.json?.needsConsent) return setT((o) => ({ ...o, [r.id]: { state: 'consent', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
     if (me.status !== 200 || !me.json?.isHeadOffice) return setT((o) => ({ ...o, [r.id]: { state: 'no', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
     const [co, ex] = await Promise.all([ask('/v1/ho/companies'), ask('/v1/ho/expiring?days=60')]);
+    if (co.status !== 200 || ex.status !== 200) return setT((o) => ({ ...o, [r.id]: { state: 'err', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
     const list: any[] = co.json?.companies ?? [];
     setT((o) => ({ ...o, [r.id]: { state: 'ok', companies: list.length, partners: list.reduce((a, c) => a + c.partners, 0), waiting: list.reduce((a, c) => a + c.submitted, 0), expiring: (ex.json?.items ?? []).length } }));
   });
@@ -314,6 +316,8 @@ function Countries({ host, locale }: { host: HostOptions; locale: Locale }) {
             <span><b>{r.label}</b></span><span class="spacer" />
             {!v || v.state === 'loading' ? <small class="muted">…</small>
               : v.state === 'ok' ? <small class="muted">{x.cTotals(v.companies, v.partners, v.waiting, v.expiring)}</small>
+              : v.state === 'consent' ? <><small class="muted">{x.cConsent}</small><button class="btn" onClick={() => host.onSignIn(r.id)}>{x.cSwitch}</button></>
+              : v.state === 'err' ? <small class="muted">{x.cErr}</small>
               : v.state === 'no' ? <small class="muted">{x.cNo}</small>
               : <><span class="chip warn">{x.cOff}</span><button class="btn" onClick={() => host.onSignIn(r.id, true)}>{x.cSign}</button></>}
           </div>
