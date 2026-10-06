@@ -5,6 +5,7 @@ import { stageColor, money } from './theme.ts';
 import type { Locale, Pipeline } from './types.ts';
 import type { Strings } from './i18n.ts';
 import { OverviewPanel, overviewLabels } from './overview.tsx';
+import { DashboardPanel } from './dashboard.tsx';
 import type { ComposeApi } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -65,7 +66,7 @@ const X = {
 export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose, meEmail }: { call: Call; t: Strings; locale: Locale; go: (page: string, id?: string) => void; name: string; isAdmin?: boolean; currency?: string; compose?: ComposeApi; meEmail?: string }) {
   const x = X[locale];
   const ol = overviewLabels(locale);
-  const [view, setView] = useState<'overview' | 'mine'>(() => { try { const v = localStorage.getItem('pii.homeview'); return v === 'mine' ? 'mine' : 'overview'; } catch { return 'overview'; } });
+  const [view, setView] = useState<'overview' | 'mine'>(() => { try { const v = localStorage.getItem('pii.homeview'); return v === 'overview' || v === 'mine' ? v : isAdmin ? 'overview' : 'mine'; } catch { return isAdmin ? 'overview' : 'mine'; } });
   const pick = (v: 'overview' | 'mine') => { setView(v); try { localStorage.setItem('pii.homeview', v); } catch { /* private window */ } };
   const [d, setD] = useState<HomeData | null>(null);
   const [err, setErr] = useState('');
@@ -97,14 +98,14 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
     for (const p of pipes) p.stages.forEach((s, i) => m.set(`${p.id}|${s.name}`, stageColor(p.colorTheme, s, i)));
     return (pipelineId: string, stage: string) => m.get(`${pipelineId}|${stage}`) ?? '#6b7280';
   }, [pipes]);
-  const adminView = Boolean(isAdmin) && view === 'overview';
-  const switcher = isAdmin ? (
+  const adminView = view === 'overview';
+  const switcher = (
     <div class="seg" role="tablist" aria-label={ol.title} style={{ margin: '0 0 8px' }}>
       <button role="tab" aria-selected={view === 'overview'} onClick={() => pick('overview')}>{ol.title}</button>
       <button role="tab" aria-selected={view === 'mine'} onClick={() => pick('mine')}>{ol.mine}</button>
     </div>
-  ) : null;
-  if (adminView) return <div class="home">{switcher}<OverviewPanel call={call} locale={locale} go={go} currency={currency ?? 'CAD'} /></div>;
+  );
+  if (adminView) return <div class="home">{switcher}{isAdmin && <OverviewPanel call={call} locale={locale} go={go} currency={currency ?? 'CAD'} />}<DashboardPanel call={call} locale={locale} currency={currency ?? 'CAD'} /></div>;
   if (err) return <ErrorBar msg={err} retry={t.retry} />;
   if (!d) return <div class="msg">…</div>;
   const late = (iso: string | null) => (iso ? new Date(iso) < new Date(new Date().setHours(0, 0, 0, 0)) : false);

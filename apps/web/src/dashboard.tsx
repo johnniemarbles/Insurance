@@ -44,7 +44,7 @@ function Bars({ rows, fmt, color }: { rows: { label: string; v: number; sub?: st
   );
 }
 
-export function DashboardPage({ call, locale, currency }: { call: Call; locale: Locale; currency: string }) {
+export function DashboardPanel({ call, locale, currency }: { call: Call; locale: Locale; currency: string }) {
   const x = X[locale];
   const [days, setDays] = useState(30);
   const [pid, setPid] = useState('');
@@ -62,8 +62,7 @@ export function DashboardPage({ call, locale, currency }: { call: Call; locale: 
   const monthLabel = (s: string) => new Date(`${s}-01T00:00:00`).toLocaleDateString(locale, { month: 'short', year: '2-digit' });
   const agingLabel = (b: string) => `${b} ${x.dayWord}`;
   return (
-    <div class="home dash">
-      <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{x.title}</h2><span class="muted">{x.sub}</span></div></div>
+    <div class="dash">
       <div class="dfilters">
         <label>{x.period} <select value={days} onChange={(e) => setDays(Number((e.target as HTMLSelectElement).value))}>{[7, 30, 90, 365].map((n) => <option value={n}>{x.d(n)}</option>)}</select></label>
         <label>{x.pipeline} <select value={pid} onChange={(e) => setPid((e.target as HTMLSelectElement).value)}><option value="">{x.allP}</option>{d.pipelines.map((p) => <option value={p.id}>{p.name}</option>)}</select></label>
