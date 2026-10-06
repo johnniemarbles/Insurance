@@ -19,6 +19,7 @@ const X = {
   'en': {
     title: 'Compliance', sub: 'Licences, E&O insurance and paperwork for each partner. PII keeps the status and copies of documents, never SIN, SSN or bank details.',
     headTitle: 'Compliance review', headSub: 'Files from every company in this country. You see compliance information only, never CRM records.',
+    allC: 'All countries', cTot: (c: number, split: string) => `${c} compan${c === 1 ? 'y' : 'ies'} ${split}`, cCo: (n: number) => `${n} compan${n === 1 ? 'y' : 'ies'}`, cWait: (n: number) => `${n} waiting`, cExp: (n: number) => `${n} expiring`, cPart: (n: number) => `${n} partner${n === 1 ? '' : 's'}`, addTo: 'Country', coIn: (c: string) => `Companies in ${c}`, showing: 'Showing', clear: 'Show all',
     countries: 'Countries', cTitle: 'All countries', cSub: 'Totals only. Each country is its own server, so you sign in to each once. Partner files stay inside their country.', cSign: 'Sign in', cOff: 'Not signed in', cNo: 'No head-office access in this account', cTotals: (c: number, p: number, w: number, e: number) => `${c} compan${c === 1 ? 'y' : 'ies'} · ${p} partner${p === 1 ? '' : 's'} · ${w} waiting · ${e} expiring`, cOpen: 'Open this country', cRefresh: 'Refresh', cHere: 'You are here', cGo: 'Open this country', cConsent: 'Accept the privacy notice once in this country, then come back.', cSwitch: 'Switch to this country', cErr: 'This country refused the request. Try again, or ask support.',
     companies: 'Companies', newCo: 'Add a company', coName: 'Company name', coAdmin: 'Administrator email', coHelp: 'The administrator is invited by email. They sign in with Google, then set up their branches and partners.', coAdd: 'Create company', coNone: 'No companies yet.', coStat: (p: number, s: number, a: number) => `${p} partner${p === 1 ? '' : 's'} · ${s} waiting · ${a} approved`, invited: 'Not signed in yet', active: 'Active',
     review: 'To review', expiring: 'Expiring', all: 'All partners', search: 'Search partners or companies', none: 'Nothing here.', retry: 'Try again', back: 'All partners',
@@ -41,6 +42,7 @@ const X = {
   'fr-CA': {
     title: 'Conformité', sub: 'Permis, assurance E&O et documents de chaque partenaire. PII conserve l’état et les copies des documents, jamais le NAS, le SSN ni les données bancaires.',
     headTitle: 'Examen de conformité', headSub: 'Dossiers de toutes les entreprises de ce pays. Vous voyez la conformité seulement, jamais les dossiers du CRM.',
+    allC: 'Tous les pays', cTot: (c: number, split: string) => `${c} entreprise${c === 1 ? '' : 's'} ${split}`, cCo: (n: number) => `${n} entreprise${n === 1 ? '' : 's'}`, cWait: (n: number) => `${n} en attente`, cExp: (n: number) => `${n} à échéance`, cPart: (n: number) => `${n} partenaire${n === 1 ? '' : 's'}`, addTo: 'Pays', coIn: (c: string) => `Entreprises : ${c}`, showing: 'Affichage', clear: 'Tout afficher',
     countries: 'Pays', cTitle: 'Tous les pays', cSub: 'Totaux seulement. Chaque pays est un serveur distinct : connectez-vous à chacun une fois. Les dossiers des partenaires restent dans leur pays.', cSign: 'Se connecter', cOff: 'Non connecté', cNo: 'Aucun accès au siège social avec ce compte', cTotals: (c: number, p: number, w: number, e: number) => `${c} entreprise${c === 1 ? '' : 's'} · ${p} partenaire${p === 1 ? '' : 's'} · ${w} en attente · ${e} à échéance`, cOpen: 'Ouvrir ce pays', cRefresh: 'Actualiser', cHere: 'Vous êtes ici', cGo: 'Ouvrir ce pays', cConsent: 'Acceptez l’avis de confidentialité une fois dans ce pays, puis revenez.', cSwitch: 'Passer à ce pays', cErr: 'Ce pays a refusé la demande. Réessayez ou contactez le soutien.',
     companies: 'Entreprises', newCo: 'Ajouter une entreprise', coName: 'Nom de l’entreprise', coAdmin: 'Courriel de l’administrateur', coHelp: 'L’administrateur est invité par courriel. Il se connecte avec Google, puis configure ses succursales et ses partenaires.', coAdd: 'Créer l’entreprise', coNone: 'Aucune entreprise pour l’instant.', coStat: (p: number, s: number, a: number) => `${p} partenaire${p === 1 ? '' : 's'} · ${s} en attente · ${a} approuvé${a === 1 ? '' : 's'}`, invited: 'Pas encore connecté', active: 'Actif',
     review: 'À examiner', expiring: 'Échéances', all: 'Tous les partenaires', search: 'Chercher un partenaire ou une entreprise', none: 'Rien ici.', retry: 'Réessayer', back: 'Tous les partenaires',
@@ -83,30 +85,59 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
   const [rows, setRows] = useState<any[] | null>(null);
   const [exp, setExp] = useState<any[]>([]);
   const [err, setErr] = useState('');
-  const [tab, setTab] = useState<'review' | 'all' | 'expiring' | 'companies' | 'countries'>(ho ? 'review' : 'all');
+  const [tab, setTab] = useState<'review' | 'all' | 'expiring' | 'companies'>(ho ? 'review' : 'all');
   const [cos, setCos] = useState<any[]>([]);
   const [coName, setCoName] = useState(''); const [coMail, setCoMail] = useState(''); const [coErr, setCoErr] = useState('');
   const loadCos = () => call('GET', '/v1/ho/companies').then((r) => setCos(r.companies), () => undefined);
   const [q, setQ] = useState('');
   const regions = host?.regions ?? [];
   const multi = ho && regions.length > 1;
+  const here = host?.region ?? regions[0]?.id;
+  const hereLabel = regions.find((r) => r.id === here)?.label ?? '';
+  // A global admin starts on All countries. Coming from a click there (a country or a company) skips straight to that country.
+  const [scope, setScope] = useState<'all' | 'country'>(() => {
+    if (!multi) return 'country';
+    try { if (localStorage.getItem('pii.focus')) return 'country'; } catch { /* private window */ }
+    return 'all';
+  });
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('pii.focus'); if (!raw) return;
+      localStorage.removeItem('pii.focus');
+      const f = JSON.parse(raw) as { tab?: typeof tab; company?: string };
+      if (f.tab) setTab(f.tab); if (f.company) setQ(f.company);
+    } catch { /* ignore */ }
+  }, []);
+  const openCountry = (id: string, f?: { tab?: typeof tab; company?: string }) => {
+    if (id === here) { setScope('country'); setTab(f?.tab ?? 'review'); setQ(f?.company ?? ''); return; }
+    try { localStorage.setItem('pii.focus', JSON.stringify(f ?? { tab: 'review' })); } catch { /* private window */ }
+    host?.switchRegion?.(id);
+  };
+  const scopeBar = multi ? (
+    <div class="rstats" role="tablist" aria-label={x.allC} style={{ marginBottom: '8px' }}>
+      <button role="tab" aria-selected={scope === 'all'} class="rstat" onClick={() => setScope('all')}><span>{x.allC}</span></button>
+      {regions.map((r) => <button role="tab" aria-selected={scope === 'country' && r.id === here} class="rstat" onClick={() => openCountry(r.id)}><span>{r.label}</span></button>)}
+    </div>
+  ) : null;
   useEffect(() => {
     call('GET', `${base}/partners`).then((r) => setRows(r.partners), (e) => setErr((e as Error).message));
     if (ho) { call('GET', '/v1/ho/expiring?days=60').then((r) => setExp(r.items), () => undefined); void loadCos(); }
   }, [call]);
   const shown = useMemo(() => (rows ?? []).filter((r) => (tab !== 'review' || r.status === 'submitted') && `${r.name} ${r.company ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())), [rows, tab, q]);
+  if (multi && scope === 'all' && host) return <div class="home"><div class="hwelcome"><div><h2 style={{ margin: 0 }}>{x.headTitle}</h2><span class="muted">{x.cSub}</span></div></div>{scopeBar}<AllCountries host={host} locale={locale} open={openCountry} /></div>;
   if (err) return <ErrorBar msg={err} retry={x.retry} />;
   if (!rows) return <div class="msg">…</div>;
   const waiting = rows.filter((r) => r.status === 'submitted').length;
   return (
     <div class="home">
       <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{ho ? x.headTitle : x.title}</h2><span class="muted">{ho ? x.headSub : x.sub}</span></div></div>
+      {scopeBar}
       {ho && <div class="rstats" role="tablist">
-        {([['review', x.review, waiting], ['all', x.all, rows.length], ['expiring', x.expiring, exp.length], ['companies', x.companies, cos.length], ...(multi ? [['countries', x.countries, regions.length] as const] : [])] as const).map(([k, l, n]) => <button role="tab" aria-selected={tab === k} class={`rstat ${k === 'expiring' && n ? 'warn' : ''}`} onClick={() => setTab(k)}><b>{n}</b><span>{l}</span></button>)}
+        {([['review', x.review, waiting], ['all', x.all, rows.length], ['expiring', x.expiring, exp.length], ['companies', x.companies, cos.length]] as const).map(([k, l, n]) => <button role="tab" aria-selected={tab === k} class={`rstat ${k === 'expiring' && n ? 'warn' : ''}`} onClick={() => setTab(k)}><b>{n}</b><span>{l}</span></button>)}
       </div>}
-      {tab === 'countries' && host ? <Countries host={host} locale={locale} /> : tab === 'companies' ? (
+      {tab === 'companies' ? (
         <section class="hcard">
-          <h3>{x.newCo}</h3>
+          <h3>{multi ? x.coIn(hereLabel) : x.newCo}</h3>
           <form class="cform" onSubmit={async (e) => { e.preventDefault(); setCoErr(''); try { await call('POST', '/v1/ho/companies', { name: coName, adminEmail: coMail, locale }); setCoName(''); setCoMail(''); await loadCos(); } catch (er) { setCoErr((er as Error).message); } }}>
             <label class="fl">{x.coName}<input required minLength={2} maxLength={120} value={coName} onInput={(e) => setCoName((e.target as HTMLInputElement).value)} /></label>
             <label class="fl">{x.coAdmin}<input required type="email" value={coMail} onInput={(e) => setCoMail((e.target as HTMLInputElement).value)} /></label>
@@ -122,6 +153,7 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
         </section>
       ) : (
         <section class="hcard">
+          {q && rows.some((r) => r.company === q) && <p class="muted">{x.showing}: <b>{q}</b> <button class="lk" onClick={() => setQ('')}>{x.clear}</button></p>}
           <input type="search" placeholder={x.search} value={q} aria-label={x.search} onInput={(e) => setQ((e.target as HTMLInputElement).value)} style={{ width: '100%', marginBottom: '8px' }} />
           {shown.length === 0 && <p class="muted">{x.none}</p>}
           {shown.map((r) => (
@@ -285,45 +317,83 @@ function Appointment({ x, onAsk }: { x: typeof X['en']; onAsk: (carrier: string)
   );
 }
 
-interface Totals { state: 'loading' | 'out' | 'no' | 'consent' | 'err' | 'ok'; companies: number; partners: number; waiting: number; expiring: number }
+interface RegionData { state: 'loading' | 'out' | 'no' | 'consent' | 'err' | 'ok'; companies: any[]; expiring: any[] }
+const EMPTY: RegionData = { state: 'loading', companies: [], expiring: [] };
 
-/** Main Admin view: one row per country with totals only. Each country is its own server and login, so each is asked separately. */
-function Countries({ host, locale }: { host: HostOptions; locale: Locale }) {
+/** Global admin home: every country and its companies at once. Each country is its own server and login, so each is asked separately. */
+function AllCountries({ host, locale, open }: { host: HostOptions; locale: Locale; open: (region: string, f?: { tab?: 'review' | 'all' | 'expiring' | 'companies'; company?: string }) => void }) {
   const x = X[locale];
   const regions = host.regions ?? [];
-  const [t, setT] = useState<Record<string, Totals>>({});
+  const [d, setD] = useState<Record<string, RegionData>>({});
+  const [adding, setAdding] = useState(false);
+  const [aReg, setAReg] = useState(host.region ?? regions[0]?.id ?? '');
+  const [aName, setAName] = useState(''); const [aMail, setAMail] = useState(''); const [aErr, setAErr] = useState('');
+  const set = (id: string, v: RegionData) => setD((o) => ({ ...o, [id]: v }));
   const load = () => regions.forEach(async (r) => {
     const ask = (path: string) => host.transport('GET', path, undefined, r.id);
-    setT((o) => ({ ...o, [r.id]: { state: 'loading', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
+    set(r.id, EMPTY);
     const me = await ask('/v1/me');
-    if (me.status === 401 || me.status === 0 || me.status === -1) return setT((o) => ({ ...o, [r.id]: { state: 'out', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
-    if (me.status === 200 && me.json?.needsConsent) return setT((o) => ({ ...o, [r.id]: { state: 'consent', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
-    if (me.status !== 200 || !me.json?.isHeadOffice) return setT((o) => ({ ...o, [r.id]: { state: 'no', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
+    if (me.status === 401 || me.status === 0 || me.status === -1) return set(r.id, { ...EMPTY, state: 'out' });
+    if (me.status === 200 && me.json?.needsConsent) return set(r.id, { ...EMPTY, state: 'consent' });
+    if (me.status !== 200 || !me.json?.isHeadOffice) return set(r.id, { ...EMPTY, state: 'no' });
     const [co, ex] = await Promise.all([ask('/v1/ho/companies'), ask('/v1/ho/expiring?days=60')]);
-    if (co.status !== 200 || ex.status !== 200) return setT((o) => ({ ...o, [r.id]: { state: 'err', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
-    const list: any[] = co.json?.companies ?? [];
-    setT((o) => ({ ...o, [r.id]: { state: 'ok', companies: list.length, partners: list.reduce((a, c) => a + c.partners, 0), waiting: list.reduce((a, c) => a + c.submitted, 0), expiring: (ex.json?.items ?? []).length } }));
+    if (co.status !== 200 || ex.status !== 200) return set(r.id, { ...EMPTY, state: 'err' });
+    set(r.id, { state: 'ok', companies: co.json?.companies ?? [], expiring: ex.json?.items ?? [] });
   });
   useEffect(() => { load(); }, []);
+  const ok = regions.map((r) => ({ r, v: d[r.id] })).filter((e) => e.v?.state === 'ok');
+  const sum = (f: (v: RegionData) => number) => ok.reduce((a, e) => a + f(e.v!), 0);
+  const waiting = (v: RegionData) => v.companies.reduce((a, c) => a + c.submitted, 0);
+  const split = (f: (v: RegionData) => number) => `(${ok.map((e) => `${e.r.id.toUpperCase()} ${f(e.v!)}`).join(' · ')})`;
+  const tiles: [string, number, (v: RegionData) => number, string][] = [
+    [x.review, sum(waiting), waiting, 'review'], [x.expiring, sum((v) => v.expiring.length), (v) => v.expiring.length, 'expiring'], [x.companies, sum((v) => v.companies.length), (v) => v.companies.length, 'companies']];
   return (
-    <section class="hcard">
-      <h3>{x.cTitle}</h3>
-      <p class="muted">{x.cSub}</p>
+    <>
+      <div class="rstats">{tiles.map(([l, n, f, tab]) => <div class={`rstat ${tab === 'expiring' && n ? 'warn' : ''}`}><b>{n}</b><span>{l}</span>{ok.length > 1 && <small class="muted">{split(f)}</small>}</div>)}</div>
       {regions.map((r) => {
-        const v = t[r.id];
+        const v = d[r.id] ?? EMPTY;
         return (
-          <div class="erow" key={r.id}>
-            <span><b>{r.label}</b>{r.id === host.region && <span class="chip ok" style={{ marginLeft: '8px' }}>{x.cHere}</span>}</span><span class="spacer" />
-            {!v || v.state === 'loading' ? <small class="muted">…</small>
-              : v.state === 'ok' ? <><small class="muted">{x.cTotals(v.companies, v.partners, v.waiting, v.expiring)}</small>{r.id !== host.region && host.switchRegion && <button class="btn" onClick={() => host.switchRegion!(r.id)}>{x.cGo}</button>}</>
-              : v.state === 'consent' ? <><small class="muted">{x.cConsent}</small><button class="btn" onClick={() => host.onSignIn(r.id)}>{x.cSwitch}</button></>
-              : v.state === 'err' ? <small class="muted">{x.cErr}</small>
-              : v.state === 'no' ? <small class="muted">{x.cNo}</small>
-              : <><span class="chip warn">{x.cOff}</span><button class="btn" onClick={() => host.onSignIn(r.id, true)}>{x.cSign}</button></>}
-          </div>
+          <section class="hcard" key={r.id}>
+            <div class="erow">
+              <button class="lk" onClick={() => open(r.id)}><b>{r.label}</b></button>
+              {r.id === host.region && <span class="chip ok">{x.cHere}</span>}
+              <span class="spacer" />
+              {v.state === 'ok' && <small class="muted">{x.cCo(v.companies.length)} · {x.cWait(waiting(v))}</small>}
+            </div>
+            {v.state === 'loading' && <p class="muted">…</p>}
+            {v.state === 'out' && <p><span class="chip warn">{x.cOff}</span> <button class="btn" onClick={() => host.onSignIn(r.id, true)}>{x.cSign}</button></p>}
+            {v.state === 'consent' && <p><small class="muted">{x.cConsent}</small> <button class="btn" onClick={() => host.onSignIn(r.id)}>{x.cSwitch}</button></p>}
+            {v.state === 'no' && <p class="muted">{x.cNo}</p>}
+            {v.state === 'err' && <p class="muted">{x.cErr}</p>}
+            {v.state === 'ok' && v.companies.length === 0 && <p class="muted">{x.coNone}</p>}
+            {v.state === 'ok' && v.companies.map((c) => {
+              const ex = v.expiring.filter((i) => i.company === c.name).length;
+              return (
+                <button class="hrow" key={c.id} onClick={() => open(r.id, { tab: c.submitted ? 'review' : ex ? 'expiring' : 'all', company: c.name })}>
+                  <span class="rname">{c.name} <small class="muted">· {c.adminEmail}</small></span>
+                  <small class="muted">{x.cPart(c.partners)}{c.submitted ? ` · ${x.cWait(c.submitted)}` : ''}{ex ? ` · ${x.cExp(ex)}` : ''}</small>
+                  <span class={`chip ${c.adminStatus === 'invited' ? 'warn' : 'ok'}`}>{c.adminStatus === 'invited' ? x.invited : x.active}</span>
+                </button>
+              );
+            })}
+          </section>
         );
       })}
-      <p><button class="btn" onClick={load}>{x.cRefresh}</button></p>
-    </section>
+      <section class="hcard">
+        {!adding ? <button class="btn" onClick={() => setAdding(true)}>+ {x.newCo}</button> : (
+          <form class="cform" onSubmit={async (e) => {
+            e.preventDefault(); setAErr('');
+            const r = await host.transport('POST', '/v1/ho/companies', { name: aName, adminEmail: aMail, locale }, aReg);
+            if (r.status >= 200 && r.status < 300) { setAName(''); setAMail(''); setAdding(false); load(); } else setAErr(r.json?.error?.message ?? `Error ${r.status}`);
+          }}>
+            <label class="fl">{x.addTo}<select value={aReg} onChange={(e) => setAReg((e.target as HTMLSelectElement).value)}>{regions.map((r) => <option value={r.id}>{r.label}</option>)}</select></label>
+            <label class="fl">{x.coName}<input required minLength={2} maxLength={120} value={aName} onInput={(e) => setAName((e.target as HTMLInputElement).value)} /></label>
+            <label class="fl">{x.coAdmin}<input required type="email" value={aMail} onInput={(e) => setAMail((e.target as HTMLInputElement).value)} /></label>
+            <button class="btn" type="submit">{x.coAdd}</button> <button class="lk" type="button" onClick={() => setAdding(false)}>{x.cancel}</button>
+            {aErr && <p class="err" role="alert">{aErr}</p>}
+          </form>
+        )}
+      </section>
+    </>
   );
 }
