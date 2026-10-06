@@ -5,6 +5,8 @@ import { stageColor, money } from './theme.ts';
 import type { Locale, Pipeline } from './types.ts';
 import type { Strings } from './i18n.ts';
 import { OverviewPanel, overviewLabels } from './overview.tsx';
+import { HomeLearning } from './ce.tsx';
+import { LMS } from './features.ts';
 import { DashboardPanel } from './dashboard.tsx';
 import type { ComposeApi } from './types.ts';
 
@@ -173,6 +175,8 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
         <button class="ktile" onClick={() => go('renewals')}><b>{renSoon}</b><span>{k.ren}</span></button>
         <div class={`ktile${d.risks.length ? ' hot' : ''}`}><b>{d.risks.length}</b><span>{k.stuck}</span></div>
       </div>
+
+      {LMS && <HomeLearning call={call} locale={locale} go={go} />}
 
       <div class="hcols">
         <section class="hcard" aria-label={k.doNow}>

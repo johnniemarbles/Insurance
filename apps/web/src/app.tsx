@@ -96,7 +96,7 @@ const older = (have?: string, need?: string) => {
 };
 
 type PageId = 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance' | 'contacts' | 'merges' | 'training' | 'settings';
-const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
+const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'renewals', 'training', 'compliance', 'contacts', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
 function Shell({ isHeadOffice, isAdmin, call, t, locale, canAuthor, meEmail, meName, compose, host, minExt, supportEmail }: { isHeadOffice: boolean; isAdmin: boolean; call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {

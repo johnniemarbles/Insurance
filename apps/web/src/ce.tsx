@@ -248,3 +248,33 @@ export function CourseCe({ call, locale, courseId, value, onSaved }: { call: Cal
     </>
   );
 }
+
+/** A strip on Home: where the person stands on CE and what training is waiting. */
+export function HomeLearning({ call, locale, go }: { call: Call; locale: Locale; go: (page: string) => void }) {
+  const k = ceStrings(locale);
+  const fr = locale === 'fr-CA';
+  const [ce, setCe] = useState<any>(null);
+  const [courses, setCourses] = useState<any[] | null>(null);
+  useEffect(() => {
+    call('GET', '/v1/ce/me').then(setCe, () => setCe({ licences: [], packs: [] }));
+    call('GET', '/v1/my/learning').then((r) => setCourses(r.enrollments), () => setCourses([]));
+  }, [call]);
+  if (!ce || !courses) return null;
+  const open = courses.filter((c) => c.status !== 'completed');
+  const lic = ce.licences[0];
+  if (!lic && open.length === 0 && ce.packs.length === 0) return null;
+  const e = lic?.evaluation;
+  const bad = e && (e.state === 'overdue' || e.state === 'at_risk');
+  return (
+    <button class={`hcard${bad ? ' nudge' : ''}`} style={{ display: 'flex', gap: '14px', alignItems: 'center', textAlign: 'left', width: '100%', margin: '0 0 12px', cursor: 'pointer' }} onClick={() => go('training')} aria-label={k.title}>
+      <span style={{ fontSize: '22px' }} aria-hidden="true">🎓</span>
+      <span style={{ flex: 1 }}>
+        <b>{k.title}</b><br />
+        {e ? <small>{hs(e.counted)} {k.of} {e.required} {k.hours} · <b>{k.state[e.state]}</b> · {k.daysLeft(e.daysLeft)}{Object.keys(e.missing).length && e.state !== 'exempt' ? ` · ${k.needs}: ${missingText(k, e.missing)}` : ''}</small>
+          : <small>{ce.packs.length ? k.setup : ''}</small>}
+        {open.length > 0 && <><br /><small>{fr ? `${open.length} cours à suivre` : `${open.length} course${open.length === 1 ? '' : 's'} to take`}</small></>}
+      </span>
+      <span class="link">{fr ? 'Ouvrir' : 'Open'} →</span>
+    </button>
+  );
+}
