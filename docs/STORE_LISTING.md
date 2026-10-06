@@ -43,7 +43,7 @@ Let invited insurance partners manage clients, renewals and licence compliance f
 - Remote code: none.
 
 ## Links
-- Privacy policy: https://<country>/privacy
+- Privacy policy: https://www.punjabinsurance.co/privacy (same as the consent screen)
 - Terms: https://<country>/terms
 - Support: https://<country>/support  (support@punjabinsurance.ca / support@punjabinsurance.com)
 

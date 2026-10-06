@@ -31,9 +31,9 @@ Why there is no Gmail scope: the Chrome extension shows the PII panel inside the
 
 | Field | Answer |
 |---|---|
-| Application home page | https://punjabinsurance.co/  (public product page: what the app is, what it reads, links to privacy, terms and support, English and French) |
-| Application privacy policy link | https://punjabinsurance.co/privacy |
-| Application terms of service link | https://punjabinsurance.co/terms |
+| Application home page | https://www.punjabinsurance.co/  (public product page: what the app is, what it reads, links to privacy, terms and support, English and French) |
+| Application privacy policy link | https://www.punjabinsurance.co/privacy |
+| Application terms of service link | https://www.punjabinsurance.co/terms |
 | Authorized domains | punjabinsurance.co |
 
 Notes:
