@@ -232,4 +232,5 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .jump input::placeholder{color:var(--mute)}.jumplist .hrow[aria-selected=true],.jumplist .hrow:focus-visible{background:var(--pri-soft)}.connect .chip.warn{color:var(--warn);background:var(--bg)}
 @media (prefers-reduced-motion:reduce){.pii *{transition:none!important;animation:none!important}}
 @media (max-width:640px){.hstats{gap:18px}.hb{grid-template-columns:90px 1fr 32px}.jump{flex:1 1 100%}}
+.trend{font-size:12px;color:var(--mute);margin-top:2px}
 `;

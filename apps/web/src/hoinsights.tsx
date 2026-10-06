@@ -8,6 +8,7 @@ export interface Insights {
   expiry: { overdue: number; within30: number; within14: number; weeks: number[] };
   appointments: { requested: number; inProgress: number; appointed: number; declined: number };
   companies: { total: number; adminNotSignedIn: number };
+  prev?: { day: string; data: Record<string, number> } | null;
 }
 export type NeedTab = 'review' | 'all' | 'expiring' | 'companies';
 export interface Need { key: string; text: string; tab: NeedTab | null; label?: string }
@@ -134,3 +135,12 @@ export function Widgets({ i, locale }: { i: Insights; locale: Locale }) {
 }
 
 export function titles(locale: Locale) { const x = T[locale]; return { funnel: x.funnel, expiry: x.expiry }; }
+
+/** "▲ 2 since 6 Sep": how a count moved since the saved day. Nothing is shown until there is history, or when nothing changed. */
+export function Trend({ now, before, since, locale }: { now: number; before: number | undefined; since: string | undefined; locale: Locale }) {
+  if (before === undefined || !since || now === before) return null;
+  const d = now - before;
+  const when = new Date(`${since}T12:00:00`).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+  const txt = locale === 'fr-CA' ? `depuis le ${when}` : `since ${when}`;
+  return <small class="trend" title={`${before} → ${now}`}><span aria-hidden="true">{d > 0 ? '▲' : '▼'}</span> {d > 0 ? '+' : '−'}{Math.abs(d)} {txt}</small>;
+}

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { withRequestTx } from '@pii/db';
+import { withRequestTx, type Tx } from '@pii/db';
+import { snapshotBefore } from './snapshots.ts';
 import { notFound } from './errors.ts';
 import { requireCrm, scopeSql, uuid } from './crm-helpers.ts';
 import type { AppDeps } from './app.ts';
@@ -121,69 +122,76 @@ export function registerInsightRoutes(app: FastifyInstance, deps: AppDeps): void
     const { ctx } = await deps.authenticate(req);
     requireCrm(ctx);
     return withRequestTx(deps.appPool, ctx, async (tx) => {
-      const stages = (
-        await tx.query(
-          `SELECT s.name, min(s.position)::int AS pos, bool_or(s.is_won) AS "isWon", bool_or(s.is_lost) AS "isLost",
-                  count(b.id)::int AS count, coalesce(sum(b.value_amount), 0)::float8 AS value
-             FROM stages s LEFT JOIN boxes b ON b.stage_id = s.id GROUP BY s.name ORDER BY min(s.position), s.name`,
-        )
-      ).rows as { name: string; pos: number; isWon: boolean; isLost: boolean; count: number; value: number }[];
-      const open = stages.filter((s) => !s.isWon && !s.isLost);
-      const won = stages.filter((s) => s.isWon).reduce((n, s) => n + s.count, 0);
-      const lost = stages.filter((s) => s.isLost).reduce((n, s) => n + s.count, 0);
-      const tasks = (
-        await tx.query(
-          `SELECT count(*) FILTER (WHERE due_at < date_trunc('day', now()))::int AS overdue,
-                  count(*) FILTER (WHERE due_at >= date_trunc('day', now()) AND due_at < date_trunc('day', now()) + interval '1 day')::int AS today,
-                  count(*)::int AS open
-             FROM tasks WHERE done_at IS NULL`,
-        )
-      ).rows[0] as { overdue: number; today: number; open: number };
-      const ren = (
-        await tx.query(
-          `SELECT count(*) FILTER (WHERE d < current_date)::int AS expired, count(*) FILTER (WHERE d >= current_date AND d <= current_date + 30)::int AS d30,
-                  coalesce((SELECT jsonb_agg(coalesce(c.n, 0) ORDER BY g.w) FROM generate_series(0, 12) g(w)
-                     LEFT JOIN (SELECT ((d - current_date) / 7) AS w, count(*) AS n FROM (SELECT (b.custom->>'renewal_date')::date AS d FROM boxes b JOIN stages s ON s.id = b.stage_id
-                                  WHERE b.custom->>'renewal_date' ~ '${DATE_RE}' AND NOT s.is_won AND NOT s.is_lost) y WHERE d >= current_date AND d < current_date + 91 GROUP BY 1) c ON c.w = g.w), '[]'::jsonb) AS weeks
-             FROM (SELECT (b.custom->>'renewal_date')::date AS d FROM boxes b JOIN stages s ON s.id = b.stage_id
-                    WHERE b.custom->>'renewal_date' ~ '${DATE_RE}' AND NOT s.is_won AND NOT s.is_lost AND (b.custom->>'renewal_date')::date BETWEEN current_date - 365 AND current_date + 365) x`,
-        )
-      ).rows[0] as { expired: number; d30: number; weeks: number[] };
-      const people = (
-        await tx.query(
-          `SELECT name, count(*)::int AS count FROM (
-             SELECT coalesce(u.display_name, u.email::text) AS name FROM box_events e JOIN app_users u ON u.id = e.actor_id WHERE e.created_at > now() - interval '7 days'
-             UNION ALL
-             SELECT coalesce(u.display_name, u.email::text) FROM notes n JOIN app_users u ON u.id = n.author_id WHERE n.created_at > now() - interval '7 days') a
-            GROUP BY name ORDER BY 2 DESC, 1 LIMIT 8`,
-        )
-      ).rows as { name: string; count: number }[];
-      const team = (
-        await tx.query(
-          `SELECT count(DISTINCT r.user_id)::int AS n FROM user_node_roles r JOIN org_nodes n ON n.id = r.node_id WHERE org_node_at_or_below(n.tenant_id, n.id)`,
-        )
-      ).rows[0] as { n: number };
-      const part = (
-        await tx.query(
-          `SELECT count(*)::int AS partners,
-                  count(*) FILTER (WHERE p.status = 'approved')::int AS approved,
-                  count(*) FILTER (WHERE p.status = 'submitted')::int AS submitted,
-                  count(*) FILTER (WHERE coalesce(p.status, 'incomplete') NOT IN ('approved', 'submitted'))::int AS incomplete,
-                  (SELECT count(*)::int FROM compliance_items i WHERE i.expires_on < current_date) AS "itemsExpired",
-                  (SELECT count(*)::int FROM compliance_items i WHERE i.expires_on >= current_date AND i.expires_on <= current_date + 30) AS "itemsSoon"
-             FROM org_nodes n LEFT JOIN compliance_profiles p ON p.node_id = n.id
-            WHERE n.type = 'partner' AND n.is_active AND org_node_at_or_below(n.tenant_id, n.id)`,
-        )
-      ).rows[0] as { partners: number; approved: number; submitted: number; incomplete: number; itemsExpired: number; itemsSoon: number };
-      const risks = (await listRisks(tx, null)).length;
-      return {
-        pipeline: {
-          stages: open.map((s) => ({ name: s.name, count: s.count, value: s.value })),
-          openCount: open.reduce((n, s) => n + s.count, 0), openValue: open.reduce((n, s) => n + s.value, 0),
-          won, lost, winRate: won + lost > 0 ? won / (won + lost) : null, stalled: risks,
-        },
-        tasks, renewals: ren, activity: people, team: team.n, partners: part,
-      };
+      const now = await overviewNumbers(tx);
+      // Only the whole-company view is compared with the past: the saved snapshots are company-wide.
+      const prev = ctx.isTenantAdmin ? await snapshotBefore(tx, 'company', 30) : null;
+      return { ...now, prev };
     });
   });
+}
+/** The numbers behind the Overview page, read through whatever the transaction's person may see. */
+export async function overviewNumbers(tx: Tx) {
+  const stages = (
+    await tx.query(
+      `SELECT s.name, min(s.position)::int AS pos, bool_or(s.is_won) AS "isWon", bool_or(s.is_lost) AS "isLost",
+              count(b.id)::int AS count, coalesce(sum(b.value_amount), 0)::float8 AS value
+         FROM stages s LEFT JOIN boxes b ON b.stage_id = s.id GROUP BY s.name ORDER BY min(s.position), s.name`,
+    )
+  ).rows as { name: string; pos: number; isWon: boolean; isLost: boolean; count: number; value: number }[];
+  const open = stages.filter((s) => !s.isWon && !s.isLost);
+  const won = stages.filter((s) => s.isWon).reduce((n, s) => n + s.count, 0);
+  const lost = stages.filter((s) => s.isLost).reduce((n, s) => n + s.count, 0);
+  const tasks = (
+    await tx.query(
+      `SELECT count(*) FILTER (WHERE due_at < date_trunc('day', now()))::int AS overdue,
+              count(*) FILTER (WHERE due_at >= date_trunc('day', now()) AND due_at < date_trunc('day', now()) + interval '1 day')::int AS today,
+              count(*)::int AS open
+         FROM tasks WHERE done_at IS NULL`,
+    )
+  ).rows[0] as { overdue: number; today: number; open: number };
+  const ren = (
+    await tx.query(
+      `SELECT count(*) FILTER (WHERE d < current_date)::int AS expired, count(*) FILTER (WHERE d >= current_date AND d <= current_date + 30)::int AS d30,
+              coalesce((SELECT jsonb_agg(coalesce(c.n, 0) ORDER BY g.w) FROM generate_series(0, 12) g(w)
+                 LEFT JOIN (SELECT ((d - current_date) / 7) AS w, count(*) AS n FROM (SELECT (b.custom->>'renewal_date')::date AS d FROM boxes b JOIN stages s ON s.id = b.stage_id
+                              WHERE b.custom->>'renewal_date' ~ '${DATE_RE}' AND NOT s.is_won AND NOT s.is_lost) y WHERE d >= current_date AND d < current_date + 91 GROUP BY 1) c ON c.w = g.w), '[]'::jsonb) AS weeks
+         FROM (SELECT (b.custom->>'renewal_date')::date AS d FROM boxes b JOIN stages s ON s.id = b.stage_id
+                WHERE b.custom->>'renewal_date' ~ '${DATE_RE}' AND NOT s.is_won AND NOT s.is_lost AND (b.custom->>'renewal_date')::date BETWEEN current_date - 365 AND current_date + 365) x`,
+    )
+  ).rows[0] as { expired: number; d30: number; weeks: number[] };
+  const people = (
+    await tx.query(
+      `SELECT name, count(*)::int AS count FROM (
+         SELECT coalesce(u.display_name, u.email::text) AS name FROM box_events e JOIN app_users u ON u.id = e.actor_id WHERE e.created_at > now() - interval '7 days'
+         UNION ALL
+         SELECT coalesce(u.display_name, u.email::text) FROM notes n JOIN app_users u ON u.id = n.author_id WHERE n.created_at > now() - interval '7 days') a
+        GROUP BY name ORDER BY 2 DESC, 1 LIMIT 8`,
+    )
+  ).rows as { name: string; count: number }[];
+  const team = (
+    await tx.query(
+      `SELECT count(DISTINCT r.user_id)::int AS n FROM user_node_roles r JOIN org_nodes n ON n.id = r.node_id WHERE org_node_at_or_below(n.tenant_id, n.id)`,
+    )
+  ).rows[0] as { n: number };
+  const part = (
+    await tx.query(
+      `SELECT count(*)::int AS partners,
+              count(*) FILTER (WHERE p.status = 'approved')::int AS approved,
+              count(*) FILTER (WHERE p.status = 'submitted')::int AS submitted,
+              count(*) FILTER (WHERE coalesce(p.status, 'incomplete') NOT IN ('approved', 'submitted'))::int AS incomplete,
+              (SELECT count(*)::int FROM compliance_items i WHERE i.expires_on < current_date) AS "itemsExpired",
+              (SELECT count(*)::int FROM compliance_items i WHERE i.expires_on >= current_date AND i.expires_on <= current_date + 30) AS "itemsSoon"
+         FROM org_nodes n LEFT JOIN compliance_profiles p ON p.node_id = n.id
+        WHERE n.type = 'partner' AND n.is_active AND org_node_at_or_below(n.tenant_id, n.id)`,
+    )
+  ).rows[0] as { partners: number; approved: number; submitted: number; incomplete: number; itemsExpired: number; itemsSoon: number };
+  const risks = (await listRisks(tx, null)).length;
+  return {
+    pipeline: {
+      stages: open.map((s) => ({ name: s.name, count: s.count, value: s.value })),
+      openCount: open.reduce((n, s) => n + s.count, 0), openValue: open.reduce((n, s) => n + s.value, 0),
+      won, lost, winRate: won + lost > 0 ? won / (won + lost) : null, stalled: risks,
+    },
+    tasks, renewals: ren, activity: people, team: team.n, partners: part,
+  };
 }

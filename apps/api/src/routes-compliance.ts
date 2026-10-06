@@ -10,6 +10,7 @@ import { uuid } from './crm-helpers.ts';
 import { forbidden, invalid, notFound, conflict } from './errors.ts';
 import { resolveSettings } from './settings.ts';
 import type { AppDeps } from './app.ts';
+import { snapshotBefore } from './snapshots.ts';
 
 export const countryOf = (region: string): Country => (region === 'us' ? 'US' : 'CA');
 
@@ -460,7 +461,7 @@ export function registerComplianceRoutes(app: FastifyInstance, deps: AppDeps): v
   // Counts only: the funnel, the review backlog, E&O coverage, expiries by week and appointment requests, for every company in this country.
   app.get('/v1/ho/insights', async (req) => {
     const { ctx } = await deps.authenticate(req);
-    return ho(ctx, async (tx) => (await tx.query<{ r: Record<string, unknown> }>('SELECT ho_insights($1) AS r', [Number(process.env.EO_MIN_LIMIT ?? 0)])).rows[0]!.r);
+    return ho(ctx, async (tx) => ({ ...(await tx.query<{ r: Record<string, unknown> }>('SELECT ho_insights($1) AS r', [Number(process.env.EO_MIN_LIMIT ?? 0)])).rows[0]!.r, prev: await snapshotBefore(tx, 'ho', 30) }));
   });
 
   app.get('/v1/ho/expiring', { schema: { querystring: { type: 'object', properties: { days: { type: 'integer', minimum: 0, maximum: 365 } } } } }, async (req) => {

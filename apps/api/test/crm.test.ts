@@ -1165,3 +1165,18 @@ test('the overview shows numbers through the viewer\'s own visibility', async ()
   assert.ok(p1.json.pipeline.openCount <= a.json.pipeline.openCount, 'a branch never sees more than the company');
   assert.equal((await call(P2U, 'GET', '/v1/insights/overview')).status, 200);
 });
+
+test('daily snapshots: saved once a day, compared with a month ago for the whole-company view only', async () => {
+  const { sweepSnapshots } = await import('../src/snapshots.ts');
+  assert.ok((await sweepSnapshots(sweepDeps)) >= 1, 'today\'s counts are saved');
+  assert.equal(await sweepSnapshots(sweepDeps), 0, 'and only once');
+  const o = new pg.Client({ connectionString: db.ownerUrl }); await o.connect();
+  const today = (await o.query(`SELECT data FROM count_snapshots WHERE tenant_id = $1 AND scope = 'company' AND day = current_date`, [tenant.tenantId])).rows[0];
+  assert.ok(today && typeof today.data.openCount === 'number' && !JSON.stringify(today.data).includes('@'), 'counts only');
+  assert.equal((await call(ADMIN, 'GET', '/v1/insights/overview')).json.prev, null, 'no history yet');
+  await o.query(`INSERT INTO count_snapshots (tenant_id, day, scope, data) VALUES ($1, current_date - 30, 'company', '{"openCount":1,"overdueTasks":0}')`, [tenant.tenantId]);
+  await o.end();
+  const a = (await call(ADMIN, 'GET', '/v1/insights/overview')).json;
+  assert.equal(a.prev.data.openCount, 1);
+  assert.equal((await call(P1U, 'GET', '/v1/insights/overview')).json.prev, null, 'a branch is never compared with company-wide numbers');
+});

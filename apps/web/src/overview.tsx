@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
-import { NeedsYou, ExpiryBars, type Need } from './hoinsights.tsx';
+import { NeedsYou, ExpiryBars, Trend, type Need } from './hoinsights.tsx';
 import { money } from './theme.ts';
 import type { Locale } from './types.ts';
 
@@ -12,6 +12,7 @@ export interface Overview {
   activity: { name: string; count: number }[];
   team: number;
   partners: { partners: number; approved: number; submitted: number; incomplete: number; itemsExpired: number; itemsSoon: number };
+  prev?: { day: string; data: Record<string, number> } | null;
 }
 
 const s = (n: number, one: string, many: string) => (n === 1 ? one : many);
@@ -45,7 +46,7 @@ export function OverviewPanel({ call, locale, go, currency }: { call: Call; loca
   useEffect(() => { call('GET', '/v1/insights/overview').then(setD, (e) => setErr((e as Error).message)); }, [call]);
   if (err) return <ErrorBar msg={err} retry="↻" />;
   if (!d) return <div class="msg">…</div>;
-  const p = d.pipeline; const pt = d.partners;
+  const p = d.pipeline; const pt = d.partners; const pv = d.prev?.data;
   const needs: { need: Need; go: () => void }[] = [];
   const add = (key: string, text: string, page: string, id?: string) => needs.push({ need: { key, text, tab: 'all', label: x.open }, go: () => go(page, id) });
   if (d.tasks.overdue) add('task', x.nOver(d.tasks.overdue), 'home');
@@ -62,10 +63,10 @@ export function OverviewPanel({ call, locale, go, currency }: { call: Call; loca
     <div class="ovw">
       <NeedsYou needs={needs} locale={locale} openAll={all} setOpenAll={setAll} />
       <div class="hstats">
-        <div class="hstat"><b>{money(p.openValue, currency, locale)}</b><span>{x.pipe}</span><small>{x.recs(p.openCount)}</small></div>
+        <div class="hstat"><b>{money(p.openValue, currency, locale)}</b><span>{x.pipe}</span><small>{x.recs(p.openCount)}</small><Trend now={p.openCount} before={pv?.openCount} since={d.prev?.day} locale={locale} /></div>
         <div class="hstat"><b>{pct}</b><span>{x.win}</span></div>
-        <div class={`hstat ${d.tasks.overdue ? 'warn' : ''}`}><b>{d.tasks.overdue}</b><span>{x.over}</span></div>
-        {pt.partners > 0 ? <div class="hstat"><b>{pt.approved}/{pt.partners}</b><span>{x.partners}</span></div> : <div class="hstat"><b>{d.team}</b><span>{x.team}</span></div>}
+        <div class={`hstat ${d.tasks.overdue ? 'warn' : ''}`}><b>{d.tasks.overdue}</b><span>{x.over}</span><Trend now={d.tasks.overdue} before={pv?.overdueTasks} since={d.prev?.day} locale={locale} /></div>
+        {pt.partners > 0 ? <div class="hstat"><b>{pt.approved}/{pt.partners}</b><span>{x.partners}</span><Trend now={pt.approved} before={pv?.approved} since={d.prev?.day} locale={locale} /></div> : <div class="hstat"><b>{d.team}</b><span>{x.team}</span></div>}
       </div>
       <div class="charts">
         <section class="hcard chartcard" aria-label={x.byStage}><h4>{x.byStage}</h4>

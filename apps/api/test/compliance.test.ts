@@ -135,6 +135,15 @@ test('expiry reminders go out at 30, 15 and 0 days, once each', async () => {
     assert.equal(r.json.coverage.meets + r.json.coverage.below + r.json.coverage.none, r.json.funnel.partners);
     assert.ok(!JSON.stringify(r.json).includes('Agency'), 'no names, only counts');
   }
+  { // the nightly counts include head office's own row, and insights report a month-ago comparison when there is one
+    const { sweepSnapshots } = await import('../src/snapshots.ts');
+    await sweepSnapshots(deps);
+    const rows = await owner(async (c) => (await c.query(`SELECT tenant_id, data FROM count_snapshots WHERE scope = 'ho' AND day = current_date`)).rows);
+    assert.equal(rows.length, 1); assert.equal(rows[0].tenant_id, ho.tenantId); assert.ok(rows[0].data.partners >= 3);
+    assert.equal((await call(HO, 'GET', '/v1/ho/insights')).json.prev, null);
+    await owner((c) => c.query(`INSERT INTO count_snapshots (tenant_id, day, scope, data) VALUES ($1, current_date - 28, 'ho', '{"partners":1}')`, [ho.tenantId]));
+    assert.equal((await call(HO, 'GET', '/v1/ho/insights')).json.prev.data.partners, 1);
+  }
   { // jump-to: names only, head office only
     assert.equal((await call(AG, 'GET', '/v1/ho/search?q=ma')).status, 403);
     assert.equal((await call(HO, 'GET', '/v1/ho/search?q=x')).status, 400);

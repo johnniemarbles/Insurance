@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
 import type { HostOptions, Locale } from './types.ts';
-import { ExpiryBars, Funnel, needsOf, NeedsYou, titles, Widgets, type Insights, type NeedTab } from './hoinsights.tsx';
+import { ExpiryBars, Funnel, needsOf, NeedsYou, titles, Trend, Widgets, type Insights, type NeedTab } from './hoinsights.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Step { id: string; done: boolean; hint?: string }
@@ -154,10 +154,10 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
         needs={needsOf(ins, locale).map((need) => ({ need, go: () => { if (need.tab) setTab(need.tab); } }))} />}
       {ho && <>
         <div class="hstats">
-          <div class={`hstat ${waiting ? 'warn' : ''}`}><b>{waiting}</b><span>{x.hWaiting}</span></div>
+          <div class={`hstat ${waiting ? 'warn' : ''}`}><b>{waiting}</b><span>{x.hWaiting}</span>{ins && <Trend now={waiting} before={ins.prev?.data.waiting} since={ins.prev?.day} locale={locale} />}</div>
           <div class={`hstat ${exp.length ? 'warn' : ''}`}><b>{exp.length}</b><span>{x.hExpiring}</span></div>
-          <div class="hstat"><b>{rows.length}</b><span>{x.hPartners}</span></div>
-          <div class="hstat"><b>{cos.length}</b><span>{x.hCompanies}</span></div>
+          <div class="hstat"><b>{rows.length}</b><span>{x.hPartners}</span>{ins && <Trend now={rows.length} before={ins.prev?.data.partners} since={ins.prev?.day} locale={locale} />}</div>
+          <div class="hstat"><b>{cos.length}</b><span>{x.hCompanies}</span>{ins && <Trend now={cos.length} before={ins.prev?.data.companies} since={ins.prev?.day} locale={locale} />}</div>
         </div>
         {ins && <>
           <div class="charts">
