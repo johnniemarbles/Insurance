@@ -41,10 +41,56 @@ export function registerPageRoutes(app: FastifyInstance, deps: AppDeps): void {
           ? `<p>${T.in}</p><ol style="text-align:left;line-height:1.7;padding-left:22px"><li><b>${T.s1}</b><br><span style="color:#6b7280;font-size:14px">${ext ? `<a href="${esc(ext)}">${T.s1x}</a>` : T.s1x}</span></li><li><b>${T.s2}</b></li><li>${T.s3}</li></ol><p><a href="https://mail.google.com" style="display:inline-block;background:#1d4ed8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">${T.go}</a></p>`
           : `<p>${T.back}</p><p><a href="https://mail.google.com">${T.go}</a></p>`;
         return reply.type('text/html; charset=utf-8').send(page(product, body, T.hi).replace('<html lang="en">', `<html lang="${lang}">`));
-      } catch { /* not signed in after all: fall through to the plain page */ }
+      } catch { /* not signed in after all: show the plain signed-in page */ }
+      return reply.type('text/html; charset=utf-8').send(page(product, body, product));
     }
-    return reply.type('text/html; charset=utf-8').send(page(product, body, product));
+    return reply.type('text/html; charset=utf-8').header('cache-control', 'public, max-age=300').send(homePage(req));
   });
+
+  // Public product home page: what the app is, who it is for, what it reads, where the policies are.
+  const homePage = (req: import('fastify').FastifyRequest): string => {
+    const q = (req.query as { lang?: string }).lang;
+    const lang: Lang = q ? (q.startsWith('fr') ? 'fr-CA' : 'en') : (String(req.headers['accept-language'] ?? '').toLowerCase().startsWith('fr') ? 'fr-CA' : 'en');
+    const fr = lang === 'fr-CA', l = fr ? 'fr' : 'en';
+    const entity = deps.config.region === 'us' ? 'Punjab Insurance Broker Inc' : 'Punjab Insurance Agency Inc';
+    const ext = process.env.PII_EXTENSION_URL;
+    const T = fr ? {
+      tag: 'Le CRM d’assurance qui vit dans Gmail',
+      lead: `${product} aide les équipes d’assurance à suivre leurs clients, pistes et renouvellements directement dans Gmail, sans quitter la boîte de réception.`,
+      cta: ext ? 'Installer l’extension Chrome' : 'Accès sur invitation',
+      ctaNote: 'L’accès se fait sur invitation de l’administrateur de votre organisation. Ouvrez votre invitation, puis connectez-vous avec Google.',
+      h: 'Ce que vous pouvez faire',
+      f: [['Pipelines', 'Suivez chaque piste, police et renouvellement par étape, dans Gmail.'], ['Liez vos courriels', 'Reliez une conversation à un dossier d’un clic. Rien n’est lié sans votre geste.'], ['Rappels et tâches', 'Notes, échéances et suivis sur chaque dossier, partagés avec votre équipe.'], ['Pour toute l’organisation', 'Siège social, sociétés, succursales, partenaires et producteurs, chacun voit ce qui le concerne.']],
+      hp: 'Votre vie privée',
+      pt: `La connexion Google ne demande que votre nom et votre adresse courriel. ${product} n’accède pas à votre boîte Gmail par l’API de Google et ne lit que la conversation que vous choisissez de lier. Aucune vente de données, aucune publicité. Les données sont hébergées sur des serveurs sécurisés aux États-Unis.`,
+      nav: [['/privacy', 'Confidentialité'], ['/terms', 'Conditions'], ['/support', 'Soutien']], other: ['English', 'en'], by: `Exploité par ${entity}.`,
+    } : {
+      tag: 'The insurance CRM that lives in Gmail',
+      lead: `${product} helps insurance teams track clients, leads and renewals right inside Gmail, without leaving the inbox.`,
+      cta: ext ? 'Install the Chrome extension' : 'Access is by invitation',
+      ctaNote: 'Access is by invitation from your organization’s administrator. Open your invitation, then sign in with Google.',
+      h: 'What you can do',
+      f: [['Pipelines', 'Move every lead, policy and renewal through stages, from Gmail.'], ['Link your emails', 'Link a conversation to a record in one click. Nothing is linked unless you choose to.'], ['Reminders and tasks', 'Notes, due dates and follow-ups on every record, shared with your team.'], ['Built for the organization', 'Head office, companies, branches, partners and producers each see what is theirs.']],
+      hp: 'Your privacy',
+      pt: `Google sign-in asks only for your name and email address. ${product} does not access your Gmail through Google’s API and reads only the conversation you choose to link. We do not sell data or show ads. Data is stored on secure servers in the United States.`,
+      nav: [['/privacy', 'Privacy'], ['/terms', 'Terms'], ['/support', 'Support']], other: ['Français', 'fr'], by: `Operated by ${entity}.`,
+    };
+    const cta = ext ? `<a class="btn" href="${esc(ext)}">${T.cta}</a>` : `<span class="btn off">${T.cta}</span>`;
+    const title = `${product} · ${T.tag}`;
+    return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><meta name="description" content="${esc(T.lead)}">
+<style>:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;color:#0f172a;background:radial-gradient(1200px 480px at 50% -10%,#dbe7ff 0%,#f8fafc 60%)}
+@media(prefers-color-scheme:dark){body{color:#e5e7eb;background:#0b1020}.card{background:#111936!important;border-color:#26305a!important}a{color:#8ab4ff}.nav a,.muted{color:#9aa6d1!important}}
+main{max-width:860px;margin:0 auto;padding:24px 20px 56px}header{display:flex;align-items:center;gap:12px}header img{width:40px;height:40px;border-radius:10px}.nav{margin-left:auto;display:flex;gap:16px;font-size:14px;flex-wrap:wrap}.nav a{color:#475569;text-decoration:none}
+.hero{text-align:center;padding:56px 0 32px}h1{font-size:clamp(30px,5vw,44px);line-height:1.15;margin:0 0 12px;letter-spacing:-.02em}.lead{font-size:18px;max-width:620px;margin:0 auto 24px}
+.btn{display:inline-block;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:13px 24px;border-radius:12px;font-weight:600;box-shadow:0 6px 16px rgba(37,99,235,.3)}.btn.off{background:#64748b;box-shadow:none}
+.muted{color:#64748b;font-size:14px;max-width:520px;margin:12px auto 0}h2{font-size:22px;margin:40px 0 14px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px}.card b{display:block;margin-bottom:4px}.card span{color:#64748b;font-size:15px}footer{margin-top:48px;font-size:14px;display:flex;flex-wrap:wrap;gap:8px 18px}a{color:#1d4ed8}</style></head>
+<body><main><header><img src="/brand/logo.png" alt=""><b>${esc(product)}</b><nav class="nav" aria-label="Pages">${T.nav.map(([h, t]) => `<a href="${h}?lang=${l}">${t}</a>`).join('')}<a href="/?lang=${T.other[1]}" lang="${T.other[1]}">${T.other[0]}</a></nav></header>
+<section class="hero"><h1>${esc(T.tag)}</h1><p class="lead">${esc(T.lead)}</p>${cta}<p class="muted">${esc(T.ctaNote)}</p></section>
+<h2>${T.h}</h2><div class="grid">${T.f.map(([a, b]) => `<div class="card"><b>${esc(a!)}</b><span>${esc(b!)}</span></div>`).join('')}</div>
+<h2>${T.hp}</h2><p>${esc(T.pt)} <a href="/privacy?lang=${l}">${T.nav[0]![1]}</a></p>
+<footer class="muted"><span>${esc(T.by)}</span>${T.nav.map(([h, t]) => `<a href="${h}?lang=${l}">${t}</a>`).join('')}</footer></main></body></html>`;
+  };
 
   // The page behind the link in an invitation email: who invited you, to what, and one button.
   const T = {

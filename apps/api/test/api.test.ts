@@ -185,6 +185,12 @@ test('landing pages exist for sign-in return, errors and privacy', async () => {
   assert.equal(home.statusCode, 200);
   assert.match(home.body, /You are signed in/);
   assert.equal((await app.inject({ method: 'GET', url: '/privacy' })).statusCode, 200);
+  { // public product home page: describes the app, links the policies, both languages
+    const h = await app.inject({ method: 'GET', url: '/' });
+    assert.equal(h.statusCode, 200); assert.match(h.body, /lang="en"/); assert.match(h.body, /href="\/privacy\?lang=en"/); assert.match(h.body, /href="\/terms\?lang=en"/); assert.match(h.body, /Gmail/);
+    const hf = await app.inject({ method: 'GET', url: '/?lang=fr' });
+    assert.match(hf.body, /lang="fr-CA"/); assert.match(hf.body, /Confidentialité/);
+  }
   { // privacy, terms and support: real pages, both languages, honest about where data is kept
     for (const u of ['/privacy', '/terms', '/support']) {
       const en = await app.inject({ method: 'GET', url: u }); assert.equal(en.statusCode, 200); assert.match(en.body, /lang="en"/);
