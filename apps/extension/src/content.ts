@@ -6,7 +6,7 @@ import type { ComposeApi, Transport } from '../../web/src/types';
 const REGION_LABELS: Record<string, string> = { ca: 'Canada', us: 'United States' };
 const REGION_CHOICES = Object.keys(__REGIONS__).map((id) => ({ id, label: REGION_LABELS[id] ?? id }));
 let chosenRegion: string | undefined;
-chrome.storage.sync.get('region').then((v) => { chosenRegion = typeof v.region === 'string' ? v.region : undefined; }, () => undefined);
+chrome.storage.sync.get('region').then((v) => { chosenRegion = typeof v.region === 'string' ? v.region : Object.keys(__REGIONS__)[0]; }, () => undefined);
 
 const transport: Transport = async (method, path, body, region) => {
   try {
@@ -68,7 +68,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     host.style.cssText = 'height:calc(100vh - 130px);min-height:480px;background:#fff';
     view.getElement().appendChild(host);
     const unmount = mountPii(host, {
-      extVersion: chrome.runtime.getManifest().version, transport, onSignIn: (region?: string, keep?: boolean) => void chrome.runtime.sendMessage({ type: 'pii:signin', region, keep }), regions: REGION_CHOICES, get region() { return chosenRegion; }, compose: { send: sendOne(sdk) },
+      extVersion: chrome.runtime.getManifest().version, transport, onSignIn: (region?: string, keep?: boolean) => void chrome.runtime.sendMessage({ type: 'pii:signin', region, keep }), regions: REGION_CHOICES, get region() { return chosenRegion; }, switchRegion: (id: string) => { void chrome.storage.sync.set({ region: id }).then(() => location.reload()); }, compose: { send: sendOne(sdk) },
       route: { page: params.page ?? 'pipelines', id: params.id }, navigate: goto,
     });
     view.on('destroy', unmount);
