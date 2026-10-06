@@ -446,6 +446,17 @@ export function registerComplianceRoutes(app: FastifyInstance, deps: AppDeps): v
     return reply.code(204).send();
   });
 
+  // Jump-to: names only. A few companies and partners whose name contains the text, nothing else.
+  app.get('/v1/ho/search', { schema: { querystring: { type: 'object', required: ['q'], properties: { q: { type: 'string', minLength: 2, maxLength: 80 } } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const like = `%${(req.query as { q: string }).q.trim().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    return ho(ctx, async (tx) => ({
+      country,
+      companies: (await tx.query('SELECT tenant_id AS id, name FROM ho_company_list() WHERE name ILIKE $1 ORDER BY name LIMIT 6', [like])).rows,
+      partners: (await tx.query('SELECT node_id AS "nodeId", name, company FROM ho_compliance_list() WHERE name ILIKE $1 ORDER BY name LIMIT 8', [like])).rows,
+    }));
+  });
+
   // Counts only: the funnel, the review backlog, E&O coverage, expiries by week and appointment requests, for every company in this country.
   app.get('/v1/ho/insights', async (req) => {
     const { ctx } = await deps.authenticate(req);

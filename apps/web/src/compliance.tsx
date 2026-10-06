@@ -18,6 +18,8 @@ interface File {
 
 const X = {
   'en': {
+    connectL: (l: string) => `Connect ${l}`, noticeL: (l: string) => `Accept the ${l} privacy notice`, noticeT: 'Privacy notice', noticeOk: 'I accept', noticeErr: 'Could not load the notice. Try again.',
+    jump: 'Jump to a company or partner', jumpNone: 'No match', jCo: 'Company', jPa: 'Partner',
     title: 'Compliance', sub: 'Licences, E&O insurance and paperwork for each partner. PII keeps the status and copies of documents, never SIN, SSN or bank details.',
     headTitle: 'Compliance review', headSub: 'Files from every company in this country. You see compliance information only, never CRM records.',
     allC: 'All countries', allCos: 'All companies', headSubC: (c: string) => `Compliance files for ${c}. You see compliance only, never CRM records.`, chooseSub: 'Choose a country or a company to open its files.', calmReview: 'All caught up', calmReviewSub: 'No files are waiting for review.', calmAll: 'No partners yet', calmAllSub: 'Partners appear here once a company adds them.', calmExp: 'Nothing expiring soon', calmExpSub: 'No licence or E&O policy runs out in the next 60 days.', hPartners: 'Partners', hWaiting: 'Waiting for review', hExpiring: 'Expiring in 60 days', hCompanies: 'Companies', cTot: (c: number, split: string) => `${c} compan${c === 1 ? 'y' : 'ies'} ${split}`, cCo: (n: number) => `${n} compan${n === 1 ? 'y' : 'ies'}`, cWait: (n: number) => `${n} waiting`, cExp: (n: number) => `${n} expiring`, cPart: (n: number) => `${n} partner${n === 1 ? '' : 's'}`, addTo: 'Country', coIn: (c: string) => `Companies in ${c}`, showing: 'Showing', clear: 'Show all',
@@ -41,6 +43,8 @@ const X = {
     min: (n: string) => `Minimum E&O limit: ${n}`,
   },
   'fr-CA': {
+    connectL: (l: string) => `Se connecter : ${l}`, noticeL: (l: string) => `Accepter l’avis de confidentialité : ${l}`, noticeT: 'Avis de confidentialité', noticeOk: 'J’accepte', noticeErr: 'Impossible de charger l’avis. Réessayez.',
+    jump: 'Aller à une entreprise ou un partenaire', jumpNone: 'Aucun résultat', jCo: 'Entreprise', jPa: 'Partenaire',
     title: 'Conformité', sub: 'Permis, assurance E&O et documents de chaque partenaire. PII conserve l’état et les copies des documents, jamais le NAS, le SSN ni les données bancaires.',
     headTitle: 'Examen de conformité', headSub: 'Dossiers de toutes les entreprises de ce pays. Vous voyez la conformité seulement, jamais les dossiers du CRM.',
     allC: 'Tous les pays', allCos: 'Toutes les entreprises', headSubC: (c: string) => `Dossiers de conformité : ${c}. Vous voyez la conformité seulement, jamais les dossiers du CRM.`, chooseSub: 'Choisissez un pays ou une entreprise pour ouvrir ses dossiers.', calmReview: 'Tout est à jour', calmReviewSub: 'Aucun dossier n’attend d’examen.', calmAll: 'Aucun partenaire pour l’instant', calmAllSub: 'Les partenaires apparaissent ici dès qu’une entreprise les ajoute.', calmExp: 'Aucune échéance proche', calmExpSub: 'Aucun permis ni aucune police E&O n’expire d’ici 60 jours.', hPartners: 'Partenaires', hWaiting: 'En attente d’examen', hExpiring: 'À échéance dans 60 jours', hCompanies: 'Entreprises', cTot: (c: number, split: string) => `${c} entreprise${c === 1 ? '' : 's'} ${split}`, cCo: (n: number) => `${n} entreprise${n === 1 ? '' : 's'}`, cWait: (n: number) => `${n} en attente`, cExp: (n: number) => `${n} à échéance`, cPart: (n: number) => `${n} partenaire${n === 1 ? '' : 's'}`, addTo: 'Pays', coIn: (c: string) => `Entreprises : ${c}`, showing: 'Affichage', clear: 'Tout afficher',
@@ -107,13 +111,13 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
     try {
       const raw = localStorage.getItem('pii.focus'); if (!raw) return;
       localStorage.removeItem('pii.focus');
-      const f = JSON.parse(raw) as { tab?: typeof tab; company?: string };
-      if (f.tab) setTab(f.tab); if (f.company) setQ(f.company);
+      const f = JSON.parse(raw) as { tab?: typeof tab; company?: string; node?: string };
+      if (f.tab) setTab(f.tab); if (f.company) setQ(f.company); if (f.node) openFile(f.node);
     } catch { /* ignore */ }
   }, []);
   useEffect(() => { if (multi) try { localStorage.setItem('pii.scope', scope); } catch { /* private window */ } }, [scope, multi]);
-  const openCountry = (id: string, f?: { tab?: typeof tab; company?: string }) => {
-    if (id === here) { setScope('country'); setTab(f?.tab ?? 'review'); setQ(f?.company ?? ''); return; }
+  const openCountry = (id: string, f?: { tab?: typeof tab; company?: string; node?: string }) => {
+    if (id === here) { setScope('country'); setTab(f?.tab ?? 'review'); setQ(f?.company ?? ''); if (f?.node) openFile(f.node); return; }
     try { localStorage.setItem('pii.focus', JSON.stringify(f ?? { tab: 'review' })); } catch { /* private window */ }
     host?.switchRegion?.(id);
   };
@@ -127,14 +131,17 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
         <select aria-label={x.companies} value={cos.some((c) => c.name === q) ? q : ''} onChange={(e) => { setQ((e.target as HTMLSelectElement).value); setTab((t) => (t === 'companies' ? 'all' : t)); }}>
           <option value="">{x.allCos}</option>{cos.map((c) => <option value={c.name}>{c.name}</option>)}
         </select></>}
+      <span class="spacer" />
+      <JumpTo host={host!} locale={locale} open={openCountry} />
     </div>
   ) : null;
+  const strip = multi && host ? <ConnectStrip host={host} locale={locale} /> : null;
   useEffect(() => {
     call('GET', `${base}/partners`).then((r) => setRows(r.partners), (e) => setErr((e as Error).message));
     if (ho) { call('GET', '/v1/ho/expiring?days=60').then((r) => setExp(r.items), () => undefined); call('GET', '/v1/ho/insights').then((r) => setIns(r as Insights), () => undefined); void loadCos(); }
   }, [call]);
   const shown = useMemo(() => (rows ?? []).filter((r) => (tab !== 'review' || r.status === 'submitted') && `${r.name} ${r.company ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())), [rows, tab, q]);
-  if (multi && scope === 'all' && host) return <div class="home"><div class="hwelcome"><div><h2 style={{ margin: 0 }}>{x.headTitle}</h2><span class="muted">{x.chooseSub}</span></div></div>{scopeBar}<AllCountries host={host} locale={locale} open={openCountry} /></div>;
+  if (multi && scope === 'all' && host) return <div class="home"><div class="hwelcome"><div><h2 style={{ margin: 0 }}>{x.headTitle}</h2><span class="muted">{x.chooseSub}</span></div></div>{scopeBar}{strip}<AllCountries host={host} locale={locale} open={openCountry} /></div>;
   if (err) return <ErrorBar msg={err} retry={x.retry} />;
   if (!rows) return <div class="msg">…</div>;
   const waiting = rows.filter((r) => r.status === 'submitted').length;
@@ -142,6 +149,7 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
     <div class="home">
       <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{ho ? x.headTitle : x.title}</h2><span class="muted">{ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub}</span></div></div>
       {scopeBar}
+      {strip}
       {ho && ins && <NeedsYou locale={locale} openAll={needAll} setOpenAll={setNeedAll}
         needs={needsOf(ins, locale).map((need) => ({ need, go: () => { if (need.tab) setTab(need.tab); } }))} />}
       {ho && <>
@@ -348,7 +356,7 @@ interface RegionData { state: 'loading' | 'out' | 'no' | 'consent' | 'err' | 'ok
 const EMPTY: RegionData = { state: 'loading', companies: [], expiring: [] };
 
 /** Global admin home: every country and its companies at once. Each country is its own server and login, so each is asked separately. */
-function AllCountries({ host, locale, open }: { host: HostOptions; locale: Locale; open: (region: string, f?: { tab?: 'review' | 'all' | 'expiring' | 'companies'; company?: string }) => void }) {
+function AllCountries({ host, locale, open }: { host: HostOptions; locale: Locale; open: (region: string, f?: { tab?: 'review' | 'all' | 'expiring' | 'companies'; company?: string; node?: string }) => void }) {
   const x = X[locale];
   const regions = host.regions ?? [];
   const [d, setD] = useState<Record<string, RegionData>>({});
@@ -369,6 +377,7 @@ function AllCountries({ host, locale, open }: { host: HostOptions; locale: Local
     set(r.id, { state: 'ok', companies: co.json?.companies ?? [], expiring: ex.json?.items ?? [], ins: ig.status === 200 ? (ig.json as Insights) : undefined });
   });
   useEffect(() => { load(); }, []);
+  useEffect(() => { const f = () => { if (document.visibilityState !== 'hidden') load(); }; window.addEventListener('focus', f); return () => window.removeEventListener('focus', f); }, []);
   const ok = regions.map((r) => ({ r, v: d[r.id] })).filter((e) => e.v?.state === 'ok');
   const sum = (f: (v: RegionData) => number) => ok.reduce((a, e) => a + f(e.v!), 0);
   const waiting = (v: RegionData) => v.companies.reduce((a, c) => a + c.submitted, 0);
@@ -391,7 +400,7 @@ function AllCountries({ host, locale, open }: { host: HostOptions; locale: Local
             </div>
             {v.state === 'loading' && <p class="muted">…</p>}
             {v.state === 'out' && <p><span class="chip warn">{x.cOff}</span> <button class="btn" onClick={() => host.onSignIn(r.id, true)}>{x.cSign}</button></p>}
-            {v.state === 'consent' && <p><small class="muted">{x.cConsent}</small> <button class="btn" onClick={() => host.onSignIn(r.id)}>{x.cSwitch}</button></p>}
+            {v.state === 'consent' && <Notice host={host} locale={locale} region={r.id} done={load} />}
             {v.state === 'no' && <p class="muted">{x.cNo}</p>}
             {v.state === 'err' && <p class="muted">{x.cErr}</p>}
             {v.state === 'ok' && v.ins && v.ins.funnel.partners > 0 && <div style={{ margin: '8px 0 4px' }}><Funnel f={v.ins.funnel} locale={locale} compact /></div>}
@@ -425,5 +434,86 @@ function AllCountries({ host, locale, open }: { host: HostOptions; locale: Local
         )}
       </section>
     </>
+  );
+}
+
+
+/** The privacy notice of one country, read and accepted without leaving the page. */
+function Notice({ host, locale, region, done }: { host: HostOptions; locale: Locale; region: string; done: () => void }) {
+  const x = X[locale];
+  const [text, setText] = useState<string | null>(null);
+  const [err, setErr] = useState(false);
+  const read = async () => { const r = await host.transport('GET', '/v1/consent/first-login', undefined, region); if (r.status === 200) { setText(String(r.json?.text ?? '')); setErr(false); } else setErr(true); };
+  return (
+    <div>
+      <small class="muted">{x.cConsent}</small>{' '}
+      {text === null ? <button class="btn" onClick={() => void read()}>{x.noticeT}</button> : (
+        <>
+          <p style={{ whiteSpace: 'pre-wrap', overflow: 'auto', maxHeight: '220px', fontSize: '13px' }}>{text}</p>
+          <button class="btn" onClick={async () => { await host.transport('POST', '/v1/consent/first-login', undefined, region); setText(null); done(); }}>{x.noticeOk}</button>
+        </>
+      )}
+      {err && <p class="err" role="alert">{x.noticeErr}</p>}
+    </div>
+  );
+}
+
+/** One line under the scope bar when another country needs a sign-in or the privacy notice. Nothing shows when all is well. */
+function ConnectStrip({ host, locale }: { host: HostOptions; locale: Locale }) {
+  const x = X[locale];
+  const regions = host.regions ?? [];
+  const [st, setSt] = useState<Record<string, 'ok' | 'out' | 'consent' | 'no'>>({});
+  const [openR, setOpenR] = useState('');
+  const check = () => regions.forEach(async (r) => {
+    const me = await host.transport('GET', '/v1/me', undefined, r.id);
+    const v = me.status === 200 ? (me.json?.needsConsent ? 'consent' : me.json?.isHeadOffice ? 'ok' : 'no') : me.status === 401 ? 'out' : 'no';
+    setSt((o) => ({ ...o, [r.id]: v }));
+  });
+  useEffect(() => { check(); const f = () => check(); window.addEventListener('focus', f); return () => window.removeEventListener('focus', f); }, []);
+  const need = regions.filter((r) => st[r.id] === 'out' || st[r.id] === 'consent');
+  if (need.length === 0) return null;
+  return (
+    <div class="connect">
+      {need.map((r) => st[r.id] === 'out'
+        ? <button class="chip warn" key={r.id} onClick={() => host.onSignIn(r.id, true)}>{x.connectL(r.label)}</button>
+        : <button class="chip warn" key={r.id} onClick={() => setOpenR(openR === r.id ? '' : r.id)}>{x.noticeL(r.label)}</button>)}
+      {openR && st[openR] === 'consent' && <section class="hcard"><Notice host={host} locale={locale} region={openR} done={() => { setOpenR(''); check(); }} /></section>}
+    </div>
+  );
+}
+
+/** Type two letters, see matching company and partner names from every country you are signed in to. Names only. */
+function JumpTo({ host, locale, open }: { host: HostOptions; locale: Locale; open: (region: string, f?: { tab?: NeedTab; company?: string; node?: string }) => void }) {
+  const x = X[locale];
+  const regions = host.regions ?? [];
+  const [q, setQ] = useState('');
+  const [hits, setHits] = useState<{ region: string; label: string; kind: 'co' | 'pa'; name: string; sub?: string; node?: string }[] | null>(null);
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setHits(null); return; }
+    let live = true;
+    const id = setTimeout(async () => {
+      const out: NonNullable<typeof hits> = [];
+      await Promise.all(regions.map(async (r) => {
+        const res = await host.transport('GET', `/v1/ho/search?q=${encodeURIComponent(term)}`, undefined, r.id);
+        if (res.status !== 200) return;
+        for (const c of res.json.companies ?? []) out.push({ region: r.id, label: r.label, kind: 'co', name: c.name });
+        for (const p of res.json.partners ?? []) out.push({ region: r.id, label: r.label, kind: 'pa', name: p.name, sub: p.company, node: p.nodeId });
+      }));
+      if (live) setHits(out);
+    }, 250);
+    return () => { live = false; clearTimeout(id); };
+  }, [q]);
+  const pick = (h: NonNullable<typeof hits>[number]) => { setQ(''); setHits(null); open(h.region, h.kind === 'co' ? { tab: 'all', company: h.name } : { tab: 'all', node: h.node }); };
+  return (
+    <div class="jump">
+      <input type="search" value={q} placeholder={x.jump} aria-label={x.jump} onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={(e) => { if (e.key === 'Escape') { setQ(''); setHits(null); } }} />
+      {hits && (
+        <div class="jumplist" role="listbox">
+          {hits.length === 0 && <div class="calm">{x.jumpNone}</div>}
+          {hits.map((h) => <button role="option" class="hrow" key={h.region + h.kind + (h.node ?? h.name)} onClick={() => pick(h)}><span class="rname">{h.name}{h.sub ? <small class="muted"> · {h.sub}</small> : null}</span><small class="muted">{h.kind === 'co' ? x.jCo : x.jPa} · {h.label}</small></button>)}
+        </div>
+      )}
+    </div>
   );
 }

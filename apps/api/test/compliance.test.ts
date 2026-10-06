@@ -135,6 +135,14 @@ test('expiry reminders go out at 30, 15 and 0 days, once each', async () => {
     assert.equal(r.json.coverage.meets + r.json.coverage.below + r.json.coverage.none, r.json.funnel.partners);
     assert.ok(!JSON.stringify(r.json).includes('Agency'), 'no names, only counts');
   }
+  { // jump-to: names only, head office only
+    assert.equal((await call(AG, 'GET', '/v1/ho/search?q=ma')).status, 403);
+    assert.equal((await call(HO, 'GET', '/v1/ho/search?q=x')).status, 400);
+    const r = await call(HO, 'GET', '/v1/ho/search?q=maple'); assert.equal(r.status, 200, JSON.stringify(r.json));
+    assert.ok(r.json.companies.some((c: { name: string }) => c.name === 'Maple Insurance'));
+    assert.deepEqual(Object.keys(r.json.companies[0]).sort(), ['id', 'name']);
+    assert.equal((await call(HO, 'GET', '/v1/ho/search?q=%25%25')).json.companies.length, 0, 'wildcards are literal');
+  }
 });
 
 test('head office administrators create companies for their country; nobody else can', async () => {
