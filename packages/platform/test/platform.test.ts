@@ -6,7 +6,8 @@ const env = { REGION: 'ca-qc', DATABASE_URL: 'a', APP_DATABASE_URL: 'b', AUTH_DA
 
 test('config refuses dev shortcuts in prod and staging', () => {
   assert.throws(() => loadConfig({ ...env, APP_ENV: 'prod', DEV_AUTH: 'true' }), /not allowed/);
-  assert.throws(() => loadConfig({ ...env, APP_ENV: 'staging', LOCAL_KEYS: 'true' }), /not allowed/);
+  assert.throws(() => loadConfig({ ...env, APP_ENV: 'staging', LOCAL_KEYS: 'true', LOCAL_KEY_SECRET: 'x'.repeat(31) }), /32\+/);
+  assert.equal(loadConfig({ ...env, APP_ENV: 'prod', LOCAL_KEYS: 'true', LOCAL_KEY_SECRET: 'x'.repeat(32) }).localKeys, true);
   assert.equal(loadConfig({ ...env, APP_ENV: 'dev', DEV_AUTH: 'true' }).devAuth, true);
 });
 

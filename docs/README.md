@@ -28,7 +28,7 @@ Tests: `npm test` (needs `TEST_ADMIN_URL`, a superuser URL; default `postgres://
 ## Rules the code enforces
 - Every user request runs inside `withRequestTx`, which sets the tenant, user, nodes and admin flags for row-level security. Without them the app role sees no rows.
 - A database belongs to one region. The app refuses to start, and a tenant cannot be created, if the region differs. A prod database refuses new tenants until `physical_region_verified` is set.
-- `DEV_AUTH` and `LOCAL_KEYS` are refused when `APP_ENV` is staging or prod.
+- `DEV_AUTH` is refused when `APP_ENV` is staging or prod; `LOCAL_KEYS` is allowed there only with a 32+ character `LOCAL_KEY_SECRET` (until a cloud KMS is plugged in).
 - Siblings cannot see each other's nodes, users, roles, invitations or CRM/LMS rows. Only tenant admins read the audit log.
 - Partner admins add sub-partners beneath themselves (depth cap 5, loops rejected). Linking an existing partner to another location is a tenant-admin action.
 

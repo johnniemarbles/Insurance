@@ -44,9 +44,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (region !== 'ca-qc' && region !== 'us') throw new Error(`Invalid REGION ${region}`);
   const devAuth = env.DEV_AUTH === 'true';
   const localKeys = env.LOCAL_KEYS === 'true';
-  // Safety rails: development shortcuts must never reach production or staging.
-  if ((appEnv === 'prod' || appEnv === 'staging') && (devAuth || localKeys)) {
-    throw new Error('DEV_AUTH and LOCAL_KEYS are not allowed when APP_ENV is staging or prod');
+  // Safety rails: the header-trusting dev sign-in must never reach production or staging.
+  // LOCAL_KEYS (keys derived from LOCAL_KEY_SECRET) is allowed there until a cloud KMS is plugged in, but needs a strong secret.
+  if ((appEnv === 'prod' || appEnv === 'staging') && devAuth) {
+    throw new Error('DEV_AUTH is not allowed when APP_ENV is staging or prod');
+  }
+  if ((appEnv === 'prod' || appEnv === 'staging') && localKeys && (env.LOCAL_KEY_SECRET ?? '').length < 32) {
+    throw new Error('LOCAL_KEY_SECRET must be 32+ characters when APP_ENV is staging or prod');
   }
   if (localKeys && (env.LOCAL_KEY_SECRET ?? '').length < 16) throw new Error('LOCAL_KEY_SECRET (16+ characters) is required with LOCAL_KEYS');
   const googleClientId = env.GOOGLE_CLIENT_ID || undefined;
