@@ -16,11 +16,11 @@ export type SortKey = 'updated' | 'name' | 'value' | 'closeDate' | 'daysInStage'
 
 export interface TransportResult { status: number; json: any }
 /** How the app reaches the server. Standalone: fetch. Inside Gmail: a message to the extension's background worker. */
-export type Transport = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<TransportResult>;
+export type Transport = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown, region?: string) => Promise<TransportResult>;
 /** Gmail's compose window, available only when the app runs inside Gmail through the extension. */
 export interface ComposeApi { send(m: { to: string; subject: string; html: string; review?: boolean }): Promise<{ ok: boolean; threadId?: string; error?: string; unconfirmed?: boolean }> }
 /** Which page the host opened, for example { page: 'pipelines', id: '…' } from the Gmail left panel. */
 export interface PiiRoute { page: string; id?: string }
 /** Countries a person can sign in to. Only set when the extension serves more than one deployment. */
 export interface RegionChoice { id: string; label: string }
-export interface HostOptions { extVersion?: string; transport: Transport; onSignIn: (region?: string) => void; regions?: RegionChoice[]; region?: string; assetBase?: string; compose?: ComposeApi; route?: PiiRoute; navigate?: (page: string, id?: string) => void }
+export interface HostOptions { extVersion?: string; transport: Transport; onSignIn: (region?: string, keep?: boolean) => void; regions?: RegionChoice[]; region?: string; assetBase?: string; compose?: ComposeApi; route?: PiiRoute; navigate?: (page: string, id?: string) => void }

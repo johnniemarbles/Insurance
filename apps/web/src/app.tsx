@@ -116,7 +116,7 @@ function Shell({ isHeadOffice, call, t, locale, canAuthor, meEmail, meName, comp
       {page === 'home' ? <HomePage call={call} t={t} locale={locale} go={go} name={meName} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'renewals' ? <RenewalsPage call={call} locale={locale} go={go} />
-        : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} />
+        : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} host={host} />
         : page === 'contacts' ? <ContactsView call={call} t={t} />
         : page === 'training' && LMS ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />
         : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} compose={compose} /> : <div class="msg">{t.loading}</div>)

@@ -3,15 +3,17 @@ import '@inboxsdk/core/background.js';
 import type { ApiRequest, ApiResponse, Message } from './messages';
 
 // The server address: an administrator's override first, then the country the person chose, then the build's default.
-async function apiBase(): Promise<string> {
+async function apiBase(want?: string): Promise<string> {
   const { apiBase, region } = await chrome.storage.sync.get(['apiBase', 'region']);
+  // A named country (the Countries view) goes to that country's server whatever the person last signed in to.
+  if (want && __REGIONS__[want]) return __REGIONS__[want].replace(/\/+$/, '');
   const byRegion = typeof region === 'string' ? __REGIONS__[region] : undefined;
   return ((apiBase as string | undefined) || byRegion || __API_BASE__).replace(/\/+$/, '');
 }
 
 async function callApi(m: ApiRequest): Promise<ApiResponse> {
   if (!m.path.startsWith('/v1/')) return { status: 400, json: { error: { message: 'bad path' } } };
-  const base = await apiBase();
+  const base = await apiBase(m.region);
   const res = await fetch(base + m.path, {
     method: m.method,
     credentials: 'include',
@@ -31,8 +33,9 @@ chrome.runtime.onMessage.addListener((msg: Message, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'pii:signin') {
-    const pick = msg.region && __REGIONS__[msg.region] ? chrome.storage.sync.set({ region: msg.region }) : Promise.resolve();
-    pick.then(apiBase).then((b) => chrome.tabs.create({ url: `${b}/auth/google/start` }));
+    // keep: sign in to that country without making it the one the rest of the app uses.
+    const pick = msg.region && __REGIONS__[msg.region] && !msg.keep ? chrome.storage.sync.set({ region: msg.region }) : Promise.resolve();
+    pick.then(() => apiBase(msg.keep ? msg.region : undefined)).then((b) => chrome.tabs.create({ url: `${b}/auth/google/start` }));
     return false;
   }
   return false;

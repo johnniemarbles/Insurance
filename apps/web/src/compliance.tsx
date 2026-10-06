@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
-import type { Locale } from './types.ts';
+import type { HostOptions, Locale } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Step { id: string; done: boolean; hint?: string }
@@ -19,6 +19,7 @@ const X = {
   'en': {
     title: 'Compliance', sub: 'Licences, E&O insurance and paperwork for each partner. PII keeps the status and copies of documents, never SIN, SSN or bank details.',
     headTitle: 'Compliance review', headSub: 'Files from every company in this country. You see compliance information only, never CRM records.',
+    countries: 'Countries', cTitle: 'All countries', cSub: 'Totals only. Each country is its own server, so you sign in to each once. Partner files stay inside their country.', cSign: 'Sign in', cOff: 'Not signed in', cNo: 'No head-office access in this account', cTotals: (c: number, p: number, w: number, e: number) => `${c} compan${c === 1 ? 'y' : 'ies'} · ${p} partner${p === 1 ? '' : 's'} · ${w} waiting · ${e} expiring`, cOpen: 'Open this country', cRefresh: 'Refresh',
     companies: 'Companies', newCo: 'Add a company', coName: 'Company name', coAdmin: 'Administrator email', coHelp: 'The administrator is invited by email. They sign in with Google, then set up their branches and partners.', coAdd: 'Create company', coNone: 'No companies yet.', coStat: (p: number, s: number, a: number) => `${p} partner${p === 1 ? '' : 's'} · ${s} waiting · ${a} approved`, invited: 'Not signed in yet', active: 'Active',
     review: 'To review', expiring: 'Expiring', all: 'All partners', search: 'Search partners or companies', none: 'Nothing here.', retry: 'Try again', back: 'All partners',
     status: { incomplete: 'Incomplete', submitted: 'Waiting for review', approved: 'Approved', rejected: 'Sent back' } as Record<string, string>,
@@ -40,6 +41,7 @@ const X = {
   'fr-CA': {
     title: 'Conformité', sub: 'Permis, assurance E&O et documents de chaque partenaire. PII conserve l’état et les copies des documents, jamais le NAS, le SSN ni les données bancaires.',
     headTitle: 'Examen de conformité', headSub: 'Dossiers de toutes les entreprises de ce pays. Vous voyez la conformité seulement, jamais les dossiers du CRM.',
+    countries: 'Pays', cTitle: 'Tous les pays', cSub: 'Totaux seulement. Chaque pays est un serveur distinct : connectez-vous à chacun une fois. Les dossiers des partenaires restent dans leur pays.', cSign: 'Se connecter', cOff: 'Non connecté', cNo: 'Aucun accès au siège social avec ce compte', cTotals: (c: number, p: number, w: number, e: number) => `${c} entreprise${c === 1 ? '' : 's'} · ${p} partenaire${p === 1 ? '' : 's'} · ${w} en attente · ${e} à échéance`, cOpen: 'Ouvrir ce pays', cRefresh: 'Actualiser',
     companies: 'Entreprises', newCo: 'Ajouter une entreprise', coName: 'Nom de l’entreprise', coAdmin: 'Courriel de l’administrateur', coHelp: 'L’administrateur est invité par courriel. Il se connecte avec Google, puis configure ses succursales et ses partenaires.', coAdd: 'Créer l’entreprise', coNone: 'Aucune entreprise pour l’instant.', coStat: (p: number, s: number, a: number) => `${p} partenaire${p === 1 ? '' : 's'} · ${s} en attente · ${a} approuvé${a === 1 ? '' : 's'}`, invited: 'Pas encore connecté', active: 'Actif',
     review: 'À examiner', expiring: 'Échéances', all: 'Tous les partenaires', search: 'Chercher un partenaire ou une entreprise', none: 'Rien ici.', retry: 'Réessayer', back: 'Tous les partenaires',
     status: { incomplete: 'Incomplet', submitted: 'En attente d’examen', approved: 'Approuvé', rejected: 'Renvoyé' } as Record<string, string>,
@@ -70,22 +72,24 @@ function save(name: string, mime: string, base64: string) {
 
 function Bar({ pct }: { pct: number }) { return <span class="cbar" role="img" aria-label={`${pct}%`}><i style={{ width: `${pct}%` }} /></span>; }
 
-export function CompliancePage({ call, locale, isHeadOffice, go }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void }) {
+export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions }) {
   const [open, setOpen] = useState<string | null>(null);
-  return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} />;
+  return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} />;
 }
 
-function ListView({ call, locale, ho, openFile }: { call: Call; locale: Locale; ho: boolean; openFile: (id: string) => void }) {
+function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Locale; ho: boolean; openFile: (id: string) => void; host?: HostOptions }) {
   const x = X[locale];
   const base = ho ? '/v1/ho' : '/v1/compliance';
   const [rows, setRows] = useState<any[] | null>(null);
   const [exp, setExp] = useState<any[]>([]);
   const [err, setErr] = useState('');
-  const [tab, setTab] = useState<'review' | 'all' | 'expiring' | 'companies'>(ho ? 'review' : 'all');
+  const [tab, setTab] = useState<'review' | 'all' | 'expiring' | 'companies' | 'countries'>(ho ? 'review' : 'all');
   const [cos, setCos] = useState<any[]>([]);
   const [coName, setCoName] = useState(''); const [coMail, setCoMail] = useState(''); const [coErr, setCoErr] = useState('');
   const loadCos = () => call('GET', '/v1/ho/companies').then((r) => setCos(r.companies), () => undefined);
   const [q, setQ] = useState('');
+  const regions = host?.regions ?? [];
+  const multi = ho && regions.length > 1;
   useEffect(() => {
     call('GET', `${base}/partners`).then((r) => setRows(r.partners), (e) => setErr((e as Error).message));
     if (ho) { call('GET', '/v1/ho/expiring?days=60').then((r) => setExp(r.items), () => undefined); void loadCos(); }
@@ -98,9 +102,9 @@ function ListView({ call, locale, ho, openFile }: { call: Call; locale: Locale; 
     <div class="home">
       <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{ho ? x.headTitle : x.title}</h2><span class="muted">{ho ? x.headSub : x.sub}</span></div></div>
       {ho && <div class="rstats" role="tablist">
-        {([['review', x.review, waiting], ['all', x.all, rows.length], ['expiring', x.expiring, exp.length], ['companies', x.companies, cos.length]] as const).map(([k, l, n]) => <button role="tab" aria-selected={tab === k} class={`rstat ${k === 'expiring' && n ? 'warn' : ''}`} onClick={() => setTab(k)}><b>{n}</b><span>{l}</span></button>)}
+        {([['review', x.review, waiting], ['all', x.all, rows.length], ['expiring', x.expiring, exp.length], ['companies', x.companies, cos.length], ...(multi ? [['countries', x.countries, regions.length] as const] : [])] as const).map(([k, l, n]) => <button role="tab" aria-selected={tab === k} class={`rstat ${k === 'expiring' && n ? 'warn' : ''}`} onClick={() => setTab(k)}><b>{n}</b><span>{l}</span></button>)}
       </div>}
-      {tab === 'companies' ? (
+      {tab === 'countries' && host ? <Countries host={host} locale={locale} /> : tab === 'companies' ? (
         <section class="hcard">
           <h3>{x.newCo}</h3>
           <form class="cform" onSubmit={async (e) => { e.preventDefault(); setCoErr(''); try { await call('POST', '/v1/ho/companies', { name: coName, adminEmail: coMail, locale }); setCoName(''); setCoMail(''); await loadCos(); } catch (er) { setCoErr((er as Error).message); } }}>
@@ -278,5 +282,44 @@ function Appointment({ x, onAsk }: { x: typeof X['en']; onAsk: (carrier: string)
       <button class="btn quiet" type="submit" disabled={!c.trim()}>{x.request}</button>
       <small class="muted">{x.apptHelp}</small>
     </form>
+  );
+}
+
+interface Totals { state: 'loading' | 'out' | 'no' | 'ok'; companies: number; partners: number; waiting: number; expiring: number }
+
+/** Main Admin view: one row per country with totals only. Each country is its own server and login, so each is asked separately. */
+function Countries({ host, locale }: { host: HostOptions; locale: Locale }) {
+  const x = X[locale];
+  const regions = host.regions ?? [];
+  const [t, setT] = useState<Record<string, Totals>>({});
+  const load = () => regions.forEach(async (r) => {
+    const ask = (path: string) => host.transport('GET', path, undefined, r.id);
+    setT((o) => ({ ...o, [r.id]: { state: 'loading', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
+    const me = await ask('/v1/me');
+    if (me.status === 401 || me.status === 0 || me.status === -1) return setT((o) => ({ ...o, [r.id]: { state: 'out', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
+    if (me.status !== 200 || !me.json?.isHeadOffice) return setT((o) => ({ ...o, [r.id]: { state: 'no', companies: 0, partners: 0, waiting: 0, expiring: 0 } }));
+    const [co, ex] = await Promise.all([ask('/v1/ho/companies'), ask('/v1/ho/expiring?days=60')]);
+    const list: any[] = co.json?.companies ?? [];
+    setT((o) => ({ ...o, [r.id]: { state: 'ok', companies: list.length, partners: list.reduce((a, c) => a + c.partners, 0), waiting: list.reduce((a, c) => a + c.submitted, 0), expiring: (ex.json?.items ?? []).length } }));
+  });
+  useEffect(() => { load(); }, []);
+  return (
+    <section class="hcard">
+      <h3>{x.cTitle}</h3>
+      <p class="muted">{x.cSub}</p>
+      {regions.map((r) => {
+        const v = t[r.id];
+        return (
+          <div class="erow" key={r.id}>
+            <span><b>{r.label}</b></span><span class="spacer" />
+            {!v || v.state === 'loading' ? <small class="muted">…</small>
+              : v.state === 'ok' ? <small class="muted">{x.cTotals(v.companies, v.partners, v.waiting, v.expiring)}</small>
+              : v.state === 'no' ? <small class="muted">{x.cNo}</small>
+              : <><span class="chip warn">{x.cOff}</span><button class="btn" onClick={() => host.onSignIn(r.id, true)}>{x.cSign}</button></>}
+          </div>
+        );
+      })}
+      <p><button class="btn" onClick={load}>{x.cRefresh}</button></p>
+    </section>
   );
 }
