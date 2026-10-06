@@ -4,6 +4,7 @@ import { strings, type Locale, type Strings } from './i18n';
 interface Me { needsConsent: boolean; user: { displayName: string | null; email: string; locale: Locale }; tenant: { name: string }; product: { name: string; logoUrl: string } }
 interface Pipeline { id: string; name: string; stages: { id: string; name: string }[] }
 interface Box { id: string; name: string; pipelineId: string; stageId: string; ownerNodeId: string }
+interface AliasRule { alias: string; pipelineId: string; stageId: string | null; pipelineName: string | null }
 interface Note { id: string; authorName: string | null; body: string; createdAt: string }
 interface Task { id: string; title: string; dueAt: string | null; doneAt: string | null }
 export interface CapturedMessage {
@@ -13,6 +14,8 @@ export interface ThreadInfo {
   getSubject(): string;
   getSender(): { email: string; name: string } | null;
   getThreadId(): Promise<string>;
+  /** Every address the conversation was sent to or copied to, read from the open page. Stays in the browser. */
+  getRecipients?(): Promise<string[]>;
   capture(): Promise<{ messages: CapturedMessage[]; skipped: number }>;
 }
 
@@ -73,27 +76,34 @@ export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
 
   async function main(me: Me): Promise<void> {
     const threadId = await thread.getThreadId();
-    const [{ pipelines }, { boxes: recent }, linked] = await Promise.all([
+    const [{ pipelines }, { boxes: recent }, linked, aliasRules, recipients] = await Promise.all([
       api<{ pipelines: Pipeline[] }>('GET', '/v1/pipelines'),
       api<{ boxes: Box[] }>('GET', '/v1/boxes?limit=50'),
       api<{ boxes: (Box & { threadId: string })[] }>('GET', `/v1/threads/lookup?gmailThreadId=${encodeURIComponent(threadId)}`),
+      api<{ rules: AliasRule[] }>('GET', '/v1/alias-rules').then((r) => r.rules, () => [] as AliasRule[]),
+      (thread.getRecipients ? thread.getRecipients() : Promise.resolve([] as string[])).catch(() => [] as string[]),
     ]);
+    // Matching happens here, in the browser: only the rules came from the server, nothing about the email went up.
+    const seen = new Set(recipients.map((a) => a.trim().toLowerCase()));
+    const hit = aliasRules.find((r) => seen.has(r.alias));
     const head = el('div', { class: 'head' }, el('img', { src: me.product.logoUrl, alt: '' }), me.product.name);
     const sub = el('div', { class: 'muted', textContent: `${me.tenant.name} · ${me.user.email}` });
     const parts: Node[] = [head, sub];
-    if (linked.boxes.length === 0) parts.push(addPanel(me, threadId, pipelines, recent));
+    if (linked.boxes.length === 0) parts.push(addPanel(me, threadId, pipelines, recent, hit));
     else for (const b of linked.boxes) parts.push(boxPanel(b, pipelines, threadId));
     show(...parts);
   }
 
   // ---------------- not linked yet ----------------
-  function addPanel(_me: Me, threadId: string, pipelines: Pipeline[], recent: Box[]): HTMLElement {
+  function addPanel(_me: Me, threadId: string, pipelines: Pipeline[], recent: Box[], suggest?: AliasRule): HTMLElement {
     const wrap = el('div', { class: 'card' }, el('b', { textContent: t.addToBox }));
     const target = el('select');
     target.append(el('option', { value: '', textContent: t.newBox }));
     for (const b of recent) target.append(el('option', { value: b.id, textContent: b.name }));
     const pSel = el('select');
     for (const p of pipelines) pSel.append(el('option', { value: p.id, textContent: p.name }));
+    const suggested = suggest && pipelines.find((p) => p.id === suggest.pipelineId);
+    if (suggested) pSel.value = suggested.id;
     const name = el('input', { value: thread.getSubject() || '' });
     const locSel = el('select');
     const locWrap = el('div', {}, el('label', { textContent: t.location }), locSel);
@@ -109,6 +119,7 @@ export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
     target.onchange = () => { newFields.style.display = target.value ? 'none' : ''; };
     const msg = el('div');
     const go = el('button', { textContent: t.review });
+    if (suggest && suggested) wrap.append(el('div', { class: 'ok', textContent: t.aliasHint(suggest.alias, suggested.name) }));
     wrap.append(el('label', { textContent: t.existingBox }), target, newFields, go, msg);
     if (pipelines.length === 0 && recent.length === 0) { wrap.replaceChildren(el('b', { textContent: t.addToBox }), el('p', { class: 'muted', textContent: t.noPipeline })); return wrap; }
 
@@ -139,7 +150,7 @@ export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
                 });
                 contactId = c?.id;
               }
-              boxId = (await api<{ id: string }>('POST', '/v1/boxes', { pipelineId: pSel.value, name: recordName, contextNodeId: loc, contactIds: contactId ? [contactId] : undefined })).id;
+              boxId = (await api<{ id: string }>('POST', '/v1/boxes', { pipelineId: pSel.value, stageId: suggest && suggest.pipelineId === pSel.value && suggest.stageId ? suggest.stageId : undefined, name: recordName, contextNodeId: loc, contactIds: contactId ? [contactId] : undefined })).id;
             }
             await api('POST', `/v1/boxes/${boxId}/threads`, { gmailThreadId: threadId, subject: thread.getSubject() || undefined, acceptedNotice: true, messages });
             await load();

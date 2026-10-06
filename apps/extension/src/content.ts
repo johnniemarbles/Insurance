@@ -196,6 +196,13 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
         return c ? { email: c.emailAddress, name: c.name ?? '' } : null;
       },
       getThreadId: () => threadView.getThreadIDAsync(),
+      getRecipients: async () => {
+        const out = new Set<string>();
+        for (const mv of threadView.getMessageViews()) {
+          try { for (const r of await mv.getRecipientsFull()) out.add(r.emailAddress.toLowerCase()); } catch { /* a collapsed message may not answer */ }
+        }
+        return [...out];
+      },
       capture: async () => {
         const messages: CapturedMessage[] = [];
         let skipped = 0;

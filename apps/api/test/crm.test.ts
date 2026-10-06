@@ -1180,3 +1180,26 @@ test('daily snapshots: saved once a day, compared with a month ago for the whole
   assert.equal(a.prev.data.openCount, 1);
   assert.equal((await call(P1U, 'GET', '/v1/insights/overview')).json.prev, null, 'a branch is never compared with company-wide numbers');
 });
+
+test('alias rules: managers map an address to a pipeline; others read them; one address, one pipeline; siblings see nothing', async () => {
+  const P = `/v1/pipelines/${pipe1}`;
+  const stages = (await call(P1U, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === pipe1).stages.map((s: any) => s.id) as string[];
+  assert.equal((await call(S1U, 'POST', `${P}/aliases`, { alias: 'travel@x.test' })).status, 403, 'not a manager');
+  assert.equal((await call(P1U, 'POST', `${P}/aliases`, { alias: 'not-an-address' })).status, 422);
+  assert.equal((await call(P1U, 'POST', `${P}/aliases`, { alias: 'travel@x.test', stageId: '00000000-0000-4000-8000-000000000000' })).status, 422, 'stage must be in the pipeline');
+  const made = await call(P1U, 'POST', `${P}/aliases`, { alias: ' Travel@X.test ', stageId: stages[1] });
+  assert.equal(made.status, 201);
+  const dup = await call(P1U, 'POST', `${P}/aliases`, { alias: 'travel@x.test' });
+  assert.equal(dup.status, 409);
+  assert.equal(dup.json.error.code, 'alias_taken');
+  const mine = (await call(P1U, 'GET', '/v1/alias-rules')).json.rules;
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].alias, 'travel@x.test', 'stored lower-case');
+  assert.equal(mine[0].pipelineId, pipe1);
+  assert.equal(mine[0].stageId, stages[1]);
+  assert.equal((await call(P2U, 'GET', '/v1/alias-rules')).json.rules.length, 0, 'a sibling branch sees no rule');
+  assert.equal((await call(P2U, 'GET', `${P}/aliases`)).status, 404);
+  assert.equal((await call(P2U, 'DELETE', `${P}/aliases/${made.json.id}`)).status, 404);
+  assert.equal((await call(P1U, 'DELETE', `${P}/aliases/${made.json.id}`)).status, 204);
+  assert.equal((await call(P1U, 'GET', '/v1/alias-rules')).json.rules.length, 0);
+});

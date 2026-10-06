@@ -98,6 +98,7 @@ export function PipelineEditor({ pipeline, call, t, locale, onClose, onChanged }
       </form>
 
       <Automations pipeline={pipeline} call={call} t={t} locale={locale} act={act} />
+      <AliasRules pipeline={pipeline} call={call} t={t} locale={locale} act={act} />
 
       <div class="actions"><button class="btn quiet" onClick={onClose}>{t.close}</button></div>
     </aside>
@@ -196,6 +197,46 @@ function Automations({ pipeline, call, t, locale, act }: { pipeline: Pipeline; c
         <button class="btn quiet" disabled={!ready} aria-label="+">+</button>
       </form>
       <p class="muted">{x.helpMore}</p>
+    </>
+  );
+}
+
+const ALX = {
+  'en': { h: 'Email aliases', help: 'When someone opens an email sent to one of these addresses, PII suggests adding it to this pipeline. Nothing is added until they accept.', ph: 'travel@yourcompany.com', start: 'Starting stage', first: 'First stage', none: 'No aliases yet.', add: 'Add alias', rm: 'Remove alias' },
+  'fr-CA': { h: 'Alias courriel', help: 'Quand quelqu’un ouvre un courriel envoyé à l’une de ces adresses, PII propose de l’ajouter à ce pipeline. Rien n’est ajouté avant son acceptation.', ph: 'voyage@votreentreprise.com', start: 'Étape de départ', first: 'Première étape', none: 'Aucun alias pour l’instant.', add: 'Ajouter l’alias', rm: 'Retirer l’alias' },
+};
+interface AliasRule { id: string; alias: string; stageId: string | null }
+function AliasRules({ pipeline, call, locale, act }: { pipeline: Pipeline; call: Call; t: Strings; locale: Locale; act: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const x = ALX[locale];
+  const [rules, setRules] = useState<AliasRule[]>([]);
+  const [alias, setAlias] = useState('');
+  const [stageId, setStageId] = useState('');
+  const [tick, setTick] = useState(0);
+  const P = `/v1/pipelines/${pipeline.id}/aliases`;
+  useEffect(() => { call('GET', P).then((r) => setRules(r.rules), () => undefined); }, [call, P, tick]);
+  const run = (fn: () => Promise<unknown>) => act(async () => { await fn(); setTick((n) => n + 1); });
+  const stageName = (id: string | null) => pipeline.stages.find((s) => s.id === id)?.name ?? x.first;
+  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(alias.trim());
+  return (
+    <>
+      <h3>{x.h}</h3>
+      <p class="muted">{x.help}</p>
+      {rules.length === 0 && <p class="muted">{x.none}</p>}
+      {rules.map((r) => (
+        <div class="erow" key={r.id}>
+          <span>{r.alias} → {stageName(r.stageId)}</span>
+          <span class="spacer" />
+          <button class="ib danger" aria-label={x.rm} onClick={() => void run(() => call('DELETE', `${P}/${r.id}`))}>✕</button>
+        </div>
+      ))}
+      <form class="erow wrap2" onSubmit={(e) => { e.preventDefault(); if (!ok) return; const a = alias.trim(); setAlias(''); void run(() => call('POST', P, { alias: a, ...(stageId ? { stageId } : {}) })); }}>
+        <input type="email" placeholder={x.ph} aria-label={x.h} value={alias} onInput={(e) => setAlias((e.target as HTMLInputElement).value)} />
+        <select aria-label={x.start} value={stageId} onChange={(e) => setStageId((e.target as HTMLSelectElement).value)}>
+          <option value="">{x.first}</option>
+          {pipeline.stages.map((s) => <option value={s.id}>{s.name}</option>)}
+        </select>
+        <button class="btn quiet" disabled={!ok} aria-label={x.add}>+</button>
+      </form>
     </>
   );
 }
