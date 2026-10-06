@@ -25,7 +25,8 @@ export function mapDbError(err: unknown): HttpError | null {
     if (msg.startsWith('Quebec-facing') || msg.startsWith('Every lesson needs')) return invalid(msg);
     if (msg.startsWith('Residency violation')) return new HttpError(500, 'residency', 'Residency check failed');
   }
-  if (e.code === '23505') return conflict('That already exists');
+  if (e.code === '22023') return invalid(msg);
+  if (e.code === '23505') return conflict(msg.startsWith('That email') ? msg : 'That already exists');
   if (e.code === '23503') return invalid('A referenced record does not exist');
   if (e.code === '42501') { if (process.env.PII_DEBUG_DB) console.error('42501', msg); return forbidden(); }
   return null;

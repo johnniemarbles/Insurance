@@ -19,6 +19,7 @@ const X = {
   'en': {
     title: 'Compliance', sub: 'Licences, E&O insurance and paperwork for each partner. PII keeps the status and copies of documents, never SIN, SSN or bank details.',
     headTitle: 'Compliance review', headSub: 'Files from every company in this country. You see compliance information only, never CRM records.',
+    companies: 'Companies', newCo: 'Add a company', coName: 'Company name', coAdmin: 'Administrator email', coHelp: 'The administrator is invited by email. They sign in with Google, then set up their branches and partners.', coAdd: 'Create company', coNone: 'No companies yet.', coStat: (p: number, s: number, a: number) => `${p} partner${p === 1 ? '' : 's'} · ${s} waiting · ${a} approved`, invited: 'Not signed in yet', active: 'Active',
     review: 'To review', expiring: 'Expiring', all: 'All partners', search: 'Search partners or companies', none: 'Nothing here.', retry: 'Try again', back: 'All partners',
     status: { incomplete: 'Incomplete', submitted: 'Waiting for review', approved: 'Approved', rejected: 'Sent back' } as Record<string, string>,
     steps: { profile: 'Business profile', licence: 'Licence', eo: 'E&O insurance', attestation: 'Confirm it is true', agreement: 'Partner agreement' } as Record<string, string>,
@@ -39,6 +40,7 @@ const X = {
   'fr-CA': {
     title: 'Conformité', sub: 'Permis, assurance E&O et documents de chaque partenaire. PII conserve l’état et les copies des documents, jamais le NAS, le SSN ni les données bancaires.',
     headTitle: 'Examen de conformité', headSub: 'Dossiers de toutes les entreprises de ce pays. Vous voyez la conformité seulement, jamais les dossiers du CRM.',
+    companies: 'Entreprises', newCo: 'Ajouter une entreprise', coName: 'Nom de l’entreprise', coAdmin: 'Courriel de l’administrateur', coHelp: 'L’administrateur est invité par courriel. Il se connecte avec Google, puis configure ses succursales et ses partenaires.', coAdd: 'Créer l’entreprise', coNone: 'Aucune entreprise pour l’instant.', coStat: (p: number, s: number, a: number) => `${p} partenaire${p === 1 ? '' : 's'} · ${s} en attente · ${a} approuvé${a === 1 ? '' : 's'}`, invited: 'Pas encore connecté', active: 'Actif',
     review: 'À examiner', expiring: 'Échéances', all: 'Tous les partenaires', search: 'Chercher un partenaire ou une entreprise', none: 'Rien ici.', retry: 'Réessayer', back: 'Tous les partenaires',
     status: { incomplete: 'Incomplet', submitted: 'En attente d’examen', approved: 'Approuvé', rejected: 'Renvoyé' } as Record<string, string>,
     steps: { profile: 'Profil de l’entreprise', licence: 'Permis', eo: 'Assurance E&O', attestation: 'Confirmer l’exactitude', agreement: 'Entente de partenariat' } as Record<string, string>,
@@ -79,11 +81,14 @@ function ListView({ call, locale, ho, openFile }: { call: Call; locale: Locale; 
   const [rows, setRows] = useState<any[] | null>(null);
   const [exp, setExp] = useState<any[]>([]);
   const [err, setErr] = useState('');
-  const [tab, setTab] = useState<'review' | 'all' | 'expiring'>(ho ? 'review' : 'all');
+  const [tab, setTab] = useState<'review' | 'all' | 'expiring' | 'companies'>(ho ? 'review' : 'all');
+  const [cos, setCos] = useState<any[]>([]);
+  const [coName, setCoName] = useState(''); const [coMail, setCoMail] = useState(''); const [coErr, setCoErr] = useState('');
+  const loadCos = () => call('GET', '/v1/ho/companies').then((r) => setCos(r.companies), () => undefined);
   const [q, setQ] = useState('');
   useEffect(() => {
     call('GET', `${base}/partners`).then((r) => setRows(r.partners), (e) => setErr((e as Error).message));
-    if (ho) call('GET', '/v1/ho/expiring?days=60').then((r) => setExp(r.items), () => undefined);
+    if (ho) { call('GET', '/v1/ho/expiring?days=60').then((r) => setExp(r.items), () => undefined); void loadCos(); }
   }, [call]);
   const shown = useMemo(() => (rows ?? []).filter((r) => (tab !== 'review' || r.status === 'submitted') && `${r.name} ${r.company ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())), [rows, tab, q]);
   if (err) return <ErrorBar msg={err} retry={x.retry} />;
@@ -93,9 +98,21 @@ function ListView({ call, locale, ho, openFile }: { call: Call; locale: Locale; 
     <div class="home">
       <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{ho ? x.headTitle : x.title}</h2><span class="muted">{ho ? x.headSub : x.sub}</span></div></div>
       {ho && <div class="rstats" role="tablist">
-        {([['review', x.review, waiting], ['all', x.all, rows.length], ['expiring', x.expiring, exp.length]] as const).map(([k, l, n]) => <button role="tab" aria-selected={tab === k} class={`rstat ${k === 'expiring' && n ? 'warn' : ''}`} onClick={() => setTab(k)}><b>{n}</b><span>{l}</span></button>)}
+        {([['review', x.review, waiting], ['all', x.all, rows.length], ['expiring', x.expiring, exp.length], ['companies', x.companies, cos.length]] as const).map(([k, l, n]) => <button role="tab" aria-selected={tab === k} class={`rstat ${k === 'expiring' && n ? 'warn' : ''}`} onClick={() => setTab(k)}><b>{n}</b><span>{l}</span></button>)}
       </div>}
-      {tab === 'expiring' ? (
+      {tab === 'companies' ? (
+        <section class="hcard">
+          <h3>{x.newCo}</h3>
+          <form class="cform" onSubmit={async (e) => { e.preventDefault(); setCoErr(''); try { await call('POST', '/v1/ho/companies', { name: coName, adminEmail: coMail, locale }); setCoName(''); setCoMail(''); await loadCos(); } catch (er) { setCoErr((er as Error).message); } }}>
+            <label class="fl">{x.coName}<input required minLength={2} maxLength={120} value={coName} onInput={(e) => setCoName((e.target as HTMLInputElement).value)} /></label>
+            <label class="fl">{x.coAdmin}<input required type="email" value={coMail} onInput={(e) => setCoMail((e.target as HTMLInputElement).value)} /></label>
+            <button class="btn" type="submit">{x.coAdd}</button>
+          </form>
+          <p class="muted">{x.coHelp}</p>{coErr && <p class="err" role="alert">{coErr}</p>}
+          {cos.length === 0 && <p class="muted">{x.coNone}</p>}
+          {cos.map((c) => <div class="erow" key={c.id}><span><b>{c.name}</b> <small class="muted">· {c.adminEmail}</small></span><span class="spacer" /><small class="muted">{x.coStat(c.partners, c.submitted, c.approved)}</small><span class={`chip ${c.adminStatus === 'invited' ? 'warn' : 'ok'}`}>{c.adminStatus === 'invited' ? x.invited : x.active}</span></div>)}
+        </section>
+      ) : tab === 'expiring' ? (
         <section class="hcard">{exp.length === 0 && <p class="muted">{x.none}</p>}
           {exp.map((i) => <button class="hrow" key={i.itemId} onClick={() => openFile(i.nodeId)}><span class="rname">{i.name} <small class="muted">· {i.company}</small></span><small class="muted">{i.label}</small><span class={`due ${tone(i.daysLeft)}`}>{i.expiresOn} · {x.left(i.daysLeft)}</span></button>)}
         </section>

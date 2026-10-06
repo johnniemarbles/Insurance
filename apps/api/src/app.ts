@@ -77,6 +77,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
     if (mapped) return reply.code(mapped.status).send({ error: { code: mapped.code, message: mapped.message } });
     const e = err as { validation?: unknown; statusCode?: number; message: string };
     if (e.validation) return reply.code(400).send({ error: { code: 'bad_request', message: e.message } });
+    if (process.env.PII_DEBUG_DB) console.error(err);
     req.log.error({ err }, 'unhandled error');
     return reply.code(500).send({ error: { code: 'internal', message: 'Something went wrong' } });
   });

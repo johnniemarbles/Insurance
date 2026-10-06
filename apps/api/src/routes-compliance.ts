@@ -337,6 +337,27 @@ export function registerComplianceRoutes(app: FastifyInstance, deps: AppDeps): v
   // --- head office --------------------------------------------------------------------------------------
   const ho = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => run(ctx, fn);
 
+  app.get('/v1/ho/companies', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    return ho(ctx, async (tx) => ({
+      country,
+      companies: (await tx.query('SELECT tenant_id AS id, name, created_at AS "createdAt", admin_email AS "adminEmail", admin_status AS "adminStatus", partners, submitted, approved FROM ho_company_list()')).rows,
+    }));
+  });
+
+  app.post('/v1/ho/companies', {
+    schema: { body: { type: 'object', required: ['name', 'adminEmail'], additionalProperties: false, properties: { name: { type: 'string', minLength: 2, maxLength: 120 }, adminEmail: { type: 'string', format: 'email', maxLength: 320 }, locale: { type: 'string', enum: ['en', 'fr-CA'] } } } },
+  }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const b = req.body as { name: string; adminEmail: string; locale?: 'en' | 'fr-CA' };
+    const id = await ho(ctx, async (tx) => {
+      const r = await tx.query<{ id: string }>('SELECT ho_company_create($1,$2,$3) AS id', [b.name, b.adminEmail, b.locale ?? 'en']);
+      await audit(tx, ctx, 'company_created', 'tenant', r.rows[0]!.id, { name: b.name.trim() });
+      return r.rows[0]!.id;
+    });
+    return reply.code(201).send({ id });
+  });
+
   app.get('/v1/ho/partners', async (req) => {
     const { ctx } = await deps.authenticate(req);
     return ho(ctx, async (tx) => {

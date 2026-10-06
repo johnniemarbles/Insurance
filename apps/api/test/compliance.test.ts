@@ -127,3 +127,20 @@ test('expiry reminders go out at 30, 15 and 0 days, once each', async () => {
   assert.ok((await call(HO, 'GET', '/v1/notifications')).json.notifications.some((x: { kind: string }) => x.kind === 'compliance_expiry'));
   assert.equal((await call(HO, 'GET', '/v1/ho/expiring?days=30')).json.items.length, 1);
 });
+
+test('head office administrators create companies for their country; nobody else can', async () => {
+  assert.equal((await call(AG, 'POST', '/v1/ho/companies', { name: 'Evil Co', adminEmail: 'x@evil.test' })).status, 403);
+  assert.equal((await call(HO, 'POST', '/v1/ho/companies', { name: 'Maple West', adminEmail: 'w@maple.test' })).status, 403, 'a Compliance person reviews files but does not create companies');
+  const r = await call(HOADMIN, 'POST', '/v1/ho/companies', { name: 'Maple West', adminEmail: 'W@Maple.test' });
+  assert.equal(r.status, 201, JSON.stringify(r.json));
+  assert.equal((await call(HOADMIN, 'POST', '/v1/ho/companies', { name: 'Again', adminEmail: 'w@maple.test' })).status, 409);
+  const list = (await call(HOADMIN, 'GET', '/v1/ho/companies')).json.companies;
+  const c = list.find((x: { name: string }) => x.name === 'Maple West');
+  assert.equal(c.adminEmail, 'w@maple.test'); assert.equal(c.adminStatus, 'invited');
+  assert.ok(list.some((x: { name: string }) => x.name === 'Maple Insurance'));
+  assert.ok(!list.some((x: { name: string }) => x.name === 'Head Office CA'), 'head office is not listed as a company');
+  // the new administrator can sign in and sees only their own company
+  assert.equal((await call('w@maple.test', 'GET', '/v1/me')).json.tenant.name, 'Maple West');
+  await call('w@maple.test', 'POST', '/v1/consent/first-login');
+  assert.equal((await call('w@maple.test', 'GET', '/v1/compliance/partners')).json.partners.length, 0);
+});
