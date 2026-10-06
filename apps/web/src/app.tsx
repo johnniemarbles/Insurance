@@ -56,6 +56,19 @@ export function App({ host }: { host: HostOptions }) {
     }
   }, [call]);
   useEffect(() => { void boot(); }, [boot]);
+  // The country changed: start over in place. The page stays if the other country has it, otherwise Home.
+  useEffect(() => {
+    const f = async () => {
+      await boot();
+      try {
+        const nav = (await call('GET', '/v1/nav')) as { items: { id: string }[] };
+        const here = host.route?.page;
+        if (here && here !== 'home' && !nav.items.some((i) => i.id === here || (here === 'merges' && i.id === 'pipelines'))) host.navigate?.('home');
+      } catch { /* signed out there: the sign-in screen shows */ }
+    };
+    window.addEventListener('pii-region-changed', f);
+    return () => window.removeEventListener('pii-region-changed', f);
+  }, [boot, call, host]);
 
   if (error) return <div class="pii"><div class="err" role="alert">{error}</div><div class="msg"><button class="btn" onClick={boot}>{t.retry}</button></div></div>;
   if (!me) return <div class="pii"><div class="msg">{t.loading}</div></div>;

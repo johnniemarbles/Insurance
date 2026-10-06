@@ -29,6 +29,7 @@ export const HEADER_CSS = `
 .ud{flex:none;width:8px;height:8px;border-radius:50%;background:var(--pri);margin-top:6px}
 .empty{padding:36px 24px;text-align:center;color:var(--mute)}.empty b{display:block;color:var(--navy);font-size:15px;margin-bottom:4px}
 .pf{padding:8px 12px;border-top:1px solid var(--line);display:flex;justify-content:space-between}
+.cc{position:absolute;bottom:2px;right:-2px;background:var(--navy);color:#fff;font-size:9px;font-weight:700;line-height:1;padding:2px 3px;border-radius:5px;border:1.5px solid #fff}
 .menu{width:240px;padding:6px}
 .mi{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:9px 10px;border-radius:8px;font:inherit;color:var(--ink);cursor:pointer;text-align:left}
 .mi:hover{background:var(--pri-soft)}.mi small{margin-left:auto;background:var(--accent);color:#fff;border-radius:9px;padding:0 6px;font-size:11px}
@@ -37,8 +38,8 @@ export const HEADER_CSS = `
 
 interface NavItem { id: string; name: string; count: number }
 const T = {
-  en: { bell: 'Notifications', all: 'See all in settings', markAll: 'Mark all read', clear: 'Nothing new', clearSub: 'We will tell you when something needs you.', open: 'Open PII', noticeT: 'Privacy notice', noticeRead: 'Read the privacy notice', noticeOk: 'I accept', retry: 'Could not load. Try again', ago: (m: number) => (m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`) },
-  'fr-CA': { bell: 'Notifications', all: 'Tout voir dans les paramètres', markAll: 'Tout marquer comme lu', clear: 'Rien de nouveau', clearSub: 'Nous vous aviserons quand quelque chose vous attend.', open: 'Ouvrir PII', noticeT: 'Avis de confidentialité', noticeRead: 'Lire l’avis de confidentialité', noticeOk: 'J’accepte', retry: 'Chargement impossible. Réessayer', ago: (m: number) => (m < 1 ? 'à l’instant' : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`) },
+  en: { bell: 'Notifications', all: 'See all in settings', markAll: 'Mark all read', clear: 'Nothing new', clearSub: 'We will tell you when something needs you.', open: 'Open PII', country: 'Country', signIn: 'Sign in', noticeT: 'Privacy notice', noticeRead: 'Read the privacy notice', noticeOk: 'I accept', retry: 'Could not load. Try again', ago: (m: number) => (m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`) },
+  'fr-CA': { bell: 'Notifications', all: 'Tout voir dans les paramètres', markAll: 'Tout marquer comme lu', clear: 'Rien de nouveau', clearSub: 'Nous vous aviserons quand quelque chose vous attend.', open: 'Ouvrir PII', country: 'Pays', signIn: 'Connexion', noticeT: 'Avis de confidentialité', noticeRead: 'Lire l’avis de confidentialité', noticeOk: 'J’accepte', retry: 'Chargement impossible. Réessayer', ago: (m: number) => (m < 1 ? 'à l’instant' : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`) },
 };
 const changed = () => { try { window.dispatchEvent(new CustomEvent('pii-settings-changed')); } catch { /* ignore */ } };
 
@@ -52,6 +53,10 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
   const [signedIn, setSignedIn] = useState(true);
   const [consent, setConsent] = useState<string | null>(null);
   const [needs, setNeeds] = useState(false);
+  const regions = host.regions ?? [];
+  const [seen, setSeen] = useState<Record<string, boolean>>({}); // signed in per country
+  const [isHo, setIsHo] = useState(false);
+  const [cur, setCur] = useState(host.region);
   const root = useRef<HTMLDivElement>(null);
   const pos = useRef({ right: 8, top: 56 });
   const t = T[locale];
@@ -60,11 +65,14 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
     if (me.status === 401 || n.status === 401) { setSignedIn(false); return; }
     setSignedIn(true);
     setNeeds(me.status === 200 && Boolean(me.json?.needsConsent));
+    setIsHo(me.status === 200 && Boolean(me.json?.isHeadOffice));
+    setCur(host.region);
+    if (regions.length > 1) void Promise.all(regions.map(async (r) => [r.id, (await host.transport('GET', '/v1/me', undefined, r.id)).status === 200] as const)).then((e) => setSeen(Object.fromEntries(e)));
     if (me.status === 200 && me.json?.user?.locale === 'fr-CA') setLocale('fr-CA');
     if (n.status === 200) { setList(n.json.notifications as N[]); setUnread(n.json.unread ?? 0); setBad(false); } else setBad(true);
     if (nav.status === 200) setItems((nav.json.items as NavItem[]).filter((i) => i.id !== 'notifications'));
   };
-  useEffect(() => { void load().catch(() => setBad(true)); const id = setInterval(() => void load().catch(() => undefined), 60_000); window.addEventListener('pii-settings-changed', () => void load().catch(() => undefined)); return () => clearInterval(id); }, []);
+  useEffect(() => { void load().catch(() => setBad(true)); const id = setInterval(() => void load().catch(() => undefined), 60_000); window.addEventListener('pii-settings-changed', () => void load().catch(() => undefined)); window.addEventListener('pii-region-changed', () => { setList(null); setItems([]); setNeeds(false); setConsent(null); setOpen(''); void load().catch(() => undefined); }); return () => clearInterval(id); }, []);
   useEffect(() => {
     if (!open) return;
     const away = (e: Event) => { if (!e.composedPath().includes(root.current as EventTarget)) setOpen(''); };
@@ -85,10 +93,11 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
   };
   const markAll = async () => { await host.transport('POST', '/v1/notifications/read', { all: true }).catch(() => undefined); setUnread(0); setList((l) => (l ?? []).map((x) => ({ ...x, readAt: x.readAt ?? new Date().toISOString() }))); changed(); };
   const x = X[locale];
+  const showCountries = regions.length > 1 && (isHo || Object.values(seen).filter(Boolean).length > 1);
   if (!signedIn) return <div class="h" ref={root}><button class="ib" title={t.open} onClick={() => host.onSignIn()}><img class="mark" src={markUrl} alt="PII" /></button></div>;
   return (
     <div class="h" ref={root}>
-      <button class="ib" aria-label="PII" aria-haspopup="menu" aria-expanded={open === 'menu'} title="PII" onClick={(e) => toggle('menu', e as unknown as MouseEvent)}><img class="mark" src={markUrl} alt="" /></button>
+      <button class="ib" aria-label="PII" aria-haspopup="menu" aria-expanded={open === 'menu'} title="PII" onClick={(e) => toggle('menu', e as unknown as MouseEvent)}><img class="mark" src={markUrl} alt="" />{showCountries && cur && <span class="cc">{cur.toUpperCase()}</span>}</button>
       <button class="ib" aria-label={`${t.bell}${unread ? ` (${unread})` : ''}`} aria-haspopup="dialog" aria-expanded={open === 'bell'} onClick={(e) => toggle('bell', e as unknown as MouseEvent)}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8" /><path d="M10.3 20a2 2 0 0 0 3.4 0" /></svg>
         {unread > 0 && <span class="dot">{unread > 9 ? '9+' : unread}</span>}
@@ -103,6 +112,11 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
       )}
       {open === 'menu' && !needs && (
         <div class="pop menu" role="menu" style={{ right: `${pos.current.right}px`, top: `${pos.current.top}px` }}>
+          {showCountries && <>
+            <div class="mh">{t.country}</div>
+            {regions.map((r) => <button class="mi" role="menuitemradio" aria-checked={r.id === cur} onClick={() => { setOpen(''); if (r.id === cur) return; if (seen[r.id]) host.switchRegion?.(r.id); else host.onSignIn(r.id); }}>{r.label}{r.id === cur ? <small style={{ background: 'var(--pri)' }}>✓</small> : !seen[r.id] ? <small style={{ background: '#98A1BD' }}>{t.signIn}</small> : null}</button>)}
+            <div style={{ borderTop: '1px solid var(--line)', margin: '6px 0' }} />
+          </>}
           <div class="mh">PII · Punjab Insurance</div>
           {items.map((i) => <button class="mi" role="menuitem" onClick={() => go(i.id)}>{i.name}{i.count > 0 && i.id === 'home' && <small>{i.count}</small>}</button>)}
         </div>
