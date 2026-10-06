@@ -1243,3 +1243,19 @@ test('sharing a conversation: teammates who can see the record are notified; oth
   const p2Id = (await ownerSql(`SELECT id FROM app_users WHERE email = $1`, [P2U]))[0].id as string;
   assert.equal((await call(S1U, 'POST', `/v1/threads/${threadId}/share`, { userIds: [p2Id] })).status, 422, 'a person from another branch is not visible to you');
 });
+
+test('dashboard: numbers come through the viewer’s own visibility; sibling branches see nothing of each other', async () => {
+  const a = await call(P1U, 'GET', '/v1/dashboard?days=90');
+  assert.equal(a.status, 200);
+  assert.equal(a.json.months.length, 6);
+  assert.deepEqual(a.json.aging.map((x: { bucket: string }) => x.bucket), ['0-7', '8-30', '31-90', '90+']);
+  assert.ok(a.json.totals.openCount >= 1);
+  const own = a.json.totals.openCount;
+  const adm = await call(ADMIN, 'GET', '/v1/dashboard');
+  assert.ok(adm.json.totals.openCount >= own);
+  const b = await call(P2U, 'GET', `/v1/dashboard?pipelineId=${pipe1}`);
+  assert.equal(b.status, 200);
+  assert.equal(b.json.totals.openCount, 0);
+  assert.equal((await call(LRN, 'GET', '/v1/dashboard')).status, 200, 'learners may read, within their own visibility');
+  assert.equal((await call(P1U, 'GET', '/v1/dashboard?days=3')).status, 400);
+});

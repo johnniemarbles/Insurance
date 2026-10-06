@@ -16,6 +16,7 @@ import { AttentionPanel } from './ai.tsx';
 import { NewRecord, RecordPanel } from './record.tsx';
 import { HomePage } from './home.tsx';
 import { NotificationsPage } from './notifications.tsx';
+import { DashboardPage } from './dashboard.tsx';
 import { RenewalsPage } from './renewals.tsx';
 import { CompliancePage } from './compliance.tsx';
 import { setHeadOffice } from './ho.ts';
@@ -95,8 +96,8 @@ const older = (have?: string, need?: string) => {
   return false;
 };
 
-type PageId = 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance' | 'contacts' | 'merges' | 'training' | 'settings';
-const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
+type PageId = 'home' | 'dashboard' | 'notifications' | 'pipelines' | 'renewals' | 'compliance' | 'contacts' | 'merges' | 'training' | 'settings';
+const PAGES: PageId[] = (['home', 'dashboard', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
 function Shell({ isHeadOffice, isAdmin, call, t, locale, canAuthor, meEmail, meName, compose, host, minExt, supportEmail }: { isHeadOffice: boolean; isAdmin: boolean; call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
@@ -115,7 +116,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, canAuthor, meEmail, meN
     const next = pageOf(p); setPage(next); setRouteId(id);
     try { localStorage.setItem('pii.page', next); } catch { /* private window */ }
   };
-  const label: Record<PageId, string> = { home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
+  const label: Record<PageId, string> = { home: t.home, dashboard: locale === 'fr-CA' ? 'Tableau de bord' : 'Dashboard', notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
     <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
@@ -128,6 +129,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, canAuthor, meEmail, meN
       )}
       <Boundary key={`${page}:${routeId ?? ''}:${nonce}`} msg={t.crashed} retry={t.retry}>
       {page === 'home' ? <HomePage call={call} t={t} locale={locale} go={go} name={meName} isAdmin={isAdmin} currency={host.region === 'us' ? 'USD' : 'CAD'} compose={compose} meEmail={meEmail} />
+        : page === 'dashboard' ? <DashboardPage call={call} locale={locale} currency={host.region === 'us' ? 'USD' : 'CAD'} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'renewals' ? <RenewalsPage call={call} locale={locale} go={go} />
         : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} host={host} />

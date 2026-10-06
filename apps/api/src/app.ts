@@ -27,6 +27,7 @@ import { registerNavRoutes } from './routes-nav.ts';
 import { registerRenewalRoutes } from './renewals.ts';
 import { registerComplianceRoutes } from './routes-compliance.ts';
 import { registerDuplicateRoutes } from './routes-duplicates.ts';
+import { registerDashboardRoutes } from './routes-dashboard.ts';
 import { registerNotificationRoutes } from './routes-notifications.ts';
 import { registerPrivacyRoutes } from './routes-privacy.ts';
 import { registerActivityRoutes } from './routes-activity.ts';
@@ -124,6 +125,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerThreadRoutes(app, deps);
   registerLmsRoutes(app, deps);
   registerInsightRoutes(app, deps);
+  registerDashboardRoutes(app, deps);
   registerAutomationRoutes(app, deps);
   registerAliasRoutes(app, deps);
   registerDocumentRoutes(app, deps);
