@@ -101,7 +101,10 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
         <div class="ev" key={d.id}>
           <button class="link" onClick={() => void download(d)} aria-label={`${x.open} ${d.name}`}>{d.name}</button>
           <small>{size(d.sizeBytes)} · {x.by} {d.uploadedBy ?? '—'} · {when(d.createdAt, locale)}</small>
-          {canEdit && <button class="ib danger" aria-label={`${x.del} ${d.name}`} onClick={() => void remove(d)}>✕</button>}
+          <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+            <button class="btn quiet" onClick={() => void download(d)} aria-label={`${x.open} ${d.name}`}>⬇ {x.open}</button>
+            {canEdit && <button class="ib danger" aria-label={`${x.del} ${d.name}`} onClick={() => void remove(d)}>✕</button>}
+          </div>
         </div>
       ))}
     </div>
