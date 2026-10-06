@@ -1259,3 +1259,54 @@ test('dashboard: numbers come through the viewer’s own visibility; sibling bra
   assert.equal((await call(LRN, 'GET', '/v1/dashboard')).status, 200, 'learners may read, within their own visibility');
   assert.equal((await call(P1U, 'GET', '/v1/dashboard?days=3')).status, 400);
 });
+
+test('public API: read-only keys act as their maker, work only on /v1/public, and can be revoked', async () => {
+  const bearer = async (token: string, url: string, method: M = 'GET') => {
+    const res = await app.inject({ method, url, headers: { authorization: `Bearer ${token}` } });
+    return { status: res.statusCode, json: res.body ? (JSON.parse(res.body) as any) : null };
+  };
+  // who may make a key
+  assert.equal((await call(S1U, 'POST', '/v1/api-keys', { name: 'nope' })).status, 403);
+  assert.equal((await call(S1U, 'GET', '/v1/api-keys')).json.canCreate, false);
+  const k1 = await call(P1U, 'POST', '/v1/api-keys', { name: 'Zapier' });
+  assert.equal(k1.status, 201);
+  assert.match(k1.json.token, /^pii_k_/);
+  const k2 = await call(P2U, 'POST', '/v1/api-keys', { name: 'Sheets' });
+  const list = await call(P1U, 'GET', '/v1/api-keys');
+  assert.equal(list.json.keys.length, 1);
+  assert.ok(!JSON.stringify(list.json).includes(k1.json.token), 'the token is shown once, never listed');
+  assert.equal((await call(P2U, 'GET', '/v1/api-keys')).json.keys.length, 1, 'keys are private to their maker');
+  // reading
+  const me = await bearer(k1.json.token, '/v1/public/me');
+  assert.equal(me.json.email, P1U);
+  const recs1 = await bearer(k1.json.token, '/v1/public/records?limit=100');
+  assert.equal(recs1.status, 200);
+  assert.ok(recs1.json.records.length >= 1);
+  assert.ok(recs1.json.records.every((r: any) => !('emailBody' in r) && 'stage' in r && 'pipeline' in r));
+  const one = await bearer(k1.json.token, `/v1/public/records/${recs1.json.records[0].id}`);
+  assert.equal(one.status, 200);
+  // the same record is invisible to a sibling branch's key
+  assert.equal((await bearer(k2.json.token, `/v1/public/records/${recs1.json.records[0].id}`)).status, 404);
+  const recs2 = await bearer(k2.json.token, '/v1/public/records');
+  assert.ok(!recs2.json.records.some((r: any) => recs1.json.records.some((x: any) => x.id === r.id)));
+  assert.equal((await bearer(k1.json.token, '/v1/public/pipelines')).status, 200);
+  assert.equal((await bearer(k1.json.token, '/v1/public/contacts')).status, 200);
+  // keys open nothing else, and never write
+  assert.equal((await bearer(k1.json.token, '/v1/boxes')).status, 401);
+  assert.equal((await bearer(k1.json.token, '/v1/api-keys')).status, 401);
+  assert.equal((await bearer(k1.json.token, '/v1/public/records', 'POST')).status, 404);
+  assert.equal((await bearer('pii_k_' + 'x'.repeat(43), '/v1/public/me')).status, 401);
+  assert.equal((await bearer('nonsense', '/v1/public/me')).status, 401);
+  assert.equal((await app.inject({ method: 'GET', url: '/v1/public/me' })).statusCode, 401);
+  // revoke
+  assert.equal((await call(P1U, 'DELETE', `/v1/api-keys/${k1.json.id}`)).status, 204);
+  assert.equal((await bearer(k1.json.token, '/v1/public/me')).status, 401);
+  assert.equal((await call(P2U, 'DELETE', `/v1/api-keys/${k1.json.id}`)).status, 404, 'cannot revoke someone else’s key');
+  // a disabled person's key stops working
+  const o = new pg.Client({ connectionString: db.ownerUrl });
+  await o.connect();
+  await o.query(`UPDATE app_users SET status = 'disabled' WHERE email = $1`, [P2U]);
+  assert.equal((await bearer(k2.json.token, '/v1/public/me')).status, 401);
+  await o.query(`UPDATE app_users SET status = 'active' WHERE email = $1`, [P2U]);
+  await o.end();
+});

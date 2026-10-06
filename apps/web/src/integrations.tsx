@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { useDialogFocus } from './a11y.ts';
 import type { Strings } from './i18n.ts';
 import type { Locale, Pipeline } from './types.ts';
+import { ApiKeys } from './apikeys.tsx';
 import { GROUPS, RECIPES, type Group, type Recipe } from './recipes.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -274,6 +275,7 @@ export function IntegrationsPanel({ pipeline, call, t, locale, onAutomations, on
           <p class="muted">{x.sheetsTip}</p>
         </section>
       )}
+      {tab === 3 && <ApiKeys call={call} locale={locale} />}
 
       <div class="actions"><button class="btn quiet" onClick={onClose}>{t.close}</button></div>
     </aside>

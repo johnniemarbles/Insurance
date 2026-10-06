@@ -29,6 +29,48 @@ export async function findSessionUser(authPool: Db, token: string): Promise<Logi
   return candidates.find((c) => c.userId === r.user_id) ?? null;
 }
 
+export const API_KEY_DAYS = 365;
+export interface ApiKeyRow { id: string; name: string; prefix: string; createdAt: string; expiresAt: string; lastUsedAt: string | null; revokedAt: string | null }
+
+/** Makes a read-only API key for a person. The token is returned once; only its hash is kept. */
+export async function createApiKey(authPool: Db, tenantId: string, userId: string, name: string): Promise<{ id: string; token: string }> {
+  const token = `pii_k_${randomBytes(32).toString('base64url')}`;
+  const { rows } = await authPool.query<{ id: string }>(
+    `INSERT INTO api_keys (tenant_id, user_id, name, token_hash, token_prefix, expires_at) VALUES ($1,$2,$3,$4,$5, now() + make_interval(days => $6)) RETURNING id`,
+    [tenantId, userId, name, hash(token), token.slice(0, 12), API_KEY_DAYS],
+  );
+  return { id: rows[0]!.id, token };
+}
+
+export async function listApiKeys(authPool: Db, userId: string): Promise<ApiKeyRow[]> {
+  const { rows } = await authPool.query(
+    `SELECT id, name, token_prefix AS prefix, created_at AS "createdAt", expires_at AS "expiresAt", last_used_at AS "lastUsedAt", revoked_at AS "revokedAt"
+       FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC`,
+    [userId],
+  );
+  return rows as ApiKeyRow[];
+}
+
+export async function revokeApiKey(authPool: Db, userId: string, id: string): Promise<boolean> {
+  const r = await authPool.query(`UPDATE api_keys SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`, [id, userId]);
+  return (r.rowCount ?? 0) > 0;
+}
+
+/** Returns the person behind an API key, or null if the key is unknown, revoked, expired, or the person is disabled. */
+export async function findApiKeyUser(authPool: Db, token: string): Promise<LoginCandidate | null> {
+  const { rows } = await authPool.query<{ email: string; user_id: string }>(
+    `UPDATE api_keys k SET last_used_at = now()
+       FROM app_users u
+      WHERE k.token_hash = $1 AND k.revoked_at IS NULL AND k.expires_at > now() AND u.id = k.user_id AND u.status = 'active'
+      RETURNING u.email::text AS email, k.user_id`,
+    [hash(token)],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const candidates = await findLoginCandidates(authPool, r.email);
+  return candidates.find((c) => c.userId === r.user_id) ?? null;
+}
+
 export async function deleteSession(authPool: Db, token: string): Promise<void> {
   await authPool.query('DELETE FROM sessions WHERE token_hash = $1', [hash(token)]);
 }
