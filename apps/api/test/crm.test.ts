@@ -1152,3 +1152,16 @@ test('record screen: one feed, undated tasks on Home, adding a note or task move
   assert.ok(!home.tasks.some((x: { title: string }) => x.title === 'Send quote'), 'and is not claimed to be due today');
   assert.equal((await call(P2U, 'GET', `/v1/boxes/${id}/timeline`)).status, 404, 'a sibling cannot read the feed');
 });
+
+test('the overview shows numbers through the viewer\'s own visibility', async () => {
+  const a = await call(ADMIN, 'GET', '/v1/insights/overview');
+  assert.equal(a.status, 200, JSON.stringify(a.json));
+  assert.equal(a.json.renewals.weeks.length, 13);
+  for (const k of ['openCount', 'openValue', 'won', 'lost', 'stalled']) assert.equal(typeof a.json.pipeline[k], 'number', k);
+  assert.equal(typeof a.json.tasks.overdue, 'number'); assert.equal(typeof a.json.partners.partners, 'number');
+  assert.ok(Array.isArray(a.json.activity) && a.json.team >= 1);
+  const p1 = await call(P1U, 'GET', '/v1/insights/overview');
+  assert.equal(p1.status, 200);
+  assert.ok(p1.json.pipeline.openCount <= a.json.pipeline.openCount, 'a branch never sees more than the company');
+  assert.equal((await call(P2U, 'GET', '/v1/insights/overview')).status, 200);
+});

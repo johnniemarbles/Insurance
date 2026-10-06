@@ -4,6 +4,7 @@ import { useDialogFocus } from './a11y.ts';
 import { stageColor, money } from './theme.ts';
 import type { Locale, Pipeline } from './types.ts';
 import type { Strings } from './i18n.ts';
+import { OverviewPanel, overviewLabels } from './overview.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface TaskRow { id: string; title: string; dueAt: string | null; boxId: string | null; boxName: string | null; pipelineId: string | null }
@@ -54,8 +55,11 @@ const X = {
 };
 
 /** The first page: shortcuts, recent work, one pipeline at a glance, and what needs the person today. */
-export function HomePage({ call, t, locale, go, name }: { call: Call; t: Strings; locale: Locale; go: (page: string, id?: string) => void; name: string }) {
+export function HomePage({ call, t, locale, go, name, isAdmin, currency }: { call: Call; t: Strings; locale: Locale; go: (page: string, id?: string) => void; name: string; isAdmin?: boolean; currency?: string }) {
   const x = X[locale];
+  const ol = overviewLabels(locale);
+  const [view, setView] = useState<'overview' | 'mine'>(() => { try { const v = localStorage.getItem('pii.homeview'); return v === 'mine' ? 'mine' : 'overview'; } catch { return 'overview'; } });
+  const pick = (v: 'overview' | 'mine') => { setView(v); try { localStorage.setItem('pii.homeview', v); } catch { /* private window */ } };
   const [d, setD] = useState<HomeData | null>(null);
   const [err, setErr] = useState('');
   const [pipes, setPipes] = useState<Pipeline[]>([]);
@@ -86,6 +90,14 @@ export function HomePage({ call, t, locale, go, name }: { call: Call; t: Strings
     for (const p of pipes) p.stages.forEach((s, i) => m.set(`${p.id}|${s.name}`, stageColor(p.colorTheme, s, i)));
     return (pipelineId: string, stage: string) => m.get(`${pipelineId}|${stage}`) ?? '#6b7280';
   }, [pipes]);
+  const adminView = Boolean(isAdmin) && view === 'overview';
+  const switcher = isAdmin ? (
+    <div class="seg" role="tablist" aria-label={ol.title} style={{ margin: '0 0 8px' }}>
+      <button role="tab" aria-selected={view === 'overview'} onClick={() => pick('overview')}>{ol.title}</button>
+      <button role="tab" aria-selected={view === 'mine'} onClick={() => pick('mine')}>{ol.mine}</button>
+    </div>
+  ) : null;
+  if (adminView) return <div class="home">{switcher}<OverviewPanel call={call} locale={locale} go={go} currency={currency ?? 'CAD'} /></div>;
   if (err) return <ErrorBar msg={err} retry={t.retry} />;
   if (!d) return <div class="msg">…</div>;
   const late = (iso: string | null) => (iso ? new Date(iso) < new Date(new Date().setHours(0, 0, 0, 0)) : false);
@@ -98,6 +110,7 @@ export function HomePage({ call, t, locale, go, name }: { call: Call; t: Strings
   const actPipe = pid || d.defaultPipeline || pipes[0]?.id || '';
   return (
     <div class="home">
+      {switcher}
       <div class="hwelcome"><div><h2>{x.welcome(first)}</h2><span class="muted">{today}</span></div><span class="spacer" />
         {d.week?.ring && (() => { const w = d.week; const pct = Math.min(100, Math.round((w.done / Math.max(1, w.goal)) * 100)); return (
           <div class="goal" title={`${w.done} / ${w.goal}`}><div class="ring" role="img" aria-label={`${w.done} / ${w.goal}`} style={{ '--p': pct } as any}><span>{w.done}/{w.goal}</span></div><small class="muted">{locale === 'fr-CA' ? (pct >= 100 ? 'Objectif atteint !' : 'Cette semaine') : (pct >= 100 ? 'Goal reached!' : 'This week')}</small></div>); })()}

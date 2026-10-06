@@ -76,7 +76,7 @@ export function App({ host }: { host: HostOptions }) {
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
   setHeadOffice(Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice));
-  return <Shell isHeadOffice={Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice)} call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} meName={me.user.displayName ?? ''} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
+  return <Shell isHeadOffice={Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice)} isAdmin={!(me as unknown as { isHeadOffice?: boolean }).isHeadOffice && (((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => r.role === 'admin') || Boolean((me as unknown as { isTenantAdmin?: boolean }).isTenantAdmin))} call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} meName={me.user.displayName ?? ''} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
 }
 
 class Boundary extends Component<{ msg: string; retry: string; children?: ComponentChildren }, { bad: boolean }> {
@@ -98,7 +98,7 @@ type PageId = 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance'
 const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
-function Shell({ isHeadOffice, call, t, locale, canAuthor, meEmail, meName, compose, host, minExt, supportEmail }: { isHeadOffice: boolean; call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
+function Shell({ isHeadOffice, isAdmin, call, t, locale, canAuthor, meEmail, meName, compose, host, minExt, supportEmail }: { isHeadOffice: boolean; isAdmin: boolean; call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
   const [page, setPage] = useState<PageId>(() => {
     if (host.route) return pageOf(host.route.page);
     try { const v = localStorage.getItem('pii.page'); return pageOf(v ?? undefined); } catch { return 'pipelines'; }
@@ -126,7 +126,7 @@ function Shell({ isHeadOffice, call, t, locale, canAuthor, meEmail, meName, comp
         </div>
       )}
       <Boundary key={`${page}:${routeId ?? ''}:${nonce}`} msg={t.crashed} retry={t.retry}>
-      {page === 'home' ? <HomePage call={call} t={t} locale={locale} go={go} name={meName} />
+      {page === 'home' ? <HomePage call={call} t={t} locale={locale} go={go} name={meName} isAdmin={isAdmin} currency={host.region === 'us' ? 'USD' : 'CAD'} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'renewals' ? <RenewalsPage call={call} locale={locale} go={go} />
         : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} host={host} />
