@@ -51,8 +51,8 @@ function FieldInput({ f, value, onChange, locale, disabled }: { f: FieldDef; val
 }
 
 const DX = {
-  'en': { tab: 'Files', h: 'Documents', none: 'No documents yet.', add: 'Add a document', help: 'PDF, images, Word, Excel, PowerPoint, text or CSV, up to 8 MB. Stored in PII only, encrypted, and seen by whoever can see this record.', del: 'Remove', confirm: 'Remove this document for everyone?', big: 'That file is over 8 MB.', by: 'added by', open: 'Download', busy: 'Working…' },
-  'fr-CA': { tab: 'Fichiers', h: 'Documents', none: 'Aucun document pour l’instant.', add: 'Ajouter un document', help: 'PDF, images, Word, Excel, PowerPoint, texte ou CSV, jusqu’à 8 Mo. Conservé dans PII seulement, chiffré, et visible par toute personne qui voit ce dossier.', del: 'Retirer', confirm: 'Retirer ce document pour tout le monde?', big: 'Ce fichier dépasse 8 Mo.', by: 'ajouté par', open: 'Télécharger', busy: 'En cours…' },
+  'en': { tab: 'Files', h: 'Documents', none: 'No documents yet.', add: 'Add a document', help: 'PDF, images, Word, Excel, PowerPoint, text or CSV, up to 8 MB. Stored in PII only, encrypted, and seen by whoever can see this record.', del: 'Remove', confirm: 'Remove this document for everyone?', big: 'That file is over 8 MB.', by: 'added by', open: 'Download', busy: 'Working…', saved: 'Saved', removed: 'Removed', wait: 'Uploading and encrypting…' },
+  'fr-CA': { tab: 'Fichiers', h: 'Documents', none: 'Aucun document pour l’instant.', add: 'Ajouter un document', help: 'PDF, images, Word, Excel, PowerPoint, texte ou CSV, jusqu’à 8 Mo. Conservé dans PII seulement, chiffré, et visible par toute personne qui voit ce dossier.', del: 'Retirer', confirm: 'Retirer ce document pour tout le monde?', big: 'Ce fichier dépasse 8 Mo.', by: 'ajouté par', open: 'Télécharger', busy: 'En cours…', saved: 'Enregistré', removed: 'Retiré', wait: 'Téléversement et chiffrement…' },
 };
 interface Doc { id: string; name: string; mime: string; sizeBytes: number; createdAt: string; uploadedBy: string | null }
 const MIME_BY_EXT: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', txt: 'text/plain', csv: 'text/csv', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
@@ -62,13 +62,14 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
   const [docs, setDocs] = useState<Doc[]>([]);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState('');
   const load = () => call('GET', `/v1/boxes/${boxId}/documents`).then((r) => setDocs(r.documents), (e) => setErr((e as Error).message));
   useEffect(() => { void load(); }, [boxId]);
   const pick = async (e: Event) => {
     const input = e.target as HTMLInputElement;
     const f = input.files?.[0]; input.value = '';
     if (!f) return;
-    setErr('');
+    setErr(''); setOk('');
     if (f.size > 8 * 1024 * 1024) { setErr(x.big); return; }
     const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
     const mime = MIME_BY_EXT[ext] ?? f.type;
@@ -77,6 +78,7 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
       const dataBase64 = await new Promise<string>((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] ?? ''); r.onerror = () => no(new Error('read')); r.readAsDataURL(f); });
       await call('POST', `/v1/boxes/${boxId}/documents`, { name: f.name, mime, dataBase64 });
       await load();
+      setOk(`✓ ${x.saved}: ${f.name}`);
     } catch (x2) { setErr((x2 as Error).message); } finally { setBusy(false); }
   };
   const download = async (d: Doc) => {
@@ -89,12 +91,14 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (x2) { setErr((x2 as Error).message); }
   };
-  const remove = async (d: Doc) => { if (!confirm(x.confirm)) return; try { await call('DELETE', `/v1/documents/${d.id}`); await load(); } catch (x2) { setErr((x2 as Error).message); } };
+  const remove = async (d: Doc) => { if (!confirm(x.confirm)) return; try { await call('DELETE', `/v1/documents/${d.id}`); await load(); setOk(`✓ ${x.removed}: ${d.name}`); } catch (x2) { setErr((x2 as Error).message); } };
   return (
     <div class="rec-form">
       <h3>{x.h}</h3>
       <p class="muted">{x.help}</p>
       {err && <div class="err" role="alert">{err}</div>}
+      {busy && <div class="muted" role="status">{x.wait}</div>}
+      {ok && !busy && <div role="status" style={{ background: '#e6f4ea', color: '#137333', padding: '8px 10px', borderRadius: '8px', margin: '8px 0', fontWeight: 600 }}>{ok}</div>}
       {canEdit && <label class="btn quiet" style={{ display: 'inline-block', cursor: 'pointer' }}>{busy ? x.busy : x.add}<input type="file" hidden disabled={busy} accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={(e) => void pick(e)} /></label>}
       {docs.length === 0 && <p class="muted">{x.none}</p>}
       {docs.map((d) => (
