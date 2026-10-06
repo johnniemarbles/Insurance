@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "PII by Punjab Insurance",
   "short_name": "PII",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "CRM and training for your insurance partners, inside Gmail.",
   "icons": {
     "16": "icon-16.png",
@@ -25,7 +25,7 @@
     "https://mail.google.com/*",
     "https://inbox.google.com/*",
     "https://*.up.railway.app/*",
-    "https://app.punjabinsurance.net/*"
+    "https://*.punjabinsurance.co/*"
   ],
   "background": {
     "service_worker": "background.js"

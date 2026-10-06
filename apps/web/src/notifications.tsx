@@ -21,6 +21,9 @@ export const X = {
         case 'unsubscribed': return `${n.data.email ?? 'A recipient'} unsubscribed from your mail merge`;
         case 'invite_accepted': return `${n.data.email ?? who} accepted your invitation and joined`;
         case 'invite_stale': return `${n.data.email ?? 'Someone'} has not joined yet, 3 days after your invitation. Open Settings > Company and people to resend it.`;
+        case 'compliance_expiry': return `${n.data.name ?? 'A partner'}: ${n.data.label ?? 'a licence'} ${n.data.daysLeft < 0 ? 'has expired' : n.data.daysLeft === 0 ? 'expires today' : `expires in ${n.data.daysLeft} days`}${n.data.company ? ` (${n.data.company})` : ''}`;
+        case 'compliance_review': return n.data.decision === 'submitted' ? `${n.data.name ?? 'A partner'} sent a compliance file for review${n.data.company ? ` (${n.data.company})` : ''}` : `${n.data.reviewer ?? 'Head office'} ${n.data.decision === 'approved' ? 'approved' : 'sent back'} the compliance file for ${n.data.name ?? 'your partner'}${n.data.note ? `: “${n.data.note}”` : ''}`;
+        case 'appointment_request': return `${n.data.name ?? 'A partner'} asked to be appointed with ${n.data.carrier ?? 'a carrier'}${n.data.company ? ` (${n.data.company})` : ''}`;
         default: return n.kind;
       }
     },
@@ -40,6 +43,9 @@ export const X = {
         case 'unsubscribed': return `${n.data.email ?? 'Un destinataire'} s’est désabonné de votre publipostage`;
         case 'invite_accepted': return `${n.data.email ?? who} a accepté votre invitation et s’est joint`;
         case 'invite_stale': return `${n.data.email ?? 'Quelqu’un'} ne s’est pas encore joint, 3 jours après votre invitation. Ouvrez Paramètres > Entreprise et personnes pour la renvoyer.`;
+        case 'compliance_expiry': return `${n.data.name ?? 'Un partenaire'} : ${n.data.label ?? 'un permis'} ${n.data.daysLeft < 0 ? 'est expiré' : n.data.daysLeft === 0 ? 'expire aujourd’hui' : `expire dans ${n.data.daysLeft} jours`}${n.data.company ? ` (${n.data.company})` : ''}`;
+        case 'compliance_review': return n.data.decision === 'submitted' ? `${n.data.name ?? 'Un partenaire'} a soumis un dossier de conformité${n.data.company ? ` (${n.data.company})` : ''}` : `${n.data.reviewer ?? 'Le siège social'} a ${n.data.decision === 'approved' ? 'approuvé' : 'renvoyé'} le dossier de conformité de ${n.data.name ?? 'votre partenaire'}${n.data.note ? ` : « ${n.data.note} »` : ''}`;
+        case 'appointment_request': return `${n.data.name ?? 'Un partenaire'} demande une nomination auprès de ${n.data.carrier ?? 'un assureur'}${n.data.company ? ` (${n.data.company})` : ''}`;
         default: return n.kind;
       }
     },
@@ -57,6 +63,7 @@ export function NotificationsPage({ call, locale, go }: { call: Call; locale: Lo
   const open = async (n: N) => {
     if (!n.readAt) { try { await call('POST', '/v1/notifications/read', { ids: [n.id] }); changed(); } catch { /* still navigate */ } }
     if (n.kind === 'merge_done' || n.kind === 'unsubscribed') go('merges');
+    else if (n.kind.startsWith('compliance') || n.kind === 'appointment_request') go('compliance');
     else if (n.pipelineId) go('pipelines', n.pipelineId);
     else void load();
   };

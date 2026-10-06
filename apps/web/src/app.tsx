@@ -17,6 +17,8 @@ import { NewRecord, RecordPanel } from './record.tsx';
 import { HomePage } from './home.tsx';
 import { NotificationsPage } from './notifications.tsx';
 import { RenewalsPage } from './renewals.tsx';
+import { CompliancePage } from './compliance.tsx';
+import { setHeadOffice } from './ho.ts';
 import { DuplicatesDialog } from './duplicates.tsx';
 import { SettingsPage, useSettings, type SettingsApi } from './settings.tsx';
 import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
@@ -57,10 +59,11 @@ export function App({ host }: { host: HostOptions }) {
 
   if (error) return <div class="pii"><div class="err" role="alert">{error}</div><div class="msg"><button class="btn" onClick={boot}>{t.retry}</button></div></div>;
   if (!me) return <div class="pii"><div class="msg">{t.loading}</div></div>;
-  if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><button class="btn" onClick={host.onSignIn}>{t.signIn}</button></div></div>;
+  if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><SignIn host={host} t={t} locale={locale} /></div></div>;
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
-  return <Shell call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} meName={me.user.displayName ?? ''} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
+  setHeadOffice(Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice));
+  return <Shell isHeadOffice={Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice)} call={call} t={t} locale={locale} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} meName={me.user.displayName ?? ''} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
 }
 
 class Boundary extends Component<{ msg: string; retry: string; children?: ComponentChildren }, { bad: boolean }> {
@@ -78,11 +81,11 @@ const older = (have?: string, need?: string) => {
   return false;
 };
 
-type PageId = 'home' | 'notifications' | 'pipelines' | 'renewals' | 'contacts' | 'merges' | 'training' | 'settings';
-const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'renewals', 'contacts', 'merges', 'training', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
+type PageId = 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance' | 'contacts' | 'merges' | 'training' | 'settings';
+const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
-function Shell({ call, t, locale, canAuthor, meEmail, meName, compose, host, minExt, supportEmail }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
+function Shell({ isHeadOffice, call, t, locale, canAuthor, meEmail, meName, compose, host, minExt, supportEmail }: { isHeadOffice: boolean; call: Call; t: Strings; locale: Locale; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
   const [page, setPage] = useState<PageId>(() => {
     if (host.route) return pageOf(host.route.page);
     try { const v = localStorage.getItem('pii.page'); return pageOf(v ?? undefined); } catch { return 'pipelines'; }
@@ -98,7 +101,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, meName, compose, host, min
     const next = pageOf(p); setPage(next); setRouteId(id);
     try { localStorage.setItem('pii.page', next); } catch { /* private window */ }
   };
-  const label: Record<PageId, string> = { home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
+  const label: Record<PageId, string> = { home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
     <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => e.stopPropagation()} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
@@ -113,6 +116,7 @@ function Shell({ call, t, locale, canAuthor, meEmail, meName, compose, host, min
       {page === 'home' ? <HomePage call={call} t={t} locale={locale} go={go} name={meName} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'renewals' ? <RenewalsPage call={call} locale={locale} go={go} />
+        : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} />
         : page === 'contacts' ? <ContactsView call={call} t={t} />
         : page === 'training' && LMS ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} />
         : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} compose={compose} /> : <div class="msg">{t.loading}</div>)
@@ -612,3 +616,19 @@ interface TaskRow { id: string; boxId: string; boxName: string | null; title: st
 const label = (f: FieldDef, locale: Locale) => f.labels[locale] ?? f.labels.en ?? f.key;
 const cell = (v: unknown) => (v == null ? '' : typeof v === 'boolean' ? (v ? '✓' : '') : String(v));
 
+
+/** Sign in, with a country choice when the extension serves more than one: Canada and USA data live in separate places. */
+function SignIn({ host, t, locale }: { host: HostOptions; t: Strings; locale: Locale }) {
+  const regions = host.regions ?? [];
+  const [r, setR] = useState(host.region && regions.some((x) => x.id === host.region) ? host.region : regions[0]?.id);
+  return (
+    <div>
+      {regions.length > 1 && (
+        <label class="fl" style={{ display: 'grid', gap: '4px', maxWidth: '260px', margin: '0 auto 12px' }}>{locale === 'fr-CA' ? 'Votre pays' : 'Your country'}
+          <select value={r} onChange={(e) => setR((e.target as HTMLSelectElement).value)}>{regions.map((x) => <option value={x.id}>{x.label}</option>)}</select>
+        </label>
+      )}
+      <button class="btn" onClick={() => host.onSignIn(r)}>{t.signIn}</button>
+    </div>
+  );
+}

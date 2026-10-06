@@ -7,7 +7,8 @@ interface Link { parentId: string; childId: string }
 interface Member { nodeId: string; role: string; userId: string; email: string; displayName: string | null; status: string }
 interface Inv { id: string; email: string; nodeId: string; role: string; expiresAt: string; acceptedAt: string | null }
 import { LMS } from './features.ts';
-const ROLES = (['admin', 'manager', 'trainer', 'partner', 'learner'] as const).filter((r) => r !== 'learner' && (LMS || r !== 'trainer'));
+import { isHeadOffice } from './ho.ts';
+const rolesNow = () => (isHeadOffice() ? (['admin', 'compliance'] as const) : (['admin', 'manager', 'trainer', 'partner'] as const).filter((r) => LMS || r !== 'trainer'));
 
 const X = {
   'en': {
@@ -17,7 +18,7 @@ const X = {
     inviteHint: 'Copy this link and send it to the person; it works once and expires in 7 days.', copy: 'Copy link', copied: 'Copied',
     people: 'People', nobody: 'Nobody yet.', off: 'Switch off', on: 'Switch back on', offChip: 'Off', pending: 'Invitations waiting', withdraw: 'Withdraw', remove: 'Remove role',
     disable: 'Switch person off', enable: 'Switch person on', none: 'Nothing set up yet. Start by adding a branch.', branch: 'Branch', partner: 'Partner', tenant: 'Company',
-    roles: { admin: 'Admin', manager: 'Manager', trainer: 'Trainer', partner: 'Partner', learner: 'Learner' } as Record<string, string>, expires: 'expires',
+    roles: { admin: 'Admin', manager: 'Manager', trainer: 'Trainer', partner: 'Partner', learner: 'Learner', compliance: 'Compliance' } as Record<string, string>, expires: 'expires',
     addRole: 'Add role to someone here', person: 'Person', makeRole: 'Give role',
     viaGmail: 'Send it from my Gmail', gmailSent: (e: string) => `Invitation sent to ${e} from your Gmail.`, gmailFailed: 'Gmail did not send it. Copy the link below and send it yourself.',
     subject: (c: string) => `You are invited to ${c} on PII`,
@@ -30,7 +31,7 @@ const X = {
     inviteHint: 'Copiez ce lien et transmettez-le à la personne; il sert une fois et expire dans 7 jours.', copy: 'Copier le lien', copied: 'Copié',
     people: 'Personnes', nobody: 'Personne pour l’instant.', off: 'Désactiver', on: 'Réactiver', offChip: 'Inactif', pending: 'Invitations en attente', withdraw: 'Retirer', remove: 'Retirer le rôle',
     disable: 'Désactiver la personne', enable: 'Réactiver la personne', none: 'Rien n’est configuré. Commencez par ajouter une succursale.', branch: 'Succursale', partner: 'Partenaire', tenant: 'Entreprise',
-    roles: { admin: 'Administrateur', manager: 'Gestionnaire', trainer: 'Formateur', partner: 'Partenaire', learner: 'Apprenant' } as Record<string, string>, expires: 'expire le',
+    roles: { admin: 'Administrateur', manager: 'Gestionnaire', trainer: 'Formateur', partner: 'Partenaire', learner: 'Apprenant', compliance: 'Conformité' } as Record<string, string>, expires: 'expire le',
     addRole: 'Donner un rôle à quelqu’un ici', person: 'Personne', makeRole: 'Donner le rôle',
     viaGmail: 'L’envoyer depuis mon Gmail', gmailSent: (e: string) => `Invitation envoyée à ${e} depuis votre Gmail.`, gmailFailed: 'Gmail n’a pas envoyé le message. Copiez le lien ci-dessous et transmettez-le vous-même.',
     subject: (c: string) => `Vous êtes invité à ${c} sur PII`,

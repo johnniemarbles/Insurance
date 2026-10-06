@@ -3,6 +3,11 @@ import { mountSidebar, type CapturedMessage } from './sidebar';
 import { mountPii, mountHeader } from '../../web/src/mount';
 import type { ComposeApi, Transport } from '../../web/src/types';
 
+const REGION_LABELS: Record<string, string> = { ca: 'Canada', us: 'United States' };
+const REGION_CHOICES = Object.keys(__REGIONS__).map((id) => ({ id, label: REGION_LABELS[id] ?? id }));
+let chosenRegion: string | undefined;
+chrome.storage.sync.get('region').then((v) => { chosenRegion = typeof v.region === 'string' ? v.region : undefined; }, () => undefined);
+
 const transport: Transport = async (method, path, body) => {
   try {
     const r = (await chrome.runtime.sendMessage({ type: 'pii:api', method, path, body })) as { status: number; json: any } | undefined;
@@ -63,7 +68,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     host.style.cssText = 'height:calc(100vh - 130px);min-height:480px;background:#fff';
     view.getElement().appendChild(host);
     const unmount = mountPii(host, {
-      extVersion: chrome.runtime.getManifest().version, transport, onSignIn: () => void chrome.runtime.sendMessage({ type: 'pii:signin' }), compose: { send: sendOne(sdk) },
+      extVersion: chrome.runtime.getManifest().version, transport, onSignIn: (region?: string) => void chrome.runtime.sendMessage({ type: 'pii:signin', region }), regions: REGION_CHOICES, get region() { return chosenRegion; }, compose: { send: sendOne(sdk) },
       route: { page: params.page ?? 'pipelines', id: params.id }, navigate: goto,
     });
     view.on('destroy', unmount);
@@ -74,7 +79,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
   // The PII mark and the bell in Gmail's top bar, next to the account area. If Gmail's layout changes and the spot is not found, they float top right instead.
   const hostEl = document.createElement('div');
   hostEl.id = 'pii-header';
-  mountHeader(hostEl, { extVersion: chrome.runtime.getManifest().version, transport, onSignIn: () => void chrome.runtime.sendMessage({ type: 'pii:signin' }), navigate: goto }, chrome.runtime.getURL('nav-icon.png'));
+  mountHeader(hostEl, { extVersion: chrome.runtime.getManifest().version, transport, onSignIn: (region?: string) => void chrome.runtime.sendMessage({ type: 'pii:signin', region }), regions: REGION_CHOICES, get region() { return chosenRegion; }, navigate: goto }, chrome.runtime.getURL('nav-icon.png'));
   const place = () => {
     const acct = document.querySelector('header[role="banner"] a[aria-label*="Google Account"], header[role="banner"] [aria-label*="Google Account"]');
     let anchor: HTMLElement | null = acct as HTMLElement | null;

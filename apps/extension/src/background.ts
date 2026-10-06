@@ -2,9 +2,11 @@
 import '@inboxsdk/core/background.js';
 import type { ApiRequest, ApiResponse, Message } from './messages';
 
+// The server address: an administrator's override first, then the country the person chose, then the build's default.
 async function apiBase(): Promise<string> {
-  const { apiBase } = await chrome.storage.sync.get('apiBase');
-  return ((apiBase as string | undefined) || __API_BASE__).replace(/\/+$/, '');
+  const { apiBase, region } = await chrome.storage.sync.get(['apiBase', 'region']);
+  const byRegion = typeof region === 'string' ? __REGIONS__[region] : undefined;
+  return ((apiBase as string | undefined) || byRegion || __API_BASE__).replace(/\/+$/, '');
 }
 
 async function callApi(m: ApiRequest): Promise<ApiResponse> {
@@ -29,7 +31,8 @@ chrome.runtime.onMessage.addListener((msg: Message, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'pii:signin') {
-    apiBase().then((b) => chrome.tabs.create({ url: `${b}/auth/google/start` }));
+    const pick = msg.region && __REGIONS__[msg.region] ? chrome.storage.sync.set({ region: msg.region }) : Promise.resolve();
+    pick.then(apiBase).then((b) => chrome.tabs.create({ url: `${b}/auth/google/start` }));
     return false;
   }
   return false;

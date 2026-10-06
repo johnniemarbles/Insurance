@@ -21,4 +21,6 @@ export type Transport = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', pa
 export interface ComposeApi { send(m: { to: string; subject: string; html: string; review?: boolean }): Promise<{ ok: boolean; threadId?: string; error?: string; unconfirmed?: boolean }> }
 /** Which page the host opened, for example { page: 'pipelines', id: '…' } from the Gmail left panel. */
 export interface PiiRoute { page: string; id?: string }
-export interface HostOptions { extVersion?: string; transport: Transport; onSignIn: () => void; assetBase?: string; compose?: ComposeApi; route?: PiiRoute; navigate?: (page: string, id?: string) => void }
+/** Countries a person can sign in to. Only set when the extension serves more than one deployment. */
+export interface RegionChoice { id: string; label: string }
+export interface HostOptions { extVersion?: string; transport: Transport; onSignIn: (region?: string) => void; regions?: RegionChoice[]; region?: string; assetBase?: string; compose?: ComposeApi; route?: PiiRoute; navigate?: (page: string, id?: string) => void }
