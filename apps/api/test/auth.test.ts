@@ -19,7 +19,7 @@ const fakeGoogle: GoogleClient = {
   authUrl: ({ state }) => `https://accounts.example/auth?state=${state}`,
   exchange: async () => nextProfile,
 };
-const ORIGIN = 'https://app.punjabinsurance.net';
+const ORIGIN = 'https://app.punjabinsurance.co';
 
 async function raw(method: 'GET' | 'POST', url: string, headers: Record<string, string> = {}, body?: object) {
   return app.inject({ method, url, headers, ...(body ? { payload: body } : {}) });

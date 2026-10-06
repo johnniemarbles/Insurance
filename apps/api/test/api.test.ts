@@ -155,7 +155,7 @@ test('invitations: scoped to the branch you administer', async () => {
   const l2 = (await call('p1@pii.test', 'GET', '/v1/org/links')).json.links.find((l: any) => l.kind === 'partner_link' && l.parentId === P1).childId;
   const ok = await call('p1@pii.test', 'POST', '/v1/invitations', { email: 'New.Hire@Example.com', nodeId: l2, role: 'partner', locale: 'fr-CA' });
   assert.equal(ok.status, 201);
-  assert.match(ok.json.acceptUrl, /^https:\/\/app\.punjabinsurance\.net\/accept\?token=/);
+  assert.match(ok.json.acceptUrl, /^https:\/\/app\.punjabinsurance\.co\/accept\?token=/);
   assert.equal((await call('p1@pii.test', 'POST', '/v1/invitations', { email: 'a@b.co', nodeId: P2 })).status, 404);
   assert.equal((await call('p1@pii.test', 'POST', '/v1/invitations', { email: 'a@b.co', nodeId: tenant.rootNodeId, role: 'admin' })).status, 403);
   assert.equal((await call('p1@pii.test', 'POST', '/v1/invitations', { email: 'not-an-email', nodeId: l2 })).status, 400);

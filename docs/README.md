@@ -1,6 +1,6 @@
 # PII platform (Phase 0)
 
-Gmail-native CRM + LMS for Punjab Insurance Agency Inc. App: https://app.punjabinsurance.net
+Gmail-native CRM + LMS for Punjab Insurance Agency Inc. App: https://app.punjabinsurance.co
 
 ## What is here
 | Path | What |
@@ -34,7 +34,7 @@ Tests: `npm test` (needs `TEST_ADMIN_URL`, a superuser URL; default `postgres://
 
 ## Sign-in (ticket 1.1)
 - Google OpenID Connect, authorization code with PKCE; scopes `openid email profile` only. Gmail access is a separate, later consent.
-- Redirect URI to register in Google Cloud: `https://app.punjabinsurance.net/auth/google/callback` (add `http://localhost:3000/auth/google/callback` for local use).
+- Redirect URI to register in Google Cloud: `https://app.punjabinsurance.co/auth/google/callback` (add `http://localhost:3000/auth/google/callback` for local use).
 - Invite-only: an unknown Google account is refused. `/auth/google/start?invite=<token>` accepts an invitation (single use, expires in 7 days, must match the invited email).
 - The Google account id is bound on first sign-in; a different Google account for the same user is refused.
 - Sessions: random token in an HttpOnly, Secure, SameSite=Lax cookie; only its hash is stored, in a table the application role cannot read. 14 days.

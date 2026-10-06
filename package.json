@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "PII: Gmail-native CRM + LMS for Punjab Insurance Agency Inc (app.punjabinsurance.net)",
+  "description": "PII: Gmail-native CRM + LMS for Punjab Insurance Agency Inc (app.punjabinsurance.co)",
   "engines": { "node": ">=22.18" },
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {

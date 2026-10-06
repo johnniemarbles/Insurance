@@ -39,7 +39,7 @@ a partner serving several locations must say which location a record is for; eve
 - [ ] Self-hosted video, captions
 
 ## Go-live gates (before any real Canadian user)
-- [ ] Custom domain app.punjabinsurance.net and routing to the two regional stacks
+- [ ] Custom domain app.punjabinsurance.co and routing to the two regional stacks
 - [ ] Move the Canadian stack to a Montréal region (AWS / Azure / GCP)
 - [ ] Counsel review of privacy notice; Google OAuth verification package
 - [ ] KMS-backed encryption keys

@@ -24,6 +24,9 @@ export interface Config {
   /** Extra origins allowed to make cookie-authenticated writes, e.g. chrome-extension://<id>. */
   extensionOrigins: string[];
   policyUrl: string;
+  supportEmail: string;
+  supportUrl: string;
+  termsUrl: string;
 }
 
 function req(env: Record<string, string | undefined>, name: string): string {
@@ -50,14 +53,19 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (googleClientId && (!googleClientSecret || !cookieSecret || cookieSecret.length < 32)) {
     throw new Error('GOOGLE_CLIENT_SECRET and a COOKIE_SECRET of at least 32 characters are required with GOOGLE_CLIENT_ID');
   }
-  const appOrigin = env.APP_ORIGIN ?? 'https://app.punjabinsurance.net';
+  const appOrigin = env.APP_ORIGIN ?? 'https://app.punjabinsurance.co';
+  // Privacy and support live on the country's own website: .ca for Canada, .com for the USA.
+  const site = region === 'us' ? 'punjabinsurance.com' : 'punjabinsurance.ca';
   return {
     extensionOrigins: (env.EXTENSION_ORIGINS ?? '').split(',').map((x) => x.trim()).filter(Boolean),
     googleClientId,
     googleClientSecret,
     cookieSecret,
-    privacyEmail: env.PRIVACY_EMAIL ?? 'privacy-officer@punjabinsurance.com',
-    policyUrl: env.POLICY_URL ?? `${appOrigin}/privacy`,
+    privacyEmail: env.PRIVACY_EMAIL ?? `privacy-officer@${site}`,
+    policyUrl: env.POLICY_URL ?? `https://${site}/privacy`,
+    supportEmail: env.SUPPORT_EMAIL ?? `support@${site}`,
+    supportUrl: env.SUPPORT_URL ?? `https://${site}/support`,
+    termsUrl: env.TERMS_URL ?? `https://${site}/terms`,
     appEnv,
     region,
     productName: env.PRODUCT_NAME ?? 'PII',
