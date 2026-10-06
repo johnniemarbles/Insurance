@@ -114,7 +114,7 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
         <div class="pop menu" role="menu" style={{ right: `${pos.current.right}px`, top: `${pos.current.top}px` }}>
           {showCountries && <>
             <div class="mh">{t.country}</div>
-            {regions.map((r) => <button class="mi" role="menuitemradio" aria-checked={r.id === cur} onClick={() => { setOpen(''); if (r.id === cur) return; if (seen[r.id]) host.switchRegion?.(r.id); else host.onSignIn(r.id); }}>{r.label}{r.id === cur ? <small style={{ background: 'var(--pri)' }}>✓</small> : !seen[r.id] ? <small style={{ background: '#98A1BD' }}>{t.signIn}</small> : null}</button>)}
+            {regions.map((r) => <button class="mi" role="menuitemradio" aria-checked={r.id === cur} onClick={() => { setOpen(''); if (r.id === cur) return; if (seen[r.id]) host.switchRegion?.(r.id); else host.onSignIn(r.id); }}><span style={{ fontWeight: r.id === cur ? 700 : 400 }}>{r.label}</span>{r.id !== cur && !seen[r.id] ? <small style={{ background: '#98A1BD' }}>{t.signIn}</small> : null}</button>)}
             <div style={{ borderTop: '1px solid var(--line)', margin: '6px 0' }} />
           </>}
           <div class="mh">PII · Punjab Insurance</div>

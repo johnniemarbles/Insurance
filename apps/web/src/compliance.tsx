@@ -19,7 +19,7 @@ const X = {
   'en': {
     title: 'Compliance', sub: 'Licences, E&O insurance and paperwork for each partner. PII keeps the status and copies of documents, never SIN, SSN or bank details.',
     headTitle: 'Compliance review', headSub: 'Files from every company in this country. You see compliance information only, never CRM records.',
-    allC: 'All countries', cTot: (c: number, split: string) => `${c} compan${c === 1 ? 'y' : 'ies'} ${split}`, cCo: (n: number) => `${n} compan${n === 1 ? 'y' : 'ies'}`, cWait: (n: number) => `${n} waiting`, cExp: (n: number) => `${n} expiring`, cPart: (n: number) => `${n} partner${n === 1 ? '' : 's'}`, addTo: 'Country', coIn: (c: string) => `Companies in ${c}`, showing: 'Showing', clear: 'Show all',
+    allC: 'All countries', allCos: 'All companies', headSubC: (c: string) => `Compliance files for ${c}. You see compliance only, never CRM records.`, chooseSub: 'Choose a country or a company to open its files.', calmReview: 'All caught up', calmReviewSub: 'No files are waiting for review.', calmAll: 'No partners yet', calmAllSub: 'Partners appear here once a company adds them.', calmExp: 'Nothing expiring soon', calmExpSub: 'No licence or E&O policy runs out in the next 60 days.', hPartners: 'Partners', hWaiting: 'Waiting for review', hExpiring: 'Expiring in 60 days', hCompanies: 'Companies', cTot: (c: number, split: string) => `${c} compan${c === 1 ? 'y' : 'ies'} ${split}`, cCo: (n: number) => `${n} compan${n === 1 ? 'y' : 'ies'}`, cWait: (n: number) => `${n} waiting`, cExp: (n: number) => `${n} expiring`, cPart: (n: number) => `${n} partner${n === 1 ? '' : 's'}`, addTo: 'Country', coIn: (c: string) => `Companies in ${c}`, showing: 'Showing', clear: 'Show all',
     countries: 'Countries', cTitle: 'All countries', cSub: 'Totals only. Each country is its own server, so you sign in to each once. Partner files stay inside their country.', cSign: 'Sign in', cOff: 'Not signed in', cNo: 'No head-office access in this account', cTotals: (c: number, p: number, w: number, e: number) => `${c} compan${c === 1 ? 'y' : 'ies'} · ${p} partner${p === 1 ? '' : 's'} · ${w} waiting · ${e} expiring`, cOpen: 'Open this country', cRefresh: 'Refresh', cHere: 'You are here', cGo: 'Open this country', cConsent: 'Accept the privacy notice once in this country, then come back.', cSwitch: 'Switch to this country', cErr: 'This country refused the request. Try again, or ask support.',
     companies: 'Companies', newCo: 'Add a company', coName: 'Company name', coAdmin: 'Administrator email', coHelp: 'The administrator is invited by email. They sign in with Google, then set up their branches and partners.', coAdd: 'Create company', coNone: 'No companies yet.', coStat: (p: number, s: number, a: number) => `${p} partner${p === 1 ? '' : 's'} · ${s} waiting · ${a} approved`, invited: 'Not signed in yet', active: 'Active',
     review: 'To review', expiring: 'Expiring', all: 'All partners', search: 'Search partners or companies', none: 'Nothing here.', retry: 'Try again', back: 'All partners',
@@ -42,7 +42,7 @@ const X = {
   'fr-CA': {
     title: 'Conformité', sub: 'Permis, assurance E&O et documents de chaque partenaire. PII conserve l’état et les copies des documents, jamais le NAS, le SSN ni les données bancaires.',
     headTitle: 'Examen de conformité', headSub: 'Dossiers de toutes les entreprises de ce pays. Vous voyez la conformité seulement, jamais les dossiers du CRM.',
-    allC: 'Tous les pays', cTot: (c: number, split: string) => `${c} entreprise${c === 1 ? '' : 's'} ${split}`, cCo: (n: number) => `${n} entreprise${n === 1 ? '' : 's'}`, cWait: (n: number) => `${n} en attente`, cExp: (n: number) => `${n} à échéance`, cPart: (n: number) => `${n} partenaire${n === 1 ? '' : 's'}`, addTo: 'Pays', coIn: (c: string) => `Entreprises : ${c}`, showing: 'Affichage', clear: 'Tout afficher',
+    allC: 'Tous les pays', allCos: 'Toutes les entreprises', headSubC: (c: string) => `Dossiers de conformité : ${c}. Vous voyez la conformité seulement, jamais les dossiers du CRM.`, chooseSub: 'Choisissez un pays ou une entreprise pour ouvrir ses dossiers.', calmReview: 'Tout est à jour', calmReviewSub: 'Aucun dossier n’attend d’examen.', calmAll: 'Aucun partenaire pour l’instant', calmAllSub: 'Les partenaires apparaissent ici dès qu’une entreprise les ajoute.', calmExp: 'Aucune échéance proche', calmExpSub: 'Aucun permis ni aucune police E&O n’expire d’ici 60 jours.', hPartners: 'Partenaires', hWaiting: 'En attente d’examen', hExpiring: 'À échéance dans 60 jours', hCompanies: 'Entreprises', cTot: (c: number, split: string) => `${c} entreprise${c === 1 ? '' : 's'} ${split}`, cCo: (n: number) => `${n} entreprise${n === 1 ? '' : 's'}`, cWait: (n: number) => `${n} en attente`, cExp: (n: number) => `${n} à échéance`, cPart: (n: number) => `${n} partenaire${n === 1 ? '' : 's'}`, addTo: 'Pays', coIn: (c: string) => `Entreprises : ${c}`, showing: 'Affichage', clear: 'Tout afficher',
     countries: 'Pays', cTitle: 'Tous les pays', cSub: 'Totaux seulement. Chaque pays est un serveur distinct : connectez-vous à chacun une fois. Les dossiers des partenaires restent dans leur pays.', cSign: 'Se connecter', cOff: 'Non connecté', cNo: 'Aucun accès au siège social avec ce compte', cTotals: (c: number, p: number, w: number, e: number) => `${c} entreprise${c === 1 ? '' : 's'} · ${p} partenaire${p === 1 ? '' : 's'} · ${w} en attente · ${e} à échéance`, cOpen: 'Ouvrir ce pays', cRefresh: 'Actualiser', cHere: 'Vous êtes ici', cGo: 'Ouvrir ce pays', cConsent: 'Acceptez l’avis de confidentialité une fois dans ce pays, puis revenez.', cSwitch: 'Passer à ce pays', cErr: 'Ce pays a refusé la demande. Réessayez ou contactez le soutien.',
     companies: 'Entreprises', newCo: 'Ajouter une entreprise', coName: 'Nom de l’entreprise', coAdmin: 'Courriel de l’administrateur', coHelp: 'L’administrateur est invité par courriel. Il se connecte avec Google, puis configure ses succursales et ses partenaires.', coAdd: 'Créer l’entreprise', coNone: 'Aucune entreprise pour l’instant.', coStat: (p: number, s: number, a: number) => `${p} partenaire${p === 1 ? '' : 's'} · ${s} en attente · ${a} approuvé${a === 1 ? '' : 's'}`, invited: 'Pas encore connecté', active: 'Actif',
     review: 'À examiner', expiring: 'Échéances', all: 'Tous les partenaires', search: 'Chercher un partenaire ou une entreprise', none: 'Rien ici.', retry: 'Réessayer', back: 'Tous les partenaires',
@@ -97,7 +97,7 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
   // A global admin starts on All countries. Coming from a click there (a country or a company) skips straight to that country.
   const [scope, setScope] = useState<'all' | 'country'>(() => {
     if (!multi) return 'country';
-    try { if (localStorage.getItem('pii.focus')) return 'country'; } catch { /* private window */ }
+    try { if (localStorage.getItem('pii.focus')) return 'country'; return localStorage.getItem('pii.scope') === 'country' ? 'country' : 'all'; } catch { /* private window */ }
     return 'all';
   });
   useEffect(() => {
@@ -108,15 +108,22 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
       if (f.tab) setTab(f.tab); if (f.company) setQ(f.company);
     } catch { /* ignore */ }
   }, []);
+  useEffect(() => { if (multi) try { localStorage.setItem('pii.scope', scope); } catch { /* private window */ } }, [scope, multi]);
   const openCountry = (id: string, f?: { tab?: typeof tab; company?: string }) => {
     if (id === here) { setScope('country'); setTab(f?.tab ?? 'review'); setQ(f?.company ?? ''); return; }
     try { localStorage.setItem('pii.focus', JSON.stringify(f ?? { tab: 'review' })); } catch { /* private window */ }
     host?.switchRegion?.(id);
   };
   const scopeBar = multi ? (
-    <div class="rstats" role="tablist" aria-label={x.allC} style={{ marginBottom: '8px' }}>
-      <button role="tab" aria-selected={scope === 'all'} class="rstat" onClick={() => setScope('all')}><span>{x.allC}</span></button>
-      {regions.map((r) => <button role="tab" aria-selected={scope === 'country' && r.id === here} class="rstat" onClick={() => openCountry(r.id)}><span>{r.label}</span></button>)}
+    <div class="scopebar">
+      <div class="seg" role="tablist" aria-label={x.allC}>
+        <button role="tab" aria-selected={scope === 'all'} onClick={() => setScope('all')}>{x.allC}</button>
+        {regions.map((r) => <button role="tab" aria-selected={scope === 'country' && r.id === here} onClick={() => openCountry(r.id)}>{r.label}</button>)}
+      </div>
+      {scope === 'country' && cos.length > 0 && <><span class="sep" aria-hidden="true">›</span>
+        <select aria-label={x.companies} value={cos.some((c) => c.name === q) ? q : ''} onChange={(e) => { setQ((e.target as HTMLSelectElement).value); setTab((t) => (t === 'companies' ? 'all' : t)); }}>
+          <option value="">{x.allCos}</option>{cos.map((c) => <option value={c.name}>{c.name}</option>)}
+        </select></>}
     </div>
   ) : null;
   useEffect(() => {
@@ -124,17 +131,25 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
     if (ho) { call('GET', '/v1/ho/expiring?days=60').then((r) => setExp(r.items), () => undefined); void loadCos(); }
   }, [call]);
   const shown = useMemo(() => (rows ?? []).filter((r) => (tab !== 'review' || r.status === 'submitted') && `${r.name} ${r.company ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())), [rows, tab, q]);
-  if (multi && scope === 'all' && host) return <div class="home"><div class="hwelcome"><div><h2 style={{ margin: 0 }}>{x.headTitle}</h2><span class="muted">{x.cSub}</span></div></div>{scopeBar}<AllCountries host={host} locale={locale} open={openCountry} /></div>;
+  if (multi && scope === 'all' && host) return <div class="home"><div class="hwelcome"><div><h2 style={{ margin: 0 }}>{x.headTitle}</h2><span class="muted">{x.chooseSub}</span></div></div>{scopeBar}<AllCountries host={host} locale={locale} open={openCountry} /></div>;
   if (err) return <ErrorBar msg={err} retry={x.retry} />;
   if (!rows) return <div class="msg">…</div>;
   const waiting = rows.filter((r) => r.status === 'submitted').length;
   return (
     <div class="home">
-      <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{ho ? x.headTitle : x.title}</h2><span class="muted">{ho ? x.headSub : x.sub}</span></div></div>
+      <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{ho ? x.headTitle : x.title}</h2><span class="muted">{ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub}</span></div></div>
       {scopeBar}
-      {ho && <div class="rstats" role="tablist">
-        {([['review', x.review, waiting], ['all', x.all, rows.length], ['expiring', x.expiring, exp.length], ['companies', x.companies, cos.length]] as const).map(([k, l, n]) => <button role="tab" aria-selected={tab === k} class={`rstat ${k === 'expiring' && n ? 'warn' : ''}`} onClick={() => setTab(k)}><b>{n}</b><span>{l}</span></button>)}
-      </div>}
+      {ho && <>
+        <div class="hstats">
+          <div class={`hstat ${waiting ? 'warn' : ''}`}><b>{waiting}</b><span>{x.hWaiting}</span></div>
+          <div class={`hstat ${exp.length ? 'warn' : ''}`}><b>{exp.length}</b><span>{x.hExpiring}</span></div>
+          <div class="hstat"><b>{rows.length}</b><span>{x.hPartners}</span></div>
+          <div class="hstat"><b>{cos.length}</b><span>{x.hCompanies}</span></div>
+        </div>
+        <div class="seg" role="tablist" aria-label={x.title} style={{ margin: '8px 0' }}>
+          {([['review', x.review], ['all', x.all], ['expiring', x.expiring], ...(multi ? [] : [['companies', x.companies] as const])] as const).map(([k, l]) => <button role="tab" aria-selected={tab === k} onClick={() => setTab(k as typeof tab)}>{l}</button>)}
+        </div>
+      </>}
       {tab === 'companies' ? (
         <section class="hcard">
           <h3>{multi ? x.coIn(hereLabel) : x.newCo}</h3>
@@ -148,14 +163,14 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
           {cos.map((c) => <div class="erow" key={c.id}><span><b>{c.name}</b> <small class="muted">· {c.adminEmail}</small></span><span class="spacer" /><small class="muted">{x.coStat(c.partners, c.submitted, c.approved)}</small><span class={`chip ${c.adminStatus === 'invited' ? 'warn' : 'ok'}`}>{c.adminStatus === 'invited' ? x.invited : x.active}</span></div>)}
         </section>
       ) : tab === 'expiring' ? (
-        <section class="hcard">{exp.length === 0 && <p class="muted">{x.none}</p>}
+        <section class="hcard">{exp.length === 0 && <div class="calm"><b>{x.calmExp}</b>{x.calmExpSub}</div>}
           {exp.map((i) => <button class="hrow" key={i.itemId} onClick={() => openFile(i.nodeId)}><span class="rname">{i.name} <small class="muted">· {i.company}</small></span><small class="muted">{i.label}</small><span class={`due ${tone(i.daysLeft)}`}>{i.expiresOn} · {x.left(i.daysLeft)}</span></button>)}
         </section>
       ) : (
         <section class="hcard">
           {q && rows.some((r) => r.company === q) && <p class="muted">{x.showing}: <b>{q}</b> <button class="lk" onClick={() => setQ('')}>{x.clear}</button></p>}
           <input type="search" placeholder={x.search} value={q} aria-label={x.search} onInput={(e) => setQ((e.target as HTMLInputElement).value)} style={{ width: '100%', marginBottom: '8px' }} />
-          {shown.length === 0 && <p class="muted">{x.none}</p>}
+          {shown.length === 0 && (tab === 'review' && !q ? <div class="calm"><b>{x.calmReview}</b>{x.calmReviewSub}</div> : rows.length === 0 ? <div class="calm"><b>{x.calmAll}</b>{x.calmAllSub}</div> : <div class="calm">{x.none}</div>)}
           {shown.map((r) => (
             <button class="hrow" key={r.nodeId ?? r.id} onClick={() => openFile(r.nodeId ?? r.id)}>
               <span class="rname">{r.name}{r.isSub || r.parent ? <span class="chip" style={{ marginLeft: '8px' }}>{x.sub1}</span> : null}{ho && <small class="muted"> · {r.company}</small>}</span>
@@ -349,14 +364,13 @@ function AllCountries({ host, locale, open }: { host: HostOptions; locale: Local
     [x.review, sum(waiting), waiting, 'review'], [x.expiring, sum((v) => v.expiring.length), (v) => v.expiring.length, 'expiring'], [x.companies, sum((v) => v.companies.length), (v) => v.companies.length, 'companies']];
   return (
     <>
-      <div class="rstats">{tiles.map(([l, n, f, tab]) => <div class={`rstat ${tab === 'expiring' && n ? 'warn' : ''}`}><b>{n}</b><span>{l}</span>{ok.length > 1 && <small class="muted">{split(f)}</small>}</div>)}</div>
+      <div class="hstats">{tiles.map(([l, n, f, tab]) => <div class={`hstat ${tab === 'expiring' && n ? 'warn' : ''}`}><b>{n}</b><span>{l}</span>{ok.length > 1 && <small>{split(f)}</small>}</div>)}</div>
       {regions.map((r) => {
         const v = d[r.id] ?? EMPTY;
         return (
           <section class="hcard" key={r.id}>
             <div class="erow">
               <button class="lk" onClick={() => open(r.id)}><b>{r.label}</b></button>
-              {r.id === host.region && <span class="chip ok">{x.cHere}</span>}
               <span class="spacer" />
               {v.state === 'ok' && <small class="muted">{x.cCo(v.companies.length)} · {x.cWait(waiting(v))}</small>}
             </div>
