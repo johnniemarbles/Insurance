@@ -76,3 +76,27 @@ test('a version row can never be changed or removed', async () => {
   await assert.rejects(owner((o) => o.query(`UPDATE course_versions SET snapshot = '{}'`)), /cannot be changed/);
   await assert.rejects(owner((o) => o.query(`DELETE FROM course_versions WHERE version = 1`)), /cannot be removed/);
 });
+
+test('assignment rules: preview first, role filter, days-after-joining due date, and late joiners', async () => {
+  const lead = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Calgary' })).json.id;
+  const mk = async (email: string, role: string) => owner(async (o) => {
+    const u = (await o.query(`INSERT INTO app_users (tenant_id,email,display_name,home_node_id,status) VALUES ($1,$2,$3,$4,'active') RETURNING id`, [co.tenantId, email, email.split('@')[0], lead])).rows[0].id;
+    await o.query(`INSERT INTO user_node_roles (tenant_id,user_id,node_id,role) VALUES ($1,$2,$3,$4)`, [co.tenantId, u, lead, role]);
+  });
+  await mk('cy@cv.test', 'learner'); await mk('di@cv.test', 'manager');
+  const p1 = (await call(ADMIN, 'POST', `/v1/courses/${course}/assignments/preview`, { nodeId: lead })).json;
+  assert.equal(p1.total, 2); assert.equal(p1.willEnrol, 2);
+  const p2 = (await call(ADMIN, 'POST', `/v1/courses/${course}/assignments/preview`, { nodeId: lead, role: 'manager' })).json;
+  assert.equal(p2.total, 1); assert.equal(p2.sample[0].name, 'di');
+  assert.equal((await call(ADMIN, 'POST', `/v1/courses/${course}/assignments`, { nodeId: lead, role: 'learner', dueInDays: 14, dueAt: '2030-01-01T00:00:00Z' })).status, 422, 'date and days together are refused');
+  assert.equal((await call(A, 'POST', `/v1/courses/${course}/assignments/preview`, { nodeId: lead })).status, 403);
+  const r = await call(ADMIN, 'POST', `/v1/courses/${course}/assignments`, { nodeId: lead, role: 'learner', dueInDays: 14 });
+  assert.equal(r.status, 201); assert.equal(r.json.enrolled, 1);
+  const due = (await owner((o) => o.query(`SELECT due_at > now() + interval '13 days' AND due_at < now() + interval '15 days' AS ok FROM enrollments e JOIN app_users u ON u.id = e.user_id WHERE u.email = 'cy@cv.test'`))).rows[0].ok;
+  assert.equal(due, true);
+  assert.equal((await call(ADMIN, 'POST', `/v1/courses/${course}/assignments/preview`, { nodeId: lead, role: 'learner' })).json.willEnrol, 0);
+  await mk('ed@cv.test', 'learner');                                   // joins after the rule was made
+  const { sweepAssignments } = await import('../src/routes-forecast.ts');
+  assert.equal(await sweepAssignments({ config: undefined, appPool: pools[0], authPool: pools[1] } as unknown as AppDeps), 1);
+  assert.equal((await call(ADMIN, 'GET', `/v1/courses/${course}/assignments`)).json.assignments[0].enrolled, 2);
+});

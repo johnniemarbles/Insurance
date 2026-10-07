@@ -94,3 +94,24 @@ export async function sweepLearnerReminders(deps: AppDeps): Promise<number> {
   }
   return made;
 }
+
+/** Applies every assignment rule again, so people who joined a branch after it was assigned are enrolled too. */
+export async function sweepAssignments(deps: AppDeps): Promise<number> {
+  const tenants = (await deps.authPool.query<{ tenant_id: string; node: string; admin: string | null }>(
+    `SELECT n.tenant_id, n.id AS node, (SELECT r.user_id FROM user_node_roles r WHERE r.node_id = n.id AND r.role = 'admin' ORDER BY r.user_id LIMIT 1) AS admin
+       FROM org_nodes n JOIN tenants t ON t.id = n.tenant_id AND NOT t.is_head_office WHERE n.type = 'tenant' AND n.is_active LIMIT 500`)).rows;
+  let made = 0;
+  for (const t of tenants) {
+    if (!t.admin) continue;
+    try {
+      const admin = { ...actingAs(t.tenant_id, t.admin, t.node), isTenantAdmin: true };
+      made += await withRequestTx(deps.appPool, admin, async (tx) => {
+        let n = 0;
+        for (const a of (await tx.query<{ id: string }>(`SELECT a.id FROM course_assignments a JOIN courses c ON c.id = a.course_id AND c.status = 'published' LIMIT 2000`)).rows)
+          n += (await tx.query<{ n: number }>('SELECT sync_enrollments($1) AS n', [a.id])).rows[0]!.n;
+        return n;
+      });
+    } catch { /* next company */ }
+  }
+  return made;
+}

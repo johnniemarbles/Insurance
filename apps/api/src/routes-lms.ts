@@ -440,31 +440,67 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   // ------------------------------------------------------------------ assigning and watching progress
-  app.post(
-    '/v1/courses/:id/assignments',
-    { schema: { params: idParams, body: { type: 'object', required: ['nodeId'], additionalProperties: false, properties: { nodeId: uuid, dueAt: { type: 'string', format: 'date-time' } } } } },
-    async (req, reply) => {
-      const { ctx } = await deps.authenticate(req);
-      const { id } = req.params as { id: string };
-      const b = req.body as { nodeId: string; dueAt?: string };
-      const out = await run(ctx, async (tx) => {
-        const c = await loadCourse(tx, id);
-        requireAuthor(ctx, c.owner_node_id);
-        if (c.status !== 'published') throw invalid('Publish the course before assigning it');
-        // you may assign to a branch you lead, or anything beneath it
-        const reach = ctx.isTenantAdmin || (await tx.query(`SELECT 1 FROM org_reach r WHERE r.descendant_id = $1 AND r.ancestor_id = ANY($2::uuid[])`, [b.nodeId, authorNodes(ctx)])).rowCount! > 0 || authorNodes(ctx).includes(b.nodeId);
-        if (!reach) throw forbidden('You can only assign training to your own branch or the partners beneath it');
-        const aid = (await tx.query<{ id: string }>(
-          `INSERT INTO course_assignments (tenant_id, course_id, node_id, due_at, assigned_by) VALUES ($1,$2,$3,$4,$5)
-           ON CONFLICT (course_id, node_id) DO UPDATE SET due_at = EXCLUDED.due_at RETURNING id`, [ctx.tenantId, id, b.nodeId, b.dueAt ?? null, ctx.userId])).rows[0]!.id;
-        const enrolled = (await tx.query<{ n: number }>('SELECT sync_enrollments($1) AS n', [aid])).rows[0]!.n;
-        if (b.dueAt) await tx.query('UPDATE enrollments SET due_at = $2 WHERE assignment_id = $1 AND status <> \'completed\'', [aid, b.dueAt]);
-        await audit(tx, ctx, 'course_assigned', 'course', id, { nodeId: b.nodeId, enrolled });
-        return { id: aid, enrolled };
-      });
-      return reply.code(201).send(out);
-    },
-  );
+  const ROLES = ['admin', 'manager', 'trainer', 'member', 'learner'] as const;
+  const ruleBody = { type: 'object', required: ['nodeId'], additionalProperties: false, properties: { nodeId: uuid, dueAt: { type: 'string', format: 'date-time' }, dueInDays: { type: 'integer', minimum: 1, maximum: 730 }, role: { enum: [...ROLES] } } } as const;
+  type Rule = { nodeId: string; dueAt?: string; dueInDays?: number; role?: (typeof ROLES)[number] };
+
+  /** Whoever assigns must lead the branch they assign to, or sit above it. */
+  async function requireReach(tx: Tx, ctx: RequestContext, nodeId: string) {
+    const reach = ctx.isTenantAdmin || (await tx.query(`SELECT 1 FROM org_reach r WHERE r.descendant_id = $1 AND r.ancestor_id = ANY($2::uuid[])`, [nodeId, authorNodes(ctx)])).rowCount! > 0 || authorNodes(ctx).includes(nodeId);
+    if (!reach) throw forbidden('You can only assign training to your own branch or the partners beneath it');
+  }
+
+  /** Shows who a rule would enrol, before it is saved: nothing is written. */
+  app.post('/v1/courses/:id/assignments/preview', { schema: { params: idParams, body: ruleBody } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    const b = req.body as Rule;
+    return run(ctx, async (tx) => {
+      const c = await loadCourse(tx, id);
+      requireAuthor(ctx, c.owner_node_id);
+      await requireReach(tx, ctx, b.nodeId);
+      const rows = (await tx.query<{ name: string; email: string; enrolled: boolean }>(
+        `SELECT au.name, au.email, EXISTS (SELECT 1 FROM enrollments e WHERE e.user_id = au.user_id AND e.course_id = $4) AS enrolled
+           FROM assignment_audience($1, $2, $3::org_role) au ORDER BY au.name LIMIT 2000`, [ctx.tenantId, b.nodeId, b.role ?? null, id])).rows;
+      const fresh = rows.filter((r) => !r.enrolled);
+      return { total: rows.length, alreadyEnrolled: rows.length - fresh.length, willEnrol: fresh.length, sample: fresh.slice(0, 10).map((r) => ({ name: r.name, email: r.email })) };
+    });
+  });
+
+  app.post('/v1/courses/:id/assignments', { schema: { params: idParams, body: ruleBody } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    const b = req.body as Rule;
+    if (b.dueAt && b.dueInDays) throw invalid('Give a due date or a number of days, not both');
+    const out = await run(ctx, async (tx) => {
+      const c = await loadCourse(tx, id);
+      requireAuthor(ctx, c.owner_node_id);
+      if (c.status !== 'published') throw invalid('Publish the course before assigning it');
+      await requireReach(tx, ctx, b.nodeId);
+      const aid = (await tx.query<{ id: string }>(
+        `INSERT INTO course_assignments (tenant_id, course_id, node_id, due_at, due_in_days, role, assigned_by) VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (course_id, node_id) DO UPDATE SET due_at = EXCLUDED.due_at, due_in_days = EXCLUDED.due_in_days, role = EXCLUDED.role RETURNING id`,
+        [ctx.tenantId, id, b.nodeId, b.dueAt ?? null, b.dueInDays ?? null, b.role ?? null, ctx.userId])).rows[0]!.id;
+      const enrolled = (await tx.query<{ n: number }>('SELECT sync_enrollments($1) AS n', [aid])).rows[0]!.n;
+      if (b.dueAt) await tx.query('UPDATE enrollments SET due_at = $2 WHERE assignment_id = $1 AND status <> \'completed\'', [aid, b.dueAt]);
+      await audit(tx, ctx, 'course_assigned', 'course', id, { nodeId: b.nodeId, enrolled, role: b.role ?? null });
+      return { id: aid, enrolled };
+    });
+    return reply.code(201).send(out);
+  });
+
+  app.get('/v1/courses/:id/assignments', { schema: { params: idParams } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    return run(ctx, async (tx) => {
+      const c = await loadCourse(tx, id);
+      requireAuthor(ctx, c.owner_node_id);
+      return { assignments: (await tx.query(
+        `SELECT a.id, a.node_id AS "nodeId", n.name AS "nodeName", a.role, a.due_at AS "dueAt", a.due_in_days AS "dueInDays",
+                (SELECT count(*)::int FROM enrollments e WHERE e.assignment_id = a.id) AS enrolled
+           FROM course_assignments a JOIN org_nodes n ON n.id = a.node_id WHERE a.course_id = $1 ORDER BY n.name`, [id])).rows };
+    });
+  });
 
   /** Published versions of a course, newest first, for the people who can edit it. */
   app.get('/v1/courses/:id/versions', { schema: { params: idParams } }, async (req) => {

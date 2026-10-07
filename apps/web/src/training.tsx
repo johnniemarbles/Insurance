@@ -84,6 +84,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
   const [lType, setLType] = useState('richtext');
   const [assignNode, setAssignNode] = useState('');
   const [assignDue, setAssignDue] = useState('');
+  const [assignRole, setAssignRole] = useState(''); const [assignDays, setAssignDays] = useState(''); const [pv, setPv] = useState('');
   const load = useCallback(() => { call('GET', `/v1/courses/${id}?locale=${locale}`).then(setC, (e) => setErr((e as Error).message)); }, [call, id, locale]);
   useEffect(load, [load]);
   useEffect(() => { if (c?.canEdit) call('GET', '/v1/org/nodes').then((r) => { setNodes(r.nodes); }, () => undefined); }, [call, c?.canEdit]);
@@ -136,13 +137,25 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
           {c.status === 'published' && (
             <>
               <h3>{t.assign}</h3>
-              <form class="erow" onSubmit={(e) => { e.preventDefault(); if (!assignNode) return; void act(async () => { const r = await call('POST', `/v1/courses/${id}/assignments`, { nodeId: assignNode, ...(assignDue ? { dueAt: new Date(`${assignDue}T23:59:00`).toISOString() } : {}) }); setNote(t.assigned(r.enrolled)); }, ''); }}>
-                <select aria-label={t.assignTo} value={assignNode} onChange={(e) => setAssignNode((e.target as HTMLSelectElement).value)}>
-                  <option value="">{t.assignTo}…</option>{nodes.map((n) => <option value={n.id}>{n.name}</option>)}
-                </select>
-                <input type="date" aria-label={t.dueDate} value={assignDue} onInput={(e) => setAssignDue((e.target as HTMLInputElement).value)} style={{ flex: '0 0 150px' }} />
-                <button class="btn quiet" disabled={!assignNode}>{t.assign}</button>
-              </form>
+              {(() => {
+                const L = locale === 'fr-CA';
+                const roles: [string, string][] = [['', L ? 'Tout le monde' : 'Everyone'], ['learner', L ? 'Apprenants' : 'Learners'], ['member', L ? 'Membres' : 'Members'], ['trainer', L ? 'Formateurs' : 'Trainers'], ['manager', L ? 'Gestionnaires' : 'Managers'], ['admin', L ? 'Administrateurs' : 'Administrators']];
+                const rule = () => ({ nodeId: assignNode, ...(assignRole ? { role: assignRole } : {}), ...(assignDue ? { dueAt: new Date(`${assignDue}T23:59:00`).toISOString() } : assignDays ? { dueInDays: Number(assignDays) } : {}) });
+                const names = (r: { sample: { name: string }[]; willEnrol: number }) => (r.sample.length ? `${L ? ' : ' : ': '}${r.sample.map((x) => x.name).join(', ')}${r.willEnrol > r.sample.length ? '…' : ''}` : '');
+                return <>
+                  <form class="erow" onSubmit={(e) => { e.preventDefault(); if (!assignNode) return; void act(async () => { const r = await call('POST', `/v1/courses/${id}/assignments`, rule()); setPv(''); setNote(t.assigned(r.enrolled)); }, ''); }}>
+                    <select aria-label={t.assignTo} value={assignNode} onChange={(e) => { setAssignNode((e.target as HTMLSelectElement).value); setPv(''); }}>
+                      <option value="">{t.assignTo}…</option>{nodes.map((n) => <option value={n.id}>{n.name}</option>)}
+                    </select>
+                    <select aria-label={L ? 'Qui' : 'Who'} value={assignRole} onChange={(e) => { setAssignRole((e.target as HTMLSelectElement).value); setPv(''); }}>{roles.map(([v, l]) => <option value={v}>{l}</option>)}</select>
+                    <input type="date" aria-label={t.dueDate} value={assignDue} onInput={(e) => { setAssignDue((e.target as HTMLInputElement).value); if ((e.target as HTMLInputElement).value) setAssignDays(''); }} style={{ flex: '0 0 150px' }} />
+                    <input type="number" min={1} max={730} placeholder={L ? 'ou jours après l’inscription' : 'or days after joining'} aria-label={L ? 'Jours après l’inscription' : 'Days after joining'} value={assignDays} disabled={!!assignDue} onInput={(e) => setAssignDays((e.target as HTMLInputElement).value)} style={{ flex: '0 0 190px' }} />
+                    <button class="btn quiet" type="button" disabled={!assignNode} onClick={() => void call('POST', `/v1/courses/${id}/assignments/preview`, rule()).then((r) => setPv(L ? `${r.willEnrol} seraient inscrits (${r.alreadyEnrolled} déjà inscrits)${names(r)}` : `${r.willEnrol} would be enrolled (${r.alreadyEnrolled} already enrolled)${names(r)}`), (e) => setErr((e as Error).message))}>{L ? 'Aperçu' : 'Preview'}</button>
+                    <button class="btn quiet" disabled={!assignNode}>{t.assign}</button>
+                  </form>
+                  {pv && <p class="muted" role="status">{pv}</p>}
+                </>;
+              })()}
               <h3>{t.teamProgress}</h3>
               {!team && <button class="btn quiet" onClick={() => void call('GET', `/v1/courses/${id}/progress`).then((r) => setTeam(r.learners), (e) => setErr((e as Error).message))}>{t.showProgress}</button>}
               {team && (
