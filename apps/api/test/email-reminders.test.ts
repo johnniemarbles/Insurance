@@ -68,3 +68,11 @@ test('a daily run sends one email per person, however many reminders', async () 
   const n = await (async () => { const o = new pg.Client({ connectionString: db.ownerUrl }); await o.connect(); try { return (await o.query(`SELECT count(*)::int AS n FROM notifications WHERE user_id = $1`, [ann])).rows[0].n; } finally { await o.end(); } })();
   assert.ok(n >= 3, 'each reminder is still in the app');
 });
+
+test('a person can choose their language', async () => {
+  assert.equal((await call('ann@em.test', 'PUT', '/v1/me/locale', { locale: 'en' })).status, 204);
+  assert.equal((await call('ann@em.test', 'GET', '/v1/me')).json.user.locale, 'en');
+  assert.equal((await call('ann@em.test', 'PUT', '/v1/me/locale', { locale: 'de' })).status, 400);
+  await call('ann@em.test', 'PUT', '/v1/me/locale', { locale: 'fr-CA' });
+  assert.equal((await call('ann@em.test', 'GET', '/v1/me')).json.user.locale, 'fr-CA');
+});

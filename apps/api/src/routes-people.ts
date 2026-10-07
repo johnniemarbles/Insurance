@@ -34,6 +34,12 @@ async function emailOf(tx: Tx, userId: string): Promise<string | null> {
 export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
 
+  app.put('/v1/me/locale', { schema: { body: { type: 'object', required: ['locale'], additionalProperties: false, properties: { locale: { type: 'string', enum: ['en', 'fr-CA'] } } } } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    await deps.authPool.query('UPDATE app_users SET locale = $2::locale_code WHERE id = $1', [ctx.userId, (req.body as { locale: string }).locale]);
+    return reply.code(204).send();
+  });
+
   app.get('/v1/me', async (req) => {
     const { ctx, user } = await deps.authenticate(req);
     const consented = await run(ctx, (tx) => hasAcceptedFirstLogin(tx, ctx));
