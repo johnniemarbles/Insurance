@@ -5,7 +5,7 @@ type L = { en: string; fr: string };
 export interface StarterQuestion { q: L; options: L[]; correct: number }
 /** `video` is the file stem of a clip in public/media: the lesson plays /media/<stem>-<en|fr>.mp4 and shows `text` as its transcript. */
 export interface StarterLesson { title: L; text: L; video?: string }
-export interface StarterCourse { key: string; title: L; description: L; lessons: StarterLesson[]; quiz: StarterQuestion[] }
+export interface StarterCourse { key: string; title: L; description: L; lessons: StarterLesson[]; quiz: StarterQuestion[]; /** Questions shown per attempt when the quiz is a bank larger than this. */ draw?: number }
 
 const NOTE: L = { en: ' Draft starter content: counsel and compliance must review it before it is published.', fr: ' Contenu de départ (ébauche) : à faire réviser par le conseiller juridique et la conformité avant publication.' };
 const D = (l: L): L => ({ en: l.en + NOTE.en, fr: l.fr + NOTE.fr });
@@ -108,4 +108,11 @@ const BASE_COURSES: StarterCourse[] = [
   },
 ];
 
-export const STARTER_COURSES: StarterCourse[] = [...BASE_COURSES, ...MORE_STARTER_COURSES, ...BROKER_STARTER_COURSES, ...VIDEO_STARTER_COURSES];
+import { STARTER_BANKS } from './starter-banks.ts';
+
+/** Each starter quiz is a bank: the original questions plus extras, with every attempt drawing as many as the original quiz had. */
+const withBank = (c: StarterCourse): StarterCourse => {
+  const extra = STARTER_BANKS[c.key] ?? [];
+  return extra.length ? { ...c, quiz: [...c.quiz, ...extra], draw: c.quiz.length } : c;
+};
+export const STARTER_COURSES: StarterCourse[] = [...BASE_COURSES, ...MORE_STARTER_COURSES, ...BROKER_STARTER_COURSES, ...VIDEO_STARTER_COURSES].map(withBank);

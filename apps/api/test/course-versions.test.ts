@@ -213,8 +213,10 @@ test('starter courses: listed, copied as drafts in both languages, authors only,
   assert.ok((await call(ADMIN, 'GET', '/v1/courses')).json.courses.some((x: any) => x.id === id));
   const quiz = en.lessons.find((l: any) => l.type === 'quiz');
   const q = (await call(ADMIN, 'GET', `/v1/lessons/${quiz.id}`)).json.quiz.questions;
-  assert.equal(q.length, 5);
+  assert.equal(q.length, 13, 'authors see the whole bank');
   assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${id}`, { status: 'published' })).status, 204, 'a reviewer can publish it');
+  const seen = (await call(A, 'GET', `/v1/lessons/${quiz.id}`)).json.quiz;
+  assert.equal(seen.questions.length, 5, 'a learner is asked five'); assert.equal(seen.bankSize, 13);
 });
 
 test('a manager can give a learner extra tries at a quiz', async () => {

@@ -616,7 +616,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
           await tx.query(`INSERT INTO lesson_locales (lesson_id, tenant_id, locale, title, body) VALUES ($1,$2,$3,$4,$5)`, [lid, ctx.tenantId, loc, l.title[key], JSON.stringify(l.video ? { url: `/media/${l.video}-${key}.mp4`, text: l.text[key] } : { text: l.text[key] })]);
       }
       const qid = randomUUID();
-      await tx.query(`INSERT INTO lessons (id, tenant_id, course_id, module_id, position, type, required, pass_mark) VALUES ($1,$2,$3,$4,$5,'quiz',true,80)`, [qid, ctx.tenantId, id, mod, ++pos]);
+      await tx.query(`INSERT INTO lessons (id, tenant_id, course_id, module_id, position, type, required, pass_mark, quiz_draw) VALUES ($1,$2,$3,$4,$5,'quiz',true,80,$6)`, [qid, ctx.tenantId, id, mod, ++pos, sc.draw ?? null]);
       await tx.query(`INSERT INTO lesson_locales (lesson_id, tenant_id, locale, title, body) VALUES ($1,$2,'en',$3,'{}'), ($1,$2,'fr-CA',$4,'{}')`, [qid, ctx.tenantId, 'Check your knowledge', 'Vérifiez vos connaissances']);
       for (const [i, q] of sc.quiz.entries()) {
         const content = Object.fromEntries((['en', 'fr-CA'] as const).map((loc) => { const k = loc === 'en' ? 'en' : 'fr'; return [loc, { prompt: q.q[k], options: q.options.map((o, n) => ({ key: String(n), text: o[k] })) }]; }));
