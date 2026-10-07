@@ -1,3 +1,4 @@
+import { LoginPage } from './login.tsx';
 import { ErrorBar } from './errorbar.tsx';
 import { useDialogFocus } from './a11y.ts';
 import { Component, type ComponentChildren } from 'preact';
@@ -77,6 +78,10 @@ export function App({ host }: { host: HostOptions }) {
   if (wrong) return <div class="pii"><div class="msg"><p><b>{t.wrongTitle}</b></p><p>{t.wrongBody(wrong.gmail, wrong.pii)}</p><button class="btn" onClick={() => host.onSignIn(host.region, undefined, { fresh: true })}>{t.signInAs(wrong.gmail)}</button></div></div>;
   if (error) return <div class="pii"><div class="err" role="alert">{error}</div><div class="msg"><button class="btn" onClick={boot}>{t.retry}</button></div></div>;
   if (!me) return <div class="pii"><div class="msg">{t.loading}</div></div>;
+  if (me === 'out' && !host.navigate) {
+    const l: Locale = locale === 'fr-CA' || (!(() => { try { return localStorage.getItem('pii.lang'); } catch { return null; } })() && /^fr/i.test(navigator.language)) ? 'fr-CA' : 'en';
+    return <LoginPage locale={l} onLocale={(v) => { try { localStorage.setItem('pii.lang', v); } catch { /* private window */ } setLocale(v); }} onSignIn={() => host.onSignIn(host.region)} />;
+  }
   if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><SignIn host={host} t={t} locale={locale} /></div></div>;
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
