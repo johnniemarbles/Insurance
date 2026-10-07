@@ -142,3 +142,20 @@ test('step-by-step courses: later lessons stay locked, and continue points at th
   assert.equal((await call(B, 'POST', `/v1/lessons/${b}/complete`)).json.completed, true);
   assert.equal((await call(B, 'GET', `/v1/courses/${c}`)).json.resumeLessonId, null);
 });
+
+test('certificate: shows the course version, takes CE hours from that version, and downloads as a PDF', async () => {
+  const c = (await call(ADMIN, 'POST', '/v1/courses', { title: 'Ethics (CE)', ownerNodeId: co.rootNodeId })).json.id;
+  const l = (await call(ADMIN, 'POST', `/v1/courses/${c}/lessons`, { title: 'Read', type: 'richtext', text: 'x' })).json.id;
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c}`, { ce: { pack: 'ribo', hours: 1, category: 'ethics' } })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c}`, { status: 'published' })).status, 204);
+  assert.equal((await call(B, 'POST', `/v1/lessons/${l}/complete`)).json.completed, true);
+  const code = (await call(B, 'GET', '/v1/my/learning')).json.enrollments.find((e: any) => e.courseId === c).certificateCode;
+  await owner((o) => o.query(`UPDATE courses SET ce_hours = 9 WHERE id = $1`, [c]));            // a later change must not rewrite the certificate
+  const page = await app.inject({ method: 'GET', url: `/c/${code}` });
+  assert.equal(page.statusCode, 200); assert.ok(page.body.includes('v1')); assert.ok(page.body.includes('hours: 1 ') || page.body.includes('hours: 1<') || /hours: 1\b/.test(page.body), page.body.slice(page.body.indexOf('ce')));
+  assert.ok(!/hours: 9/.test(page.body));
+  const pdf = await app.inject({ method: 'GET', url: `/c/${code}/pdf` });
+  assert.equal(pdf.statusCode, 200); assert.equal(pdf.headers['content-type'], 'application/pdf');
+  assert.equal(pdf.rawPayload.subarray(0, 5).toString(), '%PDF-');
+  assert.equal((await app.inject({ method: 'GET', url: '/c/000000000000000000/pdf' })).statusCode, 404);
+});

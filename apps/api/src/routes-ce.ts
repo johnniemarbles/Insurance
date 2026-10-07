@@ -7,6 +7,9 @@ import { audit } from './audit.ts';
 import { HttpError, forbidden, invalid, notFound, conflict } from './errors.ts';
 import { uuid } from './crm-helpers.ts';
 import type { AppDeps } from './app.ts';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { certificatePdf, type CertRow } from './certificate-pdf.ts';
 
 type Locale = 'en' | 'fr-CA';
 const today = () => new Date().toISOString().slice(0, 10);
@@ -337,12 +340,12 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
   const entity = deps.config.region === 'us' ? 'Punjab Insurance Broker Inc' : 'Punjab Insurance Agency Inc';
   app.get('/c/:code', { schema: { params: { type: 'object', properties: { code: { type: 'string', pattern: '^[0-9a-f]{18}$' } } } } }, async (req, reply) => {
     const { code } = req.params as { code: string };
-    const c = (await deps.authPool.query<{ code: string; issued_at: Date; learner: string; course: string; company: string; hours: string | null; category: string | null; pack: string | null; locale: string }>('SELECT * FROM certificate_public($1)', [code])).rows[0];
+    const c = (await deps.authPool.query<{ code: string; issued_at: Date; learner: string; course: string; company: string; hours: string | null; category: string | null; pack: string | null; locale: string; version: number | null }>('SELECT * FROM certificate_public($1)', [code])).rows[0];
     if (!c) return reply.code(404).type('text/html; charset=utf-8').send('<!doctype html><meta charset="utf-8"><title>Certificate not found</title><body style="font:16px system-ui;text-align:center;padding:60px"><h1>Certificate not found</h1><p>Check the code and try again.</p></body>');
     const fr = c.locale === 'fr-CA';
     const T = fr
-      ? { title: 'Attestation de formation', cert: 'Nous attestons que', did: 'a terminé avec succès', at: 'de', ce: 'Heures de formation continue', date: 'Délivrée le', code: 'Code de vérification', valid: 'Authentique: émise par', print: 'Pour enregistrer en PDF, utilisez Imprimer dans votre navigateur.', cat: 'Catégorie' }
-      : { title: 'Certificate of completion', cert: 'This certifies that', did: 'has successfully completed', at: 'at', ce: 'Continuing education hours', date: 'Issued', code: 'Verification code', valid: 'Genuine. Issued by', print: 'To save as a PDF, use Print in your browser.', cat: 'Category' };
+      ? { title: 'Attestation de formation', cert: 'Nous attestons que', did: 'a terminé avec succès', at: 'de', ce: 'Heures de formation continue', date: 'Délivrée le', code: 'Code de vérification', valid: 'Authentique: émise par', print: 'Télécharger le PDF', cat: 'Catégorie' }
+      : { title: 'Certificate of completion', cert: 'This certifies that', did: 'has successfully completed', at: 'at', ce: 'Continuing education hours', date: 'Issued', code: 'Verification code', valid: 'Genuine. Issued by', print: 'Download the PDF', cat: 'Category' };
     const when = c.issued_at.toLocaleDateString(fr ? 'fr-CA' : 'en-CA', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
     const html = `<!doctype html><html lang="${fr ? 'fr' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(T.title)}</title>
 <style>body{margin:0;background:#f3f4f6;font:16px/1.5 Georgia,serif;color:#1f2937}.sheet{max-width:820px;margin:24px auto;background:#fff;border:10px double #1d4ed8;padding:48px 56px;text-align:center}
@@ -351,10 +354,20 @@ img{width:84px;height:84px}h1{font-size:34px;margin:12px 0 4px;color:#1d4ed8;let
 .ce{display:inline-block;margin-top:16px;padding:8px 16px;border:1px solid #1d4ed8;border-radius:8px;font:600 15px system-ui;color:#1d4ed8}.v{font:13px system-ui;color:#065f46;margin-top:26px}.p{font:12px system-ui;color:#6b7280;text-align:center;margin:12px}
 @media print{body{background:#fff}.sheet{margin:0;border-width:8px}.p{display:none}}</style></head><body>
 <div class="sheet"><img src="/brand/logo.png" alt=""><div class="ent">${esc(entity)}</div><h1>${esc(T.title)}</h1><p>${esc(T.cert)}</p>
-<div class="who">${esc(c.learner)}</div><p>${esc(T.did)}</p><div class="crs">${esc(c.course)}</div><p>${esc(T.at)} ${esc(c.company)}</p>
+<div class="who">${esc(c.learner)}</div><p>${esc(T.did)}</p><div class="crs">${esc(c.course)}${c.version ? ` <small style="font:14px system-ui;color:#6b7280">v${c.version}</small>` : ''}</div><p>${esc(T.at)} ${esc(c.company)}</p>
 ${c.hours ? `<div class="ce">${esc(T.ce)}: ${esc(Number(c.hours))} · ${esc(T.cat)}: ${esc((c.category ?? '').replace('_', ' '))}</div>` : ''}
-<div class="meta">${esc(T.date)} ${esc(when)} · ${esc(T.code)}: <b>${esc(c.code)}</b></div><div class="v">✓ ${esc(T.valid)} ${esc(entity)}</div></div><p class="p">${esc(T.print)}</p></body></html>`;
+<div class="meta">${esc(T.date)} ${esc(when)} · ${esc(T.code)}: <b>${esc(c.code)}</b></div><div class="v">✓ ${esc(T.valid)} ${esc(entity)}</div></div><p class="p"><a href="/c/${esc(c.code)}/pdf">${esc(T.print)}</a></p></body></html>`;
     return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'").send(html);
+  });
+
+  // The same certificate as a PDF file. Names the standard PDF fonts cannot draw (other alphabets) fall back to the printable page.
+  app.get('/c/:code/pdf', { schema: { params: { type: 'object', properties: { code: { type: 'string', pattern: '^[0-9a-f]{18}$' } } } } }, async (req, reply) => {
+    const { code } = req.params as { code: string };
+    const c = (await deps.authPool.query<CertRow>('SELECT * FROM certificate_public($1)', [code])).rows[0];
+    if (!c) return reply.code(404).type('text/plain; charset=utf-8').send('Certificate not found');
+    const pdf = await certificatePdf(c, entity, join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'brand', 'logo.png'));
+    if (!pdf) return reply.redirect(`/c/${code}`);
+    return reply.type('application/pdf').header('content-disposition', `attachment; filename="certificate-${code}.pdf"`).header('cache-control', 'no-store').send(Buffer.from(pdf));
   });
 
   // ------------------------------------------------------------ AI help for authors (drafts only, never saved)
