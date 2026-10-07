@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { Strings } from './i18n.ts';
 import type { Locale } from './types.ts';
 import { CourseCe, MyCe, PeopleCe, ceStrings } from './ce.tsx';
+import { Catalog } from './catalog.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface CourseRow { id: string; status: string; title: string; description: string; lessonCount: number; myStatus: string | null; myProgress: number | null; myDueAt: string | null; canEdit: boolean }
@@ -47,19 +48,8 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
     try { const r = await call('POST', '/v1/courses', { title: title.trim(), locale }); onOpen(r.id); } catch (x) { setErr((x as Error).message); }
   };
   if (!courses) return <div class="msg">{err || t.loading}</div>;
-  const mine = courses.filter((c) => c.myStatus);
-  const others = courses.filter((c) => !c.myStatus);
-  const card = (c: CourseRow) => (
-    <button class="ccard" key={c.id} onClick={() => onOpen(c.id)}>
-      <b>{c.title}</b>
-      {c.status === 'draft' && <span class="tag">{t.draft}</span>}
-      <span class="muted">{c.description}</span>
-      {c.myStatus && <><Bar pct={c.myProgress ?? 0} /><small>{c.myStatus === 'completed' ? `✓ ${t.completed}` : `${Math.round(c.myProgress ?? 0)}%`}{c.myDueAt && c.myStatus !== 'completed' ? ` · ${t.due} ${new Date(c.myDueAt).toLocaleDateString(locale)}` : ''}</small></>}
-      {!c.myStatus && <small>{t.lessons(c.lessonCount)}</small>}
-    </button>
-  );
   return (
-    <div class="tpad">
+    <div class="tpad xl">
       <div class="bar" style={{ padding: 0, border: 0 }}>
         <h1>{t.training}</h1><span class="spacer" />
         {canAuthor && <button class="btn quiet" onClick={openStarters}>{t.starterCourse}</button>}
@@ -79,8 +69,7 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
         </div>
       )}
       {courses.length === 0 && <div class="msg">{t.noCourses}</div>}
-      {mine.length > 0 && <><h3>{t.myLearning}</h3><div class="cgrid">{mine.map(card)}</div></>}
-      {others.length > 0 && <><h3>{t.allCourses}</h3><div class="cgrid">{others.map(card)}</div></>}
+      {courses.length > 0 && <Catalog courses={courses as any} locale={locale} onOpen={onOpen} />}
     </div>
   );
 }

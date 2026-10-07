@@ -127,7 +127,10 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     return run(ctx, async (tx) => {
       const rows = (await tx.query(
         `SELECT c.id, c.status, c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description,
-                (SELECT count(*)::int FROM lessons x WHERE x.course_id = c.id) AS "lessonCount",
+                (SELECT count(*)::int FROM lessons x WHERE x.course_id = c.id) AS "lessonCount", c.starter_key AS "starterKey",
+                (SELECT coalesce(sum(cardinality(regexp_split_to_array(btrim(coalesce(ll.body->>'text', '')), '[[:space:]]+'))), 0)::int FROM lessons x JOIN lesson_locales ll ON ll.lesson_id = x.id AND ll.locale = 'en' WHERE x.course_id = c.id) AS words,
+                (SELECT count(*)::int FROM lessons x WHERE x.course_id = c.id AND x.type = 'video') AS videos,
+                (SELECT count(*)::int FROM quiz_questions q JOIN lessons x ON x.id = q.lesson_id WHERE x.course_id = c.id) AS questions,
                 e.status AS "myStatus", e.progress_pct::float8 AS "myProgress", e.due_at AS "myDueAt"
            FROM courses c LEFT JOIN enrollments e ON e.course_id = c.id AND e.user_id = $1
           WHERE c.status <> 'archived' ORDER BY c.created_at DESC`, [ctx.userId])).rows as Array<Record<string, unknown> & { ownerNodeId: string }>;
