@@ -5,8 +5,8 @@ import { CourseCe, MyCe, PeopleCe, ceStrings } from './ce.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface CourseRow { id: string; status: string; title: string; description: string; lessonCount: number; myStatus: string | null; myProgress: number | null; myDueAt: string | null; canEdit: boolean }
-interface LessonRow { id: string; type: string; title: string; required: boolean; done: boolean }
-interface CourseDetail { id: string; version?: number; status: string; title: string; description: string; cePack: string | null; ceHours: number | null; ceCategory: string | null; canEdit: boolean; enrollment: { status: string; progressPct: number; dueAt: string | null } | null; certificate: { verificationCode: string; issuedAt: string; url?: string } | null; lessons: LessonRow[]; locales?: { locale: string; title: string; description: string | null }[] }
+interface LessonRow { id: string; type: string; title: string; required: boolean; done: boolean; locked?: boolean }
+interface CourseDetail { id: string; version?: number; sequential?: boolean; resumeLessonId?: string | null; status: string; title: string; description: string; cePack: string | null; ceHours: number | null; ceCategory: string | null; canEdit: boolean; enrollment: { status: string; progressPct: number; dueAt: string | null } | null; certificate: { verificationCode: string; issuedAt: string; url?: string } | null; lessons: LessonRow[]; locales?: { locale: string; title: string; description: string | null }[] }
 type View = { k: 'list' } | { k: 'course'; id: string } | { k: 'lesson'; courseId: string; id: string };
 
 const move = <T,>(a: T[], i: number, d: number): T[] => { const b = [...a]; const j = i + d; if (j < 0 || j >= b.length) return b; [b[i], b[j]] = [b[j]!, b[i]!]; return b; };
@@ -101,11 +101,12 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
       {c.certificate && <p class="ok">🎓 {t.certificate}: <b>{c.certificate.verificationCode}</b> · {new Date(c.certificate.issuedAt).toLocaleDateString(locale)}{c.certificate.url && <> · <a href={c.certificate.url} target="_blank" rel="noopener noreferrer">{ceStrings(locale).certOpen}</a></>}</p>}
       {err && <div class="err">{err}</div>}{note && <div class="ok">{note}</div>}
 
+      {c.resumeLessonId && <div class="actions"><button class="btn" onClick={() => onLesson(c.resumeLessonId!)}>{c.enrollment && c.enrollment.progressPct > 0 ? (locale === 'fr-CA' ? 'Continuer' : 'Continue') : (locale === 'fr-CA' ? 'Commencer' : 'Start')}</button></div>}
       <h3>{t.lessonsTitle}</h3>
       {c.lessons.length === 0 && <p class="muted">{t.noLessons}</p>}
       {c.lessons.map((l, i) => (
         <div class="lrow" key={l.id}>
-          <button class="lbtn" onClick={() => onLesson(l.id)}><span class={`dot${l.done ? ' on' : ''}`}>{l.done ? '✓' : i + 1}</span><span>{l.title}</span><span class="tag">{t.lessonTypes[l.type] ?? l.type}</span>{!l.required && <span class="tag">{t.optional}</span>}</button>
+          <button class="lbtn" disabled={l.locked} aria-disabled={l.locked} title={l.locked ? (locale === 'fr-CA' ? 'Terminez d’abord les leçons précédentes' : 'Finish the earlier lessons first') : undefined} onClick={() => onLesson(l.id)}><span class={`dot${l.done ? ' on' : ''}`}>{l.locked ? '🔒' : l.done ? '✓' : i + 1}</span><span>{l.title}</span><span class="tag">{t.lessonTypes[l.type] ?? l.type}</span>{!l.required && <span class="tag">{t.optional}</span>}</button>
           {c.canEdit && c.status !== 'published' && <>
             <button class="ib" aria-label={t.moveUp} disabled={i === 0} onClick={() => void act(() => call('PUT', `/v1/courses/${id}/lessons/order`, { lessonIds: move(c.lessons, i, -1).map((x) => x.id) }))}>↑</button>
             <button class="ib" aria-label={t.moveDown} disabled={i === c.lessons.length - 1} onClick={() => void act(() => call('PUT', `/v1/courses/${id}/lessons/order`, { lessonIds: move(c.lessons, i, 1).map((x) => x.id) }))}>↓</button>
@@ -127,6 +128,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
           <input id="ct" class="wide" defaultValue={c.title} onBlur={(e) => { const v = (e.target as HTMLInputElement).value.trim(); if (v && v !== c.title) void act(() => call('PATCH', `/v1/courses/${id}`, { title: v, locale })); }} />
           <label for="cd">{t.description} ({locale})</label>
           <textarea id="cd" class="wide" rows={2} defaultValue={c.description} onBlur={(e) => { const v = (e.target as HTMLTextAreaElement).value; if (v !== c.description) void act(() => call('PATCH', `/v1/courses/${id}`, { description: v, locale })); }} />
+          {c.status !== 'published' && <label class="opt"><input type="checkbox" checked={!!c.sequential} onChange={(e) => void act(() => call('PATCH', `/v1/courses/${id}`, { sequential: (e.target as HTMLInputElement).checked }))} /> {locale === 'fr-CA' ? 'Étape par étape : les leçons obligatoires se suivent dans l’ordre' : 'Step by step: required lessons must be done in order'}</label>}
           <div class="actions">
             {c.status !== 'published'
               ? <button class="btn" onClick={() => void act(() => call('PATCH', `/v1/courses/${id}`, { status: 'published' }), t.published)}>{t.publish}</button>

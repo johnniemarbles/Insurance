@@ -18,3 +18,20 @@ export function attemptStatus(rules: AttemptRules, attempts: AttemptRecord[], no
   }
   return { allowed: true, reason: null, used, left, nextAt: null };
 }
+
+/** In a step-by-step course a lesson opens once every required lesson before it is done. Optional lessons never hold anyone back. */
+export function lockedLessonIds(lessons: { id: string; required: boolean; done: boolean }[]): Set<string> {
+  const locked = new Set<string>();
+  let blocked = false;
+  for (const l of lessons) {
+    if (blocked) locked.add(l.id);
+    if (l.required && !l.done) blocked = true;
+  }
+  return locked;
+}
+
+/** Where "Continue" goes: the lesson last opened if it is still open and unfinished, else the first unfinished lesson that is not locked. */
+export function resumeLesson(lessons: { id: string; done: boolean }[], locked: Set<string>, lastId: string | null): string | null {
+  const open = lessons.filter((l) => !l.done && !locked.has(l.id));
+  return open.find((l) => l.id === lastId)?.id ?? open[0]?.id ?? null;
+}

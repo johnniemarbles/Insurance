@@ -120,3 +120,25 @@ test('quiz attempt rules: numbered tries, wait between them, pass ends it', asyn
   const rec = (await owner((o) => o.query(`SELECT attempt_no, course_version FROM quiz_attempts WHERE lesson_id = $1 ORDER BY attempt_no`, [ql]))).rows;
   assert.deepEqual(rec.map((r: any) => [r.attempt_no, r.course_version]), [[1, 1], [2, 1]]);
 });
+
+test('step-by-step courses: later lessons stay locked, and continue points at the right lesson', async () => {
+  const c = (await call(ADMIN, 'POST', '/v1/courses', { title: 'In order', ownerNodeId: co.rootNodeId })).json.id;
+  const a = (await call(ADMIN, 'POST', `/v1/courses/${c}/lessons`, { title: 'First', type: 'richtext', text: 'x' })).json.id;
+  const b = (await call(ADMIN, 'POST', `/v1/courses/${c}/lessons`, { title: 'Second', type: 'richtext', text: 'y' })).json.id;
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c}`, { sequential: true })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c}`, { status: 'published' })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c}`, { sequential: false })).status, 409, 'locked while published');
+  const first = (await call(B, 'GET', `/v1/courses/${c}`)).json;
+  assert.deepEqual(first.lessons.map((l: any) => l.locked), [false, true]);
+  assert.equal((await call(B, 'GET', `/v1/lessons/${b}`)).status, 403);
+  assert.equal((await call(B, 'POST', `/v1/lessons/${b}/complete`)).status, 403);
+  assert.equal((await call(ADMIN, 'GET', `/v1/lessons/${b}`)).status, 200, 'authors are not held back');
+  assert.equal((await call(B, 'POST', `/v1/lessons/${a}/complete`)).status, 200);
+  const next = (await call(B, 'GET', `/v1/courses/${c}`)).json;
+  assert.deepEqual(next.lessons.map((l: any) => l.locked), [false, false]);
+  assert.equal(next.resumeLessonId, b);
+  await call(B, 'GET', `/v1/lessons/${b}`);
+  assert.equal((await call(B, 'GET', `/v1/courses/${c}`)).json.resumeLessonId, b);
+  assert.equal((await call(B, 'POST', `/v1/lessons/${b}/complete`)).json.completed, true);
+  assert.equal((await call(B, 'GET', `/v1/courses/${c}`)).json.resumeLessonId, null);
+});

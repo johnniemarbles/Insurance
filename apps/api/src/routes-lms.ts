@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { attemptStatus, type RequestContext } from '@pii/domain';
+import { attemptStatus, lockedLessonIds, resumeLesson, type RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { conflict, forbidden, invalid, notFound } from './errors.ts';
@@ -45,6 +45,17 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
   const requireAuthor = (ctx: RequestContext, ownerNodeId: string) => {
     if (!canAuthorAt(ctx, ownerNodeId)) throw forbidden('Only a trainer, manager or administrator of the owning branch can change this course');
   };
+
+  /** In a step-by-step course, learners cannot open or finish a lesson before the required ones ahead of it. Authors are never held back. */
+  async function assertUnlocked(tx: Tx, ctx: RequestContext, courseId: string, lessonId: string, ownerNodeId: string) {
+    if (canAuthorAt(ctx, ownerNodeId)) return;
+    if (!(await tx.query('SELECT 1 FROM courses WHERE id = $1 AND sequential', [courseId])).rowCount) return;
+    const rows = (await tx.query<{ id: string; required: boolean; done: boolean }>(
+      `SELECT l.id, l.required, (p.status = 'completed') IS TRUE AS done FROM lessons l
+         LEFT JOIN enrollments e ON e.user_id = $2 AND e.course_id = l.course_id
+         LEFT JOIN lesson_progress p ON p.lesson_id = l.id AND p.enrollment_id = e.id WHERE l.course_id = $1 ORDER BY l.position`, [courseId, ctx.userId])).rows;
+    if (lockedLessonIds(rows).has(lessonId)) throw forbidden('Finish the earlier lessons first');
+  }
 
   /** Everyone is a learner: opening a published course you can see enrolls you, unless you already are. */
   async function ensureEnrollment(tx: Tx, ctx: RequestContext, courseId: string): Promise<string> {
@@ -119,9 +130,9 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { id } = req.params as { id: string };
     const l = loc(req.query as { locale?: string });
     return run(ctx, async (tx) => {
-      const c = (await tx.query(`SELECT c.id, c.status, c.version, c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
+      const c = (await tx.query(`SELECT c.id, c.status, c.version, c.sequential, c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
       if (!c) throw notFound('Course not found');
-      const e = (await tx.query(`SELECT id, status, course_version AS "courseVersion", progress_pct::float8 AS "progressPct", due_at AS "dueAt", completed_at AS "completedAt" FROM enrollments WHERE course_id = $1 AND user_id = $2`, [id, ctx.userId])).rows[0] ?? null;
+      const e = (await tx.query(`SELECT id, status, course_version AS "courseVersion", last_lesson_id AS "lastLessonId", progress_pct::float8 AS "progressPct", due_at AS "dueAt", completed_at AS "completedAt" FROM enrollments WHERE course_id = $1 AND user_id = $2`, [id, ctx.userId])).rows[0] ?? null;
       const lessons = (await tx.query(
         `SELECT l.id, l.module_id AS "moduleId", l.position, l.type, l.required, l.pass_mark AS "passMark", ${lessonTitle(l)} AS title, (p.status = 'completed') AS done
            FROM lessons l LEFT JOIN lesson_progress p ON p.lesson_id = l.id AND p.enrollment_id = $2
@@ -130,17 +141,20 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (cert) cert.url = `${deps.config.appOrigin}/c/${cert.verificationCode}`;
       const canEdit = canAuthorAt(ctx, c.ownerNodeId);
       const locales = canEdit ? (await tx.query(`SELECT locale, title, description FROM course_locales WHERE course_id = $1`, [id])).rows : undefined;
-      return { ...c, canEdit, enrollment: e, certificate: cert, lessons: lessons.map((x) => ({ ...x, done: Boolean(x.done) })), locales };
+      const rows = lessons.map((x) => ({ ...x, done: Boolean(x.done) }));
+      const locked = c.sequential && !canEdit ? lockedLessonIds(rows) : new Set<string>();
+      const resumeLessonId = e && e.status !== 'completed' ? resumeLesson(rows, locked, e.lastLessonId ?? null) : null;
+      return { ...c, canEdit, enrollment: e, certificate: cert, lessons: rows.map((x) => ({ ...x, locked: locked.has(x.id) })), resumeLessonId, locales };
     });
   });
 
   app.patch(
     '/v1/courses/:id',
-    { schema: { params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { title: { type: 'string', minLength: 1, maxLength: 200 }, description: { type: 'string', maxLength: 4000 }, locale: localeProp, status: { enum: ['draft', 'published', 'archived'] }, quebecFacing: { type: 'boolean' }, ce: { anyOf: [{ type: 'null' }, { type: 'object', required: ['pack', 'hours', 'category'], additionalProperties: false, properties: { pack: { type: 'string', maxLength: 30 }, hours: { type: 'number', minimum: 0.5, maximum: 40 }, category: { enum: ['technical', 'management', 'ethics', 'professional_development', 'general'] } } }] } } } } },
+    { schema: { params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { title: { type: 'string', minLength: 1, maxLength: 200 }, description: { type: 'string', maxLength: 4000 }, locale: localeProp, status: { enum: ['draft', 'published', 'archived'] }, quebecFacing: { type: 'boolean' }, sequential: { type: 'boolean' }, ce: { anyOf: [{ type: 'null' }, { type: 'object', required: ['pack', 'hours', 'category'], additionalProperties: false, properties: { pack: { type: 'string', maxLength: 30 }, hours: { type: 'number', minimum: 0.5, maximum: 40 }, category: { enum: ['technical', 'management', 'ethics', 'professional_development', 'general'] } } }] } } } } },
     async (req, reply) => {
       const { ctx } = await deps.authenticate(req);
       const { id } = req.params as { id: string };
-      const b = req.body as { title?: string; description?: string; locale?: Locale; status?: string; quebecFacing?: boolean; ce?: { pack: string; hours: number; category: string } | null };
+      const b = req.body as { title?: string; description?: string; locale?: Locale; status?: string; quebecFacing?: boolean; sequential?: boolean; ce?: { pack: string; hours: number; category: string } | null };
       await run(ctx, async (tx) => {
         const c = await loadCourse(tx, id);
         requireAuthor(ctx, c.owner_node_id);
@@ -155,7 +169,8 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
              ON CONFLICT (course_id, locale) DO UPDATE SET title = coalesce($4, course_locales.title), description = coalesce($5, course_locales.description)`,
             [id, ctx.tenantId, l, b.title?.trim() ?? null, b.description ?? null]);
         }
-        if (c.status === 'published' && (b.ce !== undefined || b.quebecFacing !== undefined)) requireEditable(c.status);
+        if (c.status === 'published' && (b.ce !== undefined || b.quebecFacing !== undefined || b.sequential !== undefined)) requireEditable(c.status);
+        if (b.sequential !== undefined) await tx.query('UPDATE courses SET sequential = $2, updated_at = now() WHERE id = $1', [id, b.sequential]);
         if (b.status === 'published') {
           const n = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM lessons WHERE course_id = $1', [id])).rows[0]!.n;
           if (n === 0) throw invalid('Add at least one lesson before publishing');
@@ -338,9 +353,11 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       const l = await loadLesson(tx, id);
       const canEdit = canAuthorAt(ctx, l.owner_node_id);
       if (l.status !== 'published' && !canEdit) throw notFound('Lesson not found');
+      await assertUnlocked(tx, ctx, l.course_id, id, l.owner_node_id);
       const ll = (await tx.query<{ title: string; body: Record<string, unknown> }>(
         `SELECT title, body FROM lesson_locales WHERE lesson_id = $1 AND locale IN ($2, 'en') ORDER BY (locale = $2) DESC LIMIT 1`, [id, lang])).rows[0];
       const enr = (await tx.query<{ id: string }>('SELECT id FROM enrollments WHERE user_id = $1 AND course_id = $2', [ctx.userId, l.course_id])).rows[0];
+      if (enr) await tx.query('UPDATE enrollments SET last_lesson_id = $2 WHERE id = $1', [enr.id, id]);
       const prog = enr ? (await tx.query(`SELECT status FROM lesson_progress WHERE enrollment_id = $1 AND lesson_id = $2`, [enr.id, id])).rows[0] : undefined;
       let quiz: unknown;
       if (l.type === 'quiz') {
@@ -368,6 +385,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       const l = await loadLesson(tx, id);
       if (l.type === 'quiz') throw invalid('Quizzes are completed by passing them');
       if (l.status !== 'published') throw forbidden('This course is not published yet');
+      await assertUnlocked(tx, ctx, l.course_id, id, l.owner_node_id);
       const enr = await ensureEnrollment(tx, ctx, l.course_id);
       await tx.query(
         `INSERT INTO lesson_progress (enrollment_id, lesson_id, tenant_id, status, completed_at) VALUES ($1,$2,$3,'completed',now())
@@ -387,6 +405,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
         const l = await loadLesson(tx, id);
         if (l.type !== 'quiz') throw invalid('That lesson is not a quiz');
         if (l.status !== 'published') throw forbidden('This course is not published yet');
+        await assertUnlocked(tx, ctx, l.course_id, id, l.owner_node_id);
         const enr = await ensureEnrollment(tx, ctx, l.course_id);
         const prior = (await tx.query<{ attempted_at: string; passed: boolean }>('SELECT attempted_at, passed FROM quiz_attempts WHERE enrollment_id = $1 AND lesson_id = $2', [enr, id])).rows.map((r) => ({ attemptedAt: r.attempted_at, passed: r.passed }));
         const st = attemptStatus({ maxAttempts: l.max_attempts, cooldownMinutes: l.cooldown_minutes }, prior);
