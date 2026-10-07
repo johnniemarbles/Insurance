@@ -69,6 +69,23 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
   }
 
   interface StageIn { name: string; isWon?: boolean; isLost?: boolean; color?: string | null; requiredFields?: string[] }
+  /** Adds a stage. An open stage goes before the first Won/Lost stage so those two stay last; a Won/Lost stage goes at the end. */
+  async function addStage(tx: Tx, tenantId: string, pipelineId: string, name: string, isWon: boolean, isLost: boolean): Promise<string> {
+    const at = isWon || isLost ? null : (await tx.query<{ p: number | null }>('SELECT min(position) AS p FROM stages WHERE pipeline_id = $1 AND (is_won OR is_lost)', [pipelineId])).rows[0]?.p ?? null;
+    if (at !== null) await tx.query('UPDATE stages SET position = position + 1001 WHERE pipeline_id = $1 AND position >= $2', [pipelineId, at]); // out of the way first: (pipeline_id, position) is unique
+    const { rows } = await tx.query<{ id: string }>(
+      `INSERT INTO stages (tenant_id, pipeline_id, name, position, is_won, is_lost)
+       VALUES ($1, $2, $3, coalesce($4::int, (SELECT coalesce(max(position), 0) + 1 FROM stages WHERE pipeline_id = $2)), $5, $6) RETURNING id`,
+      [tenantId, pipelineId, name, at, isWon, isLost],
+    );
+    if (at !== null) {
+      const all = (await tx.query<{ id: string }>('SELECT id FROM stages WHERE pipeline_id = $1 ORDER BY position', [pipelineId])).rows;
+      await tx.query('UPDATE stages SET position = position + 5000 WHERE pipeline_id = $1', [pipelineId]);
+      for (let i = 0; i < all.length; i++) await tx.query('UPDATE stages SET position = $2 WHERE id = $1', [all[i]!.id, i + 1]);
+    }
+    return rows[0]!.id;
+  }
+
   interface MakeIn { name: string; owner: string; sharedDown: boolean; stages: StageIn[]; fields: FieldInput[]; colorTheme?: string | null; clonedFrom?: string | null; templateCode?: string | null; templateVersion?: number | null }
 
   /** One place makes every new pipeline (blank, copied, or from a template) so the rules cannot drift apart. */
@@ -248,12 +265,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
     const s = req.body as { name: string; isWon?: boolean; isLost?: boolean };
     const out = await run(ctx, async (tx) => {
       await loadForManage(tx, ctx, id);
-      const { rows } = await tx.query<{ id: string }>(
-        `INSERT INTO stages (tenant_id, pipeline_id, name, position, is_won, is_lost)
-         VALUES ($1, $2, $3, (SELECT coalesce(max(position), 0) + 1 FROM stages WHERE pipeline_id = $2), $4, $5) RETURNING id`,
-        [ctx.tenantId, id, s.name.trim(), s.isWon ?? false, s.isLost ?? false],
-      );
-      return { id: rows[0]!.id };
+      return { id: await addStage(tx, ctx.tenantId, id, s.name.trim(), s.isWon ?? false, s.isLost ?? false) };
     });
     return reply.code(201).send(out);
   });
@@ -486,11 +498,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
         for (const r of b.rows) {
           const n = r.stage?.trim();
           if (!n || stages.has(n.toLowerCase())) continue;
-          const ins = await tx.query<{ id: string }>(
-            `INSERT INTO stages (tenant_id, pipeline_id, name, position) VALUES ($1,$2,$3,(SELECT coalesce(max(position),0)+1 FROM stages WHERE pipeline_id=$2)) RETURNING id`,
-            [ctx.tenantId, id, n.slice(0, 100)],
-          );
-          stages.set(n.toLowerCase(), ins.rows[0]!.id); stagesCreated++;
+          stages.set(n.toLowerCase(), await addStage(tx, ctx.tenantId, id, n.slice(0, 100), false, false)); stagesCreated++;
         }
         // columns: add the ones that do not exist yet, as text
         const have = new Set((await tx.query<{ key: string }>('SELECT key FROM field_defs WHERE pipeline_id = $1', [id])).rows.map((r) => r.key));

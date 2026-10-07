@@ -133,3 +133,11 @@ test('the company can cap partners and switch partner pipelines off', async () =
   const places = await call(PA, 'GET', '/v1/pipelines/places');
   assert.deepEqual(places.json.places, []);
 });
+
+test('a stage added later goes before Won and Lost; a Won or Lost stage goes last', async () => {
+  const id = (await call(ADMIN, 'POST', '/v1/pipelines', { name: 'Order', stages: [{ name: 'New' }, { name: 'Quoted' }, { name: 'Issued', isWon: true }, { name: 'Lost', isLost: true }] })).json.id;
+  assert.equal((await call(ADMIN, 'POST', `/v1/pipelines/${id}/stages`, { name: 'Contacted' })).status, 201);
+  assert.equal((await call(ADMIN, 'POST', `/v1/pipelines/${id}/stages`, { name: 'Cancelled', isLost: true })).status, 201);
+  const names = (await call(ADMIN, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === id).stages.map((s: any) => s.name);
+  assert.deepEqual(names, ['New', 'Quoted', 'Contacted', 'Issued', 'Lost', 'Cancelled']);
+});
