@@ -5,11 +5,14 @@ import { findLoginCandidates, type LoginCandidate } from './index.ts';
 export const SESSION_DAYS = 14;
 const hash = (t: string) => createHash('sha256').update(t).digest();
 
-export async function createSession(authPool: Db, tenantId: string, userId: string): Promise<string> {
+export const EMBED_TOKEN_MINUTES = 30;
+
+/** A new session token. Cookie sign-in uses the default 14 days; the embedded screens inside Gmail use a short one. */
+export async function createSession(authPool: Db, tenantId: string, userId: string, ttlMinutes = SESSION_DAYS * 24 * 60): Promise<string> {
   const token = randomBytes(32).toString('base64url');
   await authPool.query(
-    `INSERT INTO sessions (tenant_id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + make_interval(days => $4))`,
-    [tenantId, userId, hash(token), SESSION_DAYS],
+    `INSERT INTO sessions (tenant_id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + make_interval(mins => $4))`,
+    [tenantId, userId, hash(token), ttlMinutes],
   );
   return token;
 }

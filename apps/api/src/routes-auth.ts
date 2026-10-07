@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { createSession, deleteSession, signInWithGoogle } from '@pii/db';
+import { createSession, deleteSession, signInWithGoogle, EMBED_TOKEN_MINUTES } from '@pii/db';
 import { parseCookies, serializeCookie, signValue, verifySigned } from '@pii/platform';
 import { pkce } from './google.ts';
 import { HttpError } from './errors.ts';
@@ -58,6 +58,14 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
     const token = await createSession(deps.authPool, result.user.tenantId, result.user.userId);
     reply.header('set-cookie', [sessionCookie(deps, token), clearCookie(deps, FLOW_COOKIE)]);
     return reply.redirect(`${deps.config.appOrigin}/?signed_in=1${result.accepted ? '&welcome=1' : ''}`, 302);
+  });
+
+  // A short-lived token for the screens the extension shows inside Gmail. Only a cookie sign-in can ask for one, so a token cannot mint another.
+  app.post('/v1/embed-token', async (req, reply) => {
+    if (!parseCookies(req.headers.cookie)[SESSION_COOKIE]) throw new HttpError(403, 'cookie_required', 'Sign in to PII first');
+    const { user } = await deps.authenticate(req);
+    const token = await createSession(deps.authPool, user.tenantId, user.userId, EMBED_TOKEN_MINUTES);
+    return reply.header('cache-control', 'no-store').send({ token, expiresInSeconds: EMBED_TOKEN_MINUTES * 60 });
   });
 
   app.post('/auth/logout', async (req, reply) => {

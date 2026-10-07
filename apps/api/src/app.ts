@@ -109,7 +109,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   // People must accept the first-login notice before using anything else (Law 25 / PIPEDA).
   app.addHook('preHandler', async (req) => {
     const path = req.url.split('?')[0]!;
-    if (!path.startsWith('/v1/') || path === '/v1/me' || path.startsWith('/v1/consent/') || path.startsWith('/v1/hooks/') || path.startsWith('/v1/public/')) return;
+    if (!path.startsWith('/v1/') || path === '/v1/me' || path === '/v1/embed-token' || path.startsWith('/v1/consent/') || path.startsWith('/v1/hooks/') || path.startsWith('/v1/public/')) return;
     const id = await deps.authenticate(req);
     const ok = await withRequestTx(deps.appPool, id.ctx, (tx) => hasAcceptedFirstLogin(tx, id.ctx));
     if (!ok) throw new HttpError(403, 'consent_required', 'Please review and accept the privacy notice first');

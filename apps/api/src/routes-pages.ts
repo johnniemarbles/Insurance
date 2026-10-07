@@ -172,7 +172,7 @@ h1{font-size:28px;margin:18px 0 8px;letter-spacing:-.01em}h2{font-size:18px;marg
 
   // The full-page PII app. The same bundle is also built into the Gmail extension.
   app.get('/app', async (_req, reply) =>
-    reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').send(
+    reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', "frame-ancestors 'self' https://mail.google.com").send(
       `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(product)}</title>
 <style>html,body{height:100%;margin:0}#pii-root{height:100%}</style></head><body><div id="pii-root"></div><script src="/app/app.js"></script></body></html>`,
     ),

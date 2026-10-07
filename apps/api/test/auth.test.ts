@@ -87,6 +87,22 @@ test('invited tenant admin signs in, binds the Google id, sees the French notice
   assert.equal((await raw('GET', '/v1/org/nodes', as(r.session))).statusCode, 200);
 });
 
+test('embed token: a cookie session can mint a short-lived bearer token; a bearer token cannot mint another; /app may be framed only by Gmail', async () => {
+  const boss = await signIn({ sub: 'g-boss', email: 'boss@authco.test', emailVerified: true });
+  const mint = await raw('POST', '/v1/embed-token', { ...as(boss.session), origin: ORIGIN });
+  assert.equal(mint.statusCode, 200);
+  const { token, expiresInSeconds } = JSON.parse(mint.body);
+  assert.equal(expiresInSeconds, 1800);
+  const me = await raw('GET', '/v1/me', { authorization: `Bearer ${token}` });
+  assert.equal(me.statusCode, 200);
+  assert.equal(JSON.parse(me.body).user.email, 'boss@authco.test');
+  assert.equal((await raw('POST', '/v1/embed-token', { authorization: `Bearer ${token}` })).statusCode, 403);
+  assert.equal((await raw('GET', '/v1/me', { authorization: 'Bearer notarealtokennotarealtoken' })).statusCode, 401);
+  assert.equal((await raw('POST', '/v1/embed-token', { origin: ORIGIN })).statusCode, 403);
+  const page = await raw('GET', '/app');
+  assert.match(String(page.headers['content-security-policy']), /frame-ancestors 'self' https:\/\/mail\.google\.com/);
+});
+
 test('a different Google account cannot take over the same user', async () => {
   const r = await signIn({ sub: 'g-attacker', email: 'boss@authco.test', emailVerified: true });
   assert.match(r.location, /error=identity_conflict/);

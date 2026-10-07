@@ -1,6 +1,7 @@
 import * as InboxSDK from '@inboxsdk/core';
 import { mountSidebar, type CapturedMessage } from './sidebar';
 import { mountPii, mountHeader } from '../../web/src/mount';
+import { mountEmbedded } from './embed';
 import type { ComposeApi, Transport } from '../../web/src/types';
 
 const REGION_LABELS: Record<string, string> = { ca: 'Canada', us: 'United States' };
@@ -13,6 +14,9 @@ chrome.storage.onChanged.addListener((ch, area) => {
   const next = typeof ch.region.newValue === 'string' ? ch.region.newValue : Object.keys(__REGIONS__)[0];
   if (next !== chosenRegion) { chosenRegion = next; announceRegion(); }
 });
+// Test switch (options page): show the screens from the server in a frame instead of the copy built into this extension.
+let embedUi = false;
+chrome.storage.sync.get('embedUi').then((v) => { embedUi = v.embedUi === true; }, () => undefined);
 chrome.storage.sync.get('region').then((v) => { chosenRegion = typeof v.region === 'string' ? v.region : Object.keys(__REGIONS__)[0]; }, () => undefined);
 
 const rawTransport: Transport = async (method, path, body, region) => {
@@ -96,7 +100,11 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     const host = document.createElement('div');
     host.style.cssText = 'height:calc(100vh - 130px);min-height:480px;background:#fff';
     view.getElement().appendChild(host);
-    const unmount = mountPii(host, {
+    const regionBase = () => (__REGIONS__[chosenRegion ?? ''] ?? __API_BASE__).replace(/\/+$/, '');
+    const unmount = embedUi ? mountEmbedded(host, {
+      base: regionBase(), extVersion: chrome.runtime.getManifest().version, route: { page: params.page ?? 'pipelines', id: params.id },
+      getToken: () => transport('POST', '/v1/embed-token'), onSignIn: signIn, navigate: goto,
+    }) : mountPii(host, {
       extVersion: chrome.runtime.getManifest().version, transport, onSignIn: signIn, regions: REGION_CHOICES, get region() { return chosenRegion; }, switchRegion: (id: string) => { chosenRegion = id; void chrome.storage.sync.set({ region: id }); announceRegion(); }, compose: { send: sendOne(sdk) },
       route: { page: params.page ?? 'pipelines', id: params.id }, navigate: goto,
     });

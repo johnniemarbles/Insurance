@@ -50,7 +50,9 @@ export const SESSION_COOKIE_NAME = 'pii_session';
 /** Cookie session created by Google sign-in. */
 export function sessionAuthenticator(authPool: Db): Authenticator {
   return async (req) => {
-    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME];
+    // The Gmail extension's embedded screens send a short-lived token instead of the cookie (third-party cookies are not reliable inside a frame).
+    const bearer = /^Bearer ([A-Za-z0-9_-]{20,100})$/.exec(String(req.headers.authorization ?? ''))?.[1];
+    const token = bearer ?? parseCookies(req.headers.cookie)[SESSION_COOKIE_NAME];
     if (!token) throw unauthorized();
     const user = await findSessionUser(authPool, token);
     if (!user) throw unauthorized();
