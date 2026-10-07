@@ -197,7 +197,7 @@ test('courses that need approval: ask, get told, approve or decline', async () =
 
 test('starter courses: listed, copied as drafts in both languages, authors only, quiz works', async () => {
   const list = (await call(A, 'GET', '/v1/courses/starter')).json.courses;
-  assert.equal(list.length, 11); assert.ok(list.every((c: any) => c.lessons === 3 && c.questions === 5));
+  assert.equal(list.length, 14); assert.ok(list.every((c: any) => c.lessons >= 3 && c.questions >= 5));
   assert.equal((await call(A, 'POST', '/v1/courses/starter', { key: 'eo-basics' })).status, 403, 'learners cannot add courses');
   assert.equal((await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'nope' })).status, 404);
   const made = await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'privacy-basics' });
@@ -235,4 +235,23 @@ test('a manager can give a learner extra tries at a quiz', async () => {
   const ok = await call(A, 'POST', `/v1/lessons/${ql}/quiz/attempt`, { answers: { [qid]: ['0'] } });
   assert.equal(ok.json.passed, true); assert.equal(ok.json.attemptNo, 2);
   assert.equal((await call(ADMIN, 'POST', `/v1/lessons/${ql}/quiz/extra-attempts`, { userId: '00000000-0000-4000-8000-000000000000', extra: 1 })).status, 404);
+});
+
+test('video starter course: five video lessons per language with a transcript, clips are served (with ranges)', async () => {
+  const made = await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'using-pii-video' });
+  assert.equal(made.status, 201);
+  for (const loc of ['en', 'fr-CA']) {
+    const c = (await call(ADMIN, 'GET', `/v1/courses/${made.json.id}?locale=${loc}`)).json;
+    const vids = c.lessons.filter((l: any) => l.type === 'video');
+    assert.equal(vids.length, 5);
+    const l = (await call(ADMIN, 'GET', `/v1/lessons/${vids[0].id}?locale=${loc}`)).json;
+    assert.match(l.body.url, loc === 'en' ? /^\/media\/pii-guide-1-en\.mp4$/ : /^\/media\/pii-guide-1-fr\.mp4$/);
+    assert.ok(l.body.text.length > 40);
+    const clip = await app.inject({ method: 'GET', url: l.body.url });
+    assert.equal(clip.statusCode, 200); assert.equal(clip.headers['content-type'], 'video/mp4'); assert.ok(clip.rawPayload.length > 10_000);
+    const part = await app.inject({ method: 'GET', url: l.body.url, headers: { range: 'bytes=0-99' } });
+    assert.equal(part.statusCode, 206); assert.equal(part.rawPayload.length, 100);
+  }
+  assert.equal((await app.inject({ method: 'GET', url: '/media/..%2Fpackage.json' })).statusCode, 404);
+  assert.equal((await app.inject({ method: 'GET', url: '/media/nope.mp4' })).statusCode, 404);
 });

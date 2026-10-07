@@ -233,6 +233,7 @@ function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t
       <h1>{l.title} {l.done && <span class="ok">✓</span>}</h1>
       {err && <div class="err">{err}</div>}
       {l.type === 'richtext' && <div class="prose">{(l.body.text ?? '').split(/\n{2,}/).map((p) => <p>{p}</p>)}</div>}
+      {l.type === 'video' && l.body.text && <details class="prose"><summary>{t.transcript}</summary>{l.body.text.split(/\n{2,}/).map((p) => <p>{p}</p>)}</details>}
       {l.type === 'link' && l.body.url && <p><a href={l.body.url} target="_blank" rel="noopener noreferrer">{l.body.url}</a></p>}
       {l.type === 'video' && l.body.url && (isVideoFile ? <video controls src={l.body.url} style={{ width: '100%', borderRadius: '8px' }} /> : <p><a href={l.body.url} target="_blank" rel="noopener noreferrer">▶ {t.watchVideo}</a></p>)}
       {l.type !== 'quiz' && !l.done && <div class="actions"><button class="btn" onClick={complete}>{t.markDone}</button></div>}

@@ -212,6 +212,23 @@ h1{font-size:28px;margin:18px 0 8px;letter-spacing:-.01em}h2{font-size:18px;marg
     return reply.type('application/javascript; charset=utf-8').header('cache-control', 'no-cache').send(data);
   });
 
+  // Training videos shipped with the starter courses (public, no personal data). Range requests let the player seek.
+  app.get('/media/:file', async (req, reply) => {
+    const file = (req.params as { file: string }).file;
+    if (!/^[a-z0-9-]{1,60}\.mp4$/.test(file)) return reply.code(404).send({ error: { code: 'not_found', message: 'Not found' } });
+    let data: Buffer;
+    try { data = await readFile(new URL(`../public/media/${file}`, import.meta.url)); } catch { return reply.code(404).send({ error: { code: 'not_found', message: 'Not found' } }); }
+    reply.type('video/mp4').header('accept-ranges', 'bytes').header('cache-control', 'public, max-age=86400');
+    const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
+    if (m && (m[1] || m[2])) {
+      const start = m[1] ? Number(m[1]) : Math.max(0, data.length - Number(m[2]));
+      const end = m[1] && m[2] ? Math.min(Number(m[2]), data.length - 1) : data.length - 1;
+      if (start > end || start >= data.length) return reply.code(416).header('content-range', `bytes */${data.length}`).send();
+      return reply.code(206).header('content-range', `bytes ${start}-${end}/${data.length}`).send(data.subarray(start, end + 1));
+    }
+    return reply.send(data);
+  });
+
   for (const file of ['logo.png', 'icon-128.png']) {
     app.get(`/brand/${file}`, async (_req, reply) => {
       const data = await readFile(new URL(`../public/brand/${file}`, import.meta.url));

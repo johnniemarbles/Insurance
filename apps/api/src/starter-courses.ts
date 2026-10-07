@@ -3,13 +3,15 @@
 
 type L = { en: string; fr: string };
 export interface StarterQuestion { q: L; options: L[]; correct: number }
-export interface StarterLesson { title: L; text: L }
+/** `video` is the file stem of a clip in public/media: the lesson plays /media/<stem>-<en|fr>.mp4 and shows `text` as its transcript. */
+export interface StarterLesson { title: L; text: L; video?: string }
 export interface StarterCourse { key: string; title: L; description: L; lessons: StarterLesson[]; quiz: StarterQuestion[] }
 
 const NOTE: L = { en: ' Draft starter content: counsel and compliance must review it before it is published.', fr: ' Contenu de départ (ébauche) : à faire réviser par le conseiller juridique et la conformité avant publication.' };
 const D = (l: L): L => ({ en: l.en + NOTE.en, fr: l.fr + NOTE.fr });
 
 import { MORE_STARTER_COURSES } from './starter-courses-more.ts';
+import { BROKER_STARTER_COURSES, VIDEO_STARTER_COURSES } from './starter-courses-brokers.ts';
 
 const BASE_COURSES: StarterCourse[] = [
   {
@@ -106,4 +108,4 @@ const BASE_COURSES: StarterCourse[] = [
   },
 ];
 
-export const STARTER_COURSES: StarterCourse[] = [...BASE_COURSES, ...MORE_STARTER_COURSES];
+export const STARTER_COURSES: StarterCourse[] = [...BASE_COURSES, ...MORE_STARTER_COURSES, ...BROKER_STARTER_COURSES, ...VIDEO_STARTER_COURSES];

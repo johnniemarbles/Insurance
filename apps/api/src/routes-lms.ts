@@ -584,9 +584,9 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       let pos = 0;
       for (const l of sc.lessons) {
         const lid = randomUUID();
-        await tx.query(`INSERT INTO lessons (id, tenant_id, course_id, module_id, position, type, required) VALUES ($1,$2,$3,$4,$5,'richtext',true)`, [lid, ctx.tenantId, id, mod, ++pos]);
+        await tx.query(`INSERT INTO lessons (id, tenant_id, course_id, module_id, position, type, required) VALUES ($1,$2,$3,$4,$5,$6,true)`, [lid, ctx.tenantId, id, mod, ++pos, l.video ? 'video' : 'richtext']);
         for (const [loc, key] of [['en', 'en'], ['fr-CA', 'fr']] as const)
-          await tx.query(`INSERT INTO lesson_locales (lesson_id, tenant_id, locale, title, body) VALUES ($1,$2,$3,$4,$5)`, [lid, ctx.tenantId, loc, l.title[key], JSON.stringify({ text: l.text[key] })]);
+          await tx.query(`INSERT INTO lesson_locales (lesson_id, tenant_id, locale, title, body) VALUES ($1,$2,$3,$4,$5)`, [lid, ctx.tenantId, loc, l.title[key], JSON.stringify(l.video ? { url: `/media/${l.video}-${key}.mp4`, text: l.text[key] } : { text: l.text[key] })]);
       }
       const qid = randomUUID();
       await tx.query(`INSERT INTO lessons (id, tenant_id, course_id, module_id, position, type, required, pass_mark) VALUES ($1,$2,$3,$4,$5,'quiz',true,80)`, [qid, ctx.tenantId, id, mod, ++pos]);

@@ -4,11 +4,11 @@ import type { StarterCourse, StarterQuestion } from './starter-courses.ts';
 
 type L = { en: string; fr: string };
 const NOTE: L = { en: ' Draft starter content: counsel and compliance must review it before it is published.', fr: ' Contenu de départ (ébauche) : à faire réviser par le conseiller juridique et la conformité avant publication.' };
-const D = (l: L): L => ({ en: l.en + NOTE.en, fr: l.fr + NOTE.fr });
-const T = (en: string, fr: string): L => ({ en, fr });
-const lesson = (title: L, en: string, fr: string) => ({ title, text: { en, fr } });
+export const D = (l: L): L => ({ en: l.en + NOTE.en, fr: l.fr + NOTE.fr });
+export const T = (en: string, fr: string): L => ({ en, fr });
+export const lesson = (title: L, en: string, fr: string) => ({ title, text: { en, fr } });
 /** One question. `good` is the right answer, `bad` the two wrong ones; `at` is where the right one sits (0-2). */
-const Q = (q: L, good: L, bad: [L, L], at: 0 | 1 | 2): StarterQuestion => {
+export const Q = (q: L, good: L, bad: [L, L], at: 0 | 1 | 2): StarterQuestion => {
   const options = [bad[0], bad[1]]; options.splice(at, 0, good);
   return { q, options, correct: at };
 };
