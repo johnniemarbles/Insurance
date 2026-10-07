@@ -100,3 +100,23 @@ test('assignment rules: preview first, role filter, days-after-joining due date,
   assert.equal(await sweepAssignments({ config: undefined, appPool: pools[0], authPool: pools[1] } as unknown as AppDeps), 1);
   assert.equal((await call(ADMIN, 'GET', `/v1/courses/${course}/assignments`)).json.assignments[0].enrolled, 2);
 });
+
+test('quiz attempt rules: numbered tries, wait between them, pass ends it', async () => {
+  const c = (await call(ADMIN, 'POST', '/v1/courses', { title: 'Rules quiz', ownerNodeId: co.rootNodeId })).json.id;
+  const ql = (await call(ADMIN, 'POST', `/v1/courses/${c}/lessons`, { title: 'Check', type: 'quiz', passMark: 100 })).json.id;
+  assert.equal((await call(ADMIN, 'PUT', `/v1/lessons/${ql}/quiz`, { questions: [{ prompt: 'Pick A', options: ['A', 'B'], correct: [0] }] })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/lessons/${ql}`, { cooldownMinutes: 30, maxAttempts: 5 })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c}`, { status: 'published' })).status, 204);
+  const qid = (await call(ADMIN, 'GET', `/v1/lessons/${ql}`)).json.quiz.questions[0].id;
+  const wrong = await call(A, 'POST', `/v1/lessons/${ql}/quiz/attempt`, { answers: { [qid]: ['1'] } });
+  assert.equal(wrong.status, 200); assert.equal(wrong.json.passed, false); assert.equal(wrong.json.attemptNo, 1); assert.equal(wrong.json.attemptsLeft, 4); assert.ok(wrong.json.nextAttemptAt);
+  assert.equal((await call(A, 'POST', `/v1/lessons/${ql}/quiz/attempt`, { answers: { [qid]: ['0'] } })).status, 409, 'too soon');
+  const view = (await call(A, 'GET', `/v1/lessons/${ql}`)).json.quiz;
+  assert.equal(view.status.reason, 'cooldown'); assert.equal(view.cooldownMinutes, 30); assert.equal(view.attempts[0].attemptNo, 1);
+  await owner((o) => o.query(`UPDATE quiz_attempts SET attempted_at = now() - interval '31 minutes' WHERE lesson_id = $1`, [ql]));
+  const ok = await call(A, 'POST', `/v1/lessons/${ql}/quiz/attempt`, { answers: { [qid]: ['0'] } });
+  assert.equal(ok.json.passed, true); assert.equal(ok.json.attemptNo, 2);
+  assert.equal((await call(A, 'POST', `/v1/lessons/${ql}/quiz/attempt`, { answers: { [qid]: ['0'] } })).status, 409, 'already passed');
+  const rec = (await owner((o) => o.query(`SELECT attempt_no, course_version FROM quiz_attempts WHERE lesson_id = $1 ORDER BY attempt_no`, [ql]))).rows;
+  assert.deepEqual(rec.map((r: any) => [r.attempt_no, r.course_version]), [[1, 1], [2, 1]]);
+});

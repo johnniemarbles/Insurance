@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import type { RequestContext } from '@pii/domain';
+import { attemptStatus, type RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { conflict, forbidden, invalid, notFound } from './errors.ts';
@@ -33,8 +33,8 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     return rows[0];
   }
   async function loadLesson(tx: Tx, id: string) {
-    const { rows } = await tx.query<{ id: string; course_id: string; module_id: string; type: string; required: boolean; pass_mark: number | null; max_attempts: number | null; owner_node_id: string; status: string }>(
-      `SELECT l.id, l.course_id, l.module_id, l.type, l.required, l.pass_mark, l.max_attempts, c.owner_node_id, c.status FROM lessons l JOIN courses c ON c.id = l.course_id WHERE l.id = $1`, [id]);
+    const { rows } = await tx.query<{ id: string; course_id: string; module_id: string; type: string; required: boolean; pass_mark: number | null; max_attempts: number | null; cooldown_minutes: number | null; owner_node_id: string; status: string }>(
+      `SELECT l.id, l.course_id, l.module_id, l.type, l.required, l.pass_mark, l.max_attempts, l.cooldown_minutes, c.owner_node_id, c.status FROM lessons l JOIN courses c ON c.id = l.course_id WHERE l.id = $1`, [id]);
     if (!rows[0]) throw notFound('Lesson not found');
     return rows[0];
   }
@@ -215,18 +215,18 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.patch(
     '/v1/lessons/:id',
-    { schema: { params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { title: { type: 'string', minLength: 1, maxLength: 200 }, text: { type: 'string', maxLength: 50000 }, url: { type: 'string', maxLength: 2000 }, required: { type: 'boolean' }, passMark: { type: 'integer', minimum: 0, maximum: 100 }, maxAttempts: { type: ['integer', 'null'], minimum: 1, maximum: 50 }, locale: localeProp } } } },
+    { schema: { params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { title: { type: 'string', minLength: 1, maxLength: 200 }, text: { type: 'string', maxLength: 50000 }, url: { type: 'string', maxLength: 2000 }, required: { type: 'boolean' }, passMark: { type: 'integer', minimum: 0, maximum: 100 }, maxAttempts: { type: ['integer', 'null'], minimum: 1, maximum: 50 }, cooldownMinutes: { type: ['integer', 'null'], minimum: 1, maximum: 10080 }, locale: localeProp } } } },
     async (req, reply) => {
       const { ctx } = await deps.authenticate(req);
       const { id } = req.params as { id: string };
-      const b = req.body as { title?: string; text?: string; url?: string; required?: boolean; passMark?: number; maxAttempts?: number | null; locale?: Locale };
+      const b = req.body as { title?: string; text?: string; url?: string; required?: boolean; passMark?: number; maxAttempts?: number | null; cooldownMinutes?: number | null; locale?: Locale };
       if (b.url !== undefined && !/^https:\/\//i.test(b.url)) throw invalid('Give a link starting with https://');
       await run(ctx, async (tx) => {
         const l = await loadLesson(tx, id);
         requireAuthor(ctx, l.owner_node_id);
         requireEditable(l.status);
-        if (b.required !== undefined || b.passMark !== undefined || 'maxAttempts' in b) {
-          await tx.query(`UPDATE lessons SET required = coalesce($2, required), pass_mark = coalesce($3, pass_mark), max_attempts = CASE WHEN $4 THEN $5::int ELSE max_attempts END WHERE id = $1`, [id, b.required ?? null, b.passMark ?? null, 'maxAttempts' in b, b.maxAttempts ?? null]);
+        if (b.required !== undefined || b.passMark !== undefined || 'maxAttempts' in b || 'cooldownMinutes' in b) {
+          await tx.query(`UPDATE lessons SET required = coalesce($2, required), pass_mark = coalesce($3, pass_mark), max_attempts = CASE WHEN $4 THEN $5::int ELSE max_attempts END, cooldown_minutes = CASE WHEN $6 THEN $7::int ELSE cooldown_minutes END WHERE id = $1`, [id, b.required ?? null, b.passMark ?? null, 'maxAttempts' in b, b.maxAttempts ?? null, 'cooldownMinutes' in b, b.cooldownMinutes ?? null]);
         }
         if (b.title !== undefined || b.text !== undefined || b.url !== undefined) {
           const lang = b.locale ?? 'en';
@@ -346,9 +346,10 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (l.type === 'quiz') {
         const qs = (await tx.query<{ id: string; type: string; content: Record<string, { prompt: string; options: { key: string; text: string }[] }>; correct: string[]; points: number }>(
           'SELECT id, type, content, correct, points FROM quiz_questions WHERE lesson_id = $1 ORDER BY position', [id])).rows;
-        const attempts = enr ? (await tx.query(`SELECT score_pct::float8 AS "scorePct", passed, attempted_at AS "attemptedAt" FROM quiz_attempts WHERE enrollment_id = $1 AND lesson_id = $2 ORDER BY attempted_at DESC`, [enr.id, id])).rows : [];
+        const attempts = enr ? (await tx.query(`SELECT score_pct::float8 AS "scorePct", passed, attempted_at AS "attemptedAt", attempt_no AS "attemptNo" FROM quiz_attempts WHERE enrollment_id = $1 AND lesson_id = $2 ORDER BY attempted_at DESC`, [enr.id, id])).rows : [];
         quiz = {
-          passMark: l.pass_mark, maxAttempts: l.max_attempts, attempts,
+          passMark: l.pass_mark, maxAttempts: l.max_attempts, cooldownMinutes: l.cooldown_minutes, attempts,
+          status: attemptStatus({ maxAttempts: l.max_attempts, cooldownMinutes: l.cooldown_minutes }, (attempts as { attemptedAt: string; passed: boolean }[])),
           questions: qs.map((q) => {
             const c = q.content[lang] ?? q.content.en ?? Object.values(q.content)[0]!;
             // the answer key leaves the server only for people who can edit the course
@@ -387,10 +388,11 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
         if (l.type !== 'quiz') throw invalid('That lesson is not a quiz');
         if (l.status !== 'published') throw forbidden('This course is not published yet');
         const enr = await ensureEnrollment(tx, ctx, l.course_id);
-        if (l.max_attempts) {
-          const n = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM quiz_attempts WHERE enrollment_id = $1 AND lesson_id = $2', [enr, id])).rows[0]!.n;
-          if (n >= l.max_attempts) throw forbidden('No attempts left for this quiz');
-        }
+        const prior = (await tx.query<{ attempted_at: string; passed: boolean }>('SELECT attempted_at, passed FROM quiz_attempts WHERE enrollment_id = $1 AND lesson_id = $2', [enr, id])).rows.map((r) => ({ attemptedAt: r.attempted_at, passed: r.passed }));
+        const st = attemptStatus({ maxAttempts: l.max_attempts, cooldownMinutes: l.cooldown_minutes }, prior);
+        if (st.reason === 'no_attempts_left') throw forbidden('No attempts left for this quiz');
+        if (st.reason === 'passed') throw conflict('You have already passed this quiz');
+        if (st.reason === 'cooldown') throw conflict(`Please wait before trying again. The next attempt opens at ${st.nextAt}`);
         const qs = (await tx.query<{ id: string; type: string; correct: string[]; points: number }>('SELECT id, type, correct, points FROM quiz_questions WHERE lesson_id = $1 ORDER BY position', [id])).rows;
         if (qs.length === 0) throw invalid('This quiz has no questions yet');
         let earned = 0, total = 0;
@@ -405,7 +407,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
         }
         const score = Math.round((earned / total) * 10000) / 100;
         const passed = score >= (l.pass_mark ?? 0);
-        await tx.query(`INSERT INTO quiz_attempts (tenant_id, enrollment_id, lesson_id, score_pct, passed, answers) VALUES ($1,$2,$3,$4,$5,$6)`, [ctx.tenantId, enr, id, score, passed, JSON.stringify(answers)]);
+        await tx.query(`INSERT INTO quiz_attempts (tenant_id, enrollment_id, lesson_id, score_pct, passed, answers, attempt_no, course_version) VALUES ($1,$2,$3,$4,$5,$6,$7,(SELECT course_version FROM enrollments WHERE id = $2))`, [ctx.tenantId, enr, id, score, passed, JSON.stringify(answers), prior.length + 1]);
         let progress = { progressPct: 0, completed: false };
         if (passed) {
           await tx.query(
@@ -413,7 +415,8 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
              ON CONFLICT (enrollment_id, lesson_id) DO UPDATE SET status = 'completed', completed_at = coalesce(lesson_progress.completed_at, now())`, [enr, id, ctx.tenantId]);
           progress = await recompute(tx, ctx, enr, l.course_id);
         }
-        return { scorePct: score, passed, passMark: l.pass_mark, results, ...progress };
+        const after = attemptStatus({ maxAttempts: l.max_attempts, cooldownMinutes: l.cooldown_minutes }, [...prior, { attemptedAt: new Date().toISOString(), passed }]);
+        return { scorePct: score, passed, passMark: l.pass_mark, results, attemptNo: prior.length + 1, attemptsLeft: after.left, nextAttemptAt: after.nextAt, ...progress };
       });
     },
   );

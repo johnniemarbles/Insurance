@@ -174,7 +174,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
 }
 
 interface QuizQ { id: string; type: string; prompt: string; options: { key: string; text: string }[]; correct?: string[] }
-interface LessonDetail { id: string; courseId: string; type: string; title: string; body: { text?: string; url?: string }; required: boolean; done: boolean; canEdit: boolean; quiz?: { passMark: number | null; maxAttempts: number | null; attempts: { scorePct: number; passed: boolean }[]; questions: QuizQ[] } }
+interface LessonDetail { id: string; courseId: string; type: string; title: string; body: { text?: string; url?: string }; required: boolean; done: boolean; canEdit: boolean; quiz?: { passMark: number | null; maxAttempts: number | null; cooldownMinutes?: number | null; status?: { allowed: boolean; reason: string | null; left: number | null; nextAt: string | null }; attempts: { scorePct: number; passed: boolean }[]; questions: QuizQ[] } }
 
 function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t: Strings; locale: Locale; onBack: () => void }) {
   const [l, setL] = useState<LessonDetail | null>(null);
@@ -209,6 +209,14 @@ function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t
         <>
           <p class="muted">{t.passMark(l.quiz.passMark ?? 0)}{l.quiz.maxAttempts ? ` · ${t.attemptsMax(l.quiz.maxAttempts)}` : ''}</p>
           {l.quiz.attempts.length > 0 && <p class="muted">{t.lastScore}: {l.quiz.attempts[0]!.scorePct}%</p>}
+          {l.quiz.status && !l.canEdit && (() => {
+            const st = l.quiz!.status!, fr = locale === 'fr-CA';
+            const msg = st.reason === 'passed' ? (fr ? 'Vous avez réussi ce test.' : 'You have passed this quiz.')
+              : st.reason === 'no_attempts_left' ? (fr ? 'Il ne reste aucune tentative.' : 'No attempts left.')
+              : st.reason === 'cooldown' ? (fr ? `Vous pourrez réessayer le ${new Date(st.nextAt!).toLocaleString(locale)}.` : `You can try again at ${new Date(st.nextAt!).toLocaleString(locale)}.`)
+              : st.left !== null ? (fr ? `Tentatives restantes : ${st.left}` : `Attempts left: ${st.left}`) : '';
+            return msg ? <p class={st.allowed ? 'muted' : 'overdue'} role="status">{msg}</p> : null;
+          })()}
           {l.quiz.questions.length === 0 && <p class="muted">{t.noQuestions}</p>}
           {l.quiz.questions.map((q, n) => (
             <fieldset class="q" key={q.id}>
@@ -219,7 +227,7 @@ function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t
               {result && <small class={result.results.find((r) => r.questionId === q.id)?.correct ? 'ok' : 'overdue'}>{result.results.find((r) => r.questionId === q.id)?.correct ? t.right : t.wrong}</small>}
             </fieldset>
           ))}
-          {l.quiz.questions.length > 0 && <div class="actions"><button class="btn" onClick={submit} disabled={Object.keys(answers).length === 0}>{t.submitQuiz}</button></div>}
+          {l.quiz.questions.length > 0 && <div class="actions"><button class="btn" onClick={submit} disabled={Object.keys(answers).length === 0 || (!l.canEdit && l.quiz.status?.allowed === false)}>{t.submitQuiz}</button></div>}
           {result && <p class={result.passed ? 'ok' : 'overdue'}><b>{result.scorePct}%</b> · {result.passed ? t.passed : t.notPassed}</p>}
         </>
       )}
