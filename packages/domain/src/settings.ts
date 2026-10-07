@@ -114,6 +114,14 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'A licence or E&O policy is about to expire', 'fr-CA': 'Un permis ou une police E&O arrive à échéance' }, help: { en: 'Reminders come 30, 15 and 0 days before the date.', 'fr-CA': 'Des rappels sont envoyés 30, 15 et 0 jour avant la date.' }, keywords: 'notification alert compliance licence expiry E&O insurance reminder',
   },
   {
+    key: 'notify.learning_due', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'A course is due soon or late', 'fr-CA': 'Une formation arrive à échéance ou est en retard' }, help: { en: 'One reminder a week before the due date, and one when it is late.', 'fr-CA': 'Un rappel une semaine avant l’échéance, et un autre quand elle est dépassée.' }, keywords: 'notification alert course training due overdue reminder learning',
+  },
+  {
+    key: 'notify.ce_reminder', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'My continuing education is at risk', 'fr-CA': 'Ma formation continue est à risque' }, help: { en: 'Hours are still missing with 60 days or fewer left in the term, or the term has ended.', 'fr-CA': 'Il manque des heures et il reste 60 jours ou moins, ou la période est terminée.' }, keywords: 'notification alert CE continuing education hours reminder term',
+  },
+  {
     key: 'notify.compliance_review', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
     label: { en: 'A compliance file is submitted or reviewed', 'fr-CA': 'Un dossier de conformité est soumis ou examiné' }, help: { en: 'Head office approves or sends back a file, or a partner sends one for review.', 'fr-CA': 'Le siège social approuve ou renvoie un dossier, ou un partenaire en soumet un.' }, keywords: 'notification alert compliance review approved onboarding',
   },

@@ -26,6 +26,8 @@ export const X = {
         case 'appointment_request': return `${n.data.name ?? 'A partner'} asked to be appointed with ${n.data.carrier ?? 'a carrier'}${n.data.company ? ` (${n.data.company})` : ''}`;
         case 'thread_shared': return `${who} shared a conversation with you on ${box}${n.data.message ? `: “${n.data.message}”` : ''}`;
         case 'document_added': return `${who} added a document to ${box}: ${n.data.name ?? ''}`;
+        case 'learning_due': return `${n.data.title || 'A course'} ${n.data.daysLeft < 0 ? `was due ${n.data.dueOn}` : n.data.daysLeft === 0 ? 'is due today' : `is due in ${n.data.daysLeft} days`}`;
+        case 'ce_reminder': return n.data.state === 'overdue' ? `${n.data.pack}: your term ended ${n.data.termEnd} and ${n.data.remaining} hours were still missing` : `${n.data.pack}: ${n.data.remaining} hours still to complete before ${n.data.termEnd}`;
         default: return n.kind;
       }
     },
@@ -50,6 +52,8 @@ export const X = {
         case 'appointment_request': return `${n.data.name ?? 'Un partenaire'} demande une nomination auprès de ${n.data.carrier ?? 'un assureur'}${n.data.company ? ` (${n.data.company})` : ''}`;
         case 'thread_shared': return `${who} a partagé une conversation avec vous sur ${box}${n.data.message ? ` : « ${n.data.message} »` : ''}`;
         case 'document_added': return `${who} a ajouté un document à ${box} : ${n.data.name ?? ''}`;
+        case 'learning_due': return `${n.data.title || 'Une formation'} ${n.data.daysLeft < 0 ? `devait être terminée le ${n.data.dueOn}` : n.data.daysLeft === 0 ? 'est due aujourd’hui' : `est due dans ${n.data.daysLeft} jours`}`;
+        case 'ce_reminder': return n.data.state === 'overdue' ? `${n.data.pack} : votre période s’est terminée le ${n.data.termEnd} et il manquait ${n.data.remaining} heures` : `${n.data.pack} : il reste ${n.data.remaining} heures à compléter avant le ${n.data.termEnd}`;
         default: return n.kind;
       }
     },

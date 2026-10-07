@@ -150,6 +150,7 @@ function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Lo
       <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{ho ? x.headTitle : x.title}</h2><span class="muted">{ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub}</span></div></div>
       {scopeBar}
       {strip}
+      {!ho && <ComingUp call={call} locale={locale} />}
       {ho && ins && <NeedsYou locale={locale} openAll={needAll} setOpenAll={setNeedAll}
         needs={needsOf(ins, locale).map((need) => ({ need, go: () => { if (need.tab) setTab(need.tab); } }))} />}
       {ho && <>
@@ -523,5 +524,39 @@ function JumpTo({ host, locale, open }: { host: HostOptions; locale: Locale; ope
         </div>
       )}
     </div>
+  );
+}
+
+const UP = {
+  'en': { title: 'Coming up', sub: 'Licences, E&O, continuing education and course due dates.', overdue: 'Overdue', d30: 'Next 30 days', d60: '31 to 60 days', d90: '61 to 90 days', none: 'Nothing due in the next 90 days.', empty: 'None',
+    kind: { licence: 'Licence', eo: 'E&O', ce: 'Continuing education', course: 'Course' } as Record<string, string>, day: (n: number) => (n < 0 ? `${-n} day${n === -1 ? '' : 's'} late` : n === 0 ? 'today' : `in ${n} day${n === 1 ? '' : 's'}`) },
+  'fr-CA': { title: 'À venir', sub: 'Permis, E&O, formation continue et échéances de formations.', overdue: 'En retard', d30: '30 prochains jours', d60: '31 à 60 jours', d90: '61 à 90 jours', none: 'Rien à échéance dans les 90 prochains jours.', empty: 'Aucun',
+    kind: { licence: 'Permis', eo: 'E&O', ce: 'Formation continue', course: 'Formation' } as Record<string, string>, day: (n: number) => (n < 0 ? `${-n} jour${n === -1 ? '' : 's'} de retard` : n === 0 ? 'aujourd’hui' : `dans ${n} jour${n === 1 ? '' : 's'}`) },
+};
+interface Due { kind: string; id: string; label: string; who: string | null; dueOn: string; daysLeft: number }
+
+/** The 30/60/90-day calendar: everything with a date the person can see, soonest first. Hidden when nothing is coming. */
+function ComingUp({ call, locale }: { call: Call; locale: Locale }) {
+  const u = UP[locale];
+  const [g, setG] = useState<Record<string, Due[]> | null>(null);
+  useEffect(() => { call('GET', '/v1/compliance/calendar').then((r) => setG(r.groups), () => setG(null)); }, []);
+  if (!g) return null;
+  const cols = (['overdue', 'd30', 'd60', 'd90'] as const).map((k) => [k, g[k] ?? []] as const);
+  if (cols.every(([, l]) => l.length === 0)) return <section class="hcard"><h3 style={{ marginTop: 0 }}>{u.title}</h3><span class="muted">{u.none}</span></section>;
+  return (
+    <section class="hcard" aria-label={u.title}>
+      <h3 style={{ marginTop: 0 }}>{u.title}</h3><div class="muted" style={{ marginBottom: 8 }}>{u.sub}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
+        {cols.map(([k, list]) => (
+          <div>
+            <b style={k === 'overdue' && list.length ? { color: 'var(--bad, #b3261e)' } : undefined}>{u[k]} · {list.length}</b>
+            {list.length === 0 ? <div class="muted">{u.empty}</div> : <ul style={{ listStyle: 'none', padding: 0, margin: '6px 0 0' }}>
+              {list.slice(0, 8).map((d) => <li style={{ padding: '4px 0' }}><span class="muted">{u.kind[d.kind] ?? d.kind}</span> {d.label}{d.who ? ` · ${d.who}` : ''}<br /><span class="muted">{d.dueOn} · {u.day(d.daysLeft)}</span></li>)}
+              {list.length > 8 && <li class="muted">+{list.length - 8}</li>}
+            </ul>}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
