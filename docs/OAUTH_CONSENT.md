@@ -23,9 +23,9 @@ Why there is no Gmail scope: the Chrome extension shows the PII panel inside the
 |---|---|
 | User type | External |
 | App name | PII by Punjab Insurance |
-| User support email | support@punjabinsurance.ca |
+| User support email | support.crm@punjabinsurance.com |
 | App logo | `brand/icon-128.png` (square; Google wants 120x120 to 1000x1000, under 1 MB) |
-| Developer contact email | privacy-officer@punjabinsurance.ca (or your own; Google writes here about review) |
+| Developer contact email | privacy-officer@punjabinsurance.com (Google writes here about review) |
 
 ## 3. App domain
 
