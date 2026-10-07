@@ -83,12 +83,13 @@ test('pipelines: managers define them, members cannot, siblings do not see them'
   assert.equal(list.json.pipelines[0].stages.length, 4);
   stage1 = list.json.pipelines[0].stages.map((s: any) => s.id);
   assert.equal(list.json.pipelines[0].fields.length, 3);
-  assert.equal((await call(S1U, 'POST', '/v1/pipelines', { name: 'Nope' })).status, 403);
+  // a partner may make a pipeline of their own (it is private to them and the people above them)
+  assert.equal((await call(S1U, 'POST', '/v1/pipelines', { name: 'Sub-partner own' })).status, 201);
   assert.equal((await call(P2U, 'GET', '/v1/pipelines')).json.pipelines.length, 0);
   assert.equal((await call(P2U, 'POST', `/v1/pipelines/${pipe1}/stages`, { name: 'x' })).status, 404);
   assert.equal((await call(P1U, 'POST', '/v1/pipelines', { name: 'bad', fields: [{ key: 'd', labels: { en: 'D' }, type: 'dropdown' }] })).status, 422);
   // sub-partner can't see P1's pipeline until it is shared down
-  assert.equal((await call(S1U, 'GET', '/v1/pipelines')).json.pipelines.length, 0);
+  assert.equal((await call(S1U, 'GET', '/v1/pipelines')).json.pipelines.filter((p: any) => p.id === pipe1).length, 0);
   pipe2 = (await call(P2U, 'POST', '/v1/pipelines', { name: 'P2 pipeline' })).json.id;
 });
 

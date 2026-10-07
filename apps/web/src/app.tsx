@@ -4,7 +4,8 @@ import { Component, type ComponentChildren } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { Board } from './board.tsx';
 import { ImportDialog } from './import.tsx';
-import { NewPipeline, PipelineEditor } from './editor.tsx';
+import { PipelineEditor } from './editor.tsx';
+import { NewPipeline, outdatedText } from './newpipeline.tsx';
 import { TrainingView } from './training.tsx';
 import { LMS } from './features.ts';
 import { ContactsView } from './contacts.tsx';
@@ -171,6 +172,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
   const [importing, setImporting] = useState(false);
   const [editing, setEditing] = useState(false);
   const [newPipe, setNewPipe] = useState(false);
+  const [latest, setLatest] = useState<Record<string, number>>({});
   const [myTasks, setMyTasks] = useState<TaskRow[] | null>(null);
   const [dueCount, setDueCount] = useState(0);
   const [error, setError] = useState('');
@@ -200,6 +202,10 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
       setPid((cur) => (cur && list.some((p) => p.id === cur) ? cur : (list[0]?.id ?? '')));
     }, (e) => setError((e as Error).message));
   }, [call, tick]);
+
+  useEffect(() => {
+    call('GET', '/v1/pipeline-templates').then((r) => setLatest(Object.fromEntries((r.templates as { code: string; version: number }[]).map((x) => [x.code, x.version]))), () => undefined);
+  }, [call]);
 
   useEffect(() => {
     call('GET', '/v1/tasks?mine=true&open=true&limit=200').then((r) => setDueCount((r.tasks as TaskRow[]).filter((k) => k.dueAt && new Date(k.dueAt) <= new Date()).length), () => undefined);
@@ -424,6 +430,9 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
     }}>
       <div class="bar">
         <h1>{pipeline?.name}</h1>
+        {pipeline?.templateCode && pipeline.templateVersion != null && (latest[pipeline.templateCode] ?? 0) > pipeline.templateVersion && (
+          <button class="chip warn" title={outdatedText(locale, pipeline.templateVersion, latest[pipeline.templateCode]!)} onClick={() => setNewPipe(true)}>{locale === 'fr-CA' ? 'Nouvelle version' : 'New version available'}</button>
+        )}
         {pipelines.length > 1 && (
           <select class="sel" aria-label={t.pipeline} value={pid} onChange={(e) => { setPid((e.target as HTMLSelectElement).value); setFilters(emptyFilters); setGroupBy('none'); }}>
             {pipelines.map((p) => <option value={p.id}>{p.name}</option>)}
@@ -621,7 +630,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
           </aside>
         )}
         {editing && pipeline && <PipelineEditor pipeline={pipeline} call={call} t={t} locale={locale} onClose={() => setEditing(false)} onChanged={refresh} />}
-        {newPipe && <NewPipeline call={call} t={t} locale={locale} onClose={() => setNewPipe(false)} onCreated={(id) => { setNewPipe(false); setPid(id); setFilters(emptyFilters); refresh(); }} />}
+        {newPipe && <NewPipeline call={call} t={t} locale={locale} pipelines={pipelines} onClose={() => setNewPipe(false)} onCreated={(id) => { setNewPipe(false); setPid(id); setFilters(emptyFilters); refresh(); }} />}
         {importing && pipeline && <ImportDialog pipeline={pipeline} call={call} t={t} onClose={() => setImporting(false)} onDone={refresh} />}
         {creating && pipeline && <NewRecord pipeline={pipeline} call={call} t={t} locale={locale} people={people} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); refresh(); void openById(id); }} />}
       </div>

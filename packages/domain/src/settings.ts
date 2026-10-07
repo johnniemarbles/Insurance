@@ -62,6 +62,14 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Smallest E&O coverage limit allowed', 'fr-CA': 'Plus petite limite de garantie E&O permise' }, help: { en: 'Partners must hold errors and omissions cover of at least this amount (in your country’s currency). 0 means no minimum. The country’s own minimum, if there is one, still applies.', 'fr-CA': 'Les partenaires doivent détenir une assurance responsabilité professionnelle d’au moins ce montant (dans la devise de votre pays). 0 signifie aucun minimum. Le minimum du pays, s’il y en a un, s’applique toujours.' }, keywords: 'compliance E&O errors omissions insurance limit minimum coverage',
   },
   {
+    key: 'pipelines.partnerCreate', tab: 'organization', type: 'bool', default: true, scopes: ['tenant'], lockable: false,
+    label: { en: 'Partners can make their own pipelines', 'fr-CA': 'Les partenaires peuvent créer leurs propres pipelines' }, help: { en: 'Partners can start a pipeline from scratch, from a template, or by copying one they can see. Turn off to keep pipelines with managers only.', 'fr-CA': 'Les partenaires peuvent créer un pipeline à partir de zéro, d’un modèle ou en copiant un pipeline visible. Désactivez pour réserver les pipelines aux gestionnaires.' }, keywords: 'pipeline partner create copy clone template own',
+  },
+  {
+    key: 'pipelines.partnerCap', tab: 'organization', type: 'int', default: 10, min: 1, max: 100, scopes: ['tenant'], lockable: false,
+    label: { en: 'Pipelines each partner may have', 'fr-CA': 'Nombre de pipelines par partenaire' }, help: { en: 'The most pipelines one partner can own. Managers and admins are not limited.', 'fr-CA': 'Le maximum de pipelines qu’un partenaire peut posséder. Les gestionnaires et administrateurs ne sont pas limités.' }, keywords: 'pipeline partner limit cap maximum',
+  },
+  {
     key: 'notify.assigned', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
     label: { en: 'A record is assigned to me', 'fr-CA': 'Un dossier m’est attribué' }, help: { en: 'Someone makes you the owner of a record.', 'fr-CA': 'Quelqu’un vous désigne responsable d’un dossier.' }, keywords: 'notification alert notify bell assigned',
   },

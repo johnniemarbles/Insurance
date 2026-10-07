@@ -3,8 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import { FIELD_KEY_RE, FIELD_TYPES, validateCustomValues, type RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
-import { forbidden, notFound, invalid } from './errors.ts';
+import { forbidden, notFound, invalid, HttpError } from './errors.ts';
 import { fieldDefsFor, managerNodeIds, requireCrm, resolveOwnerAndContext, resolveOwnerNode, scopeSql, uuid } from './crm-helpers.ts';
+import { effectiveSetting } from './settings.ts';
 import type { AppDeps } from './app.ts';
 
 const DEFAULT_STAGES = [
@@ -40,19 +41,87 @@ function checkField(f: FieldInput) {
 export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
 
+  /**
+   * Who may define a pipeline at a place. Admins and managers of the place, always. A partner (or anyone holding a role
+   * at a partner place) may too, unless the company turned that off. The place must be a partner place: branch and
+   * company pipelines stay with managers.
+   */
+  async function makeMode(tx: Tx, ctx: RequestContext, owner: string): Promise<'manager' | 'partner' | null> {
+    if (ctx.isTenantAdmin || managerNodeIds(ctx).includes(owner)) return 'manager';
+    if (!ctx.roles.some((r) => r.nodeId === owner && (r.role === 'partner' || r.role === 'manager' || r.role === 'admin'))) return null;
+    const t = (await tx.query<{ type: string }>('SELECT type FROM org_nodes WHERE id = $1', [owner])).rows[0]?.type;
+    if (t !== 'partner') return null;
+    return (await effectiveSetting<boolean>(tx, ctx.userId, 'pipelines.partnerCreate')) ? 'partner' : null;
+  }
+
+  /** With no place given: the home place if the person may make pipelines there, else the first place where they may. */
+  async function defaultPlace(tx: Tx, ctx: RequestContext): Promise<string> {
+    for (const id of [...new Set(ctx.nodeIds)]) if (await makeMode(tx, ctx, id)) return id;
+    throw forbidden('You cannot create a pipeline. Ask a manager, or ask your company admin to let partners make their own.');
+  }
+
   async function loadForManage(tx: Tx, ctx: RequestContext, id: string) {
     const { rows } = await tx.query<{ id: string; owner_node_id: string }>('SELECT id, owner_node_id FROM pipelines WHERE id = $1', [id]);
     const p = rows[0];
     if (!p) throw notFound('Pipeline not found');
-    if (!ctx.isTenantAdmin && !managerNodeIds(ctx).includes(p.owner_node_id)) throw forbidden('Only a manager of the owning branch can change this pipeline');
+    if (!(await makeMode(tx, ctx, p.owner_node_id))) throw forbidden('Only a manager of the owning branch, or the partner who owns it, can change this pipeline');
     return p;
   }
+
+  interface StageIn { name: string; isWon?: boolean; isLost?: boolean; color?: string | null; requiredFields?: string[] }
+  interface MakeIn { name: string; owner: string; sharedDown: boolean; stages: StageIn[]; fields: FieldInput[]; colorTheme?: string | null; clonedFrom?: string | null; templateCode?: string | null; templateVersion?: number | null }
+
+  /** One place makes every new pipeline (blank, copied, or from a template) so the rules cannot drift apart. */
+  async function makePipeline(tx: Tx, ctx: RequestContext, b: MakeIn): Promise<string> {
+    const mode = await makeMode(tx, ctx, b.owner);
+    if (!mode) throw forbidden('You cannot create a pipeline there. Ask a manager, or ask your company admin to let partners make their own.');
+    await resolveOwnerNode(tx, b.owner);
+    if (mode === 'partner') {
+      const cap = await effectiveSetting<number>(tx, ctx.userId, 'pipelines.partnerCap');
+      const have = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM pipelines WHERE owner_node_id = $1', [b.owner])).rows[0]!.n;
+      if (have >= cap) throw new HttpError(409, 'pipeline_cap', `This partner already has ${have} pipelines, the most allowed (${cap}). Remove one or ask your company admin to raise the limit.`);
+    }
+    const id = randomUUID();
+    await tx.query(
+      'INSERT INTO pipelines (id, tenant_id, owner_node_id, name, is_shared_down, color_theme, created_by, cloned_from, template_code, template_version) VALUES ($1, $2, $3, $4, $5, coalesce($6, \'rainbow\'), $7, $8, $9, $10)',
+      [id, ctx.tenantId, b.owner, b.name.trim(), b.sharedDown, b.colorTheme ?? null, ctx.userId, b.clonedFrom ?? null, b.templateCode ?? null, b.templateVersion ?? null],
+    );
+    let pos = 1;
+    for (const st of b.stages) {
+      await tx.query('INSERT INTO stages (tenant_id, pipeline_id, name, position, color, is_won, is_lost, required_fields) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text[])', [ctx.tenantId, id, st.name.trim(), pos++, st.color ?? null, st.isWon ?? false, st.isLost ?? false, st.requiredFields ?? []]);
+    }
+    let fpos = 1;
+    for (const f of b.fields) {
+      await tx.query('INSERT INTO field_defs (tenant_id, pipeline_id, key, labels, type, options, required, position) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', [ctx.tenantId, id, f.key, JSON.stringify(f.labels), f.type, f.options ? JSON.stringify(f.options) : null, f.required ?? false, fpos++]);
+    }
+    await audit(tx, ctx, b.clonedFrom ? 'pipeline_cloned' : b.templateCode ? 'pipeline_from_template' : 'pipeline_created', 'pipeline', id, { name: b.name, ownerNodeId: b.owner, clonedFrom: b.clonedFrom ?? undefined, template: b.templateCode ?? undefined });
+    return id;
+  }
+
+  /** The places this person may make a pipeline in, for the "New pipeline" screen. */
+  app.get('/v1/pipelines/places', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    return run(ctx, async (tx) => {
+      const ids = [...new Set(ctx.nodeIds)];
+      const nodes = (await tx.query<{ id: string; name: string; type: string }>('SELECT id, name, type::text AS type FROM org_nodes WHERE id = ANY($1::uuid[]) ORDER BY name', [ids])).rows;
+      const places: { nodeId: string; name: string; type: string; mode: string; used: number }[] = [];
+      for (const n of nodes) {
+        const mode = await makeMode(tx, ctx, n.id);
+        if (!mode) continue;
+        const used = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM pipelines WHERE owner_node_id = $1', [n.id])).rows[0]!.n;
+        places.push({ nodeId: n.id, name: n.name, type: n.type, mode, used });
+      }
+      const cap = await effectiveSetting<number>(tx, ctx.userId, 'pipelines.partnerCap');
+      return { places, cap };
+    });
+  });
 
   app.get('/v1/pipelines', async (req) => {
     const { ctx } = await deps.authenticate(req);
     requireCrm(ctx);
     return run(ctx, async (tx) => {
-      const pipes = (await tx.query(`SELECT id, name, owner_node_id AS "ownerNodeId", is_shared_down AS "sharedDown", color_theme AS "colorTheme", created_at AS "createdAt" FROM pipelines ORDER BY name`)).rows;
+      const pipes = (await tx.query(`SELECT id, name, owner_node_id AS "ownerNodeId", is_shared_down AS "sharedDown", color_theme AS "colorTheme", created_at AS "createdAt", cloned_from AS "clonedFrom", template_code AS "templateCode", template_version AS "templateVersion" FROM pipelines ORDER BY name`)).rows;
       const ids = pipes.map((p) => p.id);
       const stages = (await tx.query(`SELECT id, pipeline_id AS "pipelineId", name, position, color, is_won AS "isWon", is_lost AS "isLost", required_fields AS "requiredFields" FROM stages WHERE pipeline_id = ANY($1::uuid[]) ORDER BY position`, [ids])).rows;
       const fields = (await tx.query(`SELECT id, pipeline_id AS "pipelineId", key, labels, type, options, required, position FROM field_defs WHERE pipeline_id = ANY($1::uuid[]) ORDER BY position`, [ids])).rows;
@@ -78,29 +147,82 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
       const { ctx } = await deps.authenticate(req);
       requireCrm(ctx);
       const b = req.body as { name: string; ownerNodeId?: string; sharedDown?: boolean; stages?: typeof DEFAULT_STAGES; fields?: FieldInput[] };
-      const owner = b.ownerNodeId ?? ctx.nodeIds[0]!;
-      if (!ctx.isTenantAdmin && !managerNodeIds(ctx).includes(owner)) throw forbidden('Only a manager of that branch can create a pipeline there');
       for (const f of b.fields ?? []) checkField(f);
       const keys = (b.fields ?? []).map((f) => f.key);
       if (new Set(keys).size !== keys.length) throw invalid('Duplicate field keys');
       const out = await run(ctx, async (tx) => {
-        await resolveOwnerNode(tx, owner);
-        const id = randomUUID();
-        await tx.query('INSERT INTO pipelines (id, tenant_id, owner_node_id, name, is_shared_down, created_by) VALUES ($1, $2, $3, $4, $5, $6)', [id, ctx.tenantId, owner, b.name.trim(), b.sharedDown ?? false, ctx.userId]);
-        let pos = 1;
-        for (const s of b.stages ?? DEFAULT_STAGES) {
-          await tx.query('INSERT INTO stages (tenant_id, pipeline_id, name, position, is_won, is_lost) VALUES ($1, $2, $3, $4, $5, $6)', [ctx.tenantId, id, s.name.trim(), pos++, s.isWon ?? false, s.isLost ?? false]);
-        }
-        let fpos = 1;
-        for (const f of b.fields ?? []) {
-          await tx.query('INSERT INTO field_defs (tenant_id, pipeline_id, key, labels, type, options, required, position) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)', [ctx.tenantId, id, f.key, JSON.stringify(f.labels), f.type, f.options ? JSON.stringify(f.options) : null, f.required ?? false, fpos++]);
-        }
-        await audit(tx, ctx, 'pipeline_created', 'pipeline', id, { name: b.name, ownerNodeId: owner });
-        return { id };
+        const owner = b.ownerNodeId ?? (await defaultPlace(tx, ctx));
+        return { id: await makePipeline(tx, ctx, { name: b.name, owner, sharedDown: b.sharedDown ?? false, stages: b.stages ?? DEFAULT_STAGES, fields: b.fields ?? [] }) };
       });
       return reply.code(201).send(out);
     },
   );
+
+  // ---- copy a pipeline you can see ----
+  app.post('/v1/pipelines/:id/clone', {
+    schema: { params: { type: 'object', properties: { id: uuid } }, body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 120 }, ownerNodeId: uuid, sharedDown: { type: 'boolean' } } } },
+  }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    const { id } = req.params as { id: string };
+    const b = (req.body ?? {}) as { name?: string; ownerNodeId?: string; sharedDown?: boolean };
+    const out = await run(ctx, async (tx) => {
+      // row-level security hides pipelines the person cannot see, so a hidden one is simply "not found"
+      const src = (await tx.query<{ name: string; color_theme: string; template_code: string | null; template_version: number | null }>('SELECT name, color_theme, template_code, template_version FROM pipelines WHERE id = $1', [id])).rows[0];
+      if (!src) throw notFound('Pipeline not found');
+      const stages = (await tx.query<{ name: string; color: string | null; is_won: boolean; is_lost: boolean; required_fields: string[] }>('SELECT name, color, is_won, is_lost, required_fields FROM stages WHERE pipeline_id = $1 ORDER BY position', [id])).rows;
+      const fields = (await tx.query<{ key: string; labels: Record<string, string>; type: string; options: string[] | null; required: boolean }>('SELECT key, labels, type, options, required FROM field_defs WHERE pipeline_id = $1 ORDER BY position', [id])).rows;
+      const owner = b.ownerNodeId ?? (await defaultPlace(tx, ctx));
+      const newId = await makePipeline(tx, ctx, {
+        name: b.name ?? `${src.name} (copy)`, owner, sharedDown: b.sharedDown ?? false, colorTheme: src.color_theme, clonedFrom: id, templateCode: src.template_code, templateVersion: src.template_version,
+        stages: stages.map((x) => ({ name: x.name, color: x.color, isWon: x.is_won, isLost: x.is_lost, requiredFields: x.required_fields })),
+        fields: fields.map((f) => ({ key: f.key, labels: f.labels, type: f.type, ...(f.options ? { options: f.options } : {}), required: f.required })),
+      });
+      return { id: newId };
+    });
+    return reply.code(201).send(out);
+  });
+
+  // ---- the country library ----
+  interface TemplateRow { code: string; version: number; name: string; name_fr: string; description: string; description_fr: string; sort: number; stages: { en: string; fr: string; won: boolean; lost: boolean; req?: string[] }[]; fields: { key: string; en: string; fr: string; type: string; options?: string[]; required?: boolean }[] }
+  const country = deps.config.region === 'us' ? 'US' : 'CA';
+
+  app.get('/v1/pipeline-templates', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    return run(ctx, async (tx) => {
+      const rows = (await tx.query<TemplateRow>('SELECT code, version, name, name_fr, description, description_fr, sort, stages, fields FROM pipeline_templates WHERE active AND country = $1 ORDER BY sort, name', [country])).rows;
+      return {
+        country,
+        templates: rows.map((r) => ({
+          code: r.code, version: r.version, name: { en: r.name, 'fr-CA': r.name_fr }, about: { en: r.description, 'fr-CA': r.description_fr },
+          stages: r.stages.map((x) => ({ en: x.en, 'fr-CA': x.fr })), columns: r.fields.map((f) => ({ en: f.en, 'fr-CA': f.fr })),
+        })),
+      };
+    });
+  });
+
+  app.post('/v1/pipeline-templates/:code/use', {
+    schema: { params: { type: 'object', required: ['code'], properties: { code: { type: 'string', pattern: '^[a-z0-9_]{2,40}$' } } }, body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 120 }, ownerNodeId: uuid, sharedDown: { type: 'boolean' }, locale: { enum: ['en', 'fr-CA'] } } } },
+  }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    const { code } = req.params as { code: string };
+    const b = (req.body ?? {}) as { name?: string; ownerNodeId?: string; sharedDown?: boolean; locale?: 'en' | 'fr-CA' };
+    const fr = b.locale === 'fr-CA';
+    const out = await run(ctx, async (tx) => {
+      const t = (await tx.query<TemplateRow>('SELECT code, version, name, name_fr, description, description_fr, sort, stages, fields FROM pipeline_templates WHERE active AND country = $1 AND code = $2', [country, code])).rows[0];
+      if (!t) throw notFound('That template is not available');
+      const owner = b.ownerNodeId ?? (await defaultPlace(tx, ctx));
+      const id = await makePipeline(tx, ctx, {
+        name: b.name ?? (fr ? t.name_fr : t.name), owner, sharedDown: b.sharedDown ?? false, templateCode: t.code, templateVersion: t.version,
+        stages: t.stages.map((x) => ({ name: fr ? x.fr : x.en, isWon: x.won, isLost: x.lost, requiredFields: x.req ?? [] })),
+        fields: t.fields.map((f) => ({ key: f.key, labels: { en: f.en, 'fr-CA': f.fr }, type: f.type, ...(f.options ? { options: f.options } : {}), required: f.required ?? false })),
+      });
+      return { id };
+    });
+    return reply.code(201).send(out);
+  });
 
   app.patch(
     '/v1/pipelines/:id',

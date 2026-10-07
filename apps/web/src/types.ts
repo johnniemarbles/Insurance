@@ -1,7 +1,7 @@
 export type Locale = 'en' | 'fr-CA';
 export interface Stage { id: string; name: string; position: number; color: string | null; isWon: boolean; isLost: boolean; requiredFields?: string[] }
 export interface FieldDef { id: string; key: string; labels: Record<string, string>; type: 'text' | 'number' | 'date' | 'dropdown' | 'checkbox' | string; options: string[] | null; required: boolean; position: number }
-export interface Pipeline { id: string; name: string; colorTheme: Theme; sharedDown: boolean; ownerNodeId: string; stages: Stage[]; fields: FieldDef[] }
+export interface Pipeline { id: string; name: string; colorTheme: Theme; sharedDown: boolean; ownerNodeId: string; stages: Stage[]; fields: FieldDef[]; clonedFrom?: string | null; templateCode?: string | null; templateVersion?: number | null }
 export type Theme = 'rainbow' | 'ocean' | 'forest' | 'sunset' | 'mono';
 export interface Box {
   id: string; pipelineId: string; stageId: string; ownerNodeId: string; contextNodeId: string; name: string;

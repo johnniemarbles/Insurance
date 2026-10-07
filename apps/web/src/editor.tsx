@@ -1,6 +1,5 @@
 import { useDialogFocus } from './a11y.ts';
 import { useEffect, useState } from 'preact/hooks';
-import { TEMPLATES } from './templates.ts';
 import { stageColor } from './theme.ts';
 import type { Strings } from './i18n.ts';
 import type { Locale, Pipeline, Theme } from './types.ts';
@@ -241,33 +240,3 @@ function AliasRules({ pipeline, call, locale, act }: { pipeline: Pipeline; call:
   );
 }
 
-export function NewPipeline({ call, t, locale, onClose, onCreated }: { call: Call; t: Strings; locale: Locale; onClose: () => void; onCreated: (id: string) => void }) {
-  const dlg = useDialogFocus<HTMLElement>();
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [name, setName] = useState('');
-  const create = async (body: object) => {
-    setBusy(true); setErr('');
-    try { const r = await call('POST', '/v1/pipelines', { sharedDown: true, ...body }); onCreated(r.id); } catch (e) { setErr((e as Error).message); setBusy(false); }
-  };
-  return (
-    <aside ref={dlg} tabIndex={-1} class="drawer wide" role="dialog" aria-label={t.newPipeline}>
-      <h2>{t.newPipeline}</h2>
-      {err && <div class="err" role="alert">{err}</div>}
-      <p class="muted">{t.templateHelp}</p>
-      {TEMPLATES.map((tp) => (
-        <button class="tpl" disabled={busy} key={tp.id} onClick={() => void create({ name: tp.name[locale], stages: tp.stages, fields: tp.fields.map((f) => ({ key: f.key, labels: f.labels, type: f.type, ...(f.options ? { options: f.options } : {}) })) })}>
-          <b>{tp.name[locale]}</b>
-          <span>{tp.about[locale]}</span>
-          <small>{tp.stages.map((s) => s.name).join(' → ')}</small>
-        </button>
-      ))}
-      <h3>{t.blankPipeline}</h3>
-      <form class="erow" onSubmit={(e) => { e.preventDefault(); if (name.trim()) void create({ name: name.trim() }); }}>
-        <input placeholder={t.name} aria-label={t.name} value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
-        <button class="btn" disabled={busy || !name.trim()}>{t.create}</button>
-      </form>
-      <div class="actions"><button class="btn quiet" onClick={onClose}>{t.cancel}</button></div>
-    </aside>
-  );
-}
