@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
-import { forbidden, invalid, notFound } from './errors.ts';
+import { conflict, forbidden, invalid, notFound } from './errors.ts';
 import { uuid } from './crm-helpers.ts';
 import { recordCeForCompletion } from './routes-ce.ts';
 import type { AppDeps } from './app.ts';
@@ -38,6 +38,10 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!rows[0]) throw notFound('Lesson not found');
     return rows[0];
   }
+  /** A published course's content is frozen: unpublish it, make the change, and publish again to release the next version. */
+  const requireEditable = (status: string) => {
+    if (status === 'published') throw conflict('This course is published, so its lessons are locked. Unpublish it, make your changes, then publish again to release a new version.');
+  };
   const requireAuthor = (ctx: RequestContext, ownerNodeId: string) => {
     if (!canAuthorAt(ctx, ownerNodeId)) throw forbidden('Only a trainer, manager or administrator of the owning branch can change this course');
   };
@@ -115,9 +119,9 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { id } = req.params as { id: string };
     const l = loc(req.query as { locale?: string });
     return run(ctx, async (tx) => {
-      const c = (await tx.query(`SELECT c.id, c.status, c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
+      const c = (await tx.query(`SELECT c.id, c.status, c.version, c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
       if (!c) throw notFound('Course not found');
-      const e = (await tx.query(`SELECT id, status, progress_pct::float8 AS "progressPct", due_at AS "dueAt", completed_at AS "completedAt" FROM enrollments WHERE course_id = $1 AND user_id = $2`, [id, ctx.userId])).rows[0] ?? null;
+      const e = (await tx.query(`SELECT id, status, course_version AS "courseVersion", progress_pct::float8 AS "progressPct", due_at AS "dueAt", completed_at AS "completedAt" FROM enrollments WHERE course_id = $1 AND user_id = $2`, [id, ctx.userId])).rows[0] ?? null;
       const lessons = (await tx.query(
         `SELECT l.id, l.module_id AS "moduleId", l.position, l.type, l.required, l.pass_mark AS "passMark", ${lessonTitle(l)} AS title, (p.status = 'completed') AS done
            FROM lessons l LEFT JOIN lesson_progress p ON p.lesson_id = l.id AND p.enrollment_id = $2
@@ -151,6 +155,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
              ON CONFLICT (course_id, locale) DO UPDATE SET title = coalesce($4, course_locales.title), description = coalesce($5, course_locales.description)`,
             [id, ctx.tenantId, l, b.title?.trim() ?? null, b.description ?? null]);
         }
+        if (c.status === 'published' && (b.ce !== undefined || b.quebecFacing !== undefined)) requireEditable(c.status);
         if (b.status === 'published') {
           const n = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM lessons WHERE course_id = $1', [id])).rows[0]!.n;
           if (n === 0) throw invalid('Add at least one lesson before publishing');
@@ -163,7 +168,9 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
           if (b.ce && !(await tx.query('SELECT 1 FROM ce_rule_packs WHERE code = $1 AND active', [b.ce.pack])).rowCount) throw invalid('Unknown regulator');
           await tx.query('UPDATE courses SET ce_pack = $2, ce_hours = $3, ce_category = $4, updated_at = now() WHERE id = $1', [id, b.ce?.pack ?? null, b.ce?.hours ?? null, b.ce?.category ?? null]);
         }
-        await audit(tx, ctx, b.status ? `course_${b.status}` : 'course_updated', 'course', id);
+        let version: number | undefined;
+        if (b.status === 'published') version = (await tx.query<{ v: number }>('SELECT publish_course_version($1, $2) AS v', [id, ctx.userId])).rows[0]!.v;
+        await audit(tx, ctx, b.status ? `course_${b.status}` : 'course_updated', 'course', id, version ? { version } : undefined);
       });
       return reply.code(204).send();
     },
@@ -189,6 +196,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       const out = await run(ctx, async (tx) => {
         const c = await loadCourse(tx, id);
         requireAuthor(ctx, c.owner_node_id);
+        requireEditable(c.status);
         const mod = (await tx.query<{ id: string }>('SELECT id FROM course_modules WHERE course_id = $1 ORDER BY position LIMIT 1', [id])).rows[0];
         if (!mod) throw invalid('The course has no module');
         const pos = (await tx.query<{ p: number }>('SELECT coalesce(max(position), 0) + 1 AS p FROM lessons WHERE course_id = $1', [id])).rows[0]!.p;
@@ -216,6 +224,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       await run(ctx, async (tx) => {
         const l = await loadLesson(tx, id);
         requireAuthor(ctx, l.owner_node_id);
+        requireEditable(l.status);
         if (b.required !== undefined || b.passMark !== undefined || 'maxAttempts' in b) {
           await tx.query(`UPDATE lessons SET required = coalesce($2, required), pass_mark = coalesce($3, pass_mark), max_attempts = CASE WHEN $4 THEN $5::int ELSE max_attempts END WHERE id = $1`, [id, b.required ?? null, b.passMark ?? null, 'maxAttempts' in b, b.maxAttempts ?? null]);
         }
@@ -240,6 +249,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     await run(ctx, async (tx) => {
       const l = await loadLesson(tx, id);
       requireAuthor(ctx, l.owner_node_id);
+      requireEditable(l.status);
       await tx.query('DELETE FROM lesson_progress WHERE lesson_id = $1', [id]);
       await tx.query('DELETE FROM quiz_attempts WHERE lesson_id = $1', [id]);
       await tx.query('DELETE FROM lessons WHERE id = $1', [id]);
@@ -258,6 +268,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       await run(ctx, async (tx) => {
         const c = await loadCourse(tx, id);
         requireAuthor(ctx, c.owner_node_id);
+        requireEditable(c.status);
         const cur = (await tx.query<{ id: string }>('SELECT id FROM lessons WHERE course_id = $1', [id])).rows.map((r) => r.id);
         if (cur.length !== lessonIds.length || new Set(lessonIds).size !== lessonIds.length || !lessonIds.every((x) => cur.includes(x))) throw invalid('List every lesson exactly once');
         await tx.query('UPDATE lessons SET position = position + 10000 WHERE course_id = $1', [id]);
@@ -304,11 +315,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
         const l = await loadLesson(tx, id);
         requireAuthor(ctx, l.owner_node_id);
         if (l.type !== 'quiz') throw invalid('That lesson is not a quiz');
-        // Replacing questions would orphan old attempts' meaning, so only allow it before the course is published
-        if (l.status === 'published') {
-          const used = await tx.query('SELECT 1 FROM quiz_attempts WHERE lesson_id = $1 LIMIT 1', [id]);
-          if (used.rowCount) throw invalid('This quiz already has attempts; duplicate the course to change it');
-        }
+        requireEditable(l.status);
         await tx.query('DELETE FROM quiz_questions WHERE lesson_id = $1', [id]);
         for (const [i, q] of b.questions.entries()) {
           const keys = q.options.map((_, k) => String(k));
@@ -425,7 +432,8 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       origin: deps.config.appOrigin,
       enrollments: (await tx.query(
         `SELECT e.id, e.course_id AS "courseId", ${courseText('title', l)} AS title, e.status, e.progress_pct::float8 AS "progressPct", e.due_at AS "dueAt", e.completed_at AS "completedAt",
-                ct.verification_code AS "certificateCode", c.ce_hours::float8 AS "ceHours"
+                ct.verification_code AS "certificateCode", c.ce_hours::float8 AS "ceHours",
+                e.course_version AS "courseVersion", c.version AS "latestVersion", (e.status = 'completed' AND e.course_version IS NOT NULL AND e.course_version < c.version) AS outdated
            FROM enrollments e JOIN courses c ON c.id = e.course_id LEFT JOIN certificates ct ON ct.enrollment_id = e.id
           WHERE e.user_id = $1 ORDER BY (e.status = 'completed'), e.due_at NULLS LAST, e.started_at DESC NULLS LAST`, [ctx.userId])).rows,
     }));
@@ -457,6 +465,22 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       return reply.code(201).send(out);
     },
   );
+
+  /** Published versions of a course, newest first, for the people who can edit it. */
+  app.get('/v1/courses/:id/versions', { schema: { params: idParams } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    return run(ctx, async (tx) => {
+      const c = await loadCourse(tx, id);
+      requireAuthor(ctx, c.owner_node_id);
+      return {
+        versions: (await tx.query(
+          `SELECT v.version, v.published_at AS "publishedAt", coalesce(u.display_name, u.email::text) AS "publishedBy", jsonb_array_length(v.snapshot -> 'lessons')::int AS lessons,
+                  (SELECT count(*)::int FROM enrollments e WHERE e.course_id = v.course_id AND e.course_version = v.version) AS learners
+             FROM course_versions v LEFT JOIN app_users u ON u.id = v.published_by WHERE v.course_id = $1 ORDER BY v.version DESC`, [id])).rows,
+      };
+    });
+  });
 
   app.get('/v1/courses/:id/progress', { schema: { params: idParams } }, async (req) => {
     const { ctx } = await deps.authenticate(req);

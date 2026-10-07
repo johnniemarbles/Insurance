@@ -6,7 +6,7 @@ import { CourseCe, MyCe, PeopleCe, ceStrings } from './ce.tsx';
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface CourseRow { id: string; status: string; title: string; description: string; lessonCount: number; myStatus: string | null; myProgress: number | null; myDueAt: string | null; canEdit: boolean }
 interface LessonRow { id: string; type: string; title: string; required: boolean; done: boolean }
-interface CourseDetail { id: string; status: string; title: string; description: string; cePack: string | null; ceHours: number | null; ceCategory: string | null; canEdit: boolean; enrollment: { status: string; progressPct: number; dueAt: string | null } | null; certificate: { verificationCode: string; issuedAt: string; url?: string } | null; lessons: LessonRow[]; locales?: { locale: string; title: string; description: string | null }[] }
+interface CourseDetail { id: string; version?: number; status: string; title: string; description: string; cePack: string | null; ceHours: number | null; ceCategory: string | null; canEdit: boolean; enrollment: { status: string; progressPct: number; dueAt: string | null } | null; certificate: { verificationCode: string; issuedAt: string; url?: string } | null; lessons: LessonRow[]; locales?: { locale: string; title: string; description: string | null }[] }
 type View = { k: 'list' } | { k: 'course'; id: string } | { k: 'lesson'; courseId: string; id: string };
 
 const move = <T,>(a: T[], i: number, d: number): T[] => { const b = [...a]; const j = i + d; if (j < 0 || j >= b.length) return b; [b[i], b[j]] = [b[j]!, b[i]!]; return b; };
@@ -93,7 +93,8 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
   return (
     <div class="tpad">
       <button class="link" onClick={onBack}>← {t.training}</button>
-      <h1>{c.title} {c.status === 'draft' && <span class="tag">{t.draft}</span>}</h1>
+      <h1>{c.title} {c.status === 'draft' && <span class="tag">{t.draft}</span>}{(c.version ?? 0) > 0 && <span class="tag">v{c.version}</span>}</h1>
+      {c.canEdit && c.status === 'published' && <p class="muted">{locale === 'fr-CA' ? 'Cette formation est publiée, donc ses leçons sont verrouillées. Annulez la publication, modifiez, puis publiez de nouveau pour créer une nouvelle version.' : 'This course is published, so its lessons are locked. Unpublish it, make your changes, then publish again to release a new version.'}</p>}
       <p class="muted">{c.description}</p>
       {c.enrollment && <><Bar pct={c.enrollment.progressPct} /><small>{c.enrollment.status === 'completed' ? `✓ ${t.completed}` : `${Math.round(c.enrollment.progressPct)}%`}{c.enrollment.dueAt && c.enrollment.status !== 'completed' ? ` · ${t.due} ${new Date(c.enrollment.dueAt).toLocaleDateString(locale)}` : ''}</small></>}
       {c.certificate && <p class="ok">🎓 {t.certificate}: <b>{c.certificate.verificationCode}</b> · {new Date(c.certificate.issuedAt).toLocaleDateString(locale)}{c.certificate.url && <> · <a href={c.certificate.url} target="_blank" rel="noopener noreferrer">{ceStrings(locale).certOpen}</a></>}</p>}
@@ -104,7 +105,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
       {c.lessons.map((l, i) => (
         <div class="lrow" key={l.id}>
           <button class="lbtn" onClick={() => onLesson(l.id)}><span class={`dot${l.done ? ' on' : ''}`}>{l.done ? '✓' : i + 1}</span><span>{l.title}</span><span class="tag">{t.lessonTypes[l.type] ?? l.type}</span>{!l.required && <span class="tag">{t.optional}</span>}</button>
-          {c.canEdit && <>
+          {c.canEdit && c.status !== 'published' && <>
             <button class="ib" aria-label={t.moveUp} disabled={i === 0} onClick={() => void act(() => call('PUT', `/v1/courses/${id}/lessons/order`, { lessonIds: move(c.lessons, i, -1).map((x) => x.id) }))}>↑</button>
             <button class="ib" aria-label={t.moveDown} disabled={i === c.lessons.length - 1} onClick={() => void act(() => call('PUT', `/v1/courses/${id}/lessons/order`, { lessonIds: move(c.lessons, i, 1).map((x) => x.id) }))}>↓</button>
             <button class="ib danger" aria-label={t.remove} onClick={() => { if (confirm(t.confirmLesson(l.title))) void act(() => call('DELETE', `/v1/lessons/${l.id}`)); }}>✕</button>
@@ -114,11 +115,11 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
 
       {c.canEdit && (
         <>
-          <form class="erow" onSubmit={(e) => { e.preventDefault(); const title = lt.trim(); if (!title) return; setLt(''); void act(() => call('POST', `/v1/courses/${id}/lessons`, { title, type: lType, locale })); }}>
+          {c.status !== 'published' && <form class="erow" onSubmit={(e) => { e.preventDefault(); const title = lt.trim(); if (!title) return; setLt(''); void act(() => call('POST', `/v1/courses/${id}/lessons`, { title, type: lType, locale })); }}>
             <input placeholder={t.addLesson} aria-label={t.addLesson} value={lt} onInput={(e) => setLt((e.target as HTMLInputElement).value)} />
             <select aria-label={t.type} value={lType} onChange={(e) => setLType((e.target as HTMLSelectElement).value)}>{Object.entries(t.lessonTypes).map(([k, v]) => <option value={k}>{v}</option>)}</select>
             <button class="btn quiet" disabled={!lt.trim()}>+</button>
-          </form>
+          </form>}
 
           <h3>{t.courseSettings}</h3>
           <label for="ct">{t.courseTitle} ({locale})</label>

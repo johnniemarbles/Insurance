@@ -5,7 +5,7 @@ Source: the Expadio LMS (private repo, read only). Goal: take what fits PII's mu
 ## Take
 1. **Licence / CE status and 30/60/90 forecast, plus daily learner reminders.** Status derived from dates (valid → expiring → expired). **Done**: `packages/domain/src/forecast.ts`, `GET /v1/compliance/calendar`, "Coming up" on the Compliance page, `sweepLearnerReminders` (course due in 7 days / late; CE at risk / overdue once per term), migration 0033 `reminder_marks`, notification kinds `learning_due` and `ce_reminder` (en and fr-CA), settings `notify.learning_due`, `notify.ce_reminder`.
 2. **This plan saved in docs.** Done.
-3. **Versioned courses.** Publish makes a version immutable (DB trigger); enrollments pin the version they started on.
+3. **Versioned courses.** **Done**: publishing freezes a version (`course_versions`, immutable by trigger, migration 0034). A published course's lessons and quizzes are locked; unpublish, edit, republish releases version N+1 only if content changed. Learners who have not finished move to the new version; finished learners stay on the version they completed (`outdated` flag in `/v1/my/learning`). `GET /v1/courses/:id/versions` lists history. Not done: learners cannot keep reading version N while an author edits N+1 (unpublishing hides the course meanwhile).
 4. **Assignment rules with preview.** Rule by node / role; show who would be enrolled before saving.
 5. **Assessment attempt rules.** Pass mark, max attempts, cool-down, per-attempt record.
 6. **Learner player: lock and resume.** Ordered lessons, resume where left off.
