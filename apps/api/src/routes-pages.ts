@@ -136,9 +136,39 @@ ${deps.google ? `<a class="btn" href="${esc(href)}">${t.go}</a>` : `<a class="bt
   });
 
   app.get('/login', async (req, reply) => {
-    const q = req.query as { error?: string };
-    const msg = ERRORS[q.error ?? ''] ?? 'Sign-in did not complete. Close this tab and try again from the PII panel in Gmail.';
-    return reply.code(q.error ? 403 : 200).type('text/html; charset=utf-8').send(page('Sign-in', `<p>${esc(msg)}</p>`, product));
+    const q = req.query as { error?: string; lang?: string };
+    const fr = q.lang ? q.lang.startsWith('fr') : String(req.headers['accept-language'] ?? '').toLowerCase().startsWith('fr');
+    const us = deps.config.region === 'us';
+    const here = us ? 'United States' : 'Canada', there = us ? 'Canada' : 'United States';
+    const hereFr = us ? 'aux États-Unis' : 'au Canada', thereFr = us ? 'Canada' : 'États-Unis';
+    const host = String(req.hostname ?? '').toLowerCase();
+    const otherHost = host.startsWith('us.') ? host.replace(/^us\./, 'ca.') : host.startsWith('ca.') ? host.replace(/^ca\./, 'us.') : '';
+    const kind = q.error === 'unknown_user' || q.error === 'not_invited' ? 'invite' : q.error === 'cancelled' ? 'cancelled' : q.error === 'unverified_email' || q.error === 'email_not_verified' ? 'verify' : 'other';
+    const T = fr ? {
+      invite: ['Ce compte Google n’a pas accès', `Ce compte n’est pas invité sur le site PII (${hereFr}). PII est sur invitation seulement.`, ['Essayez un autre compte Google (celui de l’invitation).', `Si votre agence est en ${thereFr}, utilisez plutôt le site ${thereFr}.`, 'Sinon, demandez une invitation à votre administrateur.']],
+      cancelled: ['Connexion annulée', 'Vous avez quitté Google avant la fin. Rien n’a été modifié.', []],
+      verify: ['Courriel non vérifié', 'Google n’a pas pu vérifier l’adresse courriel de ce compte. Essayez un autre compte.', []],
+      other: ['La connexion n’a pas abouti', 'Un problème est survenu. Réessayez dans un instant.', []],
+      again: 'Réessayer', switchTo: `Passer au site ${thereFr}`, help: 'Besoin d’aide?', lang: 'English', langQ: 'en',
+    } : {
+      invite: ['This Google account doesn’t have access', `This account hasn’t been invited to the PII ${here} site. PII is invite-only.`, ['Try a different Google account (the one that received the invitation).', `If your agency is in ${there}, use the ${there} site instead.`, 'Otherwise, ask your administrator to invite you.']],
+      cancelled: ['Sign-in cancelled', 'You left Google before finishing. Nothing was changed.', []],
+      verify: ['Email not verified', 'Google couldn’t verify this account’s email address. Try a different account.', []],
+      other: ['Sign-in didn’t complete', 'Something went wrong. Please try again in a moment.', []],
+      again: 'Try again', switchTo: `Switch to the ${there} site`, help: 'Need help?', lang: 'Français', langQ: 'fr',
+    };
+    const [title, lead, tips] = T[kind] as [string, string, string[]];
+    const html = `<!doctype html><html lang="${fr ? 'fr' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)} · ${esc(product)}</title>
+<style>:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;color:#0f172a;background:radial-gradient(900px 500px at 0% 0%,#dbe4ff,transparent 60%),#f8fafc}
+main{width:100%;max-width:440px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:34px 30px;box-shadow:0 20px 50px -20px rgba(15,23,42,.25)}img{width:56px;height:56px;border-radius:14px}.b{display:flex;align-items:center;gap:12px;font-weight:700;margin-bottom:22px}
+.ic{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:22px;background:#fef3c7;margin-bottom:12px}h1{font-size:23px;margin:0 0 8px;letter-spacing:-.01em}p{margin:0 0 14px;color:#475569}ul{margin:0 0 20px;padding-left:20px;color:#334155}li{margin:6px 0}
+.btn{display:block;text-align:center;text-decoration:none;font-weight:600;border-radius:12px;padding:12px 16px;margin-top:10px}.p{background:#1d4ed8;color:#fff}.s{border:1px solid #cbd5e1;color:#0f172a}.f{margin-top:20px;font-size:13px;color:#64748b;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}.f a{color:#64748b}a:focus-visible{outline:3px solid #93a8f4;outline-offset:2px}
+@media(prefers-color-scheme:dark){body{color:#e5e7eb;background:#0b1020}main{background:#121a33;border-color:#243055;box-shadow:none}p,ul{color:#a9b4d6}.ic{background:#3a2f12}.s{border-color:#33406b;color:#e5e7eb}.f,.f a{color:#94a3b8}}</style></head>
+<body><main><div class="b"><img src="/brand/logo.png" alt="">${esc(product)}</div><div class="ic" aria-hidden="true">${kind === 'cancelled' ? '↩' : '🔒'}</div><h1>${esc(title)}</h1><p>${esc(lead)}</p>
+${tips.length ? `<ul>${tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+<a class="btn p" href="/auth/google/start">${T.again}</a>${otherHost && kind === 'invite' ? `<a class="btn s" href="https://${esc(otherHost)}/app">${esc(T.switchTo)}</a>` : ''}
+<div class="f"><span>${T.help} <a href="mailto:${esc(deps.config.supportEmail)}">${esc(deps.config.supportEmail)}</a></span><a href="/login?${q.error ? `error=${encodeURIComponent(q.error)}&` : ''}lang=${T.langQ}">${T.lang}</a></div></main></body></html>`;
+    return reply.code(q.error ? 403 : 200).type('text/html; charset=utf-8').header('cache-control', 'no-store').send(html);
   });
 
   // Public pages: privacy, terms and support. English and French; ?lang=fr (or a French browser) picks French.
