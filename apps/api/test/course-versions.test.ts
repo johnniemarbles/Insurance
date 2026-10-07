@@ -159,3 +159,33 @@ test('certificate: shows the course version, takes CE hours from that version, a
   assert.equal(pdf.rawPayload.subarray(0, 5).toString(), '%PDF-');
   assert.equal((await app.inject({ method: 'GET', url: '/c/000000000000000000/pdf' })).statusCode, 404);
 });
+
+test('courses that need approval: ask, get told, approve or decline', async () => {
+  const c = (await call(ADMIN, 'POST', '/v1/courses', { title: 'By request', ownerNodeId: co.rootNodeId })).json.id;
+  const l = (await call(ADMIN, 'POST', `/v1/courses/${c}/lessons`, { title: 'Intro', type: 'richtext', text: 'x' })).json.id;
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c}`, { enrollmentMode: 'approval' })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c}`, { status: 'published' })).status, 204);
+  assert.equal((await call(A, 'POST', `/v1/courses/${c}/enroll`)).status, 403);
+  assert.equal((await call(A, 'GET', `/v1/lessons/${l}`)).status, 403);
+  assert.equal((await call(A, 'POST', `/v1/lessons/${l}/complete`)).status, 403);
+  { const r = await call(A, 'POST', `/v1/courses/${c}/request`, { note: 'For my licence' }); assert.equal(r.status, 201, JSON.stringify(r.json)); }
+  assert.equal((await call(A, 'POST', `/v1/courses/${c}/request`, {})).status, 409, 'one pending request at a time');
+  assert.equal((await call(A, 'GET', `/v1/courses/${c}`)).json.myRequest.status, 'pending');
+  assert.equal((await call(B, 'GET', '/v1/course-requests')).json.requests.length, 0, 'a learner cannot see or answer requests');
+  const list = (await call(ADMIN, 'GET', `/v1/course-requests?courseId=${c}`)).json.requests;
+  assert.equal(list.length, 1); assert.equal(list[0].note, 'For my licence');
+  assert.equal((await call(ADMIN, 'GET', '/v1/notifications')).json.notifications.some((n: any) => n.kind === 'course_request'), true);
+  assert.equal((await call(B, 'POST', `/v1/course-requests/${list[0].id}/decision`, { decision: 'approve' })).status, 403);
+  assert.equal((await call(ADMIN, 'POST', `/v1/course-requests/${list[0].id}/decision`, { decision: 'approve', note: 'Welcome' })).status, 200);
+  assert.equal((await call(ADMIN, 'POST', `/v1/course-requests/${list[0].id}/decision`, { decision: 'decline' })).status, 409, 'already answered');
+  assert.equal((await call(A, 'GET', `/v1/lessons/${l}`)).status, 200);
+  assert.equal((await call(A, 'POST', `/v1/lessons/${l}/complete`)).json.completed, true);
+  const told = (await call(A, 'GET', '/v1/notifications')).json.notifications.find((n: any) => n.kind === 'course_decision');
+  assert.equal(told.data.decision, 'approved');
+  // a declined request can be asked again
+  assert.equal((await call(B, 'POST', `/v1/courses/${c}/request`, {})).status, 201);
+  const bid = (await call(ADMIN, 'GET', `/v1/course-requests?courseId=${c}`)).json.requests[0].id;
+  assert.equal((await call(ADMIN, 'POST', `/v1/course-requests/${bid}/decision`, { decision: 'decline', note: 'Not yet' })).status, 200);
+  assert.equal((await call(B, 'GET', `/v1/courses/${c}`)).json.myRequest.status, 'declined');
+  assert.equal((await call(B, 'POST', `/v1/courses/${c}/request`, {})).status, 201);
+});

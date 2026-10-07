@@ -6,7 +6,7 @@ import { CourseCe, MyCe, PeopleCe, ceStrings } from './ce.tsx';
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface CourseRow { id: string; status: string; title: string; description: string; lessonCount: number; myStatus: string | null; myProgress: number | null; myDueAt: string | null; canEdit: boolean }
 interface LessonRow { id: string; type: string; title: string; required: boolean; done: boolean; locked?: boolean }
-interface CourseDetail { id: string; version?: number; sequential?: boolean; resumeLessonId?: string | null; status: string; title: string; description: string; cePack: string | null; ceHours: number | null; ceCategory: string | null; canEdit: boolean; enrollment: { status: string; progressPct: number; dueAt: string | null } | null; certificate: { verificationCode: string; issuedAt: string; url?: string } | null; lessons: LessonRow[]; locales?: { locale: string; title: string; description: string | null }[] }
+interface CourseDetail { id: string; enrollmentMode?: 'open' | 'approval'; myRequest?: { status: string; decisionNote: string | null } | null; version?: number; sequential?: boolean; resumeLessonId?: string | null; status: string; title: string; description: string; cePack: string | null; ceHours: number | null; ceCategory: string | null; canEdit: boolean; enrollment: { status: string; progressPct: number; dueAt: string | null } | null; certificate: { verificationCode: string; issuedAt: string; url?: string } | null; lessons: LessonRow[]; locales?: { locale: string; title: string; description: string | null }[] }
 type View = { k: 'list' } | { k: 'course'; id: string } | { k: 'lesson'; courseId: string; id: string };
 
 const move = <T,>(a: T[], i: number, d: number): T[] => { const b = [...a]; const j = i + d; if (j < 0 || j >= b.length) return b; [b[i], b[j]] = [b[j]!, b[i]!]; return b; };
@@ -85,8 +85,11 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
   const [assignNode, setAssignNode] = useState('');
   const [assignDue, setAssignDue] = useState('');
   const [assignRole, setAssignRole] = useState(''); const [assignDays, setAssignDays] = useState(''); const [pv, setPv] = useState('');
+  const [reqs, setReqs] = useState<{ id: string; name: string; note: string | null }[]>([]);
+  const loadReqs = useCallback(() => { call('GET', `/v1/course-requests?courseId=${id}`).then((r) => setReqs(r.requests), () => undefined); }, [call, id]);
   const load = useCallback(() => { call('GET', `/v1/courses/${id}?locale=${locale}`).then(setC, (e) => setErr((e as Error).message)); }, [call, id, locale]);
   useEffect(load, [load]);
+  useEffect(() => { if (c?.canEdit) loadReqs(); }, [c?.canEdit, loadReqs]);
   useEffect(() => { if (c?.canEdit) call('GET', '/v1/org/nodes').then((r) => { setNodes(r.nodes); }, () => undefined); }, [call, c?.canEdit]);
   const act = async (fn: () => Promise<unknown>, ok = t.saved) => { setErr(''); setNote(''); try { await fn(); setNote(ok); load(); } catch (e) { setErr((e as Error).message); } };
   if (!c) return <div class="msg">{err || t.loading}</div>;
@@ -101,6 +104,14 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
       {c.certificate && <p class="ok">🎓 {t.certificate}: <b>{c.certificate.verificationCode}</b> · {new Date(c.certificate.issuedAt).toLocaleDateString(locale)}{c.certificate.url && <> · <a href={c.certificate.url} target="_blank" rel="noopener noreferrer">{ceStrings(locale).certOpen}</a> · <a href={`${c.certificate.url}/pdf`} target="_blank" rel="noopener noreferrer">PDF</a></>}</p>}
       {err && <div class="err">{err}</div>}{note && <div class="ok">{note}</div>}
 
+      {!c.canEdit && !c.enrollment && c.enrollmentMode === 'approval' && c.status === 'published' && (() => {
+        const fr = locale === 'fr-CA', r = c.myRequest;
+        if (r?.status === 'pending') return <p class="muted" role="status">{fr ? 'Votre demande est en attente d’approbation.' : 'Your request is waiting for approval.'}</p>;
+        return <div class="actions">
+          {r?.status === 'declined' && <p class="overdue">{fr ? 'Votre demande a été refusée' : 'Your request was declined'}{r.decisionNote ? ` : ${r.decisionNote}` : ''}</p>}
+          <button class="btn" onClick={() => { const n = prompt(fr ? 'Un mot pour votre gestionnaire (facultatif)' : 'A note for your manager (optional)') ?? ''; void act(() => call('POST', `/v1/courses/${id}/request`, n.trim() ? { note: n.trim() } : {}), fr ? 'Demande envoyée.' : 'Request sent.'); }}>{fr ? 'Demander à suivre cette formation' : 'Ask to join this course'}</button>
+        </div>;
+      })()}
       {c.resumeLessonId && <div class="actions"><button class="btn" onClick={() => onLesson(c.resumeLessonId!)}>{c.enrollment && c.enrollment.progressPct > 0 ? (locale === 'fr-CA' ? 'Continuer' : 'Continue') : (locale === 'fr-CA' ? 'Commencer' : 'Start')}</button></div>}
       <h3>{t.lessonsTitle}</h3>
       {c.lessons.length === 0 && <p class="muted">{t.noLessons}</p>}
@@ -128,6 +139,10 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
           <input id="ct" class="wide" defaultValue={c.title} onBlur={(e) => { const v = (e.target as HTMLInputElement).value.trim(); if (v && v !== c.title) void act(() => call('PATCH', `/v1/courses/${id}`, { title: v, locale })); }} />
           <label for="cd">{t.description} ({locale})</label>
           <textarea id="cd" class="wide" rows={2} defaultValue={c.description} onBlur={(e) => { const v = (e.target as HTMLTextAreaElement).value; if (v !== c.description) void act(() => call('PATCH', `/v1/courses/${id}`, { description: v, locale })); }} />
+          <label class="opt"><input type="checkbox" checked={c.enrollmentMode === 'approval'} onChange={(e) => void act(() => call('PATCH', `/v1/courses/${id}`, { enrollmentMode: (e.target as HTMLInputElement).checked ? 'approval' : 'open' }))} /> {locale === 'fr-CA' ? 'Les personnes doivent demander l’accès (approbation requise)' : 'People must ask to join (needs approval)'}</label>
+          {reqs.length > 0 && <div><h3>{locale === 'fr-CA' ? 'Demandes en attente' : 'Waiting for your answer'}</h3>{reqs.map((q) => <div class="lrow" key={q.id}><span style={{ flex: 1 }}>{q.name}{q.note ? ` — ${q.note}` : ''}</span>
+            <button class="btn quiet" onClick={() => void act(async () => { await call('POST', `/v1/course-requests/${q.id}/decision`, { decision: 'approve' }); loadReqs(); })}>{locale === 'fr-CA' ? 'Approuver' : 'Approve'}</button>
+            <button class="btn quiet" onClick={() => { const n = prompt(locale === 'fr-CA' ? 'Raison (facultatif)' : 'Reason (optional)') ?? ''; void act(async () => { await call('POST', `/v1/course-requests/${q.id}/decision`, { decision: 'decline', ...(n.trim() ? { note: n.trim() } : {}) }); loadReqs(); }); }}>{locale === 'fr-CA' ? 'Refuser' : 'Decline'}</button></div>)}</div>}
           {c.status !== 'published' && <label class="opt"><input type="checkbox" checked={!!c.sequential} onChange={(e) => void act(() => call('PATCH', `/v1/courses/${id}`, { sequential: (e.target as HTMLInputElement).checked }))} /> {locale === 'fr-CA' ? 'Étape par étape : les leçons obligatoires se suivent dans l’ordre' : 'Step by step: required lessons must be done in order'}</label>}
           <div class="actions">
             {c.status !== 'published'

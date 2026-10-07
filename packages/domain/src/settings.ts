@@ -122,6 +122,14 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'My continuing education is at risk', 'fr-CA': 'Ma formation continue est à risque' }, help: { en: 'Hours are still missing with 60 days or fewer left in the term, or the term has ended.', 'fr-CA': 'Il manque des heures et il reste 60 jours ou moins, ou la période est terminée.' }, keywords: 'notification alert CE continuing education hours reminder term',
   },
   {
+    key: 'notify.course_request', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'Someone asks to join a course', 'fr-CA': 'Quelqu’un demande à suivre une formation' }, help: { en: 'For courses that need approval, and only if you lead the person’s branch.', 'fr-CA': 'Pour les formations qui demandent une approbation, si vous dirigez la succursale de la personne.' }, keywords: 'notification alert course training request approve enrollment',
+  },
+  {
+    key: 'notify.course_decision', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'My course request is answered', 'fr-CA': 'Ma demande de formation a reçu une réponse' }, help: { en: 'A manager approves or declines your request.', 'fr-CA': 'Un gestionnaire approuve ou refuse votre demande.' }, keywords: 'notification alert course training request approved declined',
+  },
+  {
     key: 'notify.compliance_review', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
     label: { en: 'A compliance file is submitted or reviewed', 'fr-CA': 'Un dossier de conformité est soumis ou examiné' }, help: { en: 'Head office approves or sends back a file, or a partner sends one for review.', 'fr-CA': 'Le siège social approuve ou renvoie un dossier, ou un partenaire en soumet un.' }, keywords: 'notification alert compliance review approved onboarding',
   },

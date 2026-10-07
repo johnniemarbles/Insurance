@@ -4,6 +4,8 @@ import { attemptStatus, lockedLessonIds, resumeLesson, type RequestContext } fro
 import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { conflict, forbidden, invalid, notFound } from './errors.ts';
+import { tell } from './routes-compliance.ts';
+import { actingAs } from './effects.ts';
 import { uuid } from './crm-helpers.ts';
 import { recordCeForCompletion } from './routes-ce.ts';
 import type { AppDeps } from './app.ts';
@@ -28,7 +30,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
 
   async function loadCourse(tx: Tx, id: string) {
-    const { rows } = await tx.query<{ id: string; owner_node_id: string; status: string }>('SELECT id, owner_node_id, status FROM courses WHERE id = $1', [id]);
+    const { rows } = await tx.query<{ id: string; owner_node_id: string; status: string; enrollment_mode: string }>('SELECT id, owner_node_id, status, enrollment_mode FROM courses WHERE id = $1', [id]);
     if (!rows[0]) throw notFound('Course not found');
     return rows[0];
   }
@@ -63,6 +65,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (have.rows[0]) return have.rows[0].id;
     const c = await loadCourse(tx, courseId);
     if (c.status !== 'published') throw forbidden('This course is not published yet');
+    if (c.enrollment_mode === 'approval' && !canAuthorAt(ctx, c.owner_node_id)) throw forbidden('This course needs approval. Ask to join it first.');
     const home = (await tx.query<{ home_node_id: string }>('SELECT home_node_id FROM app_users WHERE id = $1', [ctx.userId])).rows[0]?.home_node_id ?? ctx.nodeIds[0]!;
     const id = randomUUID();
     await tx.query(`INSERT INTO enrollments (id, tenant_id, user_id, course_id, learner_node_id) VALUES ($1,$2,$3,$4,$5)`, [id, ctx.tenantId, ctx.userId, courseId, home]);
@@ -130,7 +133,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { id } = req.params as { id: string };
     const l = loc(req.query as { locale?: string });
     return run(ctx, async (tx) => {
-      const c = (await tx.query(`SELECT c.id, c.status, c.version, c.sequential, c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
+      const c = (await tx.query(`SELECT c.id, c.status, c.version, c.sequential, c.enrollment_mode AS "enrollmentMode", c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
       if (!c) throw notFound('Course not found');
       const e = (await tx.query(`SELECT id, status, course_version AS "courseVersion", last_lesson_id AS "lastLessonId", progress_pct::float8 AS "progressPct", due_at AS "dueAt", completed_at AS "completedAt" FROM enrollments WHERE course_id = $1 AND user_id = $2`, [id, ctx.userId])).rows[0] ?? null;
       const lessons = (await tx.query(
@@ -141,20 +144,21 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (cert) cert.url = `${deps.config.appOrigin}/c/${cert.verificationCode}`;
       const canEdit = canAuthorAt(ctx, c.ownerNodeId);
       const locales = canEdit ? (await tx.query(`SELECT locale, title, description FROM course_locales WHERE course_id = $1`, [id])).rows : undefined;
+      const myRequest = e ? null : (await tx.query(`SELECT id, status, decision_note AS "decisionNote" FROM enrollment_requests WHERE course_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT 1`, [id, ctx.userId])).rows[0] ?? null;
       const rows = lessons.map((x) => ({ ...x, done: Boolean(x.done) }));
       const locked = c.sequential && !canEdit ? lockedLessonIds(rows) : new Set<string>();
       const resumeLessonId = e && e.status !== 'completed' ? resumeLesson(rows, locked, e.lastLessonId ?? null) : null;
-      return { ...c, canEdit, enrollment: e, certificate: cert, lessons: rows.map((x) => ({ ...x, locked: locked.has(x.id) })), resumeLessonId, locales };
+      return { ...c, canEdit, enrollment: e, certificate: cert, myRequest, lessons: rows.map((x) => ({ ...x, locked: locked.has(x.id) })), resumeLessonId, locales };
     });
   });
 
   app.patch(
     '/v1/courses/:id',
-    { schema: { params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { title: { type: 'string', minLength: 1, maxLength: 200 }, description: { type: 'string', maxLength: 4000 }, locale: localeProp, status: { enum: ['draft', 'published', 'archived'] }, quebecFacing: { type: 'boolean' }, sequential: { type: 'boolean' }, ce: { anyOf: [{ type: 'null' }, { type: 'object', required: ['pack', 'hours', 'category'], additionalProperties: false, properties: { pack: { type: 'string', maxLength: 30 }, hours: { type: 'number', minimum: 0.5, maximum: 40 }, category: { enum: ['technical', 'management', 'ethics', 'professional_development', 'general'] } } }] } } } } },
+    { schema: { params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { title: { type: 'string', minLength: 1, maxLength: 200 }, description: { type: 'string', maxLength: 4000 }, locale: localeProp, status: { enum: ['draft', 'published', 'archived'] }, quebecFacing: { type: 'boolean' }, sequential: { type: 'boolean' }, enrollmentMode: { enum: ['open', 'approval'] }, ce: { anyOf: [{ type: 'null' }, { type: 'object', required: ['pack', 'hours', 'category'], additionalProperties: false, properties: { pack: { type: 'string', maxLength: 30 }, hours: { type: 'number', minimum: 0.5, maximum: 40 }, category: { enum: ['technical', 'management', 'ethics', 'professional_development', 'general'] } } }] } } } } },
     async (req, reply) => {
       const { ctx } = await deps.authenticate(req);
       const { id } = req.params as { id: string };
-      const b = req.body as { title?: string; description?: string; locale?: Locale; status?: string; quebecFacing?: boolean; sequential?: boolean; ce?: { pack: string; hours: number; category: string } | null };
+      const b = req.body as { title?: string; description?: string; locale?: Locale; status?: string; quebecFacing?: boolean; sequential?: boolean; enrollmentMode?: 'open' | 'approval'; ce?: { pack: string; hours: number; category: string } | null };
       await run(ctx, async (tx) => {
         const c = await loadCourse(tx, id);
         requireAuthor(ctx, c.owner_node_id);
@@ -170,6 +174,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
             [id, ctx.tenantId, l, b.title?.trim() ?? null, b.description ?? null]);
         }
         if (c.status === 'published' && (b.ce !== undefined || b.quebecFacing !== undefined || b.sequential !== undefined)) requireEditable(c.status);
+        if (b.enrollmentMode !== undefined) await tx.query('UPDATE courses SET enrollment_mode = $2, updated_at = now() WHERE id = $1', [id, b.enrollmentMode]);
         if (b.sequential !== undefined) await tx.query('UPDATE courses SET sequential = $2, updated_at = now() WHERE id = $1', [id, b.sequential]);
         if (b.status === 'published') {
           const n = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM lessons WHERE course_id = $1', [id])).rows[0]!.n;
@@ -354,6 +359,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       const canEdit = canAuthorAt(ctx, l.owner_node_id);
       if (l.status !== 'published' && !canEdit) throw notFound('Lesson not found');
       await assertUnlocked(tx, ctx, l.course_id, id, l.owner_node_id);
+      if (!canEdit && (await tx.query(`SELECT 1 FROM courses c WHERE c.id = $1 AND c.enrollment_mode = 'approval' AND NOT EXISTS (SELECT 1 FROM enrollments e WHERE e.course_id = c.id AND e.user_id = $2)`, [l.course_id, ctx.userId])).rowCount) throw forbidden('This course needs approval. Ask to join it first.');
       const ll = (await tx.query<{ title: string; body: Record<string, unknown> }>(
         `SELECT title, body FROM lesson_locales WHERE lesson_id = $1 AND locale IN ($2, 'en') ORDER BY (locale = $2) DESC LIMIT 1`, [id, lang])).rows[0];
       const enr = (await tx.query<{ id: string }>('SELECT id FROM enrollments WHERE user_id = $1 AND course_id = $2', [ctx.userId, l.course_id])).rows[0];
@@ -522,6 +528,73 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
                 (SELECT count(*)::int FROM enrollments e WHERE e.assignment_id = a.id) AS enrolled
            FROM course_assignments a JOIN org_nodes n ON n.id = a.node_id WHERE a.course_id = $1 ORDER BY n.name`, [id])).rows };
     });
+  });
+
+  // ------------------------------------------------------------------ asking to join a course
+  app.post('/v1/courses/:id/request', { schema: { params: idParams, body: { type: 'object', additionalProperties: false, properties: { note: { type: 'string', maxLength: 500 } } } } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    const note = ((req.body ?? {}) as { note?: string }).note?.trim() || null;
+    const made = await run(ctx, async (tx) => {
+      const c = await loadCourse(tx, id);
+      if (c.status !== 'published') throw forbidden('This course is not published yet');
+      if (c.enrollment_mode !== 'approval') throw invalid('This course is open: just start it');
+      if ((await tx.query('SELECT 1 FROM enrollments WHERE user_id = $1 AND course_id = $2', [ctx.userId, id])).rowCount) throw conflict('You are already enrolled');
+      const me = (await tx.query<{ home_node_id: string; name: string }>('SELECT home_node_id, coalesce(display_name, email::text) AS name FROM app_users WHERE id = $1', [ctx.userId])).rows[0]!;
+      const title = (await tx.query<{ t: string }>(`SELECT ${courseText('title', 'en')} AS t FROM courses c WHERE c.id = $1`, [id])).rows[0]!.t;
+      let rid: string;
+      try {
+        rid = (await tx.query<{ id: string }>('INSERT INTO enrollment_requests (tenant_id, course_id, user_id, learner_node_id, note) VALUES ($1,$2,$3,$4,$5) RETURNING id', [ctx.tenantId, id, ctx.userId, me.home_node_id, note])).rows[0]!.id;
+      } catch (e) { if ((e as { code?: string }).code === '23505') throw conflict('You have already asked to join this course'); throw e; }
+      await audit(tx, ctx, 'course_requested', 'course', id);
+      return { id: rid, node: me.home_node_id, name: me.name, title };
+    });
+    // tell the people who lead the learner's branch
+    const root = (await deps.authPool.query<{ node: string; admin: string | null }>(
+      `SELECT n.id AS node, (SELECT r.user_id FROM user_node_roles r WHERE r.node_id = n.id AND r.role = 'admin' ORDER BY r.user_id LIMIT 1) AS admin FROM org_nodes n WHERE n.tenant_id = $1 AND n.type = 'tenant' LIMIT 1`, [ctx.tenantId])).rows[0];
+    const who = root?.admin ? await withRequestTx(deps.appPool, { ...actingAs(ctx.tenantId, root.admin, root.node), isTenantAdmin: true }, async (tx) => (await tx.query<{ user_id: string }>(
+      `SELECT DISTINCT r.user_id FROM user_node_roles r JOIN org_reach g ON g.ancestor_id = r.node_id AND g.descendant_id = $1
+         JOIN app_users u ON u.id = r.user_id AND u.status::text <> 'disabled'
+        WHERE r.role::text IN ('admin', 'manager', 'trainer') AND r.user_id <> $2`, [made.node, ctx.userId])).rows.map((r) => r.user_id)) : [];
+    await tell(deps, ctx.tenantId, who, 'course_request', ctx.userId, { name: made.name, course: made.title, courseId: id, note });
+    return reply.code(201).send({ id: made.id });
+  });
+
+  /** Pending requests the caller can answer (for one course, or all). Learners see their own through the course page. */
+  app.get('/v1/course-requests', { schema: { querystring: { type: 'object', properties: { courseId: uuid } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const { courseId } = req.query as { courseId?: string };
+    return run(ctx, async (tx) => {
+      const rows = (await tx.query<{ id: string; courseId: string; course: string; ownerNodeId: string; userId: string; name: string; email: string; note: string | null; createdAt: string }>(
+        `SELECT q.id, q.course_id AS "courseId", ${courseText('title', 'en')} AS course, c.owner_node_id AS "ownerNodeId", q.user_id AS "userId",
+                coalesce(u.display_name, u.email::text) AS name, u.email::text AS email, q.note, q.created_at AS "createdAt"
+           FROM enrollment_requests q JOIN courses c ON c.id = q.course_id JOIN app_users u ON u.id = q.user_id
+          WHERE q.status = 'pending' AND ($1::uuid IS NULL OR q.course_id = $1) ORDER BY q.created_at LIMIT 200`, [courseId ?? null])).rows;
+      return { requests: rows.filter((r) => r.userId !== ctx.userId && canAuthorAt(ctx, r.ownerNodeId)).map(({ ownerNodeId, ...r }) => r) };
+    });
+  });
+
+  app.post('/v1/course-requests/:id/decision', { schema: { params: idParams, body: { type: 'object', required: ['decision'], additionalProperties: false, properties: { decision: { enum: ['approve', 'decline'] }, note: { type: 'string', maxLength: 500 } } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    const b = req.body as { decision: 'approve' | 'decline'; note?: string };
+    const out = await run(ctx, async (tx) => {
+      const q = (await tx.query<{ course_id: string; user_id: string; learner_node_id: string; status: string; owner: string; title: string }>(
+        `SELECT q.course_id, q.user_id, q.learner_node_id, q.status, c.owner_node_id AS owner, ${courseText('title', 'en')} AS title FROM enrollment_requests q JOIN courses c ON c.id = q.course_id WHERE q.id = $1`, [id])).rows[0];
+      if (!q) throw notFound('Request not found');
+      requireAuthor(ctx, q.owner);
+      if (q.user_id === ctx.userId) throw forbidden('Someone else needs to answer your request');
+      if (q.status !== 'pending') throw conflict('This request was already answered');
+      const decision = b.decision === 'approve' ? 'approved' : 'declined';
+      await tx.query('UPDATE enrollment_requests SET status = $2, decision_note = $3, decided_by = $4, decided_at = now() WHERE id = $1', [id, decision, b.note?.trim() || null, ctx.userId]);
+      if (decision === 'approved') {
+        await tx.query(`INSERT INTO enrollments (tenant_id, user_id, course_id, learner_node_id) VALUES ($1,$2,$3,$4) ON CONFLICT (user_id, course_id) DO NOTHING`, [ctx.tenantId, q.user_id, q.course_id, q.learner_node_id]);
+      }
+      await audit(tx, ctx, `course_request_${decision}`, 'course', q.course_id, { userId: q.user_id });
+      return { userId: q.user_id, title: q.title, decision, courseId: q.course_id };
+    });
+    await tell(deps, ctx.tenantId, [out.userId], 'course_decision', ctx.userId, { course: out.title, courseId: out.courseId, decision: out.decision, note: b.note?.trim() || null });
+    return { decision: out.decision };
   });
 
   /** Published versions of a course, newest first, for the people who can edit it. */
