@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "PII by Punjab Insurance",
   "short_name": "PII",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "CRM and training for your insurance partners, inside Gmail.",
   "icons": {
     "16": "icon-16.png",
@@ -23,7 +23,6 @@
   ],
   "host_permissions": [
     "https://mail.google.com/*",
-    "https://inbox.google.com/*",
     "https://*.punjabinsurance.co/*"
   ],
   "background": {
@@ -32,8 +31,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://mail.google.com/*",
-        "https://inbox.google.com/*"
+        "https://mail.google.com/*"
       ],
       "js": [
         "content.js"
@@ -56,8 +54,7 @@
         "icons/*.svg"
       ],
       "matches": [
-        "https://mail.google.com/*",
-        "https://inbox.google.com/*"
+        "https://mail.google.com/*"
       ]
     }
   ]

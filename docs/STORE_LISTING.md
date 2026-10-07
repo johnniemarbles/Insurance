@@ -39,11 +39,11 @@ Let invited insurance partners manage clients, renewals, training and licence co
 ## Permission justifications
 - **storage:** remembers the chosen country and small display settings.
 - **scripting:** lets the Gmail integration library (InboxSDK) load its page script so the PII panel can appear inside Gmail. No remote code is downloaded or run.
-- **Host mail.google.com / inbox.google.com:** shows the PII panel and menu inside Gmail and reads the open conversation only when the person links it to a record.
+- **Host mail.google.com:** shows the PII panel and menu inside Gmail and reads the open conversation only when the person links it to a record.
 - **Host *.punjabinsurance.co:** talks to the PII service for the person's own data (ca. and us. are the sign-in addresses).
 
 ## Data disclosures (Privacy practices tab)
-- Collected: personally identifiable information (name, email), authentication information, user activity inside the product (training progress, CE log), website content (emails the person links), files the person uploads (CE proof, licence documents).
+- Collected: personally identifiable information (name, email), authentication information, user activity inside the product (training progress, CE log), personal communications (the sender, recipients, subject and text of an email, saved only when the person links that conversation to a record), financial and health information only if the person types it into a note or field, files the person uploads (CE proof, licence documents).
 - Not sold. Not used for creditworthiness or lending. Not used for advertising. Not transferred except to our hosting and AI providers to run the service.
 - Remote code: none.
 - Certify all three Limited Use statements.
