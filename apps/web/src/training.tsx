@@ -226,7 +226,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
 }
 
 interface QuizQ { id: string; type: string; prompt: string; options: { key: string; text: string }[]; correct?: string[] }
-interface LessonDetail { id: string; courseId: string; type: string; title: string; body: { text?: string; url?: string }; required: boolean; done: boolean; canEdit: boolean; quiz?: { passMark: number | null; maxAttempts: number | null; baseMaxAttempts?: number | null; cooldownMinutes?: number | null; status?: { allowed: boolean; reason: string | null; left: number | null; nextAt: string | null }; attempts: { scorePct: number; passed: boolean }[]; questions: QuizQ[] } }
+interface LessonDetail { id: string; courseId: string; type: string; title: string; body: { text?: string; url?: string }; required: boolean; done: boolean; canEdit: boolean; quiz?: { bankSize?: number; draw?: number | null; baseDraw?: number | null; passMark: number | null; maxAttempts: number | null; baseMaxAttempts?: number | null; cooldownMinutes?: number | null; status?: { allowed: boolean; reason: string | null; left: number | null; nextAt: string | null }; attempts: { scorePct: number; passed: boolean }[]; questions: QuizQ[] } }
 
 function LessonPage({ id, call, t, locale, onBack, onLesson }: { id: string; call: Call; t: Strings; locale: Locale; onBack: () => void; onLesson: (id: string) => void }) {
   const [l, setL] = useState<LessonDetail | null>(null);
@@ -238,7 +238,7 @@ function LessonPage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
   const [url, setUrl] = useState('');
   const [editing, setEditing] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
-  const [rules, setRules] = useState<{ pass: string; max: string; wait: string } | null>(null);
+  const [rules, setRules] = useState<{ pass: string; max: string; wait: string; draw: string } | null>(null);
   const [learners, setLearners] = useState<{ userId: string; displayName: string | null; email: string }[] | null>(null);
   const [grantTo, setGrantTo] = useState('');
   const [note, setNote] = useState('');
@@ -299,6 +299,8 @@ function LessonPage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
               : st.left !== null ? (fr ? `Tentatives restantes : ${st.left}` : `Attempts left: ${st.left}`) : '';
             return msg ? <p class={st.allowed ? 'muted' : 'overdue'} role="status">{msg}</p> : null;
           })()}
+          {l.quiz.draw && !l.canEdit && <p class="muted">{fr ? `Chaque essai pose ${l.quiz.draw} questions tirées d’une banque de ${l.quiz.bankSize}.` : `Each attempt asks ${l.quiz.draw} questions drawn from a bank of ${l.quiz.bankSize}.`}</p>}
+          {l.canEdit && l.quiz.baseDraw && <p class="muted">{fr ? `Aperçu éditeur : toute la banque (${l.quiz.bankSize}) s’affiche ; chaque apprenant reçoit ${l.quiz.baseDraw} questions au hasard.` : `Editor preview: the whole bank (${l.quiz.bankSize}) is shown; each learner gets ${l.quiz.baseDraw} random questions.`}</p>}
           {l.quiz.questions.length === 0 && <p class="muted">{t.noQuestions}</p>}
           {l.quiz.questions.map((q, n) => (
             <fieldset class="q" key={q.id}>
@@ -335,12 +337,12 @@ function LessonPage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
 
       {l.canEdit && l.type === 'quiz' && l.quiz && (() => {
         const fr = locale === 'fr-CA';
-        const r = rules ?? { pass: String(l.quiz!.passMark ?? 70), max: String(l.quiz!.baseMaxAttempts ?? ''), wait: String(l.quiz!.cooldownMinutes ?? '') };
-        const set = (k: 'pass' | 'max' | 'wait') => (e: Event) => setRules({ ...r, [k]: (e.target as HTMLInputElement).value });
+        const r = rules ?? { pass: String(l.quiz!.passMark ?? 70), max: String(l.quiz!.baseMaxAttempts ?? ''), wait: String(l.quiz!.cooldownMinutes ?? ''), draw: String(l.quiz!.baseDraw ?? '') };
+        const set = (k: 'pass' | 'max' | 'wait' | 'draw') => (e: Event) => setRules({ ...r, [k]: (e.target as HTMLInputElement).value });
         const save = async () => {
           setErr(''); setNote('');
           try {
-            await call('PATCH', `/v1/lessons/${id}`, { passMark: Number(r.pass), maxAttempts: r.max.trim() ? Number(r.max) : null, cooldownMinutes: r.wait.trim() ? Number(r.wait) : null });
+            await call('PATCH', `/v1/lessons/${id}`, { passMark: Number(r.pass), maxAttempts: r.max.trim() ? Number(r.max) : null, cooldownMinutes: r.wait.trim() ? Number(r.wait) : null, quizDraw: r.draw.trim() ? Number(r.draw) : null });
             setRules(null); setNote(fr ? 'Enregistré.' : 'Saved.'); load();
           } catch (e) { setErr((e as Error).message); }
         };
@@ -353,6 +355,7 @@ function LessonPage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
               <label>{fr ? 'Note de passage (%)' : 'Pass mark (%)'} <input type="number" min={0} max={100} value={r.pass} onInput={set('pass')} style={{ width: '5em' }} /></label>
               <label>{fr ? 'Tentatives max.' : 'Max attempts'} <input type="number" min={1} max={50} placeholder={fr ? 'illimité' : 'unlimited'} value={r.max} onInput={set('max')} style={{ width: '6em' }} /></label>
               <label>{fr ? 'Attente entre les essais (min)' : 'Wait between tries (min)'} <input type="number" min={1} max={10080} placeholder={fr ? 'aucune' : 'none'} value={r.wait} onInput={set('wait')} style={{ width: '6em' }} /></label>
+              <label>{fr ? 'Questions par essai (banque)' : 'Questions per attempt (bank)'} <input type="number" min={1} max={100} placeholder={fr ? 'toutes' : 'all'} value={r.draw} onInput={set('draw')} style={{ width: '6em' }} /></label>
               <button class="btn quiet" onClick={() => void save()}>{t.saveBtn}</button>
             </div>
             {l.quiz!.baseMaxAttempts ? (

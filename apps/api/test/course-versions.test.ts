@@ -302,3 +302,23 @@ test('learning paths: authors build them, learners start them, assigning enrols 
   assert.equal((await call(ADMIN, 'DELETE', `/v1/paths/${pid}`)).status, 204);
   assert.equal((await call(ADMIN, 'GET', '/v1/paths')).json.paths.length, 0);
 });
+
+test('question bank: each attempt draws a fixed random subset and grades only that subset', async () => {
+  const c = (await call(ADMIN, 'POST', '/v1/courses', { title: 'Bank course', ownerNodeId: co.rootNodeId })).json.id;
+  const ql = (await call(ADMIN, 'POST', `/v1/courses/${c}/lessons`, { title: 'Bank quiz', type: 'quiz' })).json.id;
+  const qs = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'].map((p) => ({ prompt: p, options: ['right', 'wrong'], correct: [0] }));
+  assert.equal((await call(ADMIN, 'PUT', `/v1/lessons/${ql}/quiz`, { questions: qs })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/lessons/${ql}`, { quizDraw: 3 })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c}`, { status: 'published' })).status, 204);
+  const first = (await call(A, 'GET', `/v1/lessons/${ql}`)).json.quiz;
+  assert.equal(first.questions.length, 3); assert.equal(first.bankSize, 6); assert.equal(first.draw, 3);
+  assert.equal((await call(A, 'GET', `/v1/lessons/${ql}`)).json.quiz.questions.map((q: any) => q.id).join(), first.questions.map((q: any) => q.id).join(), 'the draw is stable until the attempt is made');
+  assert.equal((await call(ADMIN, 'GET', `/v1/lessons/${ql}`)).json.quiz.questions.length, 6, 'authors see the whole bank');
+  // answer the three drawn questions wrongly: all three are graded, nothing more
+  const wrong = Object.fromEntries(first.questions.map((q: any) => [q.id, [q.options[1].key]]));
+  const r = await call(A, 'POST', `/v1/lessons/${ql}/quiz/attempt`, { answers: wrong });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.results.length, 3);
+  assert.deepEqual(r.json.results.map((x: any) => x.questionId).sort(), first.questions.map((q: any) => q.id).sort());
+  assert.equal(r.json.scorePct, 0);
+});
