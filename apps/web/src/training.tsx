@@ -36,6 +36,10 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
   const [err, setErr] = useState('');
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
+  const [starters, setStarters] = useState<{ key: string; title: Record<string, string>; description: Record<string, string> }[]>([]);
+  const [showStarters, setShowStarters] = useState(false);
+  const addStarter = async (key: string) => { try { const r = await call('POST', '/v1/courses/starter', { key }); onOpen(r.id); } catch (x) { setErr((x as Error).message); } };
+  const openStarters = () => { setShowStarters(true); if (!starters.length) call('GET', '/v1/courses/starter').then((r) => setStarters(r.courses), (e) => setErr((e as Error).message)); };
   const load = useCallback(() => { call('GET', `/v1/courses?locale=${locale}`).then((r) => setCourses(r.courses), (e) => setErr((e as Error).message)); }, [call, locale]);
   useEffect(load, [load]);
   const create = async (e: Event) => {
@@ -58,6 +62,7 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
     <div class="tpad">
       <div class="bar" style={{ padding: 0, border: 0 }}>
         <h1>{t.training}</h1><span class="spacer" />
+        {canAuthor && <button class="btn quiet" onClick={openStarters}>{t.starterCourse}</button>}
         {canAuthor && <button class="btn" onClick={() => setAdding(true)}>+ {t.newCourse}</button>}
       </div>
       {err && <div class="err">{err}</div>}
@@ -66,6 +71,12 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
           <input autofocus placeholder={t.courseTitle} aria-label={t.courseTitle} value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} />
           <button class="btn" disabled={!title.trim()}>{t.create}</button><button type="button" class="btn quiet" onClick={() => setAdding(false)}>{t.cancel}</button>
         </form>
+      )}
+      {showStarters && (
+        <div class="tpad"><small class="muted">{t.starterHint}</small>
+          {starters.map((s) => { const k = locale === 'fr-CA' ? 'fr' : 'en'; return <div class="erow" key={s.key}><span><b>{s.title[k]}</b><br /><span class="muted">{s.description[k]}</span></span><button class="btn" onClick={() => addStarter(s.key)}>{t.addStarter}</button></div>; })}
+          <button class="btn quiet" onClick={() => setShowStarters(false)}>{t.cancel}</button>
+        </div>
       )}
       {courses.length === 0 && <div class="msg">{t.noCourses}</div>}
       {mine.length > 0 && <><h3>{t.myLearning}</h3><div class="cgrid">{mine.map(card)}</div></>}

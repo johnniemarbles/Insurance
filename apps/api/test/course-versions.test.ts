@@ -189,3 +189,22 @@ test('courses that need approval: ask, get told, approve or decline', async () =
   assert.equal((await call(B, 'GET', `/v1/courses/${c}`)).json.myRequest.status, 'declined');
   assert.equal((await call(B, 'POST', `/v1/courses/${c}/request`, {})).status, 201);
 });
+
+test('starter courses: listed, copied as drafts in both languages, authors only, quiz works', async () => {
+  const list = (await call(A, 'GET', '/v1/courses/starter')).json.courses;
+  assert.equal(list.length, 3); assert.ok(list.every((c: any) => c.lessons === 3 && c.questions === 5));
+  assert.equal((await call(A, 'POST', '/v1/courses/starter', { key: 'eo-basics' })).status, 403, 'learners cannot add courses');
+  assert.equal((await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'nope' })).status, 404);
+  const made = await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'privacy-basics' });
+  assert.equal(made.status, 201);
+  const id = made.json.id;
+  const en = (await call(ADMIN, 'GET', `/v1/courses/${id}?locale=en`)).json;
+  const fr = (await call(ADMIN, 'GET', `/v1/courses/${id}?locale=fr-CA`)).json;
+  assert.equal(en.status, 'draft'); assert.equal(en.lessons.length, 4);
+  assert.notEqual(en.title, fr.title);
+  assert.notEqual((await call(A, 'POST', `/v1/courses/${id}/enroll`)).status, 201, 'learners cannot start a draft');
+  const quiz = en.lessons.find((l: any) => l.type === 'quiz');
+  const q = (await call(ADMIN, 'GET', `/v1/lessons/${quiz.id}`)).json.quiz.questions;
+  assert.equal(q.length, 5);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${id}`, { status: 'published' })).status, 204, 'a reviewer can publish it');
+});

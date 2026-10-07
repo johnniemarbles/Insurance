@@ -6,6 +6,7 @@ import { audit } from './audit.ts';
 import { conflict, forbidden, invalid, notFound } from './errors.ts';
 import { tell } from './routes-compliance.ts';
 import { actingAs } from './effects.ts';
+import { STARTER_COURSES } from './starter-courses.ts';
 import { uuid } from './crm-helpers.ts';
 import { recordCeForCompletion } from './routes-ce.ts';
 import type { AppDeps } from './app.ts';
@@ -528,6 +529,46 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
                 (SELECT count(*)::int FROM enrollments e WHERE e.assignment_id = a.id) AS enrolled
            FROM course_assignments a JOIN org_nodes n ON n.id = a.node_id WHERE a.course_id = $1 ORDER BY n.name`, [id])).rows };
     });
+  });
+
+  // ------------------------------------------------------------------ starter courses
+  app.get('/v1/courses/starter', async (req) => {
+    await deps.authenticate(req);
+    return { courses: STARTER_COURSES.map((c) => ({ key: c.key, title: c.title, description: c.description, lessons: c.lessons.length, questions: c.quiz.length })) };
+  });
+
+  /** Copies a starter course into the company as an unpublished draft, in both languages. Run again, it makes another copy. */
+  app.post('/v1/courses/starter', { schema: { body: { type: 'object', required: ['key'], additionalProperties: false, properties: { key: { type: 'string', maxLength: 40 }, ownerNodeId: uuid } } } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const b = req.body as { key: string; ownerNodeId?: string };
+    const sc = STARTER_COURSES.find((c) => c.key === b.key);
+    if (!sc) throw notFound('Unknown starter course');
+    const owner = b.ownerNodeId ?? authorNodes(ctx)[0] ?? ctx.nodeIds[0];
+    if (!owner || !canAuthorAt(ctx, owner)) throw forbidden('Only a trainer, manager or administrator can add a course');
+    const out = await run(ctx, async (tx) => {
+      const id = randomUUID();
+      await tx.query(`INSERT INTO courses (id, tenant_id, owner_node_id, default_locale, quebec_facing, created_by) VALUES ($1,$2,$3,'en',false,$4)`, [id, ctx.tenantId, owner, ctx.userId]);
+      for (const [loc, key] of [['en', 'en'], ['fr-CA', 'fr']] as const)
+        await tx.query(`INSERT INTO course_locales (course_id, tenant_id, locale, title, description, is_published) VALUES ($1,$2,$3,$4,$5,true)`, [id, ctx.tenantId, loc, sc.title[key], sc.description[key]]);
+      const mod = (await tx.query<{ id: string }>(`INSERT INTO course_modules (tenant_id, course_id, position, titles) VALUES ($1,$2,1,$3) RETURNING id`, [ctx.tenantId, id, JSON.stringify({ en: 'Lessons', 'fr-CA': 'Leçons' })])).rows[0]!.id;
+      let pos = 0;
+      for (const l of sc.lessons) {
+        const lid = randomUUID();
+        await tx.query(`INSERT INTO lessons (id, tenant_id, course_id, module_id, position, type, required) VALUES ($1,$2,$3,$4,$5,'richtext',true)`, [lid, ctx.tenantId, id, mod, ++pos]);
+        for (const [loc, key] of [['en', 'en'], ['fr-CA', 'fr']] as const)
+          await tx.query(`INSERT INTO lesson_locales (lesson_id, tenant_id, locale, title, body) VALUES ($1,$2,$3,$4,$5)`, [lid, ctx.tenantId, loc, l.title[key], JSON.stringify({ text: l.text[key] })]);
+      }
+      const qid = randomUUID();
+      await tx.query(`INSERT INTO lessons (id, tenant_id, course_id, module_id, position, type, required, pass_mark) VALUES ($1,$2,$3,$4,$5,'quiz',true,80)`, [qid, ctx.tenantId, id, mod, ++pos]);
+      await tx.query(`INSERT INTO lesson_locales (lesson_id, tenant_id, locale, title, body) VALUES ($1,$2,'en',$3,'{}'), ($1,$2,'fr-CA',$4,'{}')`, [qid, ctx.tenantId, 'Check your knowledge', 'Vérifiez vos connaissances']);
+      for (const [i, q] of sc.quiz.entries()) {
+        const content = Object.fromEntries((['en', 'fr-CA'] as const).map((loc) => { const k = loc === 'en' ? 'en' : 'fr'; return [loc, { prompt: q.q[k], options: q.options.map((o, n) => ({ key: String(n), text: o[k] })) }]; }));
+        await tx.query(`INSERT INTO quiz_questions (tenant_id, lesson_id, position, type, content, correct, points) VALUES ($1,$2,$3,'single',$4,$5,1)`, [ctx.tenantId, qid, i + 1, JSON.stringify(content), JSON.stringify([String(q.correct)])]);
+      }
+      await audit(tx, ctx, 'course_created', 'course', id, { starter: sc.key });
+      return { id };
+    });
+    return reply.code(201).send(out);
   });
 
   // ------------------------------------------------------------------ asking to join a course
