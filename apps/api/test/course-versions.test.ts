@@ -208,6 +208,9 @@ test('starter courses: listed, copied as drafts in both languages, authors only,
   assert.equal(en.status, 'draft'); assert.equal(en.lessons.length, 4);
   assert.notEqual(en.title, fr.title);
   assert.notEqual((await call(A, 'POST', `/v1/courses/${id}/enroll`)).status, 201, 'learners cannot start a draft');
+  assert.equal((await call(A, 'GET', `/v1/courses/${id}`)).status, 404, 'a draft is hidden from learners');
+  assert.ok(!(await call(A, 'GET', '/v1/courses')).json.courses.some((x: any) => x.id === id), 'and missing from their list');
+  assert.ok((await call(ADMIN, 'GET', '/v1/courses')).json.courses.some((x: any) => x.id === id));
   const quiz = en.lessons.find((l: any) => l.type === 'quiz');
   const q = (await call(ADMIN, 'GET', `/v1/lessons/${quiz.id}`)).json.quiz.questions;
   assert.equal(q.length, 5);

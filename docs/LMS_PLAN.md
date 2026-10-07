@@ -27,3 +27,6 @@ Competency frameworks, SCORM/LTI/xAPI, discussions and moderation, AI pipeline /
 - **Fourth starter course:** Handling client money (draft, en + fr-CA, counsel review needed).
 - **Unicode PDF certificates:** Gurmukhi, Devanagari and accented Latin names print with Noto fonts (no more redirect to the printable page).
 - **Quiz rules in the editor** (pass mark, max attempts, wait between tries) and **managers can give a learner extra attempts**.
+- **One email per person per day:** the daily run gathers a person's reminders into a single email.
+- **Learner told** when a manager gives another quiz attempt.
+- **Drafts hidden:** a draft course is visible only to people who can edit it, so starter courses never reach learners before they are published.

@@ -131,7 +131,8 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
                 e.status AS "myStatus", e.progress_pct::float8 AS "myProgress", e.due_at AS "myDueAt"
            FROM courses c LEFT JOIN enrollments e ON e.course_id = c.id AND e.user_id = $1
           WHERE c.status <> 'archived' ORDER BY c.created_at DESC`, [ctx.userId])).rows as Array<Record<string, unknown> & { ownerNodeId: string }>;
-      return { courses: rows.map((r) => ({ ...r, canEdit: canAuthorAt(ctx, r.ownerNodeId) })) };
+      // a draft is the author's work in progress: nobody else sees it until it is published
+      return { courses: rows.map((r) => ({ ...r, canEdit: canAuthorAt(ctx, r.ownerNodeId) })).filter((r) => (r as { status?: unknown }).status !== 'draft' || r.canEdit) };
     });
   });
 
@@ -142,6 +143,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     return run(ctx, async (tx) => {
       const c = (await tx.query(`SELECT c.id, c.status, c.version, c.sequential, c.enrollment_mode AS "enrollmentMode", c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
       if (!c) throw notFound('Course not found');
+      if (c.status === 'draft' && !canAuthorAt(ctx, c.ownerNodeId)) throw notFound('Course not found');
       const e = (await tx.query(`SELECT id, status, course_version AS "courseVersion", last_lesson_id AS "lastLessonId", progress_pct::float8 AS "progressPct", due_at AS "dueAt", completed_at AS "completedAt" FROM enrollments WHERE course_id = $1 AND user_id = $2`, [id, ctx.userId])).rows[0] ?? null;
       const lessons = (await tx.query(
         `SELECT l.id, l.module_id AS "moduleId", l.position, l.type, l.required, l.pass_mark AS "passMark", ${lessonTitle(l)} AS title, (p.status = 'completed') AS done
