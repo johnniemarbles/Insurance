@@ -29,9 +29,9 @@ const T: Record<string, Theme> = {
 const SPARE: [string, string][] = [['#2563eb', '#7c3aed'], ['#0d9488', '#16a34a'], ['#ea580c', '#db2777'], ['#4338ca', '#0ea5e9'], ['#a21caf', '#6366f1']];
 const hash = (s: string) => [...s].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
 export const themeOf = (c: CatalogCourse): Theme => (c.starterKey && T[c.starterKey]) || { a: SPARE[hash(c.title) % SPARE.length]![0], b: SPARE[hash(c.title) % SPARE.length]![1], icon: 'book', cat: 'other' };
-export const minutesOf = (c: CatalogCourse) => Math.max(1, Math.round((c.words ?? 0) / 180 + (c.videos ?? 0) * 3 + (c.questions ?? 0) * 0.5));
+export const minutesOf = (c: CatalogCourse) => Math.max(1, Math.round((c.words ?? 0) / 150 + (c.videos ?? 0) * 3 + (c.questions ?? 0) * 0.5));
 
-const ICON: Record<Icon, preact.JSX.Element> = {
+export const ICONS: Record<Icon, preact.JSX.Element> = {
   money: <><circle cx="55" cy="55" r="34" fill="#fff" opacity=".22" /><circle cx="55" cy="55" r="22" fill="#fff" opacity=".35" /><text x="55" y="64" font-size="26" font-weight="800" fill="#fff" text-anchor="middle">$</text></>,
   shield: <><path d="M50 12l32 12v24c0 22-14 36-32 42C32 84 18 70 18 48V24z" fill="#fff" opacity=".28" /><path d="M36 50l10 10 18-22" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round" /></>,
   mail: <><rect x="14" y="26" width="72" height="50" rx="8" fill="#fff" opacity=".28" /><path d="M14 34l36 24 36-24" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round" /><circle cx="78" cy="30" r="12" fill="#fbbf24" /><text x="78" y="35" font-size="16" font-weight="800" fill="#1c1d1f" text-anchor="middle">!</text></>,
@@ -93,7 +93,7 @@ export function Catalog({ courses, locale, onOpen }: { courses: CatalogCourse[];
               {(c.videos ?? 0) > 0 && <span class="cc-tag">▶ {x.video}</span>}
               {c.ceHours ? <span class="cc-tag ce">{x.ce(c.ceHours)}</span> : null}
             </div>
-            <svg viewBox="0 0 100 100" aria-hidden="true">{ICON[t.icon]}</svg>
+            <svg viewBox="0 0 100 100" aria-hidden="true">{ICONS[t.icon]}</svg>
           </div>
           <div class="cc-b">
             <h3>{c.title}</h3>

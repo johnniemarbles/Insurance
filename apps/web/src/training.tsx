@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { Strings } from './i18n.ts';
 import type { Locale } from './types.ts';
 import { CourseCe, MyCe, PeopleCe, ceStrings } from './ce.tsx';
-import { Catalog } from './catalog.tsx';
+import { Catalog, themeOf, ICONS } from './catalog.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface CourseRow { id: string; status: string; title: string; description: string; lessonCount: number; myStatus: string | null; myProgress: number | null; myDueAt: string | null; canEdit: boolean }
-interface LessonRow { id: string; type: string; title: string; required: boolean; done: boolean; locked?: boolean }
-interface CourseDetail { id: string; enrollmentMode?: 'open' | 'approval'; myRequest?: { status: string; decisionNote: string | null } | null; version?: number; sequential?: boolean; resumeLessonId?: string | null; status: string; title: string; description: string; cePack: string | null; ceHours: number | null; ceCategory: string | null; canEdit: boolean; enrollment: { status: string; progressPct: number; dueAt: string | null } | null; certificate: { verificationCode: string; issuedAt: string; url?: string } | null; lessons: LessonRow[]; locales?: { locale: string; title: string; description: string | null }[] }
+interface LessonRow { id: string; type: string; title: string; required: boolean; done: boolean; locked?: boolean; words?: number | null; questions?: number }
+const lessonMin = (l: LessonRow) => (l.type === 'video' ? 3 : l.type === 'quiz' ? Math.max(1, Math.round((l.questions ?? 0) * 0.5)) : Math.max(1, Math.round((l.words ?? 0) / 150)));
+interface CourseDetail { id: string; starterKey?: string | null; enrollmentMode?: 'open' | 'approval'; myRequest?: { status: string; decisionNote: string | null } | null; version?: number; sequential?: boolean; resumeLessonId?: string | null; status: string; title: string; description: string; cePack: string | null; ceHours: number | null; ceCategory: string | null; canEdit: boolean; enrollment: { status: string; progressPct: number; dueAt: string | null } | null; certificate: { verificationCode: string; issuedAt: string; url?: string } | null; lessons: LessonRow[]; locales?: { locale: string; title: string; description: string | null }[] }
 type View = { k: 'list' } | { k: 'course'; id: string } | { k: 'lesson'; courseId: string; id: string };
 
 const move = <T,>(a: T[], i: number, d: number): T[] => { const b = [...a]; const j = i + d; if (j < 0 || j >= b.length) return b; [b[i], b[j]] = [b[j]!, b[i]!]; return b; };
@@ -95,13 +96,43 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
   if (!c) return <div class="msg">{err || t.loading}</div>;
   const en = c.locales?.find((l) => l.locale === 'en');
   return (
-    <div class="tpad">
-      <button class="link" onClick={onBack}>← {t.training}</button>
-      <h1>{c.title} {c.status === 'draft' && <span class="tag">{t.draft}</span>}{(c.version ?? 0) > 0 && <span class="tag">v{c.version}</span>}</h1>
+    <div class="cp">
+      {(() => {
+        const th = themeOf({ title: c.title, starterKey: c.starterKey } as any);
+        const mins = c.lessons.reduce((n, l) => n + lessonMin(l), 0);
+        const doneN = c.lessons.filter((l) => l.done).length;
+        const fr = locale === 'fr-CA';
+        const inP = c.enrollment && c.enrollment.status !== 'completed';
+        return <>
+          <div class="cp-hero">
+            <button class="link cp-back" onClick={onBack}>← {t.training}</button>
+            <h1>{c.title}</h1>
+            <p class="cp-lead">{c.description}</p>
+            <div class="cp-meta">
+              {c.status === 'draft' && <span class="cc-tag dr">{fr ? 'BROUILLON' : 'DRAFT'}</span>}
+              {(c.version ?? 0) > 0 && <span class="cc-tag dr">v{c.version}</span>}
+              {c.enrollment?.dueAt && c.enrollment.status !== 'completed' && <span class="cc-tag req">{fr ? 'OBLIGATOIRE' : 'REQUIRED'}</span>}
+              {c.enrollment?.dueAt && c.enrollment.status !== 'completed' && <span>{t.due} {new Date(c.enrollment.dueAt).toLocaleDateString(locale, { month: 'short', day: 'numeric' })}</span>}
+              <span>⏱ {mins} min</span><span>{t.lessons(c.lessons.length)}</span><span>EN · FR</span>
+              {c.ceHours ? <span>{fr ? 'FC' : 'CE'} {c.ceHours} h</span> : null}
+            </div>
+          </div>
+          <div class="cp-grid">
+            <aside class="cp-side">
+              <div class="cp-cover" style={{ background: `linear-gradient(135deg,${th.a},${th.b})` }}><svg viewBox="0 0 100 100" aria-hidden="true">{ICONS[th.icon]}</svg>{c.resumeLessonId && <button class="cp-play" aria-label={fr ? 'Commencer' : 'Start'} onClick={() => onLesson(c.resumeLessonId!)}>▶</button>}</div>
+              <div class="cp-sb">
+                {c.enrollment && <div class="cp-prog"><b>{c.enrollment.status === 'completed' ? `✓ ${t.completed}` : `${Math.round(c.enrollment.progressPct)}% ${fr ? 'terminé' : 'complete'}`}</b>{c.enrollment.status !== 'completed' && <span> · {fr ? 'leçon' : 'lesson'} {Math.min(doneN + 1, c.lessons.length)} / {c.lessons.length}</span>}<Bar pct={c.enrollment.progressPct} /></div>}
+                {c.resumeLessonId && <button class="cp-cta" onClick={() => onLesson(c.resumeLessonId!)}>{inP && c.enrollment!.progressPct > 0 ? (fr ? 'Continuer le cours' : 'Continue course') : (fr ? 'Commencer le cours' : 'Start course')}</button>}
+                {c.certificate && <div class="cp-cert">🎓 {t.certificate}: <b>{c.certificate.verificationCode}</b><br />{new Date(c.certificate.issuedAt).toLocaleDateString(locale)}{c.certificate.url && <> · <a href={c.certificate.url} target="_blank" rel="noopener noreferrer">{ceStrings(locale).certOpen}</a> · <a href={`${c.certificate.url}/pdf`} target="_blank" rel="noopener noreferrer">PDF</a></>}</div>}
+                <ul class="cp-facts">
+                  <li>▣ {t.lessons(c.lessons.filter((l) => l.type !== 'quiz').length)}{c.lessons.some((l) => l.type === 'quiz') ? (fr ? ' et un quiz' : ' and a quiz') : ''}</li>
+                  {c.lessons.some((l) => l.type === 'quiz') && <li>✓ {fr ? 'Note de passage et reprises selon le quiz' : 'Pass mark and retries set by the quiz'}</li>}
+                  <li>◷ {fr ? 'À votre rythme' : 'Self-paced'}</li><li>🎓 {fr ? 'Certificat de réussite' : 'Certificate of completion'}</li>
+                </ul>
+              </div>
+            </aside>
+            <div class="cp-main">
       {c.canEdit && c.status === 'published' && <p class="muted">{locale === 'fr-CA' ? 'Cette formation est publiée, donc ses leçons sont verrouillées. Annulez la publication, modifiez, puis publiez de nouveau pour créer une nouvelle version.' : 'This course is published, so its lessons are locked. Unpublish it, make your changes, then publish again to release a new version.'}</p>}
-      <p class="muted">{c.description}</p>
-      {c.enrollment && <><Bar pct={c.enrollment.progressPct} /><small>{c.enrollment.status === 'completed' ? `✓ ${t.completed}` : `${Math.round(c.enrollment.progressPct)}%`}{c.enrollment.dueAt && c.enrollment.status !== 'completed' ? ` · ${t.due} ${new Date(c.enrollment.dueAt).toLocaleDateString(locale)}` : ''}</small></>}
-      {c.certificate && <p class="ok">🎓 {t.certificate}: <b>{c.certificate.verificationCode}</b> · {new Date(c.certificate.issuedAt).toLocaleDateString(locale)}{c.certificate.url && <> · <a href={c.certificate.url} target="_blank" rel="noopener noreferrer">{ceStrings(locale).certOpen}</a> · <a href={`${c.certificate.url}/pdf`} target="_blank" rel="noopener noreferrer">PDF</a></>}</p>}
       {err && <div class="err">{err}</div>}{note && <div class="ok">{note}</div>}
 
       {!c.canEdit && !c.enrollment && c.enrollmentMode === 'approval' && c.status === 'published' && (() => {
@@ -112,12 +143,12 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
           <button class="btn" onClick={() => { const n = prompt(fr ? 'Un mot pour votre gestionnaire (facultatif)' : 'A note for your manager (optional)') ?? ''; void act(() => call('POST', `/v1/courses/${id}/request`, n.trim() ? { note: n.trim() } : {}), fr ? 'Demande envoyée.' : 'Request sent.'); }}>{fr ? 'Demander à suivre cette formation' : 'Ask to join this course'}</button>
         </div>;
       })()}
-      {c.resumeLessonId && <div class="actions"><button class="btn" onClick={() => onLesson(c.resumeLessonId!)}>{c.enrollment && c.enrollment.progressPct > 0 ? (locale === 'fr-CA' ? 'Continuer' : 'Continue') : (locale === 'fr-CA' ? 'Commencer' : 'Start')}</button></div>}
-      <h3>{t.lessonsTitle}</h3>
+      <h2 class="cp-h">{t.lessonsTitle}</h2>
+      <div class="cp-acc">
       {c.lessons.length === 0 && <p class="muted">{t.noLessons}</p>}
       {c.lessons.map((l, i) => (
         <div class="lrow" key={l.id}>
-          <button class="lbtn" disabled={l.locked} aria-disabled={l.locked} title={l.locked ? (locale === 'fr-CA' ? 'Terminez d’abord les leçons précédentes' : 'Finish the earlier lessons first') : undefined} onClick={() => onLesson(l.id)}><span class={`dot${l.done ? ' on' : ''}`}>{l.locked ? '🔒' : l.done ? '✓' : i + 1}</span><span>{l.title}</span><span class="tag">{t.lessonTypes[l.type] ?? l.type}</span>{!l.required && <span class="tag">{t.optional}</span>}</button>
+          <button class={`lbtn${l.id === c.resumeLessonId ? ' cur' : ''}`} disabled={l.locked} aria-disabled={l.locked} title={l.locked ? (locale === 'fr-CA' ? 'Terminez d’abord les leçons précédentes' : 'Finish the earlier lessons first') : undefined} onClick={() => onLesson(l.id)}><span class={`dot${l.done ? ' on' : ''}`}>{l.locked ? '🔒' : l.done ? '✓' : i + 1}</span><span class="lt">{l.title}</span>{!l.required && <span class="tag">{t.optional}</span>}<span class="lm">{l.type === 'quiz' ? `❓ ${t.lessonTypes.quiz}` : l.type === 'video' ? `▶ ${lessonMin(l)} min` : `▤ ${lessonMin(l)} min`}</span></button>
           {c.canEdit && c.status !== 'published' && <>
             <button class="ib" aria-label={t.moveUp} disabled={i === 0} onClick={() => void act(() => call('PUT', `/v1/courses/${id}/lessons/order`, { lessonIds: move(c.lessons, i, -1).map((x) => x.id) }))}>↑</button>
             <button class="ib" aria-label={t.moveDown} disabled={i === c.lessons.length - 1} onClick={() => void act(() => call('PUT', `/v1/courses/${id}/lessons/order`, { lessonIds: move(c.lessons, i, 1).map((x) => x.id) }))}>↓</button>
@@ -125,6 +156,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
           </>}
         </div>
       ))}
+      </div>
 
       {c.canEdit && (
         <>
@@ -186,6 +218,10 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
           {en && <small class="muted">{t.langHint}</small>}
         </>
       )}
+            </div>
+          </div>
+        </>;
+      })()}
     </div>
   );
 }

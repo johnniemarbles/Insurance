@@ -144,12 +144,14 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { id } = req.params as { id: string };
     const l = loc(req.query as { locale?: string });
     return run(ctx, async (tx) => {
-      const c = (await tx.query(`SELECT c.id, c.status, c.version, c.sequential, c.enrollment_mode AS "enrollmentMode", c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
+      const c = (await tx.query(`SELECT c.id, c.status, c.version, c.sequential, c.starter_key AS "starterKey", c.enrollment_mode AS "enrollmentMode", c.owner_node_id AS "ownerNodeId", c.quebec_facing AS "quebecFacing", c.ce_pack AS "cePack", c.ce_hours::float8 AS "ceHours", c.ce_category AS "ceCategory", ${courseText('title', l)} AS title, ${courseText('description', l)} AS description FROM courses c WHERE c.id = $1`, [id])).rows[0];
       if (!c) throw notFound('Course not found');
       if (c.status === 'draft' && !canAuthorAt(ctx, c.ownerNodeId)) throw notFound('Course not found');
       const e = (await tx.query(`SELECT id, status, course_version AS "courseVersion", last_lesson_id AS "lastLessonId", progress_pct::float8 AS "progressPct", due_at AS "dueAt", completed_at AS "completedAt" FROM enrollments WHERE course_id = $1 AND user_id = $2`, [id, ctx.userId])).rows[0] ?? null;
       const lessons = (await tx.query(
-        `SELECT l.id, l.module_id AS "moduleId", l.position, l.type, l.required, l.pass_mark AS "passMark", ${lessonTitle(l)} AS title, (p.status = 'completed') AS done
+        `SELECT l.id, l.module_id AS "moduleId", l.position, l.type, l.required, l.pass_mark AS "passMark", ${lessonTitle(l)} AS title, (p.status = 'completed') AS done,
+                (SELECT cardinality(regexp_split_to_array(btrim(coalesce(ll.body->>'text', '')), '[[:space:]]+')) FROM lesson_locales ll WHERE ll.lesson_id = l.id AND ll.locale = 'en') AS words,
+                (SELECT count(*)::int FROM quiz_questions q WHERE q.lesson_id = l.id) AS questions
            FROM lessons l LEFT JOIN lesson_progress p ON p.lesson_id = l.id AND p.enrollment_id = $2
           WHERE l.course_id = $1 ORDER BY l.position`, [id, e?.id ?? null])).rows;
       const cert = e ? (await tx.query(`SELECT id, verification_code AS "verificationCode", issued_at AS "issuedAt" FROM certificates WHERE enrollment_id = $1`, [e.id])).rows[0] ?? null : null;
