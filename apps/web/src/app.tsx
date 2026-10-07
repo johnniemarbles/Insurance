@@ -36,6 +36,7 @@ class ApiErr extends Error { constructor(public status: number, m: string) { sup
 export function App({ host }: { host: HostOptions }) {
   const [me, setMe] = useState<Me | 'out' | null>(null);
   const [error, setError] = useState('');
+  const [wrong, setWrong] = useState<{ pii: string; gmail: string } | null>(null);
   const [locale, setLocale] = useState<Locale>('en');
   const t = strings(locale);
 
@@ -43,17 +44,18 @@ export function App({ host }: { host: HostOptions }) {
     const r = await host.transport(method, path, body);
     if (r.status >= 200 && r.status < 300) return r.json;
     if (r.status === 401) setMe('out');
+    if (r.status === 409 && r.json?.error?.code === 'wrong_account') setWrong({ pii: String(r.json.piiEmail ?? ''), gmail: String(r.json.gmailEmail ?? '') });
     throw new ApiErr(r.status, r.status === -1 ? t.reloadNeeded : r.status === 0 ? t.offline : (r.json?.error?.message ?? `Error ${r.status}`));
   }, [host, t.offline]);
 
   const boot = useCallback(async () => {
-    setError(''); setMe(null);
+    setError(''); setMe(null); setWrong(null);
     try {
       const m = (await call('GET', '/v1/me')) as Me;
       setLocale(m.user.locale === 'fr-CA' ? 'fr-CA' : 'en');
       setMe(m);
     } catch (e) {
-      if (e instanceof ApiErr && e.status === 401) setMe('out'); else setError((e as Error).message);
+      if (e instanceof ApiErr && e.status === 401) setMe('out'); else if (e instanceof ApiErr && e.status === 409) { /* wrong Gmail account: the screen below says so */ } else setError((e as Error).message);
     }
   }, [call]);
   useEffect(() => { void boot(); }, [boot]);
@@ -71,6 +73,7 @@ export function App({ host }: { host: HostOptions }) {
     return () => window.removeEventListener('pii-region-changed', f);
   }, [boot, call, host]);
 
+  if (wrong) return <div class="pii"><div class="msg"><p><b>{t.wrongTitle}</b></p><p>{t.wrongBody(wrong.gmail, wrong.pii)}</p><button class="btn" onClick={() => host.onSignIn(host.region, undefined, { fresh: true })}>{t.signInAs(wrong.gmail)}</button></div></div>;
   if (error) return <div class="pii"><div class="err" role="alert">{error}</div><div class="msg"><button class="btn" onClick={boot}>{t.retry}</button></div></div>;
   if (!me) return <div class="pii"><div class="msg">{t.loading}</div></div>;
   if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><SignIn host={host} t={t} locale={locale} /></div></div>;

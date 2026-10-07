@@ -62,7 +62,7 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
   const t = T[locale];
   const load = async () => {
     const [n, nav, me] = await Promise.all([host.transport('GET', '/v1/notifications?limit=20'), host.transport('GET', '/v1/nav'), host.transport('GET', '/v1/me')]);
-    if (me.status === 401 || n.status === 401) { setSignedIn(false); return; }
+    if (me.status === 401 || n.status === 401 || me.status === 409) { setSignedIn(false); return; }
     setSignedIn(true);
     setNeeds(me.status === 200 && Boolean(me.json?.needsConsent));
     setIsHo(me.status === 200 && Boolean(me.json?.isHeadOffice));

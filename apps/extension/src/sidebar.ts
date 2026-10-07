@@ -11,6 +11,9 @@ export interface CapturedMessage {
   gmailMessageId: string; sentAt?: string; from?: string; to: { email: string; name?: string }[]; body: string; attachments: { name: string }[];
 }
 export interface ThreadInfo {
+  /** The Gmail account on screen. PII only shows when it is the account signed in to PII. */
+  accountEmail?(): string;
+  signInAs?(): void;
   getSubject(): string;
   getSender(): { email: string; name: string } | null;
   getThreadId(): Promise<string>;
@@ -63,6 +66,12 @@ export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
       return fail(e);
     }
     t = strings(me.user.locale);
+    const gmail = thread.accountEmail?.() ?? '';
+    if (gmail && gmail !== me.user.email.toLowerCase()) {
+      show(el('b', { textContent: t.wrongTitle }), el('p', { textContent: t.wrongBody(gmail, me.user.email) }),
+        el('button', { textContent: t.signInAs(gmail), onclick: () => thread.signInAs?.() }));
+      return;
+    }
     if (me.needsConsent) return consent();
     try { await main(me); } catch (e) { fail(e); }
   }

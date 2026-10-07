@@ -1,5 +1,6 @@
 export type Locale = 'en' | 'fr-CA';
 const en = {
+  wrongTitle: 'Different Google account', wrongBody: (gmail: string, pii: string) => `This Gmail is ${gmail}, but PII is signed in as ${pii}. Nothing is shown until they match.`, signInAs: (g: string) => `Sign in as ${g}`,
   loading: 'Loading…', signIn: 'Sign in with Google', signedOut: 'Sign in to see your CRM here.', offline: 'Cannot reach the server.',
   retry: 'Try again', notice: 'Privacy notice', accept: 'I understand', pipeline: 'Pipeline', stage: 'Stage', location: 'Location',
   createBox: 'Add this email to the CRM', boxName: 'Name', create: 'Create', creating: 'Creating…', recent: 'Recent boxes', none: 'Nothing here yet.',
@@ -14,6 +15,7 @@ const en = {
 };
 export type Strings = typeof en;
 const frCA: Strings = {
+  wrongTitle: 'Autre compte Google', wrongBody: (gmail: string, pii: string) => `Ce Gmail est ${gmail}, mais PII est connecté en tant que ${pii}. Rien n’est affiché tant qu’ils ne correspondent pas.`, signInAs: (g: string) => `Se connecter en tant que ${g}`,
   loading: 'Chargement…', signIn: 'Se connecter avec Google', signedOut: 'Connectez-vous pour voir votre CRM ici.', offline: 'Impossible de joindre le serveur.',
   retry: 'Réessayer', notice: 'Avis de confidentialité', accept: 'J’ai compris', pipeline: 'Pipeline', stage: 'Étape', location: 'Emplacement',
   createBox: 'Ajouter ce courriel au CRM', boxName: 'Nom', create: 'Créer', creating: 'Création…', recent: 'Fiches récentes', none: 'Rien pour le moment.',

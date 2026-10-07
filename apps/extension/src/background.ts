@@ -35,7 +35,12 @@ chrome.runtime.onMessage.addListener((msg: Message, sender, sendResponse) => {
   if (msg.type === 'pii:signin') {
     // keep: sign in to that country without making it the one the rest of the app uses.
     const pick = msg.region && __REGIONS__[msg.region] && !msg.keep ? chrome.storage.sync.set({ region: msg.region }) : Promise.resolve();
-    pick.then(() => apiBase(msg.keep ? msg.region : undefined)).then((b) => chrome.tabs.create({ url: `${b}/auth/google/start` }));
+    // fresh: end the current PII session first (it belongs to a different Google account than the Gmail on screen).
+    pick.then(() => apiBase(msg.region)).then(async (b) => {
+      if (msg.fresh) { try { await fetch(`${b}/auth/logout`, { method: 'POST', credentials: 'include' }); } catch { /* the sign-in below replaces the session anyway */ } }
+      const q = msg.hint ? `?hint=${encodeURIComponent(msg.hint)}` : '';
+      await chrome.tabs.create({ url: `${b}/auth/google/start${q}` });
+    });
     return false;
   }
   return false;

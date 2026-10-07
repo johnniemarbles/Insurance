@@ -23,4 +23,4 @@ export interface ComposeApi { send(m: { to: string; subject: string; html: strin
 export interface PiiRoute { page: string; id?: string }
 /** Countries a person can sign in to. Only set when the extension serves more than one deployment. */
 export interface RegionChoice { id: string; label: string }
-export interface HostOptions { extVersion?: string; transport: Transport; onSignIn: (region?: string, keep?: boolean) => void; regions?: RegionChoice[]; region?: string; switchRegion?: (region: string) => void; assetBase?: string; compose?: ComposeApi; route?: PiiRoute; navigate?: (page: string, id?: string) => void }
+export interface HostOptions { extVersion?: string; transport: Transport; onSignIn: (region?: string, keep?: boolean, opts?: { fresh?: boolean }) => void; regions?: RegionChoice[]; region?: string; switchRegion?: (region: string) => void; assetBase?: string; compose?: ComposeApi; route?: PiiRoute; navigate?: (page: string, id?: string) => void }

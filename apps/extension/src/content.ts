@@ -15,7 +15,7 @@ chrome.storage.onChanged.addListener((ch, area) => {
 });
 chrome.storage.sync.get('region').then((v) => { chosenRegion = typeof v.region === 'string' ? v.region : Object.keys(__REGIONS__)[0]; }, () => undefined);
 
-const transport: Transport = async (method, path, body, region) => {
+const rawTransport: Transport = async (method, path, body, region) => {
   try {
     const r = (await chrome.runtime.sendMessage({ type: 'pii:api', method, path, body, region })) as { status: number; json: any } | undefined;
     return r ?? { status: -1, json: null };
@@ -24,6 +24,27 @@ const transport: Transport = async (method, path, body, region) => {
     return { status: -1, json: null };
   }
 };
+
+// The PII sign-in belongs to the browser, not to one Gmail tab. With several Google accounts open, the Gmail on screen
+// can be a different person from the one signed in to PII. Until the two match, nothing is shown or sent.
+let gmailAccount = '';
+const wrong = (pii: string) => ({ status: 409, json: { error: { code: 'wrong_account', message: `This Gmail is ${gmailAccount}, but PII is signed in as ${pii}.` }, piiEmail: pii, gmailEmail: gmailAccount } });
+const whoCache = new Map<string, { at: number; email: Promise<string | null> }>();
+const piiEmailFor = (region?: string): Promise<string | null> => {
+  const key = region ?? '';
+  const hit = whoCache.get(key);
+  if (hit && Date.now() - hit.at < 15_000) return hit.email;
+  const email = rawTransport('GET', '/v1/me', undefined, region).then((r) => (r.status === 200 && typeof r.json?.user?.email === 'string' ? (r.json.user.email as string).toLowerCase() : null));
+  whoCache.set(key, { at: Date.now(), email });
+  return email;
+};
+const transport: Transport = async (method, path, body, region) => {
+  if (!gmailAccount || !path.startsWith('/v1/')) return rawTransport(method, path, body, region);
+  const who = await piiEmailFor(region);
+  if (who && who !== gmailAccount) return wrong(who);
+  return rawTransport(method, path, body, region);
+};
+const signIn = (region?: string, keep?: boolean, opts?: { fresh?: boolean }) => { whoCache.clear(); void chrome.runtime.sendMessage({ type: 'pii:signin', region, keep, hint: gmailAccount || undefined, fresh: opts?.fresh }); };
 
 
 // Sending for mail merge: open a normal Gmail compose window, fill it in, press Send, and wait to hear how it went.
@@ -64,6 +85,7 @@ interface Snippet { id: string; name: string; body: string; shared: boolean }
 console.info('[PII] content script running');
 InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
   console.info('[PII] InboxSDK loaded');
+  try { gmailAccount = (sdk.User.getEmailAddress() || '').trim().toLowerCase(); } catch { gmailAccount = ''; }
   // Full-page views: every item in the PII section of Gmail's left panel opens a page in place of the mailbox.
   const goto = (page: string, id?: string) => {
     if (id) sdk.Router.goto('pii/:page/:id', { page, id });
@@ -75,7 +97,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     host.style.cssText = 'height:calc(100vh - 130px);min-height:480px;background:#fff';
     view.getElement().appendChild(host);
     const unmount = mountPii(host, {
-      extVersion: chrome.runtime.getManifest().version, transport, onSignIn: (region?: string, keep?: boolean) => void chrome.runtime.sendMessage({ type: 'pii:signin', region, keep }), regions: REGION_CHOICES, get region() { return chosenRegion; }, switchRegion: (id: string) => { chosenRegion = id; void chrome.storage.sync.set({ region: id }); announceRegion(); }, compose: { send: sendOne(sdk) },
+      extVersion: chrome.runtime.getManifest().version, transport, onSignIn: signIn, regions: REGION_CHOICES, get region() { return chosenRegion; }, switchRegion: (id: string) => { chosenRegion = id; void chrome.storage.sync.set({ region: id }); announceRegion(); }, compose: { send: sendOne(sdk) },
       route: { page: params.page ?? 'pipelines', id: params.id }, navigate: goto,
     });
     view.on('destroy', unmount);
@@ -86,7 +108,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
   // The PII mark and the bell in Gmail's top bar, next to the account area. If Gmail's layout changes and the spot is not found, they float top right instead.
   const hostEl = document.createElement('div');
   hostEl.id = 'pii-header';
-  mountHeader(hostEl, { extVersion: chrome.runtime.getManifest().version, transport, onSignIn: (region?: string, keep?: boolean) => void chrome.runtime.sendMessage({ type: 'pii:signin', region, keep }), regions: REGION_CHOICES, get region() { return chosenRegion; }, switchRegion: (id: string) => { chosenRegion = id; void chrome.storage.sync.set({ region: id }); announceRegion(); }, navigate: goto }, chrome.runtime.getURL('nav-icon.png'));
+  mountHeader(hostEl, { extVersion: chrome.runtime.getManifest().version, transport, onSignIn: signIn, regions: REGION_CHOICES, get region() { return chosenRegion; }, switchRegion: (id: string) => { chosenRegion = id; void chrome.storage.sync.set({ region: id }); announceRegion(); }, navigate: goto }, chrome.runtime.getURL('nav-icon.png'));
   const place = () => {
     const acct = document.querySelector('header[role="banner"] a[aria-label*="Google Account"], header[role="banner"] [aria-label*="Google Account"]');
     let anchor: HTMLElement | null = acct as HTMLElement | null;
@@ -190,6 +212,8 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     console.info('[PII] conversation opened');
     const el = document.createElement('div');
     mountSidebar(el, {
+      accountEmail: () => gmailAccount,
+      signInAs: () => signIn(undefined, undefined, { fresh: true }),
       getSubject: () => threadView.getSubject(),
       getSender: () => {
         const c = threadView.getMessageViews()[0]?.getSender();
