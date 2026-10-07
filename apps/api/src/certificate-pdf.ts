@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { PDFDocument, StandardFonts, rgb, type PDFFont } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import 'regenerator-runtime/runtime.js';
+import qrcode from 'qrcode-generator';
 
 const NO_POSITIONING = { mark: false, mkmk: false, dist: false, abvm: false, blwm: false, kern: false, curs: false };
 const require = createRequire(import.meta.url);
@@ -27,7 +28,7 @@ async function loadFallbacks(doc: PDFDocument, weight: 400 | 700): Promise<{ fon
 }
 
 /** An A4 landscape certificate. Returns null only when a character is in no available font. */
-export async function certificatePdf(c: CertRow, entity: string, logoPath: string): Promise<Uint8Array | null> {
+export async function certificatePdf(c: CertRow, entity: string, logoPath: string, verifyUrl?: string): Promise<Uint8Array | null> {
   const fr = c.locale === 'fr-CA';
   const T = fr
     ? { title: 'Attestation de formation', cert: 'Nous attestons que', did: 'a terminé avec succès', at: 'de', ce: 'Heures de formation continue', cat: 'Catégorie', date: 'Délivrée le', code: 'Code de vérification', valid: 'Authentique : émise par' }
@@ -83,6 +84,14 @@ export async function certificatePdf(c: CertRow, entity: string, logoPath: strin
   if (ceLine) centre(ceLine, top - 280, sansB, 13, blue);
   centre(`${T.date} ${when}   |   ${T.code}: ${c.code}`, 92, sans, 11, grey);
   centre(`${T.valid} ${ent}`, 74, sans, 10, rgb(0.02, 0.37, 0.27));
+  if (verifyUrl) {
+    // A QR code to the public check page, bottom right, so a printed certificate can be verified with a phone.
+    const qr = qrcode(0, 'M'); qr.addData(verifyUrl); qr.make();
+    const n = qr.getModuleCount(), cell = 2.4, size = n * cell, ox = W - 60 - size, oy = 52;
+    page.drawRectangle({ x: ox - 5, y: oy - 5, width: size + 10, height: size + 10, color: rgb(1, 1, 1), borderColor: rgb(0.82, 0.84, 0.86), borderWidth: 0.6 });
+    for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (qr.isDark(r, k)) page.drawRectangle({ x: ox + k * cell, y: oy + (n - 1 - r) * cell, width: cell + 0.05, height: cell + 0.05, color: rgb(0.07, 0.09, 0.14) });
+    page.drawText(fr ? 'Scannez pour vérifier' : 'Scan to verify', { x: ox - 5 + (size + 10 - sans.widthOfTextAtSize(fr ? 'Scannez pour vérifier' : 'Scan to verify', 7)) / 2, y: oy - 15, size: 7, font: sans, color: grey });
+  }
   doc.setTitle(`${T.title} - ${learner}`); doc.setProducer('PII'); doc.setCreator('PII');
   return doc.save();
 }

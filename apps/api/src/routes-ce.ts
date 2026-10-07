@@ -10,6 +10,7 @@ import type { AppDeps } from './app.ts';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { certificatePdf, type CertRow } from './certificate-pdf.ts';
+import qrcode from 'qrcode-generator';
 
 type Locale = 'en' | 'fr-CA';
 const today = () => new Date().toISOString().slice(0, 10);
@@ -337,6 +338,12 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   // ------------------------------------------------------------ the agency certificate, checkable by anyone with the code
+  const qrSvg = (url: string) => {
+    const q = qrcode(0, 'M'); q.addData(url); q.make();
+    const n = q.getModuleCount(); let d = '';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (q.isDark(y, x)) d += `M${x} ${y}h1v1h-1z`;
+    return `<svg viewBox="-2 -2 ${n + 4} ${n + 4}" width="96" height="96" role="img" aria-label="QR" style="margin-top:18px;background:#fff"><path d="${d}" fill="#111827"/></svg>`;
+  };
   const entity = deps.config.region === 'us' ? 'Punjab Insurance Broker Inc' : 'Punjab Insurance Agency Inc';
   app.get('/c/:code', { schema: { params: { type: 'object', properties: { code: { type: 'string', pattern: '^[0-9a-f]{18}$' } } } } }, async (req, reply) => {
     const { code } = req.params as { code: string };
@@ -356,7 +363,7 @@ img{width:84px;height:84px}h1{font-size:34px;margin:12px 0 4px;color:#1d4ed8;let
 <div class="sheet"><img src="/brand/logo.png" alt=""><div class="ent">${esc(entity)}</div><h1>${esc(T.title)}</h1><p>${esc(T.cert)}</p>
 <div class="who">${esc(c.learner)}</div><p>${esc(T.did)}</p><div class="crs">${esc(c.course)}${c.version ? ` <small style="font:14px system-ui;color:#6b7280">v${c.version}</small>` : ''}</div><p>${esc(T.at)} ${esc(c.company)}</p>
 ${c.hours ? `<div class="ce">${esc(T.ce)}: ${esc(Number(c.hours))} · ${esc(T.cat)}: ${esc((c.category ?? '').replace('_', ' '))}</div>` : ''}
-<div class="meta">${esc(T.date)} ${esc(when)} · ${esc(T.code)}: <b>${esc(c.code)}</b></div><div class="v">✓ ${esc(T.valid)} ${esc(entity)}</div></div><p class="p"><a href="/c/${esc(c.code)}/pdf">${esc(T.print)}</a></p></body></html>`;
+<div class="meta">${esc(T.date)} ${esc(when)} · ${esc(T.code)}: <b>${esc(c.code)}</b></div>${qrSvg(`${deps.config.appOrigin}/c/${c.code}`)}<div class="v">✓ ${esc(T.valid)} ${esc(entity)}</div></div><p class="p"><a href="/c/${esc(c.code)}/pdf">${esc(T.print)}</a></p></body></html>`;
     return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'").send(html);
   });
 
@@ -365,7 +372,7 @@ ${c.hours ? `<div class="ce">${esc(T.ce)}: ${esc(Number(c.hours))} · ${esc(T.ca
     const { code } = req.params as { code: string };
     const c = (await deps.authPool.query<CertRow>('SELECT * FROM certificate_public($1)', [code])).rows[0];
     if (!c) return reply.code(404).type('text/plain; charset=utf-8').send('Certificate not found');
-    const pdf = await certificatePdf(c, entity, join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'brand', 'logo.png'));
+    const pdf = await certificatePdf(c, entity, join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'brand', 'logo.png'), `${deps.config.appOrigin}/c/${code}`);
     if (!pdf) return reply.redirect(`/c/${code}`);
     return reply.type('application/pdf').header('content-disposition', `attachment; filename="certificate-${code}.pdf"`).header('cache-control', 'no-store').send(Buffer.from(pdf));
   });
