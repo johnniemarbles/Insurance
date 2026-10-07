@@ -9,7 +9,9 @@ export interface StarterCourse { key: string; title: L; description: L; lessons:
 const NOTE: L = { en: ' Draft starter content: counsel and compliance must review it before it is published.', fr: ' Contenu de départ (ébauche) : à faire réviser par le conseiller juridique et la conformité avant publication.' };
 const D = (l: L): L => ({ en: l.en + NOTE.en, fr: l.fr + NOTE.fr });
 
-export const STARTER_COURSES: StarterCourse[] = [
+import { MORE_STARTER_COURSES } from './starter-courses-more.ts';
+
+const BASE_COURSES: StarterCourse[] = [
   {
     key: 'eo-basics',
     title: { en: 'Errors and omissions (E&O) basics', fr: 'Notions de base sur l’assurance erreurs et omissions (E&O)' },
@@ -103,3 +105,5 @@ export const STARTER_COURSES: StarterCourse[] = [
     ],
   },
 ];
+
+export const STARTER_COURSES: StarterCourse[] = [...BASE_COURSES, ...MORE_STARTER_COURSES];
