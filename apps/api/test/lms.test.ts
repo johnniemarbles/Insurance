@@ -113,6 +113,7 @@ test('assigning and watching: due dates reach everyone beneath, progress is visi
   assert.equal(mine.length, 1);
   assert.ok(mine[0].dueAt);
   const prog = (await call(P1U, 'GET', `/v1/courses/${course}/progress`)).json.learners;
+  assert.ok(prog.every((l: any) => "bestScore" in l && typeof l.attempts === "number"), "report fields present");
   assert.ok(prog.some((p: any) => p.email === LRN && p.status === 'completed'));
   assert.ok(prog.some((p: any) => p.email === S1U && p.status === 'assigned'));
   assert.equal((await call(S1U, 'GET', `/v1/courses/${course}/progress`)).status, 403);

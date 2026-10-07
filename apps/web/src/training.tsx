@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { Strings } from './i18n.ts';
 import type { Locale } from './types.ts';
 import { CourseCe, MyCe, PeopleCe, ceStrings } from './ce.tsx';
+import { MyLearning } from './mylearning.tsx';
+import { CompletionReport, type Learner } from './report.tsx';
 import { Catalog, themeOf, ICONS } from './catalog.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -16,13 +18,14 @@ const Bar = ({ pct }: { pct: number }) => <div class="pbar" role="progressbar" a
 
 export function TrainingView({ call, t, locale, canAuthor, isHeadOffice = false, isAdmin = false }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; isHeadOffice?: boolean; isAdmin?: boolean }) {
   const k = ceStrings(locale);
-  const tabs = isHeadOffice ? (canAuthor || isAdmin ? (['officer', 'courses', 'my', 'team'] as const) : (['officer', 'my'] as const)) : (canAuthor || isAdmin ? (['courses', 'my', 'team'] as const) : (['courses', 'my'] as const));
+  const tabs = isHeadOffice ? (canAuthor || isAdmin ? (['officer', 'courses', 'learning', 'my', 'team'] as const) : (['officer', 'learning', 'my'] as const)) : (canAuthor || isAdmin ? (['courses', 'learning', 'my', 'team'] as const) : (['courses', 'learning', 'my'] as const));
   const [tab, setTab] = useState<string>(tabs[0]);
   const [view, setView] = useState<View>({ k: 'list' });
-  const label: Record<string, string> = { courses: k.courses, my: k.my, team: k.team, officer: k.officer };
+  const label: Record<string, string> = { learning: locale === 'fr-CA' ? 'Mon apprentissage' : 'My learning', courses: k.courses, my: k.my, team: k.team, officer: k.officer };
   return (
     <div class="train">
       {(view.k === 'list' || tab !== 'courses') && <div class="tpad" style={{ paddingBottom: 0 }}><div class="seg" role="tablist">{tabs.map((x) => <button role="tab" aria-selected={tab === x} onClick={() => { setTab(x); setView({ k: 'list' }); }}>{label[x]}</button>)}</div></div>}
+      {tab === 'learning' && <MyLearning call={call} locale={locale} onOpen={(id) => { setTab('courses'); setView({ k: 'course', id }); }} />}
       {tab === 'my' && <MyCe call={call} locale={locale} />}
       {tab === 'team' && <PeopleCe call={call} locale={locale} officer={false} />}
       {tab === 'officer' && <PeopleCe call={call} locale={locale} officer={true} />}
@@ -80,7 +83,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
   const [err, setErr] = useState('');
   const [note, setNote] = useState('');
   const [nodes, setNodes] = useState<{ id: string; name: string; type: string }[]>([]);
-  const [team, setTeam] = useState<{ userId: string; displayName: string | null; email: string; status: string; progressPct: number; dueAt: string | null }[] | null>(null);
+  const [team, setTeam] = useState<Learner[] | null>(null);
   const [lt, setLt] = useState('');
   const [lType, setLType] = useState('richtext');
   const [assignNode, setAssignNode] = useState('');
@@ -180,6 +183,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
             {c.status !== 'published'
               ? <button class="btn" onClick={() => void act(() => call('PATCH', `/v1/courses/${id}`, { status: 'published' }), t.published)}>{t.publish}</button>
               : <button class="btn quiet" onClick={() => void act(() => call('PATCH', `/v1/courses/${id}`, { status: 'draft' }))}>{t.unpublish}</button>}
+            {c.status !== 'published' && <button class="btn quiet danger" onClick={() => { if (confirm(locale === 'fr-CA' ? 'Archiver ce cours ? Il disparaîtra de la liste. Les attestations déjà émises restent valides.' : 'Archive this course? It will disappear from the list. Certificates already issued stay valid.')) void call('PATCH', `/v1/courses/${id}`, { status: 'archived' }).then(onBack, (e) => setErr((e as Error).message)); }}>{locale === 'fr-CA' ? 'Archiver le cours' : 'Archive course'}</button>}
           </div>
 
           <CourseCe call={call} locale={locale} courseId={id} value={c} onSaved={load} />
@@ -207,12 +211,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
               })()}
               <h3>{t.teamProgress}</h3>
               {!team && <button class="btn quiet" onClick={() => void call('GET', `/v1/courses/${id}/progress`).then((r) => setTeam(r.learners), (e) => setErr((e as Error).message))}>{t.showProgress}</button>}
-              {team && (
-                <table>
-                  <thead><tr><th>{t.name}</th><th>{t.stage}</th><th>%</th><th>{t.due}</th></tr></thead>
-                  <tbody>{team.map((m) => <tr key={m.userId}><td>{m.displayName ?? m.email}</td><td>{t.enrollStatus[m.status] ?? m.status}</td><td>{Math.round(m.progressPct)}%</td><td>{m.dueAt ? new Date(m.dueAt).toLocaleDateString(locale) : ''}</td></tr>)}</tbody>
-                </table>
-              )}
+              {team && <CompletionReport learners={team} courseTitle={c.title} locale={locale} />}
             </>
           )}
           {en && <small class="muted">{t.langHint}</small>}

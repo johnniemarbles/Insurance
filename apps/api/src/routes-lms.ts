@@ -709,8 +709,11 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (authorNodes(ctx).length === 0 && !ctx.isTenantAdmin) throw forbidden('Only trainers, managers and administrators can see team progress');
       return {
         learners: (await tx.query(
-          `SELECT e.id, u.id AS "userId", u.display_name AS "displayName", u.email, e.status, e.progress_pct::float8 AS "progressPct", e.due_at AS "dueAt", e.completed_at AS "completedAt"
-             FROM enrollments e JOIN app_users u ON u.id = e.user_id WHERE e.course_id = $1 ORDER BY u.display_name NULLS LAST, u.email`, [id])).rows,
+          `SELECT e.id, u.id AS "userId", u.display_name AS "displayName", u.email, e.status, e.progress_pct::float8 AS "progressPct", e.due_at AS "dueAt", e.completed_at AS "completedAt", e.started_at AS "startedAt",
+                  qa.best AS "bestScore", coalesce(qa.n, 0) AS attempts
+             FROM enrollments e JOIN app_users u ON u.id = e.user_id
+             LEFT JOIN LATERAL (SELECT max(score_pct)::float8 AS best, count(*)::int AS n FROM quiz_attempts q WHERE q.enrollment_id = e.id) qa ON true
+            WHERE e.course_id = $1 ORDER BY u.display_name NULLS LAST, u.email`, [id])).rows,
       };
     });
   });
