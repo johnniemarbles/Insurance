@@ -29,6 +29,7 @@ export const X = {
         case 'learning_due': return `${n.data.title || 'A course'} ${n.data.daysLeft < 0 ? `was due ${n.data.dueOn}` : n.data.daysLeft === 0 ? 'is due today' : `is due in ${n.data.daysLeft} days`}`;
         case 'course_request': return `${n.data.name ?? 'Someone'} asked to join “${n.data.course ?? 'a course'}”${n.data.note ? `: “${n.data.note}”` : ''}`;
         case 'course_decision': return `Your request to join “${n.data.course ?? 'a course'}” was ${n.data.decision === 'approved' ? 'approved' : 'declined'}${n.data.note ? `: “${n.data.note}”` : ''}`;
+        case 'quiz_attempts': return `${who} gave you ${n.data.extra ?? 1} more attempt(s) at the quiz in “${n.data.course ?? 'a course'}”`;
         case 'ce_reminder': return n.data.state === 'overdue' ? `${n.data.pack}: your term ended ${n.data.termEnd} and ${n.data.remaining} hours were still missing` : `${n.data.pack}: ${n.data.remaining} hours still to complete before ${n.data.termEnd}`;
         default: return n.kind;
       }
@@ -57,6 +58,7 @@ export const X = {
         case 'learning_due': return `${n.data.title || 'Une formation'} ${n.data.daysLeft < 0 ? `devait être terminée le ${n.data.dueOn}` : n.data.daysLeft === 0 ? 'est due aujourd’hui' : `est due dans ${n.data.daysLeft} jours`}`;
         case 'course_request': return `${n.data.name ?? 'Quelqu’un'} demande à suivre « ${n.data.course ?? 'une formation'} »${n.data.note ? ` : « ${n.data.note} »` : ''}`;
         case 'course_decision': return `Votre demande pour « ${n.data.course ?? 'une formation'} » a été ${n.data.decision === 'approved' ? 'approuvée' : 'refusée'}${n.data.note ? ` : « ${n.data.note} »` : ''}`;
+        case 'quiz_attempts': return `${who} vous a accordé ${n.data.extra ?? 1} tentative(s) de plus au test de « ${n.data.course ?? 'une formation'} »`;
         case 'ce_reminder': return n.data.state === 'overdue' ? `${n.data.pack} : votre période s’est terminée le ${n.data.termEnd} et il manquait ${n.data.remaining} heures` : `${n.data.pack} : il reste ${n.data.remaining} heures à compléter avant le ${n.data.termEnd}`;
         default: return n.kind;
       }

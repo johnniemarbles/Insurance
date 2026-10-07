@@ -225,6 +225,8 @@ test('a manager can give a learner extra tries at a quiz', async () => {
   const aId = (await owner((o) => o.query(`SELECT id FROM app_users WHERE email = $1`, [A]))).rows[0].id;
   assert.equal((await call(B, 'POST', `/v1/lessons/${ql}/quiz/extra-attempts`, { userId: aId, extra: 1 })).status, 403, 'a learner cannot grant tries');
   assert.equal((await call(ADMIN, 'POST', `/v1/lessons/${ql}/quiz/extra-attempts`, { userId: aId, extra: 1 })).status, 204);
+  const told = (await call(A, 'GET', '/v1/notifications')).json.notifications.find((n: any) => n.kind === 'quiz_attempts');
+  assert.ok(told && told.data.extra === 1, 'the learner is told');
   const view = (await call(A, 'GET', `/v1/lessons/${ql}`)).json.quiz;
   assert.equal(view.maxAttempts, 2); assert.equal(view.status.allowed, true);
   const ok = await call(A, 'POST', `/v1/lessons/${ql}/quiz/attempt`, { answers: { [qid]: ['0'] } });

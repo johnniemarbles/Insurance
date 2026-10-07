@@ -63,3 +63,20 @@ export function buildReminderMail(config: Config, to: string, kind: string, d: D
     html: `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:auto;color:#1c1b1a"><p style="font-size:16px">${esc(t.line)}</p><p><a href="${esc(url)}" style="background:#1f3a5f;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">${esc(open)}</a></p><p style="color:#6b6b6b;font-size:12px">${esc(off)}<br>${esc(config.productDisplayName)}</p></div>`,
   };
 }
+
+/** Several reminders for one person, in one email. */
+export function buildDigestMail(config: Config, to: string, items: { kind: string; data: D }[], loc: Locale): Mail | null {
+  const lines = items.map((i) => reminderText(i.kind, i.data, loc)?.line).filter((x): x is string => Boolean(x));
+  if (lines.length === 0) return null;
+  if (lines.length === 1) return buildReminderMail(config, to, items[0]!.kind, items[0]!.data, loc);
+  const fr = loc === 'fr-CA';
+  const subject = fr ? `${lines.length} rappels dans PII` : `${lines.length} reminders in PII`;
+  const open = fr ? 'Ouvrir dans PII' : 'Open in PII';
+  const off = fr ? 'Pour ne plus recevoir ces courriels, désactivez « Rappels par courriel » dans les paramètres de notification de PII.' : 'To stop these emails, turn off “Email reminders” in your PII notification settings.';
+  const url = `${config.appOrigin}/app`;
+  return {
+    to, subject,
+    text: `${lines.map((l) => `- ${l}`).join('\n')}\n\n${open}: ${url}\n\n${off}\n${config.productDisplayName}`,
+    html: `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:auto;color:#1c1b1a"><ul style="font-size:16px;padding-left:20px">${lines.map((l) => `<li style="margin:6px 0">${esc(l)}</li>`).join('')}</ul><p><a href="${esc(url)}" style="background:#1f3a5f;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">${esc(open)}</a></p><p style="color:#6b6b6b;font-size:12px">${esc(off)}<br>${esc(config.productDisplayName)}</p></div>`,
+  };
+}

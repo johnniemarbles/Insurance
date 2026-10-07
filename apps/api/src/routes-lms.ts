@@ -461,7 +461,7 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { ctx } = await deps.authenticate(req);
     const { id } = req.params as { id: string };
     const b = req.body as { userId: string; extra: number };
-    await run(ctx, async (tx) => {
+    const course = await run(ctx, async (tx) => {
       const l = await loadLesson(tx, id);
       if (l.type !== 'quiz') throw invalid('That lesson is not a quiz');
       if (!canAuthorAt(ctx, l.owner_node_id)) throw forbidden('Only a trainer, manager or administrator of the owning branch can give extra attempts');
@@ -469,7 +469,9 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       const done = await tx.query(`UPDATE enrollments SET extra_attempts = jsonb_set(extra_attempts, ARRAY[$3::text], to_jsonb(coalesce((extra_attempts ->> $3)::int, 0) + $4::int)) WHERE user_id = $1 AND course_id = $2`, [b.userId, l.course_id, id, b.extra]);
       if (!done.rowCount) throw notFound('That person is not taking this course');
       await audit(tx, ctx, 'quiz_extra_attempts', 'lesson', id, { userId: b.userId, extra: b.extra });
+      return (await tx.query<{ t: string }>(`SELECT ${courseText('title', 'en')} AS t FROM courses c WHERE c.id = $1`, [l.course_id])).rows[0]?.t ?? '';
     });
+    await tell(deps, ctx.tenantId, [b.userId], 'quiz_attempts', ctx.userId, { course, lessonId: id, extra: b.extra });
     return reply.code(204).send();
   });
 

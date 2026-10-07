@@ -130,6 +130,10 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'My course request is answered', 'fr-CA': 'Ma demande de formation a reçu une réponse' }, help: { en: 'A manager approves or declines your request.', 'fr-CA': 'Un gestionnaire approuve ou refuse votre demande.' }, keywords: 'notification alert course training request approved declined',
   },
   {
+    key: 'notify.quiz_attempts', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'A manager gives me another quiz attempt', 'fr-CA': 'Un gestionnaire m’accorde une tentative de plus à un test' }, help: { en: 'When you ran out of tries and someone gave you more.', 'fr-CA': 'Lorsque vous n’aviez plus de tentatives et que quelqu’un vous en a accordé.' }, keywords: 'notification alert quiz attempt extra try training',
+  },
+  {
     key: 'notify.compliance_review', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
     label: { en: 'A compliance file is submitted or reviewed', 'fr-CA': 'Un dossier de conformité est soumis ou examiné' }, help: { en: 'Head office approves or sends back a file, or a partner sends one for review.', 'fr-CA': 'Le siège social approuve ou renvoie un dossier, ou un partenaire en soumet un.' }, keywords: 'notification alert compliance review approved onboarding',
   },

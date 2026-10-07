@@ -52,6 +52,8 @@ export interface AppDeps {
   ai?: AiClient;
   /** Sends reminder emails. Absent: reminders stay in the app. */
   mailer?: import('./mailer.ts').Mailer;
+  /** While set, reminder emails are gathered here and sent as one message per person. */
+  digest?: Map<string, { kind: string; data: Record<string, unknown> }[]>;
 }
 
 export function buildApp(input: AppDeps): FastifyInstance {

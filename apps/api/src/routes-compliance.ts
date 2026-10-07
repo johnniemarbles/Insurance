@@ -1,4 +1,4 @@
-import { buildReminderMail } from './mailer.ts';
+import { buildDigestMail } from './mailer.ts';
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
 import {
@@ -97,14 +97,27 @@ export async function tell(deps: AppDeps, tenantId: string, userIds: string[], k
 
 const EMAILED = new Set(['learning_due', 'ce_reminder', 'compliance_expiry']);
 
-/** Reminders also go by email, unless the person turned that off. A failed send never blocks the work. */
+/** Reminders also go by email, unless the person turned that off. A failed send never blocks the work. Inside withDigest they are gathered and sent as one email per person. */
 async function emailReminder(deps: AppDeps, userId: string, kind: string, data: Record<string, unknown>): Promise<void> {
+  if (deps.digest) { deps.digest.set(userId, [...(deps.digest.get(userId) ?? []), { kind, data }]); return; }
+  await sendReminders(deps, userId, [{ kind, data }]);
+}
+
+async function sendReminders(deps: AppDeps, userId: string, items: { kind: string; data: Record<string, unknown> }[]): Promise<void> {
   try {
     const u = (await deps.authPool.query<{ email: string; locale: string; email_reminders: boolean; status: string }>('SELECT email::text AS email, locale::text AS locale, email_reminders, status::text AS status FROM app_users WHERE id = $1', [userId])).rows[0];
     if (!u || !u.email_reminders || u.status === 'disabled') return;
-    const mail = buildReminderMail(deps.config, u.email, kind, data, u.locale === 'fr-CA' ? 'fr-CA' : 'en');
+    const mail = buildDigestMail(deps.config, u.email, items, u.locale === 'fr-CA' ? 'fr-CA' : 'en');
     if (mail) await deps.mailer!.send(mail);
   } catch { /* the in-app notice already exists */ }
+}
+
+/** Runs a job whose reminders go out as one email per person, however many it makes. */
+export async function withDigest<T>(deps: AppDeps, fn: (d: AppDeps) => Promise<T>): Promise<T> {
+  const digest = new Map<string, { kind: string; data: Record<string, unknown> }[]>();
+  const out = await fn({ ...deps, digest });
+  for (const [userId, items] of digest) await sendReminders(deps, userId, items);
+  return out;
 }
 
 const str = (max: number) => ({ type: 'string', maxLength: max }) as const;
