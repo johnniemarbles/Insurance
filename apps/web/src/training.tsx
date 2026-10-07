@@ -28,7 +28,7 @@ export function TrainingView({ call, t, locale, canAuthor, isHeadOffice = false,
       {tab === 'officer' && <PeopleCe call={call} locale={locale} officer={true} />}
       {tab === 'courses' && view.k === 'list' && <CourseList call={call} t={t} locale={locale} canAuthor={canAuthor} onOpen={(id) => setView({ k: 'course', id })} />}
       {tab === 'courses' && view.k === 'course' && <CoursePage key={view.id} id={view.id} call={call} t={t} locale={locale} onBack={() => setView({ k: 'list' })} onLesson={(id) => setView({ k: 'lesson', courseId: (view as { id: string }).id, id })} />}
-      {tab === 'courses' && view.k === 'lesson' && <LessonPage key={view.id} id={view.id} call={call} t={t} locale={locale} onBack={() => setView({ k: 'course', id: view.courseId })} />}
+      {tab === 'courses' && view.k === 'lesson' && <LessonPage key={view.id} id={view.id} call={call} t={t} locale={locale} onBack={() => setView({ k: 'course', id: view.courseId })} onLesson={(id) => setView({ k: 'lesson', courseId: (view as { courseId: string }).courseId, id })} />}
     </div>
   );
 }
@@ -229,8 +229,9 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
 interface QuizQ { id: string; type: string; prompt: string; options: { key: string; text: string }[]; correct?: string[] }
 interface LessonDetail { id: string; courseId: string; type: string; title: string; body: { text?: string; url?: string }; required: boolean; done: boolean; canEdit: boolean; quiz?: { passMark: number | null; maxAttempts: number | null; baseMaxAttempts?: number | null; cooldownMinutes?: number | null; status?: { allowed: boolean; reason: string | null; left: number | null; nextAt: string | null }; attempts: { scorePct: number; passed: boolean }[]; questions: QuizQ[] } }
 
-function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t: Strings; locale: Locale; onBack: () => void }) {
+function LessonPage({ id, call, t, locale, onBack, onLesson }: { id: string; call: Call; t: Strings; locale: Locale; onBack: () => void; onLesson: (id: string) => void }) {
   const [l, setL] = useState<LessonDetail | null>(null);
+  const [outline, setOutline] = useState<CourseDetail | null>(null);
   const [err, setErr] = useState('');
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [result, setResult] = useState<{ scorePct: number; passed: boolean; results: { questionId: string; correct: boolean }[] } | null>(null);
@@ -244,6 +245,8 @@ function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t
   const [note, setNote] = useState('');
   const load = useCallback(() => { call('GET', `/v1/lessons/${id}?locale=${locale}`).then((r) => { setL(r); setText(r.body?.text ?? ''); setUrl(r.body?.url ?? ''); }, (e) => setErr((e as Error).message)); }, [call, id, locale]);
   useEffect(load, [load]);
+  const cid = l?.courseId;
+  useEffect(() => { if (cid) call('GET', `/v1/courses/${cid}?locale=${locale}`).then(setOutline, () => {}); }, [call, cid, locale, l?.done]);
   if (!l) return <div class="msg">{err || t.loading}</div>;
   const complete = async () => { try { await call('POST', `/v1/lessons/${id}/complete`); load(); } catch (e) { setErr((e as Error).message); } };
   const submit = async () => { setErr(''); try { const r = await call('POST', `/v1/lessons/${id}/quiz/attempt`, { answers }); setResult(r); load(); } catch (e) { setErr((e as Error).message); } };
@@ -252,8 +255,20 @@ function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t
     return { ...a, [q.id]: q.type === 'multi' ? (cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key]) : [key] };
   });
   const isVideoFile = /\.(mp4|webm)(\?|$)/i.test(l.body.url ?? '');
+  const fr = locale === 'fr-CA';
+  const ls = outline?.lessons ?? [];
+  const idx = ls.findIndex((x) => x.id === id);
+  const prev = idx > 0 ? ls[idx - 1] : undefined;
+  const next = idx >= 0 ? ls[idx + 1] : undefined;
+  const nav = outline && (
+    <div class="lp-nav">
+      <button class="btn quiet" disabled={!prev || prev.locked} onClick={() => prev && onLesson(prev.id)}>← {fr ? 'Précédent' : 'Previous'}</button>
+      <button class="btn" disabled={!next || next.locked} onClick={() => next && onLesson(next.id)}>{fr ? 'Suivant' : 'Next'} →</button>
+    </div>
+  );
   return (
-    <div class="tpad narrow">
+    <div class="tpad xl lp">
+      <div class="lp-main">
       <button class="link" onClick={onBack}>← {t.backToCourse}</button>
       <h1>{l.title} {l.done && <span class="ok">✓</span>}</h1>
       {err && <div class="err">{err}</div>}
@@ -338,6 +353,22 @@ function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t
         </>
       )}
       {l.canEdit && l.type === 'quiz' && <QuizEditor lessonId={id} call={call} t={t} locale={locale} existing={l.quiz?.questions ?? []} onSaved={load} />}
+      {nav}
+      </div>
+      {outline && (
+        <aside class="lp-side" aria-label={fr ? 'Contenu du cours' : 'Course content'}>
+          <b class="lp-t">{outline.title}</b>
+          <Bar pct={outline.enrollment?.progressPct ?? 0} />
+          <small class="muted">{Math.round(outline.enrollment?.progressPct ?? 0)}% {fr ? 'terminé' : 'complete'}</small>
+          <ol class="lp-list">
+            {ls.map((x, n) => (
+              <li><button class={`lp-i${x.id === id ? ' cur' : ''}`} disabled={x.locked} aria-current={x.id === id ? 'true' : undefined} onClick={() => onLesson(x.id)}>
+                <span class={`lp-d${x.done ? ' on' : ''}`}>{x.done ? '✓' : n + 1}</span><span class="lp-n">{x.title}</span><span class="lm">{x.type === 'video' ? '▶ ' : ''}{lessonMin(x)} min</span>
+              </button></li>
+            ))}
+          </ol>
+        </aside>
+      )}
     </div>
   );
 }
