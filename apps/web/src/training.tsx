@@ -14,7 +14,7 @@ const Bar = ({ pct }: { pct: number }) => <div class="pbar" role="progressbar" a
 
 export function TrainingView({ call, t, locale, canAuthor, isHeadOffice = false, isAdmin = false }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; isHeadOffice?: boolean; isAdmin?: boolean }) {
   const k = ceStrings(locale);
-  const tabs = isHeadOffice ? (['officer', 'my'] as const) : (canAuthor || isAdmin ? (['courses', 'my', 'team'] as const) : (['courses', 'my'] as const));
+  const tabs = isHeadOffice ? (canAuthor || isAdmin ? (['officer', 'courses', 'my', 'team'] as const) : (['officer', 'my'] as const)) : (canAuthor || isAdmin ? (['courses', 'my', 'team'] as const) : (['courses', 'my'] as const));
   const [tab, setTab] = useState<string>(tabs[0]);
   const [view, setView] = useState<View>({ k: 'list' });
   const label: Record<string, string> = { courses: k.courses, my: k.my, team: k.team, officer: k.officer };
