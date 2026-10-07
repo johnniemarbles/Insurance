@@ -36,10 +36,10 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
   const [err, setErr] = useState('');
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
-  const [starters, setStarters] = useState<{ key: string; title: Record<string, string>; description: Record<string, string> }[]>([]);
+  const [starters, setStarters] = useState<{ key: string; title: Record<string, string>; description: Record<string, string>; courseId: string | null }[]>([]);
   const [showStarters, setShowStarters] = useState(false);
   const addStarter = async (key: string) => { try { const r = await call('POST', '/v1/courses/starter', { key }); onOpen(r.id); } catch (x) { setErr((x as Error).message); } };
-  const openStarters = () => { setShowStarters(true); if (!starters.length) call('GET', '/v1/courses/starter').then((r) => setStarters(r.courses), (e) => setErr((e as Error).message)); };
+  const openStarters = () => { setShowStarters(true); call('GET', '/v1/courses/starter').then((r) => setStarters(r.courses), (e) => setErr((e as Error).message)); };
   const load = useCallback(() => { call('GET', `/v1/courses?locale=${locale}`).then((r) => setCourses(r.courses), (e) => setErr((e as Error).message)); }, [call, locale]);
   useEffect(load, [load]);
   const create = async (e: Event) => {
@@ -74,7 +74,7 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
       )}
       {showStarters && (
         <div class="tpad"><small class="muted">{t.starterHint}</small>
-          {starters.map((s) => { const k = locale === 'fr-CA' ? 'fr' : 'en'; return <div class="erow" key={s.key}><span><b>{s.title[k]}</b><br /><span class="muted">{s.description[k]}</span></span><button class="btn" onClick={() => addStarter(s.key)}>{t.addStarter}</button></div>; })}
+          {starters.map((s) => { const k = locale === 'fr-CA' ? 'fr' : 'en'; return <div class="erow" key={s.key}><span><b>{s.title[k]}</b><br /><span class="muted">{s.description[k]}</span></span>{s.courseId ? <button class="btn quiet" onClick={() => onOpen(s.courseId!)}>{t.starterAdded}</button> : <button class="btn" onClick={() => addStarter(s.key)}>{t.addStarter}</button>}</div>; })}
           <button class="btn quiet" onClick={() => setShowStarters(false)}>{t.cancel}</button>
         </div>
       )}

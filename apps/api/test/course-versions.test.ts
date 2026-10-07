@@ -255,3 +255,26 @@ test('video starter course: five video lessons per language with a transcript, c
   assert.equal((await app.inject({ method: 'GET', url: '/media/..%2Fpackage.json' })).statusCode, 404);
   assert.equal((await app.inject({ method: 'GET', url: '/media/nope.mp4' })).statusCode, 404);
 });
+
+test('a starter course can be added once per company; a published title cannot be published twice', async () => {
+  const first = await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'aml-fraud' });
+  assert.equal(first.status, 201);
+  const again = await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'aml-fraud' });
+  assert.equal(again.status, 200); assert.equal(again.json.id, first.json.id); assert.equal(again.json.existing, true);
+  const list = (await call(ADMIN, 'GET', '/v1/courses/starter')).json.courses;
+  assert.equal(list.find((c: any) => c.key === 'aml-fraud').courseId, first.json.id);
+  assert.equal(list.find((c: any) => c.key === 'claims-handling').courseId, null);
+  // archive the copy and the starter can be added again
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${first.json.id}`, { status: 'archived' })).status, 204);
+  const third = await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'aml-fraud' });
+  assert.equal(third.status, 201); assert.notEqual(third.json.id, first.json.id);
+  // two courses with the same title: the second cannot be published while the first is
+  const mk = async () => (await call(ADMIN, 'POST', '/v1/courses', { title: 'Twin course' })).json.id;
+  const a = await mk(), b = await mk();
+  for (const id of [a, b]) assert.equal((await call(ADMIN, 'POST', `/v1/courses/${id}/lessons`, { title: 'L', type: 'richtext', text: 'x' })).status, 201);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${a}`, { status: 'published' })).status, 204);
+  const blocked = await call(ADMIN, 'PATCH', `/v1/courses/${b}`, { status: 'published' });
+  assert.equal(blocked.status, 409); assert.match(JSON.stringify(blocked.json), /already published/);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${b}`, { title: 'Twin course 2' })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${b}`, { status: 'published' })).status, 204);
+});

@@ -188,6 +188,13 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
         if (b.status === 'published') {
           const n = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM lessons WHERE course_id = $1', [id])).rows[0]!.n;
           if (n === 0) throw invalid('Add at least one lesson before publishing');
+          // The same course must not be published twice: another published course with this title blocks it.
+          const dupe = (await tx.query<{ title: string }>(
+            `SELECT l2.title FROM course_locales l1
+               JOIN course_locales l2 ON lower(btrim(l2.title)) = lower(btrim(l1.title)) AND l2.locale = l1.locale AND l2.course_id <> l1.course_id
+               JOIN courses c2 ON c2.id = l2.course_id AND c2.status = 'published'
+              WHERE l1.course_id = $1 AND l1.title <> '' LIMIT 1`, [id])).rows[0];
+          if (dupe) throw conflict(`A course called “${dupe.title}” is already published. Open that one, or rename this course before publishing it.`);
         }
         if (b.status !== undefined || b.quebecFacing !== undefined) {
           await tx.query('UPDATE courses SET status = coalesce($2::course_status, status), quebec_facing = coalesce($3, quebec_facing), updated_at = now() WHERE id = $1', [id, b.status ?? null, b.quebecFacing ?? null]);
@@ -563,8 +570,10 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   // ------------------------------------------------------------------ starter courses
   app.get('/v1/courses/starter', async (req) => {
-    await deps.authenticate(req);
-    return { courses: STARTER_COURSES.map((c) => ({ key: c.key, title: c.title, description: c.description, lessons: c.lessons.length, questions: c.quiz.length })) };
+    const { ctx } = await deps.authenticate(req);
+    const have = await run(ctx, async (tx) => (await tx.query<{ starter_key: string; id: string }>(`SELECT starter_key, id FROM courses WHERE starter_key IS NOT NULL AND status <> 'archived'`)).rows);
+    const added = new Map(have.map((r) => [r.starter_key, r.id]));
+    return { courses: STARTER_COURSES.map((c) => ({ key: c.key, title: c.title, description: c.description, lessons: c.lessons.length, questions: c.quiz.length, courseId: added.get(c.key) ?? null })) };
   });
 
   /** Copies a starter course into the company as an unpublished draft, in both languages. Run again, it makes another copy. */
@@ -576,8 +585,11 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     const owner = b.ownerNodeId ?? authorNodes(ctx)[0] ?? ctx.nodeIds[0];
     if (!owner || !canAuthorAt(ctx, owner)) throw forbidden('Only a trainer, manager or administrator can add a course');
     const out = await run(ctx, async (tx) => {
+      // Each starter course exists once per company: asking again opens the copy that is already there.
+      const had = (await tx.query<{ id: string }>(`SELECT id FROM courses WHERE starter_key = $1 AND status <> 'archived' LIMIT 1`, [sc.key])).rows[0];
+      if (had) return { id: had.id, existing: true };
       const id = randomUUID();
-      await tx.query(`INSERT INTO courses (id, tenant_id, owner_node_id, default_locale, quebec_facing, created_by) VALUES ($1,$2,$3,'en',false,$4)`, [id, ctx.tenantId, owner, ctx.userId]);
+      await tx.query(`INSERT INTO courses (id, tenant_id, owner_node_id, default_locale, quebec_facing, created_by, starter_key) VALUES ($1,$2,$3,'en',false,$4,$5)`, [id, ctx.tenantId, owner, ctx.userId, sc.key]);
       for (const [loc, key] of [['en', 'en'], ['fr-CA', 'fr']] as const)
         await tx.query(`INSERT INTO course_locales (course_id, tenant_id, locale, title, description, is_published) VALUES ($1,$2,$3,$4,$5,true)`, [id, ctx.tenantId, loc, sc.title[key], sc.description[key]]);
       const mod = (await tx.query<{ id: string }>(`INSERT INTO course_modules (tenant_id, course_id, position, titles) VALUES ($1,$2,1,$3) RETURNING id`, [ctx.tenantId, id, JSON.stringify({ en: 'Lessons', 'fr-CA': 'Leçons' })])).rows[0]!.id;
@@ -596,9 +608,9 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
         await tx.query(`INSERT INTO quiz_questions (tenant_id, lesson_id, position, type, content, correct, points) VALUES ($1,$2,$3,'single',$4,$5,1)`, [ctx.tenantId, qid, i + 1, JSON.stringify(content), JSON.stringify([String(q.correct)])]);
       }
       await audit(tx, ctx, 'course_created', 'course', id, { starter: sc.key });
-      return { id };
+      return { id, existing: false };
     });
-    return reply.code(201).send(out);
+    return reply.code(out.existing ? 200 : 201).send(out);
   });
 
   // ------------------------------------------------------------------ asking to join a course
