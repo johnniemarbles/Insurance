@@ -50,6 +50,8 @@ export interface AppDeps {
   keys?: KeyProvider;
   /** AI text service. Absent: AI features answer 503. */
   ai?: AiClient;
+  /** Sends reminder emails. Absent: reminders stay in the app. */
+  mailer?: import('./mailer.ts').Mailer;
 }
 
 export function buildApp(input: AppDeps): FastifyInstance {

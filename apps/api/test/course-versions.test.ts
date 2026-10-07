@@ -158,6 +158,11 @@ test('certificate: shows the course version, takes CE hours from that version, a
   assert.equal(pdf.statusCode, 200); assert.equal(pdf.headers['content-type'], 'application/pdf');
   assert.equal(pdf.rawPayload.subarray(0, 5).toString(), '%PDF-');
   assert.equal((await app.inject({ method: 'GET', url: '/c/000000000000000000/pdf' })).statusCode, 404);
+  // a name the standard fonts cannot draw still gets a PDF, in Noto fonts
+  await owner((o) => o.query(`UPDATE app_users SET display_name = 'ਗੁਰਪ੍ਰੀਤ Sañjeev नमस्ते' WHERE email = $1`, [B]));
+  const uni = await app.inject({ method: 'GET', url: `/c/${code}/pdf` });
+  assert.equal(uni.statusCode, 200, 'Unicode names are drawn, not redirected'); assert.equal(uni.headers['content-type'], 'application/pdf');
+  if (process.env.CERT_OUT) (await import('node:fs')).writeFileSync(process.env.CERT_OUT, uni.rawPayload);
 });
 
 test('courses that need approval: ask, get told, approve or decline', async () => {
@@ -192,7 +197,7 @@ test('courses that need approval: ask, get told, approve or decline', async () =
 
 test('starter courses: listed, copied as drafts in both languages, authors only, quiz works', async () => {
   const list = (await call(A, 'GET', '/v1/courses/starter')).json.courses;
-  assert.equal(list.length, 3); assert.ok(list.every((c: any) => c.lessons === 3 && c.questions === 5));
+  assert.equal(list.length, 4); assert.ok(list.every((c: any) => c.lessons === 3 && c.questions === 5));
   assert.equal((await call(A, 'POST', '/v1/courses/starter', { key: 'eo-basics' })).status, 403, 'learners cannot add courses');
   assert.equal((await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'nope' })).status, 404);
   const made = await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'privacy-basics' });
@@ -207,4 +212,22 @@ test('starter courses: listed, copied as drafts in both languages, authors only,
   const q = (await call(ADMIN, 'GET', `/v1/lessons/${quiz.id}`)).json.quiz.questions;
   assert.equal(q.length, 5);
   assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${id}`, { status: 'published' })).status, 204, 'a reviewer can publish it');
+});
+
+test('a manager can give a learner extra tries at a quiz', async () => {
+  const c = (await call(ADMIN, 'POST', '/v1/courses', { title: 'One try', ownerNodeId: co.rootNodeId })).json.id;
+  const ql = (await call(ADMIN, 'POST', `/v1/courses/${c}/lessons`, { title: 'Check', type: 'quiz', passMark: 100, maxAttempts: 1 })).json.id;
+  assert.equal((await call(ADMIN, 'PUT', `/v1/lessons/${ql}/quiz`, { questions: [{ prompt: 'Pick A', options: ['A', 'B'], correct: [0] }] })).status, 204);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c}`, { status: 'published' })).status, 204);
+  const qid = (await call(ADMIN, 'GET', `/v1/lessons/${ql}`)).json.quiz.questions[0].id;
+  assert.equal((await call(A, 'POST', `/v1/lessons/${ql}/quiz/attempt`, { answers: { [qid]: ['1'] } })).json.attemptsLeft, 0);
+  assert.equal((await call(A, 'POST', `/v1/lessons/${ql}/quiz/attempt`, { answers: { [qid]: ['0'] } })).status, 403, 'out of tries');
+  const aId = (await owner((o) => o.query(`SELECT id FROM app_users WHERE email = $1`, [A]))).rows[0].id;
+  assert.equal((await call(B, 'POST', `/v1/lessons/${ql}/quiz/extra-attempts`, { userId: aId, extra: 1 })).status, 403, 'a learner cannot grant tries');
+  assert.equal((await call(ADMIN, 'POST', `/v1/lessons/${ql}/quiz/extra-attempts`, { userId: aId, extra: 1 })).status, 204);
+  const view = (await call(A, 'GET', `/v1/lessons/${ql}`)).json.quiz;
+  assert.equal(view.maxAttempts, 2); assert.equal(view.status.allowed, true);
+  const ok = await call(A, 'POST', `/v1/lessons/${ql}/quiz/attempt`, { answers: { [qid]: ['0'] } });
+  assert.equal(ok.json.passed, true); assert.equal(ok.json.attemptNo, 2);
+  assert.equal((await call(ADMIN, 'POST', `/v1/lessons/${ql}/quiz/extra-attempts`, { userId: '00000000-0000-4000-8000-000000000000', extra: 1 })).status, 404);
 });

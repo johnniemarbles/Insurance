@@ -7,7 +7,7 @@ export interface N { id: string; kind: string; boxId: string | null; pipelineId:
 
 export const X = {
   'en': {
-    title: 'Notifications', none: 'You are all caught up.', markAll: 'Mark all read', settings: 'Choose what you are told about',
+    title: 'Notifications', none: 'You are all caught up.', markAll: 'Mark all read', settings: 'Choose what you are told about', emailRem: 'Email reminders (training, continuing education, licences)',
     text: (n: N) => {
       const who = n.actorName ?? 'Someone', box = n.data.boxName ?? 'a record';
       switch (n.kind) {
@@ -35,7 +35,7 @@ export const X = {
     },
   },
   'fr-CA': {
-    title: 'Notifications', none: 'Vous êtes à jour.', markAll: 'Tout marquer comme lu', settings: 'Choisir ce dont vous êtes informé',
+    title: 'Notifications', none: 'Vous êtes à jour.', markAll: 'Tout marquer comme lu', settings: 'Choisir ce dont vous êtes informé', emailRem: 'Rappels par courriel (formation, formation continue, permis)',
     text: (n: N) => {
       const who = n.actorName ?? 'Quelqu’un', box = n.data.boxName ?? 'un dossier';
       switch (n.kind) {
@@ -70,6 +70,9 @@ export function NotificationsPage({ call, locale, go }: { call: Call; locale: Lo
   const x = X[locale];
   const [list, setList] = useState<N[] | null>(null);
   const [err, setErr] = useState('');
+  const [mail, setMail] = useState<{ enabled: boolean; available: boolean } | null>(null);
+  useEffect(() => { call('GET', '/v1/me/email-reminders').then(setMail, () => setMail(null)); }, [call]);
+  const toggleMail = async (enabled: boolean) => { try { await call('PUT', '/v1/me/email-reminders', { enabled }); setMail((m) => (m ? { ...m, enabled } : m)); } catch (e) { setErr((e as Error).message); } };
   const load = () => call('GET', '/v1/notifications').then((r) => setList(r.notifications), (e) => setErr((e as Error).message));
   useEffect(() => { void load(); }, [call]);
   const open = async (n: N) => {
@@ -87,6 +90,7 @@ export function NotificationsPage({ call, locale, go }: { call: Call; locale: Lo
       <div class="erow"><h2 style={{ margin: 0 }}>{x.title}</h2><span class="spacer" />
         <button class="link" onClick={() => go('settings', 'notifications')}>{x.settings}</button>
         <button class="btn quiet" disabled={!list.some((n) => !n.readAt)} onClick={() => void markAll()}>{x.markAll}</button></div>
+      {mail?.available && <label class="erow" style={{ marginTop: '8px' }}><input type="checkbox" checked={mail.enabled} onChange={(e) => void toggleMail((e.target as HTMLInputElement).checked)} /> {x.emailRem}</label>}
       <div class="hcard" style={{ marginTop: '12px' }}>
         {list.length === 0 && <p class="muted">{x.none}</p>}
         {list.map((n) => (

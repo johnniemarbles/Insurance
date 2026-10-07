@@ -1,6 +1,7 @@
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { assertDeployment, createPool } from '@pii/db';
 import { buildApp } from './app.ts';
+import { resendMailer } from './mailer.ts';
 import { devAuthenticator, firstOf, sessionAuthenticator } from './auth.ts';
 import { realGoogleClient } from './google.ts';
 import { anthropicClient } from './ai.ts';
@@ -22,6 +23,8 @@ const authenticate = config.devAuth ? firstOf(sessionAuthenticator(authPool), de
 const keys = config.localKeys && config.localKeySecret ? localKeyProvider(config.localKeySecret, config.currentKeyId) : undefined;
 if (!keys) console.warn('No encryption keys configured: linking email conversations is disabled.');
 const ai = process.env.ANTHROPIC_API_KEY ? anthropicClient(process.env.ANTHROPIC_API_KEY, process.env.AI_MODEL ?? 'claude-sonnet-5-5') : undefined;
-const app = buildApp({ config, appPool, authPool, authenticate, google, keys, ai });
+const mailer = resendMailer(config);
+if (!mailer) console.warn('RESEND_API_KEY is not set: reminders stay in the app and are not emailed.');
+const app = buildApp({ config, appPool, authPool, authenticate, google, keys, ai, mailer });
 await app.listen({ port: config.port, host: '0.0.0.0' });
-startBackgroundJobs({ config, appPool, authPool, authenticate, google, keys });
+startBackgroundJobs({ config, appPool, authPool, authenticate, google, keys, mailer });

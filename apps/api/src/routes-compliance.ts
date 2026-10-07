@@ -1,3 +1,4 @@
+import { buildReminderMail } from './mailer.ts';
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
 import {
@@ -90,7 +91,20 @@ export async function tell(deps: AppDeps, tenantId: string, userIds: string[], k
     try {
       await deps.authPool.query('INSERT INTO notifications (tenant_id, user_id, kind, actor_id, data) VALUES ($1,$2,$3,$4,$5)', [tenantId, id, kind, actorId, JSON.stringify(data)]);
     } catch { /* a missed notice never blocks the work */ }
+    if (deps.mailer && EMAILED.has(kind)) await emailReminder(deps, id, kind, data);
   }
+}
+
+const EMAILED = new Set(['learning_due', 'ce_reminder', 'compliance_expiry']);
+
+/** Reminders also go by email, unless the person turned that off. A failed send never blocks the work. */
+async function emailReminder(deps: AppDeps, userId: string, kind: string, data: Record<string, unknown>): Promise<void> {
+  try {
+    const u = (await deps.authPool.query<{ email: string; locale: string; email_reminders: boolean; status: string }>('SELECT email::text AS email, locale::text AS locale, email_reminders, status::text AS status FROM app_users WHERE id = $1', [userId])).rows[0];
+    if (!u || !u.email_reminders || u.status === 'disabled') return;
+    const mail = buildReminderMail(deps.config, u.email, kind, data, u.locale === 'fr-CA' ? 'fr-CA' : 'en');
+    if (mail) await deps.mailer!.send(mail);
+  } catch { /* the in-app notice already exists */ }
 }
 
 const str = (max: number) => ({ type: 'string', maxLength: max }) as const;

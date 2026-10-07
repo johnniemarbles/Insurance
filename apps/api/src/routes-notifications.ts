@@ -18,6 +18,16 @@ export async function unreadCount(tx: Tx, userId: string): Promise<number> {
 }
 
 export function registerNotificationRoutes(app: FastifyInstance, deps: AppDeps): void {
+  app.get('/v1/me/email-reminders', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const r = (await deps.authPool.query<{ on: boolean }>('SELECT email_reminders AS on FROM app_users WHERE id = $1', [ctx.userId])).rows[0];
+    return { enabled: r?.on ?? true, available: Boolean(deps.mailer) };
+  });
+  app.put('/v1/me/email-reminders', { schema: { body: { type: 'object', required: ['enabled'], additionalProperties: false, properties: { enabled: { type: 'boolean' } } } } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    await deps.authPool.query('UPDATE app_users SET email_reminders = $2 WHERE id = $1', [ctx.userId, (req.body as { enabled: boolean }).enabled]);
+    return reply.code(204).send();
+  });
   app.get('/v1/notifications', { schema: { querystring: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 100 } } } } }, async (req) => {
     const { ctx } = await deps.authenticate(req);
     const limit = (req.query as { limit?: number }).limit ?? 50;

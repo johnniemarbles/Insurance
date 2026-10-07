@@ -18,6 +18,12 @@ const idParams = { type: 'object', properties: { id: uuid } } as const;
 
 /** Nodes where the caller may build and assign training: admins, managers and trainers. */
 const authorNodes = (ctx: RequestContext): string[] => ctx.roles.filter((r) => ['admin', 'manager', 'trainer'].includes(r.role)).map((r) => r.nodeId);
+/** Extra tries a manager gave this learner for one quiz. */
+const extraTries = async (tx: Tx, enrollmentId: string | undefined, lessonId: string): Promise<number> => {
+  if (!enrollmentId) return 0;
+  const r = (await tx.query<{ n: number }>(`SELECT coalesce((extra_attempts ->> $2)::int, 0) AS n FROM enrollments WHERE id = $1`, [enrollmentId, lessonId])).rows[0];
+  return r?.n ?? 0;
+};
 const canAuthorAt = (ctx: RequestContext, ownerNodeId: string): boolean => ctx.isTenantAdmin || authorNodes(ctx).includes(ownerNodeId);
 const loc = (q: { locale?: string }): Locale => (q.locale === 'fr-CA' ? 'fr-CA' : 'en');
 
@@ -371,9 +377,11 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
         const qs = (await tx.query<{ id: string; type: string; content: Record<string, { prompt: string; options: { key: string; text: string }[] }>; correct: string[]; points: number }>(
           'SELECT id, type, content, correct, points FROM quiz_questions WHERE lesson_id = $1 ORDER BY position', [id])).rows;
         const attempts = enr ? (await tx.query(`SELECT score_pct::float8 AS "scorePct", passed, attempted_at AS "attemptedAt", attempt_no AS "attemptNo" FROM quiz_attempts WHERE enrollment_id = $1 AND lesson_id = $2 ORDER BY attempted_at DESC`, [enr.id, id])).rows : [];
+        const extra = await extraTries(tx, enr?.id, id);
+        const cap = l.max_attempts ? l.max_attempts + extra : null;
         quiz = {
-          passMark: l.pass_mark, maxAttempts: l.max_attempts, cooldownMinutes: l.cooldown_minutes, attempts,
-          status: attemptStatus({ maxAttempts: l.max_attempts, cooldownMinutes: l.cooldown_minutes }, (attempts as { attemptedAt: string; passed: boolean }[])),
+          passMark: l.pass_mark, maxAttempts: cap, cooldownMinutes: l.cooldown_minutes, attempts, ...(canEdit ? { baseMaxAttempts: l.max_attempts } : {}),
+          status: attemptStatus({ maxAttempts: cap, cooldownMinutes: l.cooldown_minutes }, (attempts as { attemptedAt: string; passed: boolean }[])),
           questions: qs.map((q) => {
             const c = q.content[lang] ?? q.content.en ?? Object.values(q.content)[0]!;
             // the answer key leaves the server only for people who can edit the course
@@ -415,7 +423,8 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
         await assertUnlocked(tx, ctx, l.course_id, id, l.owner_node_id);
         const enr = await ensureEnrollment(tx, ctx, l.course_id);
         const prior = (await tx.query<{ attempted_at: string; passed: boolean }>('SELECT attempted_at, passed FROM quiz_attempts WHERE enrollment_id = $1 AND lesson_id = $2', [enr, id])).rows.map((r) => ({ attemptedAt: r.attempted_at, passed: r.passed }));
-        const st = attemptStatus({ maxAttempts: l.max_attempts, cooldownMinutes: l.cooldown_minutes }, prior);
+        const cap = l.max_attempts ? l.max_attempts + (await extraTries(tx, enr, id)) : null;
+        const st = attemptStatus({ maxAttempts: cap, cooldownMinutes: l.cooldown_minutes }, prior);
         if (st.reason === 'no_attempts_left') throw forbidden('No attempts left for this quiz');
         if (st.reason === 'passed') throw conflict('You have already passed this quiz');
         if (st.reason === 'cooldown') throw conflict(`Please wait before trying again. The next attempt opens at ${st.nextAt}`);
@@ -441,11 +450,28 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
              ON CONFLICT (enrollment_id, lesson_id) DO UPDATE SET status = 'completed', completed_at = coalesce(lesson_progress.completed_at, now())`, [enr, id, ctx.tenantId]);
           progress = await recompute(tx, ctx, enr, l.course_id);
         }
-        const after = attemptStatus({ maxAttempts: l.max_attempts, cooldownMinutes: l.cooldown_minutes }, [...prior, { attemptedAt: new Date().toISOString(), passed }]);
+        const after = attemptStatus({ maxAttempts: cap, cooldownMinutes: l.cooldown_minutes }, [...prior, { attemptedAt: new Date().toISOString(), passed }]);
         return { scorePct: score, passed, passMark: l.pass_mark, results, attemptNo: prior.length + 1, attemptsLeft: after.left, nextAttemptAt: after.nextAt, ...progress };
       });
     },
   );
+
+  /** A trainer, manager or administrator gives one learner more tries at a quiz. */
+  app.post('/v1/lessons/:id/quiz/extra-attempts', { schema: { params: idParams, body: { type: 'object', required: ['userId', 'extra'], additionalProperties: false, properties: { userId: uuid, extra: { type: 'integer', minimum: 1, maximum: 20 } } } } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    const b = req.body as { userId: string; extra: number };
+    await run(ctx, async (tx) => {
+      const l = await loadLesson(tx, id);
+      if (l.type !== 'quiz') throw invalid('That lesson is not a quiz');
+      if (!canAuthorAt(ctx, l.owner_node_id)) throw forbidden('Only a trainer, manager or administrator of the owning branch can give extra attempts');
+      if (!l.max_attempts) throw invalid('This quiz has no limit on attempts');
+      const done = await tx.query(`UPDATE enrollments SET extra_attempts = jsonb_set(extra_attempts, ARRAY[$3::text], to_jsonb(coalesce((extra_attempts ->> $3)::int, 0) + $4::int)) WHERE user_id = $1 AND course_id = $2`, [b.userId, l.course_id, id, b.extra]);
+      if (!done.rowCount) throw notFound('That person is not taking this course');
+      await audit(tx, ctx, 'quiz_extra_attempts', 'lesson', id, { userId: b.userId, extra: b.extra });
+    });
+    return reply.code(204).send();
+  });
 
   app.post('/v1/courses/:id/enroll', { schema: { params: idParams } }, async (req, reply) => {
     const { ctx } = await deps.authenticate(req);

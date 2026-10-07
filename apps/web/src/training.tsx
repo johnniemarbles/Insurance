@@ -202,7 +202,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
 }
 
 interface QuizQ { id: string; type: string; prompt: string; options: { key: string; text: string }[]; correct?: string[] }
-interface LessonDetail { id: string; courseId: string; type: string; title: string; body: { text?: string; url?: string }; required: boolean; done: boolean; canEdit: boolean; quiz?: { passMark: number | null; maxAttempts: number | null; cooldownMinutes?: number | null; status?: { allowed: boolean; reason: string | null; left: number | null; nextAt: string | null }; attempts: { scorePct: number; passed: boolean }[]; questions: QuizQ[] } }
+interface LessonDetail { id: string; courseId: string; type: string; title: string; body: { text?: string; url?: string }; required: boolean; done: boolean; canEdit: boolean; quiz?: { passMark: number | null; maxAttempts: number | null; baseMaxAttempts?: number | null; cooldownMinutes?: number | null; status?: { allowed: boolean; reason: string | null; left: number | null; nextAt: string | null }; attempts: { scorePct: number; passed: boolean }[]; questions: QuizQ[] } }
 
 function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t: Strings; locale: Locale; onBack: () => void }) {
   const [l, setL] = useState<LessonDetail | null>(null);
@@ -213,6 +213,10 @@ function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t
   const [url, setUrl] = useState('');
   const [editing, setEditing] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
+  const [rules, setRules] = useState<{ pass: string; max: string; wait: string } | null>(null);
+  const [learners, setLearners] = useState<{ userId: string; displayName: string | null; email: string }[] | null>(null);
+  const [grantTo, setGrantTo] = useState('');
+  const [note, setNote] = useState('');
   const load = useCallback(() => { call('GET', `/v1/lessons/${id}?locale=${locale}`).then((r) => { setL(r); setText(r.body?.text ?? ''); setUrl(r.body?.url ?? ''); }, (e) => setErr((e as Error).message)); }, [call, id, locale]);
   useEffect(load, [load]);
   if (!l) return <div class="msg">{err || t.loading}</div>;
@@ -259,6 +263,40 @@ function LessonPage({ id, call, t, locale, onBack }: { id: string; call: Call; t
           {result && <p class={result.passed ? 'ok' : 'overdue'}><b>{result.scorePct}%</b> · {result.passed ? t.passed : t.notPassed}</p>}
         </>
       )}
+
+      {l.canEdit && l.type === 'quiz' && l.quiz && (() => {
+        const fr = locale === 'fr-CA';
+        const r = rules ?? { pass: String(l.quiz!.passMark ?? 70), max: String(l.quiz!.baseMaxAttempts ?? ''), wait: String(l.quiz!.cooldownMinutes ?? '') };
+        const set = (k: 'pass' | 'max' | 'wait') => (e: Event) => setRules({ ...r, [k]: (e.target as HTMLInputElement).value });
+        const save = async () => {
+          setErr(''); setNote('');
+          try {
+            await call('PATCH', `/v1/lessons/${id}`, { passMark: Number(r.pass), maxAttempts: r.max.trim() ? Number(r.max) : null, cooldownMinutes: r.wait.trim() ? Number(r.wait) : null });
+            setRules(null); setNote(fr ? 'Enregistré.' : 'Saved.'); load();
+          } catch (e) { setErr((e as Error).message); }
+        };
+        const openGrant = () => call('GET', `/v1/courses/${l.courseId}/progress`).then((x) => setLearners(x.learners), (e) => setErr((e as Error).message));
+        const grant = async () => { try { await call('POST', `/v1/lessons/${id}/quiz/extra-attempts`, { userId: grantTo, extra: 1 }); setNote(fr ? 'Une tentative de plus accordée.' : 'One more attempt given.'); } catch (e) { setErr((e as Error).message); } };
+        return (
+          <fieldset class="q">
+            <legend>{fr ? 'Règles du test' : 'Quiz rules'}</legend>
+            <div class="erow">
+              <label>{fr ? 'Note de passage (%)' : 'Pass mark (%)'} <input type="number" min={0} max={100} value={r.pass} onInput={set('pass')} style={{ width: '5em' }} /></label>
+              <label>{fr ? 'Tentatives max.' : 'Max attempts'} <input type="number" min={1} max={50} placeholder={fr ? 'illimité' : 'unlimited'} value={r.max} onInput={set('max')} style={{ width: '6em' }} /></label>
+              <label>{fr ? 'Attente entre les essais (min)' : 'Wait between tries (min)'} <input type="number" min={1} max={10080} placeholder={fr ? 'aucune' : 'none'} value={r.wait} onInput={set('wait')} style={{ width: '6em' }} /></label>
+              <button class="btn quiet" onClick={() => void save()}>{t.saveBtn}</button>
+            </div>
+            {l.quiz!.baseMaxAttempts ? (
+              <div class="erow">
+                {!learners && <button class="btn quiet" onClick={() => void openGrant()}>{fr ? 'Accorder une tentative de plus…' : 'Give a learner another attempt…'}</button>}
+                {learners && <><select aria-label={fr ? 'Apprenant' : 'Learner'} value={grantTo} onChange={(e) => setGrantTo((e.target as HTMLSelectElement).value)}><option value="">{fr ? 'Choisir…' : 'Choose…'}</option>{learners.map((m) => <option value={m.userId}>{m.displayName ?? m.email}</option>)}</select>
+                  <button class="btn" disabled={!grantTo} onClick={() => void grant()}>{fr ? 'Accorder' : 'Give'}</button></>}
+              </div>
+            ) : null}
+            {note && <small class="ok" role="status">{note}</small>}
+          </fieldset>
+        );
+      })()}
 
       {l.canEdit && l.type !== 'quiz' && (
         <>
