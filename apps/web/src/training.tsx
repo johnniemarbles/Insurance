@@ -310,7 +310,26 @@ function LessonPage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
             </fieldset>
           ))}
           {l.quiz.questions.length > 0 && <div class="actions"><button class="btn" onClick={submit} disabled={Object.keys(answers).length === 0 || (!l.canEdit && l.quiz.status?.allowed === false)}>{t.submitQuiz}</button></div>}
-          {result && <p class={result.passed ? 'ok' : 'overdue'}><b>{result.scorePct}%</b> · {result.passed ? t.passed : t.notPassed}</p>}
+          {result && (() => {
+            const total = result.results.length, right = result.results.filter((r) => r.correct).length, pass = l.quiz!.passMark ?? 0;
+            const C = 2 * Math.PI * 42, off = C * (1 - Math.min(100, result.scorePct) / 100);
+            const left = l.quiz!.status?.left;
+            return (
+              <div class={`qr ${result.passed ? 'pass' : 'fail'}`} role="status">
+                <svg viewBox="0 0 100 100" class="qr-ring" aria-hidden="true"><circle cx="50" cy="50" r="42" class="bg" /><circle cx="50" cy="50" r="42" class="fg" stroke-dasharray={C} stroke-dashoffset={off} transform="rotate(-90 50 50)" /><text x="50" y="57" text-anchor="middle">{Math.round(result.scorePct)}%</text></svg>
+                <div class="qr-t">
+                  <b>{result.passed ? (fr ? 'Réussi !' : 'You passed!') : (fr ? 'Pas encore réussi' : 'Not passed yet')}</b>
+                  <span>{fr ? `${right} bonnes réponses sur ${total} · note de passage ${pass} %` : `${right} of ${total} correct · pass mark ${pass}%`}</span>
+                  {!result.passed && <span>{fr ? 'Relisez les leçons, puis réessayez.' : 'Review the lessons, then try again.'}{left != null && left >= 0 ? (fr ? ` Tentatives restantes : ${left}.` : ` Attempts left: ${left}.`) : ''}</span>}
+                  <div class="qr-a">
+                    {!result.passed && <button class="btn quiet" onClick={() => { setResult(null); setAnswers({}); }}>{fr ? 'Réessayer' : 'Try again'}</button>}
+                    {result.passed && next && !next.locked && <button class="btn" onClick={() => onLesson(next.id)}>{fr ? 'Leçon suivante' : 'Next lesson'} →</button>}
+                    {result.passed && !next && <button class="btn" onClick={onBack}>{fr ? 'Retour au cours' : 'Back to the course'}</button>}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </>
       )}
 
