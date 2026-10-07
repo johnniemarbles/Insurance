@@ -260,23 +260,33 @@ function LessonPage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
   const idx = ls.findIndex((x) => x.id === id);
   const prev = idx > 0 ? ls[idx - 1] : undefined;
   const next = idx >= 0 ? ls[idx + 1] : undefined;
+  const th = themeOf({ title: outline?.title ?? '', starterKey: outline?.starterKey } as any);
+  const goNext = async () => { if (l.type !== 'quiz' && !l.done) await complete(); if (next && !next.locked) onLesson(next.id); };
   const nav = outline && (
     <div class="lp-nav">
       <button class="btn quiet" disabled={!prev || prev.locked} onClick={() => prev && onLesson(prev.id)}>← {fr ? 'Précédent' : 'Previous'}</button>
-      <button class="btn" disabled={!next || next.locked} onClick={() => next && onLesson(next.id)}>{fr ? 'Suivant' : 'Next'} →</button>
+      <span class="lp-mid">
+        {l.type !== 'quiz' && !l.done && <button class="btn quiet" onClick={complete}>✓ {t.markDone}</button>}
+        {l.done && <span class="ok">✓ {fr ? 'Terminé' : 'Done'}</span>}
+      </span>
+      <button class="btn" disabled={(!next || next.locked) && (l.type === 'quiz' || l.done)} onClick={() => void goNext()}>{next ? (l.type !== 'quiz' && !l.done ? (fr ? 'Terminer et continuer' : 'Complete and continue') : (fr ? 'Leçon suivante' : 'Next lesson')) : (fr ? 'Terminer' : 'Finish')} →</button>
     </div>
   );
   return (
     <div class="tpad xl lp">
       <div class="lp-main">
       <button class="link" onClick={onBack}>← {t.backToCourse}</button>
-      <h1>{l.title} {l.done && <span class="ok">✓</span>}</h1>
+      <div class="lp-hero" style={{ background: `linear-gradient(120deg,${th.a},${th.b})` }}>
+        <svg class="lp-ico" viewBox="0 0 100 100" aria-hidden="true">{ICONS[th.icon]}</svg>
+        <small class="lp-kick">{idx >= 0 ? (fr ? `Leçon ${idx + 1} sur ${ls.length}` : `Lesson ${idx + 1} of ${ls.length}`) : (fr ? 'Leçon' : 'Lesson')}</small>
+        <h1>{l.title}{l.done && <span class="lp-ok">✓ {fr ? 'Terminé' : 'Done'}</span>}</h1>
+        <div class="lp-chips"><span>{l.type === 'video' ? (fr ? '▶ Vidéo' : '▶ Video') : l.type === 'quiz' ? (fr ? '❓ Test' : '❓ Quiz') : (fr ? '📖 Lecture' : '📖 Reading')}</span>{idx >= 0 && <span>⏱ {lessonMin(ls[idx]!)} min</span>}{l.required && <span>{fr ? 'Obligatoire' : 'Required'}</span>}</div>
+      </div>
       {err && <div class="err">{err}</div>}
-      {l.type === 'richtext' && <div class="prose">{(l.body.text ?? '').split(/\n{2,}/).map((p) => <p>{p}</p>)}</div>}
+      {l.type === 'richtext' && <div class="prose lp-card">{(l.body.text ?? '').split(/\n{2,}/).map((p) => <p>{p}</p>)}</div>}
       {l.type === 'video' && l.body.text && <details class="prose"><summary>{t.transcript}</summary>{l.body.text.split(/\n{2,}/).map((p) => <p>{p}</p>)}</details>}
       {l.type === 'link' && l.body.url && <p><a href={l.body.url} target="_blank" rel="noopener noreferrer">{l.body.url}</a></p>}
       {l.type === 'video' && l.body.url && (isVideoFile ? <video controls src={l.body.url} style={{ width: '100%', borderRadius: '8px' }} /> : <p><a href={l.body.url} target="_blank" rel="noopener noreferrer">▶ {t.watchVideo}</a></p>)}
-      {l.type !== 'quiz' && !l.done && <div class="actions"><button class="btn" onClick={complete}>{t.markDone}</button></div>}
 
       {l.type === 'quiz' && l.quiz && (
         <>
