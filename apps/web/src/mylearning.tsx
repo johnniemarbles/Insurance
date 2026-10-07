@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
+import { Paths } from './paths.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface En { id: string; courseId: string; title: string; status: string; progressPct: number; dueAt: string | null; completedAt: string | null; certificateCode: string | null; ceHours: number | null; outdated?: boolean }
 
-export function MyLearning({ call, locale, onOpen }: { call: Call; locale: Locale; onOpen: (courseId: string) => void }) {
+export function MyLearning({ call, locale, onOpen, canAuthor = false }: { call: Call; locale: Locale; onOpen: (courseId: string) => void; canAuthor?: boolean }) {
   const fr = locale === 'fr-CA';
   const [d, setD] = useState<{ origin: string; enrollments: En[] } | null>(null);
   const [err, setErr] = useState('');
@@ -41,6 +42,7 @@ export function MyLearning({ call, locale, onOpen }: { call: Call; locale: Local
         {hours > 0 && <div><b>{hours}</b><span>{fr ? 'Heures de FC' : 'CE hours'}</span></div>}
       </div>
       {all.length === 0 && <p class="muted">{fr ? 'Vous n’êtes inscrit à aucun cours. Ouvrez l’onglet Cours pour en choisir un.' : 'You are not enrolled in any course yet. Open the Courses tab to pick one.'}</p>}
+      <Paths call={call} locale={locale} canAuthor={canAuthor} onOpen={onOpen} />
       {sec(fr ? 'Échéance proche ou en retard' : 'Due soon or overdue', due)}
       {sec(fr ? 'En cours' : 'In progress', rest)}
       {sec(fr ? 'Terminés' : 'Completed', done)}

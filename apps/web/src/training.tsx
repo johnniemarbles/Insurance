@@ -25,7 +25,7 @@ export function TrainingView({ call, t, locale, canAuthor, isHeadOffice = false,
   return (
     <div class="train">
       {(view.k === 'list' || tab !== 'courses') && <div class="tpad" style={{ paddingBottom: 0 }}><div class="seg" role="tablist">{tabs.map((x) => <button role="tab" aria-selected={tab === x} onClick={() => { setTab(x); setView({ k: 'list' }); }}>{label[x]}</button>)}</div></div>}
-      {tab === 'learning' && <MyLearning call={call} locale={locale} onOpen={(id) => { setTab('courses'); setView({ k: 'course', id }); }} />}
+      {tab === 'learning' && <MyLearning call={call} locale={locale} canAuthor={canAuthor} onOpen={(id) => { setTab('courses'); setView({ k: 'course', id }); }} />}
       {tab === 'my' && <MyCe call={call} locale={locale} />}
       {tab === 'team' && <PeopleCe call={call} locale={locale} officer={false} />}
       {tab === 'officer' && <PeopleCe call={call} locale={locale} officer={true} />}

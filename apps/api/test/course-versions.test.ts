@@ -278,3 +278,27 @@ test('a starter course can be added once per company; a published title cannot b
   assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${b}`, { title: 'Twin course 2' })).status, 204);
   assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${b}`, { status: 'published' })).status, 204);
 });
+
+test('learning paths: authors build them, learners start them, assigning enrols a branch in every published course', async () => {
+  const c2 = (await call(ADMIN, 'POST', '/v1/courses', { title: 'Path second', ownerNodeId: co.rootNodeId })).json.id;
+  await call(ADMIN, 'POST', `/v1/courses/${c2}/lessons`, { title: 'Only', type: 'richtext', text: 'x' });
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${c2}`, { status: 'published' })).status, 204);
+  const mk = await call(ADMIN, 'POST', '/v1/paths', { name: 'New broker', courseIds: [course, c2] });
+  assert.equal(mk.status, 201);
+  const pid = mk.json.id;
+  assert.equal((await call(A, 'POST', '/v1/paths', { name: 'No', courseIds: [course] })).status, 403, 'learners cannot create');
+  assert.equal((await call(ADMIN, 'POST', '/v1/paths', { name: 'Bad', courseIds: ['00000000-0000-4000-8000-000000000000'] })).status, 422);
+  const list = (await call(A, 'GET', '/v1/paths')).json.paths;
+  assert.equal(list.length, 1);
+  assert.deepEqual(list[0].courses.map((c: any) => c.id), [course, c2]);
+  assert.equal(list[0].canEdit, false);
+  const as = await call(ADMIN, 'POST', `/v1/paths/${pid}/assignments`, { nodeId: co.rootNodeId, dueInDays: 14 });
+  assert.equal(as.status, 201);
+  assert.equal(as.json.courses >= 1, true);
+  assert.equal((await call(B, 'POST', `/v1/paths/${pid}/start`)).status, 200);
+  assert.equal((await call(A, 'PATCH', `/v1/paths/${pid}`, { name: 'x' })).status, 403);
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/paths/${pid}`, { courseIds: [c2] })).status, 204);
+  assert.equal((await call(ADMIN, 'GET', '/v1/paths')).json.paths[0].courses.length, 1);
+  assert.equal((await call(ADMIN, 'DELETE', `/v1/paths/${pid}`)).status, 204);
+  assert.equal((await call(ADMIN, 'GET', '/v1/paths')).json.paths.length, 0);
+});

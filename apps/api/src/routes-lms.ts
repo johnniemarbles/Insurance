@@ -717,4 +717,119 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
       };
     });
   });
+
+  // ------------------------------------------------------------------ learning paths
+  const pathBody = { type: 'object', required: ['name', 'courseIds'], additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 200 }, description: { type: 'string', maxLength: 2000 }, courseIds: { type: 'array', minItems: 1, maxItems: 20, uniqueItems: true, items: uuid } } } as const;
+  const loadPath = async (tx: Tx, id: string) => {
+    const p = (await tx.query<{ id: string; owner_node_id: string; name: string }>('SELECT id, owner_node_id, name FROM learning_paths WHERE id = $1', [id])).rows[0];
+    if (!p) throw notFound('Learning path not found');
+    return p;
+  };
+  const setPathCourses = async (tx: Tx, ctx: RequestContext, pathId: string, courseIds: string[]) => {
+    const ok = (await tx.query<{ id: string }>(`SELECT id FROM courses WHERE id = ANY($1::uuid[]) AND status <> 'archived'`, [courseIds])).rows.length;
+    if (ok !== courseIds.length) throw invalid('One of the courses was not found');
+    await tx.query('DELETE FROM learning_path_courses WHERE path_id = $1', [pathId]);
+    for (let i = 0; i < courseIds.length; i++) await tx.query('INSERT INTO learning_path_courses (path_id, tenant_id, course_id, position) VALUES ($1,$2,$3,$4)', [pathId, ctx.tenantId, courseIds[i], i + 1]);
+  };
+
+  app.get('/v1/paths', { schema: { querystring: { type: 'object', properties: { locale: localeProp } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const l = loc(req.query as { locale?: string });
+    return run(ctx, async (tx) => {
+      const paths = (await tx.query<{ id: string; name: string; description: string | null; ownerNodeId: string }>(
+        `SELECT id, name, description, owner_node_id AS "ownerNodeId" FROM learning_paths ORDER BY created_at DESC LIMIT 200`)).rows;
+      const rows = paths.length ? (await tx.query<{ pathId: string; id: string; title: string; status: string; starterKey: string | null; enrollStatus: string | null; progressPct: number | null }>(
+        `SELECT pc.path_id AS "pathId", c.id, ${courseText('title', l)} AS title, c.status, c.starter_key AS "starterKey", e.status AS "enrollStatus", e.progress_pct::float8 AS "progressPct"
+           FROM learning_path_courses pc JOIN courses c ON c.id = pc.course_id LEFT JOIN enrollments e ON e.course_id = c.id AND e.user_id = $2
+          WHERE pc.path_id = ANY($1::uuid[]) ORDER BY pc.position`, [paths.map((p) => p.id), ctx.userId])).rows : [];
+      return { paths: paths.map((p) => {
+        const courses = rows.filter((r) => r.pathId === p.id);
+        return { ...p, canEdit: canAuthorAt(ctx, p.ownerNodeId), courses, done: courses.filter((c) => c.enrollStatus === 'completed').length };
+      }) };
+    });
+  });
+
+  app.post('/v1/paths', { schema: { body: pathBody } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const b = req.body as { name: string; description?: string; courseIds: string[] };
+    const owner = authorNodes(ctx)[0];
+    if (!owner) throw forbidden('Only a trainer, manager or administrator can create a learning path');
+    const out = await run(ctx, async (tx) => {
+      const id = randomUUID();
+      await tx.query('INSERT INTO learning_paths (id, tenant_id, owner_node_id, name, description, created_by) VALUES ($1,$2,$3,$4,$5,$6)', [id, ctx.tenantId, owner, b.name.trim(), b.description ?? null, ctx.userId]);
+      await setPathCourses(tx, ctx, id, b.courseIds);
+      await audit(tx, ctx, 'path_created', 'learning_path', id);
+      return { id };
+    });
+    return reply.code(201).send(out);
+  });
+
+  app.patch('/v1/paths/:id', { schema: { params: idParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { ...pathBody.properties } } } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    const b = req.body as { name?: string; description?: string; courseIds?: string[] };
+    await run(ctx, async (tx) => {
+      const p = await loadPath(tx, id);
+      if (!canAuthorAt(ctx, p.owner_node_id)) throw forbidden('Only the owning branch can change this path');
+      if (b.name !== undefined || b.description !== undefined) await tx.query('UPDATE learning_paths SET name = coalesce($2, name), description = coalesce($3, description) WHERE id = $1', [id, b.name?.trim() ?? null, b.description ?? null]);
+      if (b.courseIds) { if (b.courseIds.length === 0) throw invalid('A path needs at least one course'); await setPathCourses(tx, ctx, id, b.courseIds); }
+      await audit(tx, ctx, 'path_updated', 'learning_path', id);
+    });
+    return reply.code(204).send();
+  });
+
+  app.delete('/v1/paths/:id', { schema: { params: idParams } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    await run(ctx, async (tx) => {
+      const p = await loadPath(tx, id);
+      if (!canAuthorAt(ctx, p.owner_node_id)) throw forbidden('Only the owning branch can delete this path');
+      await tx.query('DELETE FROM learning_paths WHERE id = $1', [id]);
+      await audit(tx, ctx, 'path_deleted', 'learning_path', id);
+    });
+    return reply.code(204).send();
+  });
+
+  /** Take the whole path: enrol in every published course that does not need approval. */
+  app.post('/v1/paths/:id/start', { schema: { params: idParams } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    return run(ctx, async (tx) => {
+      await loadPath(tx, id);
+      const cs = (await tx.query<{ course_id: string }>('SELECT course_id FROM learning_path_courses WHERE path_id = $1 ORDER BY position', [id])).rows;
+      let enrolled = 0, skipped = 0;
+      for (const c of cs) {
+        try { await tx.query('SAVEPOINT p'); await ensureEnrollment(tx, ctx, c.course_id); await tx.query('RELEASE SAVEPOINT p'); enrolled++; }
+        catch { await tx.query('ROLLBACK TO SAVEPOINT p'); skipped++; }
+      }
+      return { enrolled, skipped, firstCourseId: cs[0]?.course_id ?? null };
+    });
+  });
+
+  /** Assign every published course in the path to a branch, with the same due-date rules as a single course. */
+  app.post('/v1/paths/:id/assignments', { schema: { params: idParams, body: ruleBody } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    const b = req.body as Rule;
+    if (b.dueAt && b.dueInDays) throw invalid('Give a due date or a number of days, not both');
+    const out = await run(ctx, async (tx) => {
+      const p = await loadPath(tx, id);
+      requireAuthor(ctx, p.owner_node_id);
+      await requireReach(tx, ctx, b.nodeId);
+      const cs = (await tx.query<{ id: string }>(`SELECT c.id FROM learning_path_courses pc JOIN courses c ON c.id = pc.course_id WHERE pc.path_id = $1 AND c.status = 'published' ORDER BY pc.position`, [id])).rows;
+      if (cs.length === 0) throw invalid('Publish at least one course in the path before assigning it');
+      let enrolled = 0;
+      for (const c of cs) {
+        const aid = (await tx.query<{ id: string }>(
+          `INSERT INTO course_assignments (tenant_id, course_id, node_id, due_at, due_in_days, role, assigned_by) VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (course_id, node_id) DO UPDATE SET due_at = EXCLUDED.due_at, due_in_days = EXCLUDED.due_in_days, role = EXCLUDED.role RETURNING id`,
+          [ctx.tenantId, c.id, b.nodeId, b.dueAt ?? null, b.dueInDays ?? null, b.role ?? null, ctx.userId])).rows[0]!.id;
+        enrolled += (await tx.query<{ n: number }>('SELECT sync_enrollments($1) AS n', [aid])).rows[0]!.n;
+        if (b.dueAt) await tx.query('UPDATE enrollments SET due_at = $2 WHERE assignment_id = $1 AND status <> \'completed\'', [aid, b.dueAt]);
+      }
+      await audit(tx, ctx, 'path_assigned', 'learning_path', id, { nodeId: b.nodeId, courses: cs.length, enrolled });
+      return { courses: cs.length, enrolled };
+    });
+    return reply.code(201).send(out);
+  });
 }
