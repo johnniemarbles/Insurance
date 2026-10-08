@@ -369,3 +369,22 @@ test('refresh quizzes: gives an old short quiz the current bank, never touches a
   await call(ADMIN, 'POST', '/v1/courses/starter/refresh-quizzes', { apply: true });
   assert.equal(await count(), full, 'the full bank is back');
 });
+
+test('duplicate course: a draft copy with lessons, quiz and both languages, and no learners', async () => {
+  const src = (await call(ADMIN, 'POST', '/v1/courses', { title: 'Original course', ownerNodeId: co.rootNodeId })).json.id;
+  await call(ADMIN, 'POST', `/v1/courses/${src}/lessons`, { title: 'Read me', type: 'richtext', text: 'hello' });
+  const q = (await call(ADMIN, 'POST', `/v1/courses/${src}/lessons`, { title: 'Quiz', type: 'quiz' })).json.id;
+  await call(ADMIN, 'PUT', `/v1/lessons/${q}/quiz`, { questions: [{ prompt: 'Pick A', options: ['A', 'B'], correct: [0] }] });
+  await call(ADMIN, 'PATCH', `/v1/courses/${src}`, { status: 'published' });
+  await call(A, 'POST', `/v1/courses/${src}/enroll`);
+  assert.equal((await call(A, 'POST', `/v1/courses/${src}/duplicate`)).status, 403, 'learners cannot copy');
+  const r = await call(ADMIN, 'POST', `/v1/courses/${src}/duplicate`);
+  assert.equal(r.status, 201);
+  const a = (await call(ADMIN, 'GET', `/v1/courses/${src}`)).json, b = (await call(ADMIN, 'GET', `/v1/courses/${r.json.id}`)).json;
+  assert.equal(b.status, 'draft'); assert.match(b.title, /Original course \(copy\)/);
+  assert.equal(b.lessons.length, a.lessons.length);
+  const nQ = (id: string) => owner(async (o) => (await o.query('SELECT count(*)::int AS n FROM quiz_questions qq JOIN lessons l ON l.id = qq.lesson_id WHERE l.course_id = $1', [id])).rows[0].n as number);
+  assert.equal(await nQ(r.json.id), await nQ(src)); assert.equal(await nQ(src) > 0, true);
+  assert.equal(await owner(async (o) => (await o.query('SELECT count(*)::int AS n FROM enrollments WHERE course_id = $1', [r.json.id])).rows[0].n as number), 0);
+  assert.equal(a.lessons.every((l: any) => !b.lessons.some((m: any) => m.id === l.id)), true, 'new lessons, not shared ones');
+});

@@ -777,6 +777,41 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
   });
 
+  /** A draft copy of a course: lessons, quizzes and both languages, none of the learners, results or publishing. */
+  app.post('/v1/courses/:id/duplicate', { schema: { params: idParams } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id } = req.params as { id: string };
+    const out = await run(ctx, async (tx) => {
+      const c = await loadCourse(tx, id);
+      requireAuthor(ctx, c.owner_node_id);
+      const nid = randomUUID();
+      await tx.query(
+        `INSERT INTO courses (id, tenant_id, owner_node_id, status, quebec_facing, default_locale, created_by, ce_pack, ce_hours, ce_category, sequential, enrollment_mode)
+         SELECT $2, tenant_id, owner_node_id, 'draft', quebec_facing, default_locale, $3, ce_pack, ce_hours, ce_category, sequential, enrollment_mode FROM courses WHERE id = $1`, [id, nid, ctx.userId]);
+      await tx.query(
+        `INSERT INTO course_locales (course_id, tenant_id, locale, title, description, is_published)
+         SELECT $2, tenant_id, locale, title || CASE locale WHEN 'fr-CA' THEN ' (copie)' ELSE ' (copy)' END, description, true FROM course_locales WHERE course_id = $1`, [id, nid]);
+      const mods = (await tx.query<{ id: string }>('SELECT id FROM course_modules WHERE course_id = $1 ORDER BY position', [id])).rows;
+      const modMap = new Map<string, string>();
+      for (const m of mods) {
+        const mid = randomUUID(); modMap.set(m.id, mid);
+        await tx.query(`INSERT INTO course_modules (id, tenant_id, course_id, position, titles) SELECT $3, tenant_id, $2, position, titles FROM course_modules WHERE id = $1`, [m.id, nid, mid]);
+      }
+      const lessons = (await tx.query<{ id: string; module_id: string }>('SELECT id, module_id FROM lessons WHERE course_id = $1 ORDER BY position', [id])).rows;
+      for (const l of lessons) {
+        const lid = randomUUID();
+        await tx.query(
+          `INSERT INTO lessons (id, tenant_id, course_id, module_id, position, type, required, pass_mark, max_attempts, cooldown_minutes, quiz_draw)
+           SELECT $3, tenant_id, $2, $4, position, type, required, pass_mark, max_attempts, cooldown_minutes, quiz_draw FROM lessons WHERE id = $1`, [l.id, nid, lid, modMap.get(l.module_id)]);
+        await tx.query(`INSERT INTO lesson_locales (lesson_id, tenant_id, locale, title, body, asset_id) SELECT $2, tenant_id, locale, title, body, asset_id FROM lesson_locales WHERE lesson_id = $1`, [l.id, lid]);
+        await tx.query(`INSERT INTO quiz_questions (tenant_id, lesson_id, position, type, content, correct, points) SELECT tenant_id, $2, position, type, content, correct, points FROM quiz_questions WHERE lesson_id = $1`, [l.id, lid]);
+      }
+      await audit(tx, ctx, 'course_created', 'course', nid, { duplicatedFrom: id });
+      return { id: nid };
+    });
+    return reply.code(201).send(out);
+  });
+
   // ------------------------------------------------------------------ learning paths
   const pathBody = { type: 'object', required: ['name', 'courseIds'], additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 200 }, description: { type: 'string', maxLength: 2000 }, courseIds: { type: 'array', minItems: 1, maxItems: 20, uniqueItems: true, items: uuid } } } as const;
   const loadPath = async (tx: Tx, id: string) => {

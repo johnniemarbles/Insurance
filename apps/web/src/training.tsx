@@ -30,7 +30,7 @@ export function TrainingView({ call, t, locale, canAuthor, isHeadOffice = false,
       {tab === 'team' && <PeopleCe call={call} locale={locale} officer={false} />}
       {tab === 'officer' && <PeopleCe call={call} locale={locale} officer={true} />}
       {tab === 'courses' && view.k === 'list' && <CourseList call={call} t={t} locale={locale} canAuthor={canAuthor} onOpen={(id) => setView({ k: 'course', id })} />}
-      {tab === 'courses' && view.k === 'course' && <CoursePage key={view.id} id={view.id} call={call} t={t} locale={locale} onBack={() => setView({ k: 'list' })} onLesson={(id) => setView({ k: 'lesson', courseId: (view as { id: string }).id, id })} />}
+      {tab === 'courses' && view.k === 'course' && <CoursePage key={view.id} id={view.id} call={call} t={t} locale={locale} onOpenCourse={(nid) => setView({ k: 'course', id: nid })} onBack={() => setView({ k: 'list' })} onLesson={(id) => setView({ k: 'lesson', courseId: (view as { id: string }).id, id })} />}
       {tab === 'courses' && view.k === 'lesson' && <LessonPage key={view.id} id={view.id} call={call} t={t} locale={locale} onBack={() => setView({ k: 'course', id: view.courseId })} onLesson={(id) => setView({ k: 'lesson', courseId: (view as { courseId: string }).courseId, id })} />}
     </div>
   );
@@ -103,7 +103,7 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
   );
 }
 
-function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; call: Call; t: Strings; locale: Locale; onBack: () => void; onLesson: (id: string) => void }) {
+function CoursePage({ id, call, t, locale, onBack, onLesson, onOpenCourse }: { id: string; call: Call; t: Strings; locale: Locale; onBack: () => void; onLesson: (id: string) => void; onOpenCourse: (id: string) => void }) {
   const [c, setC] = useState<CourseDetail | null>(null);
   const [err, setErr] = useState('');
   const [note, setNote] = useState('');
@@ -208,6 +208,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
             {c.status !== 'published'
               ? <button class="btn" onClick={() => void act(() => call('PATCH', `/v1/courses/${id}`, { status: 'published' }), t.published)}>{t.publish}</button>
               : <button class="btn quiet" onClick={() => void act(() => call('PATCH', `/v1/courses/${id}`, { status: 'draft' }))}>{t.unpublish}</button>}
+            <button class="btn quiet" onClick={() => { if (confirm(locale === 'fr-CA' ? 'Créer une copie de ce cours (leçons et quiz inclus) ? La copie est un brouillon sans apprenants.' : 'Make a copy of this course, lessons and quiz included? The copy is a draft with no learners.')) void call('POST', `/v1/courses/${id}/duplicate`).then((r) => onOpenCourse(r.id), (e) => setErr((e as Error).message)); }}>{locale === 'fr-CA' ? 'Dupliquer le cours' : 'Duplicate course'}</button>
             {c.status !== 'published' && <button class="btn quiet danger" onClick={() => { if (confirm(locale === 'fr-CA' ? 'Archiver ce cours ? Il disparaîtra de la liste. Les attestations déjà émises restent valides.' : 'Archive this course? It will disappear from the list. Certificates already issued stay valid.')) void call('PATCH', `/v1/courses/${id}`, { status: 'archived' }).then(onBack, (e) => setErr((e as Error).message)); }}>{locale === 'fr-CA' ? 'Archiver le cours' : 'Archive course'}</button>}
           </div>
 
