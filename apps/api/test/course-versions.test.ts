@@ -388,3 +388,21 @@ test('duplicate course: a draft copy with lessons, quiz and both languages, and 
   assert.equal(await owner(async (o) => (await o.query('SELECT count(*)::int AS n FROM enrollments WHERE course_id = $1', [r.json.id])).rows[0].n as number), 0);
   assert.equal(a.lessons.every((l: any) => !b.lessons.some((m: any) => m.id === l.id)), true, 'new lessons, not shared ones');
 });
+
+test('certificate signatory: admins set it, it prints on the public page and the PDF, others cannot', async () => {
+  assert.equal((await call(A, 'GET', '/v1/training/certificate-settings')).status, 403);
+  assert.equal((await call(A, 'PUT', '/v1/training/certificate-settings', { name: 'X' })).status, 403);
+  assert.equal((await call(ADMIN, 'PUT', '/v1/training/certificate-settings', { name: 'Jaspreet Gill', title: 'Principal Broker' })).status, 204);
+  assert.deepEqual((await call(ADMIN, 'GET', '/v1/training/certificate-settings')).json, { name: 'Jaspreet Gill', title: 'Principal Broker' });
+  const code = await owner(async (o) => {
+    const e = (await o.query(`SELECT e.id, e.tenant_id FROM enrollments e LIMIT 1`)).rows[0];
+    const r = await o.query(`INSERT INTO certificates (tenant_id, enrollment_id, verification_code, locale) VALUES ($1,$2,$3,'en') ON CONFLICT DO NOTHING RETURNING verification_code`, [e.tenant_id, e.id, 'abcdef0123456789ab']);
+    return (r.rows[0]?.verification_code ?? (await o.query('SELECT verification_code FROM certificates LIMIT 1')).rows[0].verification_code) as string;
+  });
+  const page = await app.inject({ method: 'GET', url: `/c/${code}` });
+  assert.equal(page.statusCode, 200); assert.match(page.body, /Jaspreet Gill/); assert.match(page.body, /Principal Broker/);
+  const pdf = await app.inject({ method: 'GET', url: `/c/${code}/pdf` });
+  assert.equal(pdf.statusCode, 200); assert.equal(pdf.headers['content-type'], 'application/pdf');
+  assert.equal((await call(ADMIN, 'PUT', '/v1/training/certificate-settings', { name: '' })).status, 204);
+  assert.doesNotMatch((await app.inject({ method: 'GET', url: `/c/${code}` })).body, /Jaspreet Gill/);
+});

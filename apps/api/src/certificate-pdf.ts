@@ -9,7 +9,7 @@ const NO_POSITIONING = { mark: false, mkmk: false, dist: false, abvm: false, blw
 const require = createRequire(import.meta.url);
 const noto = (pkg: string, file: string) => readFile(require.resolve(`@fontsource/${pkg}/files/${file}`));
 
-export interface CertRow { code: string; issued_at: Date; learner: string; course: string; company: string; hours: string | null; category: string | null; pack: string | null; locale: string; version: number | null }
+export interface CertRow { code: string; issued_at: Date; learner: string; course: string; company: string; hours: string | null; category: string | null; pack: string | null; locale: string; version: number | null; sig_name?: string | null; sig_title?: string | null }
 
 /** Straight quotes and dashes for the typographic ones; anything the standard fonts cannot draw makes the whole certificate fall back. */
 const tidy = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/…/g, '...');
@@ -36,7 +36,8 @@ export async function certificatePdf(c: CertRow, entity: string, logoPath: strin
   const learner = tidy(c.learner), course = tidy(c.course) + (c.version ? ` (v${c.version})` : ''), company = tidy(c.company), ent = tidy(entity);
   const when = c.issued_at.toLocaleDateString(fr ? 'fr-CA' : 'en-CA', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
   const ceLine = c.hours ? `${T.ce}: ${Number(c.hours)}  |  ${T.cat}: ${(c.category ?? '').replace('_', ' ')}` : '';
-  const lines = [learner, course, company, ceLine, ent, when, ...Object.values(T)];
+  const sigName = c.sig_name ? tidy(c.sig_name) : '', sigTitle = c.sig_title ? tidy(c.sig_title) : '';
+  const lines = [learner, course, company, ceLine, ent, when, sigName, sigTitle, ...Object.values(T)];
   const needsUnicode = !lines.every(drawable);
 
   const doc = await PDFDocument.create();
@@ -82,6 +83,13 @@ export async function certificatePdf(c: CertRow, entity: string, logoPath: strin
   centre(course, top - 214, bold, 24);
   centre(`${T.at} ${company}`, top - 242, serif, 16);
   if (ceLine) centre(ceLine, top - 280, sansB, 13, blue);
+  if (sigName) {
+    // a signature line, bottom left, with the signatory's name and title under it
+    const sx = 70, sw = 200, sy = 138;
+    page.drawLine({ start: { x: sx, y: sy }, end: { x: sx + sw, y: sy }, thickness: 0.8, color: rgb(0.35, 0.38, 0.43) });
+    const put = (text: string, y: number, font: PDFFont, size: number) => { let x = sx + (sw - widthOf(runsOf(text, font), size)) / 2; for (const r of runsOf(text, font)) { page.drawText(r.t, { x, y, size, font: r.font, color: rgb(0.12, 0.16, 0.22) }); x += r.font.widthOfTextAtSize(r.t, size); } };
+    put(sigName, sy - 14, sansB, 11); if (sigTitle) put(sigTitle, sy - 27, sans, 9);
+  }
   centre(`${T.date} ${when}   |   ${T.code}: ${c.code}`, 92, sans, 11, grey);
   centre(`${T.valid} ${ent}`, 74, sans, 10, rgb(0.02, 0.37, 0.27));
   if (verifyUrl) {

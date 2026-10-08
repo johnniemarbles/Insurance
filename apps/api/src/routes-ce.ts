@@ -337,6 +337,27 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
     return reply.code(204).send();
   });
 
+  // ------------------------------------------------------------ who signs the company's certificates
+  const sigBody = { type: 'object', required: ['name'], additionalProperties: false, properties: { name: { type: 'string', maxLength: 80 }, title: { type: 'string', maxLength: 80 } } } as const;
+  app.get('/v1/training/certificate-settings', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    if (!ctx.isTenantAdmin) throw forbidden('Only administrators can change the certificate');
+    return run(ctx, async (tx) => {
+      const r = (await tx.query<{ name: string | null; title: string | null }>('SELECT cert_signatory_name AS name, cert_signatory_title AS title FROM tenants WHERE id = app_tenant_id()')).rows[0];
+      return { name: r?.name ?? '', title: r?.title ?? '' };
+    });
+  });
+  app.put('/v1/training/certificate-settings', { schema: { body: sigBody } }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    if (!ctx.isTenantAdmin) throw forbidden('Only administrators can change the certificate');
+    const b = req.body as { name: string; title?: string };
+    await run(ctx, async (tx) => {
+      await tx.query('UPDATE tenants SET cert_signatory_name = $1, cert_signatory_title = $2 WHERE id = app_tenant_id()', [b.name.trim() || null, b.name.trim() ? (b.title ?? '').trim() || null : null]);
+      await audit(tx, ctx, 'certificate_signatory_set', 'tenant', ctx.tenantId, { name: b.name.trim() });
+    });
+    return reply.code(204).send();
+  });
+
   // ------------------------------------------------------------ the agency certificate, checkable by anyone with the code
   const qrSvg = (url: string) => {
     const q = qrcode(0, 'M'); q.addData(url); q.make();
@@ -347,7 +368,7 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
   const entity = deps.config.region === 'us' ? 'Punjab Insurance Broker Inc' : 'Punjab Insurance Agency Inc';
   app.get('/c/:code', { schema: { params: { type: 'object', properties: { code: { type: 'string', pattern: '^[0-9a-f]{18}$' } } } } }, async (req, reply) => {
     const { code } = req.params as { code: string };
-    const c = (await deps.authPool.query<{ code: string; issued_at: Date; learner: string; course: string; company: string; hours: string | null; category: string | null; pack: string | null; locale: string; version: number | null }>('SELECT * FROM certificate_public($1)', [code])).rows[0];
+    const c = (await deps.authPool.query<{ code: string; issued_at: Date; learner: string; course: string; company: string; hours: string | null; category: string | null; pack: string | null; locale: string; version: number | null; sig_name: string | null; sig_title: string | null }>('SELECT * FROM certificate_public($1)', [code])).rows[0];
     if (!c) return reply.code(404).type('text/html; charset=utf-8').send('<!doctype html><meta charset="utf-8"><title>Certificate not found</title><body style="font:16px system-ui;text-align:center;padding:60px"><h1>Certificate not found</h1><p>Check the code and try again.</p></body>');
     const fr = c.locale === 'fr-CA';
     const T = fr
@@ -358,12 +379,12 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
 <style>body{margin:0;background:#f3f4f6;font:16px/1.5 Georgia,serif;color:#1f2937}.sheet{max-width:820px;margin:24px auto;background:#fff;border:10px double #1d4ed8;padding:48px 56px;text-align:center}
 img{width:84px;height:84px}h1{font-size:34px;margin:12px 0 4px;color:#1d4ed8;letter-spacing:.02em}.ent{font:600 14px system-ui;letter-spacing:.14em;text-transform:uppercase;color:#4b5563}
 .who{font-size:30px;margin:26px 0 6px;border-bottom:1px solid #d1d5db;display:inline-block;padding:0 28px 6px}.crs{font-size:24px;font-weight:700;margin:6px 0}.meta{font:14px system-ui;color:#4b5563;margin-top:22px}
-.ce{display:inline-block;margin-top:16px;padding:8px 16px;border:1px solid #1d4ed8;border-radius:8px;font:600 15px system-ui;color:#1d4ed8}.v{font:13px system-ui;color:#065f46;margin-top:26px}.p{font:12px system-ui;color:#6b7280;text-align:center;margin:12px}
+.sig{margin:26px auto 0;width:240px;border-top:1px solid #6b7280;padding-top:6px;font:600 14px system-ui;color:#1f2937}.sig small{display:block;font:12px system-ui;color:#6b7280;font-weight:400}.ce{display:inline-block;margin-top:16px;padding:8px 16px;border:1px solid #1d4ed8;border-radius:8px;font:600 15px system-ui;color:#1d4ed8}.v{font:13px system-ui;color:#065f46;margin-top:26px}.p{font:12px system-ui;color:#6b7280;text-align:center;margin:12px}
 @media print{body{background:#fff}.sheet{margin:0;border-width:8px}.p{display:none}}</style></head><body>
 <div class="sheet"><img src="/brand/logo.png" alt=""><div class="ent">${esc(entity)}</div><h1>${esc(T.title)}</h1><p>${esc(T.cert)}</p>
 <div class="who">${esc(c.learner)}</div><p>${esc(T.did)}</p><div class="crs">${esc(c.course)}${c.version ? ` <small style="font:14px system-ui;color:#6b7280">v${c.version}</small>` : ''}</div><p>${esc(T.at)} ${esc(c.company)}</p>
 ${c.hours ? `<div class="ce">${esc(T.ce)}: ${esc(Number(c.hours))} · ${esc(T.cat)}: ${esc((c.category ?? '').replace('_', ' '))}</div>` : ''}
-<div class="meta">${esc(T.date)} ${esc(when)} · ${esc(T.code)}: <b>${esc(c.code)}</b></div>${qrSvg(`${deps.config.appOrigin}/c/${c.code}`)}<div class="v">✓ ${esc(T.valid)} ${esc(entity)}</div></div><p class="p"><a href="/c/${esc(c.code)}/pdf">${esc(T.print)}</a></p></body></html>`;
+${c.sig_name ? `<div class="sig"><span>${esc(c.sig_name)}</span>${c.sig_title ? `<small>${esc(c.sig_title)}</small>` : ''}</div>` : ''}<div class="meta">${esc(T.date)} ${esc(when)} · ${esc(T.code)}: <b>${esc(c.code)}</b></div>${qrSvg(`${deps.config.appOrigin}/c/${c.code}`)}<div class="v">✓ ${esc(T.valid)} ${esc(entity)}</div></div><p class="p"><a href="/c/${esc(c.code)}/pdf">${esc(T.print)}</a></p></body></html>`;
     return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'").send(html);
   });
 

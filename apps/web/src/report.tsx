@@ -77,3 +77,29 @@ export function TrainingOverview({ call, locale, onOpen }: { call: (m: 'GET', p:
     </section>
   );
 }
+
+/** Administrators choose who signs the company's certificates. Hidden for everyone else (the server refuses them). */
+export function CertificateSigner({ call, locale }: { call: (m: 'GET' | 'PUT', p: string, b?: unknown) => Promise<any>; locale: Locale }) {
+  const fr = locale === 'fr-CA';
+  const [v, setV] = useState<{ name: string; title: string } | null>(null);
+  const [msg, setMsg] = useState('');
+  useEffect(() => { call('GET', '/v1/training/certificate-settings').then(setV, () => setV(null)); }, [call]);
+  if (!v) return null;
+  const save = async (e: Event) => {
+    e.preventDefault(); setMsg('');
+    try { await call('PUT', '/v1/training/certificate-settings', { name: v.name, title: v.title }); setMsg(fr ? 'Enregistré. Les attestations affichent maintenant cette signature.' : 'Saved. Certificates now show this signature.'); }
+    catch (x) { setMsg((x as Error).message); }
+  };
+  return (
+    <details class="sigset">
+      <summary>{fr ? 'Signature sur les attestations' : 'Certificate signature'}</summary>
+      <form class="erow" onSubmit={save}>
+        <input aria-label={fr ? 'Nom du signataire' : 'Signatory name'} placeholder={fr ? 'Nom du signataire' : 'Signatory name'} maxLength={80} value={v.name} onInput={(e) => setV({ ...v, name: (e.target as HTMLInputElement).value })} />
+        <input aria-label={fr ? 'Titre' : 'Title'} placeholder={fr ? 'Titre (ex. Directeur)' : 'Title (e.g. Principal Broker)'} maxLength={80} value={v.title} onInput={(e) => setV({ ...v, title: (e.target as HTMLInputElement).value })} />
+        <button class="btn">{fr ? 'Enregistrer' : 'Save'}</button>
+        {msg && <span class="muted">{msg}</span>}
+      </form>
+      <p class="muted" style={{ margin: '4px 0 0' }}>{fr ? 'Laissez le nom vide pour ne pas afficher de signature. Les attestations déjà émises affichent aussi la signature actuelle.' : 'Leave the name empty to print no signature. Certificates already issued also show the current signature.'}</p>
+    </details>
+  );
+}
