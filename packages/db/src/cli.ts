@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { bootstrapDeployment, bootstrapTenant, ensureRoles, migrate, seedStarterPipelines } from './index.ts';
+import { bootstrapDeployment, bootstrapTenant, ensureRoles, migrate, seedDemoTenant, seedStarterPipelines } from './index.ts';
 
 const [cmd, ...args] = process.argv.slice(2);
 const url = process.env.DATABASE_URL;
@@ -90,6 +90,10 @@ try {
       const n = await seedStarterPipelines(url);
       if (n > 0) console.log(`seeded starter pipeline for ${n} tenant(s)`);
     }
+    if (process.env.SEED_DEMO === 'true') {
+      const d = await seedDemoTenant(url, { adminEmail: process.env.DEMO_ADMIN_EMAIL, reset: process.env.DEMO_RESET === 'true' });
+      console.log(d.created ? `seeded demo tenant ${d.tenantId}: ${JSON.stringify(d.counts)}` : d.counts && Object.keys(d.counts).length ? `reset demo tenant ${d.tenantId}: ${JSON.stringify(d.counts)}` : 'demo tenant already present');
+    }
     console.log(`release ok: ${region}/${environment}; applied ${r.applied.length}, existing ${r.skipped.length}`);
   } else if (cmd === 'bootstrap-deployment') {
     const region = flag('region') as 'ca-qc' | 'us' | undefined;
@@ -98,6 +102,9 @@ try {
     const hostedIn = flag('hosted-in') as 'ca' | 'us' | undefined;
     await bootstrapDeployment(url, { region, environment, physicalRegionVerified: args.includes('--verified'), ...(hostedIn ? { hostedIn, residencyAcknowledged: args.includes('--acknowledge') } : {}) });
     console.log(`deployment set: ${region} / ${environment}`);
+  } else if (cmd === 'seed-demo') {
+    const d = await seedDemoTenant(url, { adminEmail: flag('admin-email'), reset: args.includes('--reset') });
+    console.log(JSON.stringify(d, null, 2));
   } else if (cmd === 'create-tenant') {
     const name = flag('name');
     const country = flag('country') as 'CA' | 'US' | undefined;
@@ -108,7 +115,7 @@ try {
     const t = await bootstrapTenant(url, { name, countryCode: country, adminEmail, adminName: flag('admin-name'), defaultLocale: (flag('locale') as 'en' | 'fr-CA') ?? 'en', headOffice: args.includes('--head-office') });
     console.log(JSON.stringify(t, null, 2));
   } else {
-    console.error('commands: migrate | bootstrap-deployment --region ca-qc|us [--environment dev|staging|prod] [--verified] [--hosted-in ca|us --acknowledge] | create-tenant ...');
+    console.error('commands: migrate | seed-demo [--admin-email <email>] [--reset] | bootstrap-deployment --region ca-qc|us [--environment dev|staging|prod] [--verified] [--hosted-in ca|us --acknowledge] | create-tenant ...');
     process.exit(2);
   }
 } catch (err) {

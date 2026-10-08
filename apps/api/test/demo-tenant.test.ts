@@ -1,0 +1,50 @@
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import type { FastifyInstance } from 'fastify';
+import { createPool, seedDemoTenant, type Db } from '@pii/db';
+import { createTestDb, type TestDb } from '@pii/db/testing';
+import { loadConfig, localKeyProvider } from '@pii/platform';
+import { buildApp } from '../src/app.ts';
+import { devAuthenticator } from '../src/auth.ts';
+
+let db: TestDb;
+let app: FastifyInstance;
+let pools: Db[] = [];
+const ADMIN = 'demo.owner@example.com';
+
+async function get(email: string, url: string) {
+  const res = await app.inject({ method: 'GET', url, headers: { 'x-dev-user-email': email } });
+  return { status: res.statusCode, json: res.body ? (JSON.parse(res.body) as any) : null };
+}
+
+before(async () => {
+  db = await createTestDb('ca-qc');
+  const appPool = createPool(db.appUrl, 4);
+  const authPool = createPool(db.authUrl, 2);
+  pools = [appPool, authPool];
+  const config = loadConfig({ APP_ENV: 'test', REGION: 'ca-qc', DATABASE_URL: db.ownerUrl, APP_DATABASE_URL: db.appUrl, AUTH_DATABASE_URL: db.authUrl, DEV_AUTH: 'true' });
+  app = buildApp({ config, appPool, authPool, authenticate: devAuthenticator(authPool), keys: localKeyProvider('0123456789abcdef0123') });
+  await seedDemoTenant(db.ownerUrl, { adminEmail: ADMIN });
+});
+after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });
+
+test('the demo admin sees every pipeline and all contacts; a branch manager sees only their branch', async () => {
+  const admin = await get(ADMIN, '/v1/pipelines');
+  assert.equal(admin.status, 200);
+  const names = admin.json.pipelines.map((p: any) => p.name);
+  assert.ok(names.includes('Travel & Visitor') && names.includes('Super Visa') && names.includes('Life & Health'));
+
+  const adminContacts = await get(ADMIN, '/v1/contacts?limit=200');
+  assert.equal(adminContacts.status, 200);
+  const manager = await get('aisha.khan@demo.invalid', '/v1/contacts?limit=200');
+  assert.equal(manager.status, 200);
+  const all = adminContacts.json.contacts.length;
+  const mine = manager.json.contacts.length;
+  assert.ok(mine > 0 && mine < all, `manager sees ${mine} of ${all}`);
+
+  const mgrPipes = (await get('aisha.khan@demo.invalid', '/v1/pipelines')).json;
+  const mgrNames = mgrPipes.pipelines.map((p: any) => p.name);
+  assert.ok(mgrNames.includes('Branch referrals'), 'Toronto manager sees the Toronto-only pipeline');
+  const otherPipes = (await get('wei.chen@demo.invalid', '/v1/pipelines')).json;
+  assert.ok(!otherPipes.pipelines.map((p: any) => p.name).includes('Branch referrals'), 'Vancouver manager does not');
+});

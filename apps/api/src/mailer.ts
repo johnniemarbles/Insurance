@@ -15,6 +15,8 @@ export function resendMailer(config: Config, env: Record<string, string | undefi
   const from = mailFrom(config, env);
   return {
     async send(m) {
+      // Demo users have fictional addresses; nothing is sent to them.
+      if (m.to.toLowerCase().endsWith('.invalid')) return;
       try {
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',

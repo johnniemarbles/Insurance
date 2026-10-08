@@ -30,3 +30,12 @@ Competency frameworks, SCORM/LTI/xAPI, discussions and moderation, AI pipeline /
 - **One email per person per day:** the daily run gathers a person's reminders into a single email.
 - **Learner told** when a manager gives another quiz attempt.
 - **Drafts hidden:** a draft course is visible only to people who can edit it, so starter courses never reach learners before they are published.
+
+## Demo tenant
+
+A fictional company ("Maple Demo Insurance" on pii-ca, "Liberty Demo Insurance" on pii-us) filled with sample data for demos and testing. Invite-only: only the address in `DEMO_ADMIN_EMAIL` can sign in as its admin; the other users have `@demo.invalid` addresses, so nobody can sign in as them and the mailer never sends to them. Others are invited through the normal invitation flow.
+
+- Set `SEED_DEMO=true` and `DEMO_ADMIN_EMAIL=<address>` to create it at deploy time. Add `DEMO_RESET=true` for one deploy to rebuild its CRM data, then remove it.
+- Or run `node packages/db/src/cli.ts seed-demo --admin-email <address> [--reset]`.
+- Data is deterministic and dated relative to today: org tree with partners, about 14 users in every role and state, 4 pipelines (one branch-only), 150 contacts, 200 deals with overdue and stale cases, notes, call logs, tasks and linked threads.
+- Not yet seeded: LMS and compliance data, and policy-issuing cases.
