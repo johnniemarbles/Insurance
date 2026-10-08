@@ -66,12 +66,13 @@ export function computeChecklist(i: ChecklistInput): Checklist {
   return { steps, percent: Math.round((done / steps.length) * 100), complete: done === steps.length };
 }
 
-/** Reminders go out 30, 15 and 0 days before an expiry date. Returns the tightest one that applies, or null if it is further out. */
-export const REMINDER_DAYS = [30, 15, 0] as const;
+/** Reminders go out 90, 60, 30 and 0 days before an expiry date. Returns the tightest one that applies, or null if it is further out. */
+export const REMINDER_DAYS = [90, 60, 30, 0] as const;
 export function reminderThreshold(daysLeft: number): (typeof REMINDER_DAYS)[number] | null {
   if (daysLeft <= 0) return 0;
-  if (daysLeft <= 15) return 15;
   if (daysLeft <= 30) return 30;
+  if (daysLeft <= 60) return 60;
+  if (daysLeft <= 90) return 90;
   return null;
 }
 

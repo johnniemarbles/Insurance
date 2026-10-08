@@ -21,8 +21,8 @@ test('compliance checklist: E&O below the minimum is not done and says why', () 
   assert.equal(computeChecklist({ profile: null, licences: 0, eoCount: 1, eoMaxLimit: null, eoMin: 0 }).steps.find((s) => s.id === 'eo')!.done, true);
 });
 test('expiry reminders at 30, 15 and 0 days', () => {
-  assert.equal(reminderThreshold(45), null); assert.equal(reminderThreshold(30), 30); assert.equal(reminderThreshold(16), 30);
-  assert.equal(reminderThreshold(15), 15); assert.equal(reminderThreshold(1), 15); assert.equal(reminderThreshold(0), 0); assert.equal(reminderThreshold(-9), 0);
+  assert.equal(reminderThreshold(120), null); assert.equal(reminderThreshold(90), 90); assert.equal(reminderThreshold(61), 90);
+  assert.equal(reminderThreshold(60), 60); assert.equal(reminderThreshold(31), 60); assert.equal(reminderThreshold(30), 30); assert.equal(reminderThreshold(1), 30); assert.equal(reminderThreshold(0), 0); assert.equal(reminderThreshold(-9), 0);
   assert.equal(expiryState(-1), 'expired'); assert.equal(expiryState(30), 'soon'); assert.equal(expiryState(31), 'ok'); assert.equal(expiryState(null), 'none');
 });
 test('the country E&O minimum can be raised by a company but never lowered', () => {

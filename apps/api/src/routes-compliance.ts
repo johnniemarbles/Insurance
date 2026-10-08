@@ -500,7 +500,7 @@ export function registerComplianceRoutes(app: FastifyInstance, deps: AppDeps): v
   });
 }
 
-/** Reminds people 30, 15 and 0 days before a licence or E&O policy runs out. Each item gets each reminder once per expiry date. */
+/** Reminds people 90, 60, 30 and 0 days before a licence or E&O policy runs out. Each item gets each reminder once per expiry date. */
 export async function sweepCompliance(deps: AppDeps): Promise<number> {
   type Cand = { id: string; tenant_id: string; node_id: string; name: string; kind: string; label: string; expires_on: string; days: number };
   const tenants = (await deps.authPool.query<{ tenant_id: string; node: string; admin: string | null }>(
@@ -515,14 +515,14 @@ export async function sweepCompliance(deps: AppDeps): Promise<number> {
       const due = await withRequestTx(deps.appPool, admin, async (tx) => (await tx.query<Cand>(
         `SELECT i.id, i.tenant_id, i.node_id, n.name, i.kind, i.label, i.expires_on::text AS expires_on, (i.expires_on - current_date)::int AS days
            FROM compliance_items i JOIN org_nodes n ON n.id = i.node_id AND n.is_active
-          WHERE i.expires_on IS NOT NULL AND i.expires_on <= current_date + 30 AND i.expires_on >= current_date - 30 LIMIT 2000`)).rows);
+          WHERE i.expires_on IS NOT NULL AND i.expires_on <= current_date + 90 AND i.expires_on >= current_date - 30 LIMIT 2000`)).rows);
       for (const c of due) {
         const th = reminderThreshold(c.days);
         if (th === null) continue;
         const fresh = await withRequestTx(deps.appPool, admin, async (tx) => {
           // Mark the tighter reminder, and any looser one that was skipped, so a late-added item sends one message and not three.
           let first = false;
-          for (const x of [30, 15, 0] as const) {
+          for (const x of [90, 60, 30, 0] as const) {
             if (x < th) continue;
             const r = await tx.query('INSERT INTO compliance_marks (item_id, tenant_id, threshold, expires_on) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [c.id, c.tenant_id, x, c.expires_on]);
             if (x === th && r.rowCount) first = true;

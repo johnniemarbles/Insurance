@@ -117,7 +117,7 @@ test('carrier appointments: only after approval, and head office moves them alon
   assert.equal((await call(AG, 'PUT', `/v1/ho/appointments/${r.json.id}`, { status: 'declined' })).status, 403);
 });
 
-test('expiry reminders go out at 30, 15 and 0 days, once each', async () => {
+test('expiry reminders go out at 90, 60, 30 and 0 days, once each', async () => {
   const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
   assert.equal((await call(AG, 'POST', `/v1/compliance/partners/${AGN}/items`, { kind: 'licence', label: 'Soon', lines: ['life'], expiresOn: day(20) })).status, 201);
   assert.equal(await sweepCompliance(deps), 1);
