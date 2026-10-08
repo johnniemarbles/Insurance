@@ -406,3 +406,12 @@ test('certificate signatory: admins set it, it prints on the public page and the
   assert.equal((await call(ADMIN, 'PUT', '/v1/training/certificate-settings', { name: '' })).status, 204);
   assert.doesNotMatch((await app.inject({ method: 'GET', url: `/c/${code}` })).body, /Jaspreet Gill/);
 });
+
+test('starter quizzes: the right answer is not always in the same place, and every key points at a real option', async () => {
+  const { STARTER_COURSES } = await import('../src/starter-courses.ts');
+  for (const c of STARTER_COURSES) {
+    const counts = new Map<number, number>();
+    for (const q of c.quiz) { assert.ok(q.correct >= 0 && q.correct < q.options.length, `${c.key}: key in range`); counts.set(q.correct, (counts.get(q.correct) ?? 0) + 1); }
+    assert.ok(Math.max(...counts.values()) <= Math.ceil(c.quiz.length * 0.5), `${c.key}: answers are spread across the options`);
+  }
+});

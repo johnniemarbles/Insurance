@@ -115,4 +115,15 @@ const withBank = (c: StarterCourse): StarterCourse => {
   const extra = STARTER_BANKS[c.key] ?? [];
   return extra.length ? { ...c, quiz: [...c.quiz, ...extra], draw: c.quiz.length } : c;
 };
-export const STARTER_COURSES: StarterCourse[] = [...BASE_COURSES, ...MORE_STARTER_COURSES, ...BROKER_STARTER_COURSES, ...VIDEO_STARTER_COURSES].map(withBank);
+
+/** The questions were written with the right answer first. Rotate each question's options so the right answer lands in a mixed, repeatable place (no option is ever "all of the above", so order carries no meaning). */
+const balance = (c: StarterCourse): StarterCourse => ({
+  ...c,
+  quiz: c.quiz.map((q, i) => {
+    const n = q.options.length; if (n < 2) return q;
+    const target = (i + 1) % n;
+    const shift = (((target - q.correct) % n) + n) % n;
+    return { ...q, options: q.options.map((_, k) => q.options[(k - shift + n) % n]!), correct: target };
+  }),
+});
+export const STARTER_COURSES: StarterCourse[] = [...BASE_COURSES, ...MORE_STARTER_COURSES, ...BROKER_STARTER_COURSES, ...VIDEO_STARTER_COURSES].map(withBank).map(balance);
