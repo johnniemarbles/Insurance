@@ -121,3 +121,12 @@ test('the clearance list names who is not cleared to transact, and stays inside 
   assert.equal(r.json.total, r.json.cleared + r.json.notCleared.length);
   assert.ok(!(await call(OTHER, 'GET', '/v1/compliance/clearance')).json.notCleared.some((x: any) => x.name === 'Partner A'));
 });
+
+test('copying a pipeline copies each stage’s required paperwork', async () => {
+  assert.equal((await call(COMP, 'PATCH', `/v1/pipelines/${pipe}/stages/${sBound}`, { requiredDocs: ['needs_analysis', 'id_record'] })).status, 204);
+  const c = await call(MGR, 'POST', `/v1/pipelines/${pipe}/clone`, { name: 'Life copy' });
+  assert.equal(c.status, 201);
+  const b = (await call(MGR, 'POST', '/v1/boxes', { pipelineId: c.json.id, name: 'Copy client' })).json.id as string;
+  const g = (await call(MGR, 'GET', `/v1/boxes/${b}/gates`)).json.gates;
+  assert.deepEqual(g.find((x: any) => x.stageName === 'Bound').required.slice().sort(), ['id_record', 'needs_analysis']);
+});

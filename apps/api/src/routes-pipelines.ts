@@ -68,7 +68,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
     return p;
   }
 
-  interface StageIn { name: string; isWon?: boolean; isLost?: boolean; color?: string | null; requiredFields?: string[] }
+  interface StageIn { name: string; isWon?: boolean; isLost?: boolean; color?: string | null; requiredFields?: string[]; requiredDocs?: string[] }
   /** Adds a stage. An open stage goes before the first Won/Lost stage so those two stay last; a Won/Lost stage goes at the end. */
   async function addStage(tx: Tx, tenantId: string, pipelineId: string, name: string, isWon: boolean, isLost: boolean): Promise<string> {
     const at = isWon || isLost ? null : (await tx.query<{ p: number | null }>('SELECT min(position) AS p FROM stages WHERE pipeline_id = $1 AND (is_won OR is_lost)', [pipelineId])).rows[0]?.p ?? null;
@@ -105,7 +105,8 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
     );
     let pos = 1;
     for (const st of b.stages) {
-      await tx.query('INSERT INTO stages (tenant_id, pipeline_id, name, position, color, is_won, is_lost, required_fields) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text[])', [ctx.tenantId, id, st.name.trim(), pos++, st.color ?? null, st.isWon ?? false, st.isLost ?? false, st.requiredFields ?? []]);
+      const sid = (await tx.query<{ id: string }>('INSERT INTO stages (tenant_id, pipeline_id, name, position, color, is_won, is_lost, required_fields) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text[]) RETURNING id', [ctx.tenantId, id, st.name.trim(), pos++, st.color ?? null, st.isWon ?? false, st.isLost ?? false, st.requiredFields ?? []])).rows[0]!.id;
+      for (const dt of st.requiredDocs ?? []) await tx.query('INSERT INTO stage_doc_requirements (stage_id, doc_type, tenant_id) VALUES ($1,$2,$3)', [sid, dt, ctx.tenantId]);
     }
     let fpos = 1;
     for (const f of b.fields) {
@@ -189,12 +190,13 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
       // row-level security hides pipelines the person cannot see, so a hidden one is simply "not found"
       const src = (await tx.query<{ name: string; color_theme: string; template_code: string | null; template_version: number | null }>('SELECT name, color_theme, template_code, template_version FROM pipelines WHERE id = $1', [id])).rows[0];
       if (!src) throw notFound('Pipeline not found');
-      const stages = (await tx.query<{ name: string; color: string | null; is_won: boolean; is_lost: boolean; required_fields: string[] }>('SELECT name, color, is_won, is_lost, required_fields FROM stages WHERE pipeline_id = $1 ORDER BY position', [id])).rows;
+      const stages = (await tx.query<{ name: string; color: string | null; is_won: boolean; is_lost: boolean; required_fields: string[]; docs: string[] }>(
+        `SELECT s.name, s.color, s.is_won, s.is_lost, s.required_fields, coalesce((SELECT array_agg(r.doc_type ORDER BY r.doc_type) FROM stage_doc_requirements r WHERE r.stage_id = s.id), '{}') AS docs FROM stages s WHERE s.pipeline_id = $1 ORDER BY s.position`, [id])).rows;
       const fields = (await tx.query<{ key: string; labels: Record<string, string>; type: string; options: string[] | null; required: boolean }>('SELECT key, labels, type, options, required FROM field_defs WHERE pipeline_id = $1 ORDER BY position', [id])).rows;
       const owner = b.ownerNodeId ?? (await defaultPlace(tx, ctx));
       const newId = await makePipeline(tx, ctx, {
         name: b.name ?? `${src.name} (copy)`, owner, sharedDown: b.sharedDown ?? false, colorTheme: src.color_theme, clonedFrom: id, templateCode: src.template_code, templateVersion: src.template_version,
-        stages: stages.map((x) => ({ name: x.name, color: x.color, isWon: x.is_won, isLost: x.is_lost, requiredFields: x.required_fields })),
+        stages: stages.map((x) => ({ name: x.name, color: x.color, isWon: x.is_won, isLost: x.is_lost, requiredFields: x.required_fields, requiredDocs: x.docs })),
         fields: fields.map((f) => ({ key: f.key, labels: f.labels, type: f.type, ...(f.options ? { options: f.options } : {}), required: f.required })),
       });
       return { id: newId };
