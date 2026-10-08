@@ -14,3 +14,4 @@ export * from './advice.ts';
 export * from './aml.ts';
 export * from './client-consent.ts';
 export * from './retention.ts';
+export * from './vendors.ts';

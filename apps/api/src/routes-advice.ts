@@ -1,11 +1,12 @@
 import { createHash, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
-import { ADVICE_KINDS, ADVICE_LABELS, OTP_MAX_ATTEMPTS, OTP_MINUTES, consentStates, gateTypeFor, signingTierFor, type AdviceKind, type RequestContext } from '@pii/domain';
-import { seal } from '@pii/platform';
+import { SIGNING_VENDORS, VENDOR_CATALOG, vendorName, ADVICE_KINDS, ADVICE_LABELS, OTP_MAX_ATTEMPTS, OTP_MINUTES, consentStates, gateTypeFor, signingTierFor, type AdviceKind, type RequestContext } from '@pii/domain';
 import { audit } from './audit.ts';
-import { HttpError, invalid, notFound } from './errors.ts';
+import { HttpError, forbidden, invalid, notFound } from './errors.ts';
 import { requireCrm, requireEdit, uuid } from './crm-helpers.ts';
+import { canWaive } from './routes-gates.ts';
+import { sealAdvice } from './advice-seal.ts';
 import type { AppDeps } from './app.ts';
 
 interface Row {
@@ -142,18 +143,8 @@ export function registerAdviceRoutes(app: FastifyInstance, deps: AppDeps): void 
         await tx.query('UPDATE advice_records SET otp_attempts = otp_attempts + 1 WHERE id = $1', [id]);
         return { ok: false as const };
       }
-      const now = new Date().toISOString();
-      const cert = `${r.title}\nClient: ${r.client_name} <${r.client_email}>\n\n${r.body}\n\n--- Signature record ---\nSigned by one-time code sent to ${r.client_email}\nAt: ${now}\nContent hash (SHA-256): ${r.content_hash}\nRecord: ${id}\n`;
-      let documentId: string | null = null;
-      if (deps.keys) {
-        documentId = randomUUID();
-        const data = Buffer.from(cert, 'utf8');
-        const sealed = seal(deps.keys, data, `${ctx.tenantId}:doc:${documentId}`);
-        await tx.query(`INSERT INTO box_documents (id, tenant_id, box_id, name, mime, size_bytes, data_enc, key_id, uploaded_by, doc_type) VALUES ($1,$2,$3,$4,'text/plain',$5,$6,$7,$8,$9)`,
-          [documentId, ctx.tenantId, r.box_id, `${r.title.replace(/[^\w .-]/g, '_').slice(0, 150)} (signed).txt`, data.length, sealed.data, sealed.keyId, ctx.userId, gateTypeFor(r.kind)]);
-      }
-      await tx.query(`UPDATE advice_records SET status = 'signed', signed_at = $2, signed_method = 'otp', document_id = $3, otp_hash = NULL, otp_expires_at = NULL, updated_at = now() WHERE id = $1`, [id, now, documentId]);
-      await audit(tx, ctx, 'advice_signed', 'box', r.box_id, { adviceId: id, method: 'otp', contentHash: r.content_hash });
+      const firm = (await tx.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [ctx.tenantId])).rows[0]?.name ?? '';
+      const { documentId } = await sealAdvice(tx, ctx, deps.keys, { adviceId: id, boxId: r.box_id, kind: r.kind, title: r.title, body: r.body, clientName: r.client_name, clientEmail: r.client_email, contentHash: r.content_hash!, firm, method: 'otp', typedName: null, ip: req.ip, agent: String(req.headers['user-agent'] ?? ''), signer: 'advisor' });
       return { ok: true as const, documentId };
     });
     if (!result.ok) throw new HttpError(422, 'wrong_code', 'That code is not right');
@@ -162,25 +153,58 @@ export function registerAdviceRoutes(app: FastifyInstance, deps: AppDeps): void 
 
   // Vendor tier: record that a certified third party signed it. Needs the vendor's reference and the completed document on the record.
   app.post('/v1/advice/:id/vendor-signed', {
-    schema: { params: idp, body: { type: 'object', required: ['vendorName', 'vendorRef', 'documentId'], additionalProperties: false, properties: { vendorName: text(100), vendorRef: text(200), documentId: uuid } } },
+    schema: { params: idp, body: { type: 'object', required: ['vendorRef', 'documentId'], additionalProperties: false, properties: { vendorId: { enum: [...SIGNING_VENDORS] }, vendorName: text(100), vendorRef: text(200), documentId: uuid } } },
   }, async (req) => {
     const { ctx } = await deps.authenticate(req);
     requireCrm(ctx);
     const { id } = req.params as { id: string };
-    const b = req.body as { vendorName: string; vendorRef: string; documentId: string };
+    const b = req.body as { vendorId?: string; vendorName?: string; vendorRef: string; documentId: string };
+    const label = (b.vendorId && b.vendorId !== 'other' ? vendorName(b.vendorId) : b.vendorName?.trim()) ?? '';
+    if (!label) throw invalid('Say which vendor signed it');
     return run(ctx, async (tx) => {
       const r = await load(tx, id);
       requireEdit(ctx, r.owner_node_id);
       if (r.status === 'signed') throw new HttpError(409, 'advice_locked', 'Already signed');
+      if (b.vendorId) {
+        const rows = (await tx.query<{ vendor: string; enabled: boolean }>('SELECT vendor, enabled FROM signing_vendors')).rows;
+        if (rows.some((v) => v.enabled) && !rows.some((v) => v.vendor === b.vendorId && v.enabled)) throw invalid('That vendor is not turned on for your company');
+      }
       const doc = (await tx.query('SELECT 1 FROM box_documents WHERE id = $1 AND box_id = $2', [b.documentId, r.box_id])).rowCount;
       if (!doc) throw invalid('Upload the completed, vendor-signed document to this record first');
       const g = gateTypeFor(r.kind);
       if (g) await tx.query('UPDATE box_documents SET doc_type = $2 WHERE id = $1 AND doc_type IS NULL', [b.documentId, g]);
       const now = new Date().toISOString();
-      await tx.query(`UPDATE advice_records SET status = 'signed', signed_at = $2, signed_method = 'vendor', vendor_name = $3, vendor_ref = $4, document_id = $5, content_hash = $6, updated_at = now() WHERE id = $1`,
-        [id, now, b.vendorName.trim(), b.vendorRef.trim(), b.documentId, contentHash(r)]);
-      await audit(tx, ctx, 'advice_signed', 'box', r.box_id, { adviceId: id, method: 'vendor', vendor: b.vendorName.trim(), ref: b.vendorRef.trim() });
+      await tx.query(`UPDATE advice_records SET status = 'signed', signed_at = $2, signed_method = 'vendor', vendor_name = $3, vendor_ref = $4, document_id = $5, content_hash = $6, vendor_id = $7, updated_at = now() WHERE id = $1`,
+        [id, now, label, b.vendorRef.trim(), b.documentId, contentHash(r), b.vendorId ?? null]);
+      await audit(tx, ctx, 'advice_signed', 'box', r.box_id, { adviceId: id, method: 'vendor', vendor: label, ref: b.vendorRef.trim() });
       return { ok: true };
     });
+  });
+
+  // The e-signature vendor catalogue and which ones this company has turned on. Everyone who records a signature reads it; administrators and compliance change it.
+  app.get('/v1/compliance/signing-vendors', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    return run(ctx, async (tx) => {
+      const rows = (await tx.query<{ vendor: string; enabled: boolean; note: string | null }>('SELECT vendor, enabled, note FROM signing_vendors')).rows;
+      const anySet = rows.some((r) => r.enabled);
+      return { vendors: VENDOR_CATALOG.map((v) => ({ ...v, enabled: anySet ? !!rows.find((r) => r.vendor === v.id)?.enabled : true, note2: rows.find((r) => r.vendor === v.id)?.note ?? null })), restricted: anySet, canManage: canWaive(ctx) };
+    });
+  });
+  app.put('/v1/compliance/signing-vendors/:vendor', {
+    schema: { params: { type: 'object', properties: { vendor: { enum: [...SIGNING_VENDORS] } } }, body: { type: 'object', required: ['enabled'], additionalProperties: false, properties: { enabled: { type: 'boolean' }, note: { type: 'string', maxLength: 200 } } } },
+  }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    if (!canWaive(ctx)) throw forbidden('Only an administrator or the compliance role can choose signing vendors');
+    const { vendor } = req.params as { vendor: string };
+    const b = req.body as { enabled: boolean; note?: string };
+    await run(ctx, async (tx) => {
+      const who = (await tx.query<{ n: string }>('SELECT coalesce(display_name, email::text) AS n FROM app_users WHERE id = $1', [ctx.userId])).rows[0]!.n;
+      await tx.query(`INSERT INTO signing_vendors (tenant_id, vendor, enabled, note, set_by_name) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant_id, vendor) DO UPDATE SET enabled = EXCLUDED.enabled, note = EXCLUDED.note, set_by_name = EXCLUDED.set_by_name, updated_at = now()`,
+        [ctx.tenantId, vendor, b.enabled, b.note?.trim() || null, who]);
+      await audit(tx, ctx, 'signing_vendor_set', 'vendor', null, { vendor, enabled: b.enabled });
+    });
+    return reply.code(204).send();
   });
 }

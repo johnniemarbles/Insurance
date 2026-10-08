@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 export interface Rule { name: string; windowMs: number; max: number; match: (method: string, path: string) => boolean }
 
 export const RULES: Rule[] = [
+  { name: 'sign', windowMs: 60_000, max: 40, match: (_m, p) => p.startsWith('/sign/') || p.startsWith('/v1/public/sign/') },
   { name: 'signin', windowMs: 10 * 60_000, max: 60, match: (_m, p) => p.startsWith('/auth/') },
   { name: 'public', windowMs: 60_000, max: 120, match: (m, p) => m === 'GET' && (p === '/privacy' || p === '/terms' || p === '/support' || p === '/v1/region' || p.startsWith('/brand/') || p.startsWith('/c/')) },
   { name: 'api', windowMs: 60_000, max: 1500, match: (_m, p) => p.startsWith('/v1/') && !p.startsWith('/v1/hooks/') },

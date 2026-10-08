@@ -111,7 +111,7 @@ export const SETTINGS: readonly SettingDef[] = [
   },
   {
     key: 'notify.compliance_expiry', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
-    label: { en: 'A licence or E&O policy is about to expire', 'fr-CA': 'Un permis ou une police E&O arrive à échéance' }, help: { en: 'Reminders come 30, 15 and 0 days before the date.', 'fr-CA': 'Des rappels sont envoyés 30, 15 et 0 jour avant la date.' }, keywords: 'notification alert compliance licence expiry E&O insurance reminder',
+    label: { en: 'A licence or E&O policy is about to expire', 'fr-CA': 'Un permis ou une police E&O arrive à échéance' }, help: { en: 'Reminders come 90, 60, 30 and 0 days before the date.', 'fr-CA': 'Des rappels sont envoyés 90, 60, 30 et 0 jour avant la date.' }, keywords: 'notification alert compliance licence expiry E&O insurance reminder',
   },
   {
     key: 'notify.learning_due', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,

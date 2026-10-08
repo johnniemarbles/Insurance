@@ -1,3 +1,4 @@
+import { useVendors } from './vendors.tsx';
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
 
@@ -9,10 +10,10 @@ interface Doc { id: string; name: string }
 const T = {
   'en': { tab: 'Advice', h: 'Advice records', help: 'The advice you gave this client, kept as a permanent record. A signed record can never be changed.', none: 'No advice recorded yet.', add: 'New advice record', kind: 'Kind', title: 'Title', body: 'What you advised and why', client: 'Client name', email: 'Client email', save: 'Save draft', cancel: 'Cancel',
     draft: 'Draft', awaiting: 'Waiting for the client’s code', signed: 'Signed', builtin: 'Signed with a one-time code', vendor: 'Needs a certified e-signature vendor', send: 'Send code to client', code: '6-digit code', confirm: 'Confirm signature', sent: 'Code sent. It expires in 15 minutes.', del: 'Remove draft', edit: 'Edit',
-    vendorHelp: 'Sign this with your certified e-signature vendor, upload the completed document on the Files tab, then record it here.', vendorName: 'Vendor (for example DocuSign)', vendorRef: 'Vendor reference or envelope ID', doc: 'Completed document', record: 'Record vendor signature', by: 'by', via: 'via', hash: 'Fingerprint' },
+    vendorHelp: 'Sign this with your certified e-signature vendor, upload the completed document on the Files tab, then record it here.', vendorPick: 'Vendor', vendorName: 'Vendor name', vendorRef: 'Vendor reference or envelope ID', doc: 'Completed document', record: 'Record vendor signature', by: 'by', via: 'via', hash: 'Fingerprint', link: 'Send signing link to client', linkMade: 'Signing link ready. Valid for 7 days.', emailedYes: 'It was also emailed to the client.', emailedNo: 'It was not emailed, so share the link yourself.', copy: 'Copy link' },
   'fr-CA': { tab: 'Conseils', h: 'Dossiers de conseil', help: 'Les conseils donnés à ce client, conservés comme dossier permanent. Un dossier signé ne peut jamais être modifié.', none: 'Aucun conseil consigné.', add: 'Nouveau dossier de conseil', kind: 'Type', title: 'Titre', body: 'Ce que vous avez conseillé et pourquoi', client: 'Nom du client', email: 'Courriel du client', save: 'Enregistrer le brouillon', cancel: 'Annuler',
     draft: 'Brouillon', awaiting: 'En attente du code du client', signed: 'Signé', builtin: 'Signature par code à usage unique', vendor: 'Exige un fournisseur de signature électronique certifié', send: 'Envoyer le code au client', code: 'Code à 6 chiffres', confirm: 'Confirmer la signature', sent: 'Code envoyé. Il expire dans 15 minutes.', del: 'Retirer le brouillon', edit: 'Modifier',
-    vendorHelp: 'Faites signer avec votre fournisseur de signature électronique certifié, téléversez le document final dans l’onglet Fichiers, puis consignez-le ici.', vendorName: 'Fournisseur (p. ex. DocuSign)', vendorRef: 'Référence ou ID d’enveloppe', doc: 'Document final', record: 'Consigner la signature du fournisseur', by: 'par', via: 'via', hash: 'Empreinte' },
+    vendorHelp: 'Faites signer avec votre fournisseur de signature électronique certifié, téléversez le document final dans l’onglet Fichiers, puis consignez-le ici.', vendorPick: 'Fournisseur', vendorName: 'Nom du fournisseur', vendorRef: 'Référence ou ID d’enveloppe', doc: 'Document final', record: 'Consigner la signature du fournisseur', by: 'par', via: 'via', hash: 'Empreinte', link: 'Envoyer le lien de signature au client', linkMade: 'Lien de signature prêt. Valide 7 jours.', emailedYes: 'Il a aussi été envoyé par courriel au client.', emailedNo: 'Il n’a pas été envoyé par courriel : transmettez le lien vous-même.', copy: 'Copier le lien' },
 };
 const when = (iso: string, locale: Locale) => new Date(iso).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -25,7 +26,10 @@ export function AdviceTab({ boxId, call, locale, canEdit }: { boxId: string; cal
   const [err, setErr] = useState(''); const [ok, setOk] = useState('');
   const [form, setForm] = useState<{ kind: string; title: string; body: string; clientName: string; clientEmail: string } | null>(null);
   const [codes, setCodes] = useState<Record<string, string>>({});
-  const [vend, setVend] = useState<Record<string, { vendorName: string; vendorRef: string; documentId: string }>>({});
+  const [links, setLinks] = useState<Record<string, { url: string; emailed: boolean }>>({});
+  const [vend, setVend] = useState<Record<string, { vendorId: string; vendorName: string; vendorRef: string; documentId: string }>>({});
+  const { d: vd } = useVendors(call);
+  const vset = (id: string, patch: Partial<{ vendorId: string; vendorName: string; vendorRef: string; documentId: string }>) => setVend({ ...vend, [id]: { vendorId: '', vendorName: '', vendorRef: '', documentId: '', ...vend[id], ...patch } });
   const load = () => Promise.all([call('GET', `/v1/boxes/${boxId}/advice`), call('GET', `/v1/boxes/${boxId}/documents`)]).then(([a, d]) => { setList(a.advice); setKinds(a.kinds); setDocs(d.documents); }, (e) => setErr((e as Error).message));
   useEffect(() => { void load(); }, [boxId]);
   const go = async (fn: () => Promise<unknown>, msg = '') => { setErr(''); setOk(''); try { await fn(); await load(); setOk(msg); } catch (e) { setErr((e as Error).message); } };
@@ -53,8 +57,10 @@ export function AdviceTab({ boxId, call, locale, canEdit }: { boxId: string; cal
           <strong>{a.title}</strong> <small>{label(a.kind)} · {a.clientName} · {a.status === 'signed' ? x.signed : a.status === 'awaiting_signature' ? x.awaiting : x.draft}</small>
           <div style={{ whiteSpace: 'pre-wrap', margin: '4px 0' }}>{a.body}</div>
           {a.status === 'signed' && <small style={{ display: 'block' }}>✓ {a.signedMethod === 'vendor' ? `${x.via} ${a.vendorName} (${a.vendorRef})` : x.builtin} · {a.signedAt ? when(a.signedAt, locale) : ''} · {x.hash} {a.contentHash?.slice(0, 12)}…</small>}
+          {links[a.id] && a.status !== 'signed' && <div class="muted" style={{ wordBreak: 'break-all' }}><code>{links[a.id]!.url}</code> <button class="btn quiet" onClick={() => void navigator.clipboard?.writeText(links[a.id]!.url)}>{x.copy}</button> {links[a.id]!.emailed ? x.emailedYes : x.emailedNo}</div>}
           {canEdit && a.status !== 'signed' && a.tier === 'builtin' && (
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', marginTop: '4px' }}>
+              <button class="btn" onClick={() => void go(async () => { const r = await call('POST', `/v1/advice/${a.id}/signing-link`); setLinks({ ...links, [a.id]: r }); }, x.linkMade)}>{x.link}</button>
               <button class="btn quiet" onClick={() => void go(() => call('POST', `/v1/advice/${a.id}/send-code`), x.sent)}>{x.send}</button>
               {a.status === 'awaiting_signature' && <>
                 <input aria-label={x.code} placeholder={x.code} inputMode="numeric" maxLength={6} value={codes[a.id] ?? ''} onInput={(e) => setCodes({ ...codes, [a.id]: (e.target as HTMLInputElement).value })} style={{ width: '110px' }} />
@@ -65,12 +71,15 @@ export function AdviceTab({ boxId, call, locale, canEdit }: { boxId: string; cal
           {canEdit && a.status !== 'signed' && a.tier === 'vendor' && (
             <div style={{ marginTop: '4px' }}>
               <p class="muted">{x.vendorHelp}</p>
-              <input aria-label={x.vendorName} placeholder={x.vendorName} value={vend[a.id]?.vendorName ?? ''} onInput={(e) => setVend({ ...vend, [a.id]: { vendorName: (e.target as HTMLInputElement).value, vendorRef: vend[a.id]?.vendorRef ?? '', documentId: vend[a.id]?.documentId ?? '' } })} />{' '}
-              <input aria-label={x.vendorRef} placeholder={x.vendorRef} value={vend[a.id]?.vendorRef ?? ''} onInput={(e) => setVend({ ...vend, [a.id]: { vendorName: vend[a.id]?.vendorName ?? '', vendorRef: (e.target as HTMLInputElement).value, documentId: vend[a.id]?.documentId ?? '' } })} />{' '}
-              <select aria-label={x.doc} value={vend[a.id]?.documentId ?? ''} onChange={(e) => setVend({ ...vend, [a.id]: { vendorName: vend[a.id]?.vendorName ?? '', vendorRef: vend[a.id]?.vendorRef ?? '', documentId: (e.target as HTMLSelectElement).value } })}>
+              <select aria-label={x.vendorPick} value={vend[a.id]?.vendorId ?? ''} onChange={(e) => vset(a.id, { vendorId: (e.target as HTMLSelectElement).value })}>
+                <option value="">{x.vendorPick}</option>{(vd?.vendors ?? []).filter((v) => v.enabled).map((v) => <option value={v.id}>{v.name}</option>)}
+              </select>{' '}
+              {vend[a.id]?.vendorId === 'other' && <><input aria-label={x.vendorName} placeholder={x.vendorName} value={vend[a.id]?.vendorName ?? ''} onInput={(e) => vset(a.id, { vendorName: (e.target as HTMLInputElement).value })} />{' '}</>}
+              <input aria-label={x.vendorRef} placeholder={x.vendorRef} value={vend[a.id]?.vendorRef ?? ''} onInput={(e) => vset(a.id, { vendorRef: (e.target as HTMLInputElement).value })} />{' '}
+              <select aria-label={x.doc} value={vend[a.id]?.documentId ?? ''} onChange={(e) => vset(a.id, { documentId: (e.target as HTMLSelectElement).value })}>
                 <option value="">{x.doc}</option>{docs.map((d) => <option value={d.id}>{d.name}</option>)}
               </select>{' '}
-              <button class="btn" disabled={!vend[a.id]?.vendorName || !vend[a.id]?.vendorRef || !vend[a.id]?.documentId} onClick={() => void go(() => call('POST', `/v1/advice/${a.id}/vendor-signed`, vend[a.id]), `✓ ${x.signed}`)}>{x.record}</button>{' '}
+              <button class="btn" disabled={!vend[a.id]?.vendorId || (vend[a.id]?.vendorId === 'other' && !vend[a.id]?.vendorName) || !vend[a.id]?.vendorRef || !vend[a.id]?.documentId} onClick={() => void go(() => call('POST', `/v1/advice/${a.id}/vendor-signed`, { vendorId: vend[a.id]!.vendorId, ...(vend[a.id]!.vendorId === 'other' ? { vendorName: vend[a.id]!.vendorName } : {}), vendorRef: vend[a.id]!.vendorRef, documentId: vend[a.id]!.documentId }), `✓ ${x.signed}`)}>{x.record}</button>{' '}
               {a.status === 'draft' && <button class="ib danger" aria-label={x.del} onClick={() => void go(() => call('DELETE', `/v1/advice/${a.id}`))}>✕</button>}
             </div>
           )}

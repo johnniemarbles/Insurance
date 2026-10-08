@@ -102,3 +102,79 @@ test('drafts can be edited and removed; other partners and other companies canno
   assert.equal((await call(PA, 'DELETE', `/v1/advice/${a}`)).status, 204);
   assert.equal((await mk(PA, 'recommendation', { clientEmail: 'nope' })).status, 400);
 });
+
+test('the client signing link: read, get a code, sign with a typed name, and the sealed PDF is filed', async () => {
+  const a = (await mk(PA, 'needs_analysis', { title: 'Needs analysis via link' })).json.id;
+  assert.equal((await call(PB, 'POST', `/v1/advice/${a}/signing-link`)).status, 404);
+  const link = await call(PA, 'POST', `/v1/advice/${a}/signing-link`);
+  assert.equal(link.status, 200); assert.match(link.json.url, /\/sign\/[A-Za-z0-9_-]{20,}$/);
+  const token = link.json.url.split('/').pop();
+  const page = await app.inject({ method: 'GET', url: `/sign/${token}` });
+  assert.equal(page.statusCode, 200); assert.match(page.headers['content-security-policy'] as string, /script-src 'nonce-/);
+  const pub = await app.inject({ method: 'GET', url: `/v1/public/sign/${token}` });
+  assert.equal(pub.statusCode, 200);
+  const view = JSON.parse(pub.body);
+  assert.equal(view.title, 'Needs analysis via link'); assert.equal(view.signed, false); assert.match(view.emailHint, /^r\*\*\*@client\.test$/);
+  assert.equal((await app.inject({ method: 'GET', url: `/v1/public/sign/${'x'.repeat(30)}` })).statusCode, 404);
+  const post = (path: string, body: object) => app.inject({ method: 'POST', url: `/v1/public/sign/${token}${path}`, payload: body });
+  assert.equal((await post('/confirm', { code: '123456', typedName: 'Rita Client', agree: true })).statusCode, 409, 'no code yet');
+  const code = JSON.parse((await post('/code', {})).body).devCode;
+  assert.equal((await post('/confirm', { code: code === '000000' ? '111111' : '000000', typedName: 'Rita Client', agree: true })).statusCode, 422);
+  assert.equal((await post('/confirm', { code, typedName: 'R', agree: true })).statusCode, 400, 'a name is required');
+  assert.equal((await post('/confirm', { code, typedName: 'Rita Client', agree: false })).statusCode, 400, 'agreement is required');
+  assert.equal((await post('/confirm', { code, typedName: 'Rita Client', agree: true })).statusCode, 200);
+  assert.equal((await app.inject({ method: 'GET', url: `/v1/public/sign/${token}` })).statusCode, 404, 'the link is spent');
+  const row = (await call(PA, 'GET', `/v1/boxes/${box}/advice`)).json.advice.find((x: any) => x.id === a);
+  assert.equal(row.status, 'signed');
+  const docs = (await call(PA, 'GET', `/v1/boxes/${box}/documents`)).json.documents;
+  const pdf = docs.find((d: any) => d.name.startsWith('Needs analysis via link'));
+  assert.equal(pdf.mime, 'application/pdf'); assert.equal(pdf.docType, 'needs_analysis');
+  const dl = (await call(PA, 'GET', `/v1/documents/${pdf.id}`)).json;
+  assert.equal(Buffer.from(dl.dataBase64, 'base64').subarray(0, 5).toString(), '%PDF-');
+  const o = new pg.Client({ connectionString: db.ownerUrl }); await o.connect();
+  const r = (await o.query(`SELECT signer_typed_name, document_sha256 FROM advice_records WHERE id = $1`, [a])).rows[0];
+  await o.end();
+  assert.equal(r.signer_typed_name, 'Rita Client'); assert.match(r.document_sha256, /^[0-9a-f]{64}$/);
+});
+
+test('a new link replaces the old one, vendor-tier paperwork gets no link, and five wrong codes lock the code', async () => {
+  const a = (await mk(PA, 'recommendation', { title: 'Link two' })).json.id;
+  const t1 = (await call(PA, 'POST', `/v1/advice/${a}/signing-link`)).json.url.split('/').pop();
+  const t2 = (await call(PA, 'POST', `/v1/advice/${a}/signing-link`)).json.url.split('/').pop();
+  assert.equal((await app.inject({ method: 'GET', url: `/v1/public/sign/${t1}` })).statusCode, 404);
+  assert.equal((await app.inject({ method: 'GET', url: `/v1/public/sign/${t2}` })).statusCode, 200);
+  const post = (path: string, body: object) => app.inject({ method: 'POST', url: `/v1/public/sign/${t2}${path}`, payload: body });
+  const code = JSON.parse((await post('/code', {})).body).devCode; const bad = code === '000000' ? '111111' : '000000';
+  for (let i = 0; i < 5; i++) assert.equal((await post('/confirm', { code: bad, typedName: 'Rita Client', agree: true })).statusCode, 422);
+  assert.equal((await post('/confirm', { code, typedName: 'Rita Client', agree: true })).statusCode, 429);
+  const v = (await mk(PA, 'beneficiary_designation')).json.id;
+  assert.equal((await call(PA, 'POST', `/v1/advice/${v}/signing-link`)).status, 409);
+});
+
+test('signing vendors: everyone sees the catalogue, only admin or compliance choose, a vendor that is off is refused, the chosen id is kept', async () => {
+  const list = await call(PA, 'GET', '/v1/compliance/signing-vendors');
+  assert.equal(list.status, 200);
+  assert.equal(list.json.vendors.length, 8);
+  assert.equal(list.json.restricted, false);
+  assert.ok(list.json.vendors.every((v: any) => v.enabled && v.connected === false));
+  assert.equal(list.json.canManage, false);
+  assert.equal((await call(PA, 'PUT', '/v1/compliance/signing-vendors/docusign', { enabled: true })).status, 403);
+  assert.equal((await call(ADMIN, 'PUT', '/v1/compliance/signing-vendors/nope', { enabled: true })).status, 400);
+  assert.equal((await call(ADMIN, 'PUT', '/v1/compliance/signing-vendors/onespan', { enabled: true, note: 'Acct 77' })).status, 204);
+  assert.equal((await call(ADMIN, 'PUT', '/v1/compliance/signing-vendors/notarius', { enabled: true })).status, 204);
+  const after = (await call(PA, 'GET', '/v1/compliance/signing-vendors')).json;
+  assert.equal(after.restricted, true);
+  assert.deepEqual(after.vendors.filter((v: any) => v.enabled).map((v: any) => v.id).sort(), ['notarius', 'onespan']);
+  assert.equal(after.vendors.find((v: any) => v.id === 'onespan').note2, 'Acct 77');
+  // another company is not affected
+  assert.equal((await call(OTHER, 'GET', '/v1/compliance/signing-vendors')).json.restricted, false);
+  const a = await mk(PA, 'beneficiary_designation');
+  const up = await call(PA, 'POST', `/v1/boxes/${box}/documents`, { name: 'bene2.pdf', mime: 'application/pdf', dataBase64: PDF });
+  assert.equal((await call(PA, 'POST', `/v1/advice/${a.json.id}/vendor-signed`, { vendorId: 'docusign', vendorRef: 'E1', documentId: up.json.id })).status, 422);
+  assert.equal((await call(PA, 'POST', `/v1/advice/${a.json.id}/vendor-signed`, { vendorRef: 'E1', documentId: up.json.id })).status, 422);
+  const ok = await call(PA, 'POST', `/v1/advice/${a.json.id}/vendor-signed`, { vendorId: 'onespan', vendorRef: 'E1', documentId: up.json.id });
+  assert.equal(ok.status, 200);
+  const rec = (await call(PA, 'GET', `/v1/boxes/${box}/advice`)).json.advice.find((x: any) => x.id === a.json.id);
+  assert.equal(rec.vendorName, 'OneSpan Sign');
+  assert.equal((await call(ADMIN, 'PUT', '/v1/compliance/signing-vendors/onespan', { enabled: false })).status, 204);
+});

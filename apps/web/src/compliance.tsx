@@ -1,4 +1,5 @@
 import { docLabel } from './doctypes.ts';
+import { VendorPanel } from './vendors.tsx';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
 import type { HostOptions, Locale } from './types.ts';
@@ -82,7 +83,7 @@ function Bar({ pct }: { pct: number }) { return <span class="cbar" role="img" ar
 
 export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions }) {
   const [open, setOpen] = useState<string | null>(null);
-  return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <><ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} />{!isHeadOffice && <><Overview call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}</>;
+  return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <><ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} />{!isHeadOffice && <><Overview call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /><VendorPanel call={call} locale={locale} /></>}</>;
 }
 
 const OV = {
