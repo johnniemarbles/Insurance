@@ -95,7 +95,7 @@ export async function tell(deps: AppDeps, tenantId: string, userIds: string[], k
   }
 }
 
-const EMAILED = new Set(['learning_due', 'ce_reminder', 'compliance_expiry']);
+const EMAILED = new Set(['learning_due', 'ce_reminder', 'compliance_expiry', 'team_overdue']);
 
 /** Reminders also go by email, unless the person turned that off. A failed send never blocks the work. Inside withDigest they are gathered and sent as one email per person. */
 async function emailReminder(deps: AppDeps, userId: string, kind: string, data: Record<string, unknown>): Promise<void> {

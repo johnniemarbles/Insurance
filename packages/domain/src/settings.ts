@@ -118,6 +118,10 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'A course is due soon or late', 'fr-CA': 'Une formation arrive à échéance ou est en retard' }, help: { en: 'One reminder a week before the due date, and one when it is late.', 'fr-CA': 'Un rappel une semaine avant l’échéance, et un autre quand elle est dépassée.' }, keywords: 'notification alert course training due overdue reminder learning',
   },
   {
+    key: 'notify.team_overdue', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'Weekly summary of overdue training in my team', 'fr-CA': 'Résumé hebdomadaire des formations en retard de mon équipe' }, help: { en: 'Once a week, only when someone is overdue. Sent to administrators.', 'fr-CA': 'Une fois par semaine, seulement si quelqu’un est en retard. Envoyé aux administrateurs.' }, keywords: 'notification alert training course overdue late team weekly summary formation retard',
+  },
+  {
     key: 'notify.ce_reminder', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
     label: { en: 'My continuing education is at risk', 'fr-CA': 'Ma formation continue est à risque' }, help: { en: 'Hours are still missing with 60 days or fewer left in the term, or the term has ended.', 'fr-CA': 'Il manque des heures et il reste 60 jours ou moins, ou la période est terminée.' }, keywords: 'notification alert CE continuing education hours reminder term',
   },

@@ -46,6 +46,14 @@ export function reminderText(kind: string, d: D, loc: Locale): { subject: string
       const line = `${d.name ?? (fr ? 'Un partenaire' : 'A partner')} : ${d.label ?? (fr ? 'un permis' : 'a licence')} ${w}${d.company ? ` (${d.company})` : ''}`;
       return { subject: fr ? 'Rappel de conformité' : 'Compliance reminder', line };
     }
+    case 'team_overdue': {
+      const n = Number(d.overdue) || 0;
+      const top = Array.isArray(d.courses) ? (d.courses as { title: string; overdue: number }[]).slice(0, 3).map((c) => `${c.title} (${c.overdue})`).join(', ') : '';
+      const line = fr
+        ? `Formation : ${n} apprenant(s) en retard dans votre équipe${top ? ` — ${top}` : ''}`
+        : `Training: ${n} learner${n === 1 ? ' is' : 's are'} overdue across your team${top ? ` — ${top}` : ''}`;
+      return { subject: fr ? 'Résumé hebdomadaire de la formation' : 'Weekly training summary', line };
+    }
     default: return null;
   }
 }

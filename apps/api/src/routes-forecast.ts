@@ -7,6 +7,13 @@ import { loadPacks, hoursIn, evaluateFor } from './routes-ce.ts';
 import type { AppDeps } from './app.ts';
 
 const today = () => new Date().toISOString().slice(0, 10);
+/** The ISO week a day falls in, as "2026-W41", so a weekly notice is made once per week. */
+export const isoWeek = (day: string): string => {
+  const d = new Date(`${day}T00:00:00Z`); const wd = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - wd + 3);
+  const y = d.getUTCFullYear(); const jan4 = new Date(Date.UTC(y, 0, 4));
+  const wk = 1 + Math.round(((d.getTime() - jan4.getTime()) / 86400000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
+  return `${y}-W${String(wk).padStart(2, '0')}`;
+};
 
 interface CeRow { userId: string; name: string; packCode: string; packName: string; state: string; termEnd: string; daysLeft: number; remaining: number }
 
@@ -72,8 +79,9 @@ export async function sweepLearnerReminders(deps: AppDeps): Promise<number> {
     try {
       const admin = { ...actingAs(t.tenant_id, t.admin, t.node), isTenantAdmin: true };
       const mark = (tx: Tx, userId: string, key: string) => tx.query('INSERT INTO reminder_marks (tenant_id, user_id, key) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [t.tenant_id, userId, key]).then((r) => (r.rowCount ?? 0) > 0);
+      const admins = (await deps.authPool.query<{ user_id: string }>(`SELECT DISTINCT r.user_id FROM user_node_roles r JOIN app_users u ON u.id = r.user_id WHERE r.tenant_id = $1 AND r.role = 'admin' AND u.status::text <> 'disabled'`, [t.tenant_id])).rows;
       const todo = await withRequestTx(deps.appPool, admin, async (tx) => {
-        const out: { userId: string; kind: 'learning_due' | 'ce_reminder'; data: Record<string, unknown> }[] = [];
+        const out: { userId: string; kind: 'learning_due' | 'ce_reminder' | 'team_overdue'; data: Record<string, unknown> }[] = [];
         const courses = (await tx.query<{ id: string; user_id: string; title: string; due: string; days: number }>(
           `SELECT e.id, e.user_id, coalesce((SELECT title FROM course_locales WHERE course_id = e.course_id AND locale = 'en'), (SELECT title FROM course_locales WHERE course_id = e.course_id LIMIT 1), '') AS title,
                   e.due_at::date::text AS due, (e.due_at::date - current_date)::int AS days
@@ -86,6 +94,17 @@ export async function sweepLearnerReminders(deps: AppDeps): Promise<number> {
         for (const c of await ceRows(tx, day)) {
           const s = ceNudge(c.state); if (!s) continue;
           if (await mark(tx, c.userId, `ce:${c.packCode}:${c.termEnd}:${s}`)) out.push({ userId: c.userId, kind: 'ce_reminder', data: { pack: c.packName, state: s, daysLeft: c.daysLeft, remaining: c.remaining, termEnd: c.termEnd } });
+        }
+        // once a week, the company's administrators hear how many learners are overdue and in which courses
+        const week = isoWeek(day);
+        const late = (await tx.query<{ title: string; overdue: number }>(
+          `SELECT coalesce((SELECT title FROM course_locales WHERE course_id = e.course_id AND locale = 'en'), (SELECT title FROM course_locales WHERE course_id = e.course_id LIMIT 1), '') AS title, count(*)::int AS overdue
+             FROM enrollments e JOIN app_users u ON u.id = e.user_id JOIN courses c ON c.id = e.course_id
+            WHERE e.status <> 'completed' AND e.due_at IS NOT NULL AND e.due_at < now() AND u.status::text <> 'disabled' AND c.status <> 'archived' GROUP BY e.course_id ORDER BY 2 DESC LIMIT 50`)).rows;
+        const overdue = late.reduce((a, r) => a + r.overdue, 0);
+        if (overdue > 0) {
+          for (const a of admins)
+            if (await mark(tx, a.user_id, `team-overdue:${week}`)) out.push({ userId: a.user_id, kind: 'team_overdue', data: { overdue, courses: late.slice(0, 5) } });
         }
         return out;
       });

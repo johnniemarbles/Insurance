@@ -71,8 +71,12 @@ test('learners are nudged once when a course is a week out, and once when it is 
   assert.equal(n.length, 1); assert.equal(n[0].data.title, 'Privacy basics');
   assert.equal((await call(L2, 'GET', '/v1/notifications')).json.notifications.filter((x: any) => x.kind === 'learning_due').length, 0);
   await owner((o) => o.query(`UPDATE enrollments SET due_at = now() - interval '2 days' WHERE user_id = $1`, [L1id]));
-  assert.equal(await sweepLearnerReminders(deps), 1);
+  assert.equal(await sweepLearnerReminders(deps), 2, 'the late nudge, plus this week’s summary for the administrator');
   assert.equal((await call(L1, 'GET', '/v1/notifications')).json.notifications.filter((x: any) => x.kind === 'learning_due').length, 2);
+  const sum = (await call(ADMIN, 'GET', '/v1/notifications')).json.notifications.filter((x: any) => x.kind === 'team_overdue');
+  assert.equal(sum.length, 1); assert.equal(sum[0].data.overdue, 1); assert.equal(sum[0].data.courses[0].title, 'Privacy basics');
+  assert.equal((await call(L1, 'GET', '/v1/notifications')).json.notifications.some((x: any) => x.kind === 'team_overdue'), false, 'learners do not get the summary');
+  assert.equal(await sweepLearnerReminders(deps), 0, 'the summary comes once a week');
   await owner((o) => o.query(`UPDATE enrollments SET status = 'completed' WHERE user_id = $1`, [L1id]));
   await owner((o) => o.query(`UPDATE enrollments SET due_at = now() - interval '9 days' WHERE user_id = $1`, [L1id]));
   assert.equal(await sweepLearnerReminders(deps), 0, 'finished courses are not chased');

@@ -1,6 +1,6 @@
 import type { Tx } from '@pii/db';
 
-export type NotifyKind = 'assigned' | 'task_assigned' | 'mention' | 'note' | 'stage_change' | 'capture' | 'merge_done' | 'unsubscribed' | 'invite_accepted' | 'invite_stale' | 'compliance_expiry' | 'compliance_review' | 'appointment_request' | 'thread_shared' | 'document_added' | 'learning_due' | 'ce_reminder' | 'course_request' | 'course_decision' | 'quiz_attempts';
+export type NotifyKind = 'assigned' | 'task_assigned' | 'mention' | 'note' | 'stage_change' | 'capture' | 'merge_done' | 'unsubscribed' | 'invite_accepted' | 'invite_stale' | 'compliance_expiry' | 'compliance_review' | 'appointment_request' | 'thread_shared' | 'document_added' | 'learning_due' | 'ce_reminder' | 'course_request' | 'course_decision' | 'quiz_attempts' | 'team_overdue';
 
 /** Tells a person something. Never tells someone about their own action. Whether they see it is their own setting, checked when they read. */
 export async function notify(tx: Tx, p: { tenantId: string; userId: string | null | undefined; actorId?: string | null; kind: NotifyKind; boxId?: string | null; data?: Record<string, unknown> }): Promise<void> {

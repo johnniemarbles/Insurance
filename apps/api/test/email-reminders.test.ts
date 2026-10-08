@@ -76,3 +76,10 @@ test('a person can choose their language', async () => {
   await call('ann@em.test', 'PUT', '/v1/me/locale', { locale: 'fr-CA' });
   assert.equal((await call('ann@em.test', 'GET', '/v1/me')).json.user.locale, 'fr-CA');
 });
+
+test('the weekly team summary reads well in both languages', () => {
+  const d = { overdue: 3, courses: [{ title: 'Privacy', overdue: 2 }, { title: 'E&O', overdue: 1 }] };
+  const en = buildReminderMail(deps.config, 'a@b.c', 'team_overdue', d, 'en')!;
+  assert.match(en.subject, /Weekly training summary/); assert.match(en.text, /3 learners are overdue.*Privacy \(2\)/);
+  assert.match(buildReminderMail(deps.config, 'a@b.c', 'team_overdue', d, 'fr-CA')!.text, /3 apprenant\(s\) en retard/);
+});
