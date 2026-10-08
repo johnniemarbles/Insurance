@@ -81,3 +81,27 @@ test('learners are nudged once when a course is a week out, and once when it is 
   await owner((o) => o.query(`UPDATE enrollments SET due_at = now() - interval '9 days' WHERE user_id = $1`, [L1id]));
   assert.equal(await sweepLearnerReminders(deps), 0, 'finished courses are not chased');
 });
+
+test('managers and trainers get a weekly summary of only their own people', async () => {
+  const M1 = 'mgr1@fc.test', M2 = 'mgr2@fc.test';
+  for (const [email, node, role] of [[M1, P1, 'manager'], [M2, P2, 'trainer']] as const)
+    await owner(async (o) => {
+      const u = (await o.query(`INSERT INTO app_users (tenant_id,email,display_name,home_node_id,status) VALUES ($1,$2,$3,$4,'active') RETURNING id`, [co.tenantId, email, email, node])).rows[0].id;
+      await o.query(`INSERT INTO user_node_roles (tenant_id,user_id,node_id,role) VALUES ($1,$2,$3,$4)`, [co.tenantId, u, node, role]);
+    });
+  for (const e of [M1, M2]) await call(e, 'POST', '/v1/consent/first-login');
+  const L2id = await owner(async (o) => (await o.query('SELECT id FROM app_users WHERE email = $1', [L2])).rows[0].id as string);
+  const course2 = (await call(ADMIN, 'POST', '/v1/courses', { title: 'Second course', ownerNodeId: co.rootNodeId })).json.id;
+  await owner((o) => o.query(`UPDATE courses SET status = 'published' WHERE id = ANY($1::uuid[])`, [[course, course2]]));
+  await owner(async (o) => {
+    await o.query(`UPDATE enrollments SET status = 'assigned', due_at = now() - interval '3 days' WHERE user_id = $1`, [L1id]);
+    for (const c of [course, course2]) await o.query(`INSERT INTO enrollments (tenant_id,user_id,course_id,learner_node_id,status,due_at) VALUES ($1,$2,$3,$4,'assigned', now() - interval '4 days')`, [co.tenantId, L2id, c, P2]);
+  });
+  const made = await sweepLearnerReminders(deps);
+  assert.ok(made >= 2);
+  const sum = async (e: string) => (await call(e, 'GET', '/v1/notifications')).json.notifications.filter((x: any) => x.kind === 'team_overdue');
+  const a = await sum(M1), b = await sum(M2);
+  assert.equal(a.length, 1); assert.equal(a[0].data.overdue, 1, 'the manager at Lee’s branch sees only Lee');
+  assert.equal(b.length, 1); assert.equal(b[0].data.overdue, 2, 'the trainer at Sam’s branch sees only Sam');
+  assert.equal(await sweepLearnerReminders(deps), 0, 'once a week');
+});

@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { withRequestTx, type Tx } from '@pii/db';
+import { withRequestTx, findLoginCandidates, type Tx } from '@pii/db';
 import { courseNudge, ceNudge, groupDeadlines, deadlineBucket, daysBetween, type Deadline } from '@pii/domain';
 import { actingAs } from './effects.ts';
+import { candidateToIdentity } from './auth.ts';
 import { tell } from './routes-compliance.ts';
 import { loadPacks, hoursIn, evaluateFor } from './routes-ce.ts';
 import type { AppDeps } from './app.ts';
@@ -64,6 +65,14 @@ export function registerForecastRoutes(app: FastifyInstance, deps: AppDeps): voi
   });
 }
 
+/** Overdue learners by course, as far as the person running the query can see them (row-level security does the scoping). */
+async function overdueByCourse(tx: Tx): Promise<{ title: string; overdue: number }[]> {
+  return (await tx.query<{ title: string; overdue: number }>(
+    `SELECT coalesce((SELECT title FROM course_locales WHERE course_id = e.course_id AND locale = 'en'), (SELECT title FROM course_locales WHERE course_id = e.course_id LIMIT 1), '') AS title, count(*)::int AS overdue
+       FROM enrollments e JOIN app_users u ON u.id = e.user_id JOIN courses c ON c.id = e.course_id
+      WHERE e.status <> 'completed' AND e.due_at IS NOT NULL AND e.due_at < now() AND u.status::text <> 'disabled' AND c.status <> 'archived' GROUP BY e.course_id ORDER BY 2 DESC LIMIT 50`)).rows;
+}
+
 /**
  * Daily nudges for learners: a course a week from its due date (and again once it is late), and a CE term that is at risk or overdue.
  * Each person is told each situation once; the mark says so. Returns how many notices were made.
@@ -80,6 +89,7 @@ export async function sweepLearnerReminders(deps: AppDeps): Promise<number> {
       const admin = { ...actingAs(t.tenant_id, t.admin, t.node), isTenantAdmin: true };
       const mark = (tx: Tx, userId: string, key: string) => tx.query('INSERT INTO reminder_marks (tenant_id, user_id, key) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [t.tenant_id, userId, key]).then((r) => (r.rowCount ?? 0) > 0);
       const admins = (await deps.authPool.query<{ user_id: string }>(`SELECT DISTINCT r.user_id FROM user_node_roles r JOIN app_users u ON u.id = r.user_id WHERE r.tenant_id = $1 AND r.role = 'admin' AND u.status::text <> 'disabled'`, [t.tenant_id])).rows;
+      const leads = (await deps.authPool.query<{ user_id: string; email: string }>(`SELECT DISTINCT r.user_id, u.email::text AS email FROM user_node_roles r JOIN app_users u ON u.id = r.user_id WHERE r.tenant_id = $1 AND r.role::text IN ('manager', 'trainer') AND u.status::text <> 'disabled'`, [t.tenant_id])).rows;
       const todo = await withRequestTx(deps.appPool, admin, async (tx) => {
         const out: { userId: string; kind: 'learning_due' | 'ce_reminder' | 'team_overdue'; data: Record<string, unknown> }[] = [];
         const courses = (await tx.query<{ id: string; user_id: string; title: string; due: string; days: number }>(
@@ -97,14 +107,22 @@ export async function sweepLearnerReminders(deps: AppDeps): Promise<number> {
         }
         // once a week, the company's administrators hear how many learners are overdue and in which courses
         const week = isoWeek(day);
-        const late = (await tx.query<{ title: string; overdue: number }>(
-          `SELECT coalesce((SELECT title FROM course_locales WHERE course_id = e.course_id AND locale = 'en'), (SELECT title FROM course_locales WHERE course_id = e.course_id LIMIT 1), '') AS title, count(*)::int AS overdue
-             FROM enrollments e JOIN app_users u ON u.id = e.user_id JOIN courses c ON c.id = e.course_id
-            WHERE e.status <> 'completed' AND e.due_at IS NOT NULL AND e.due_at < now() AND u.status::text <> 'disabled' AND c.status <> 'archived' GROUP BY e.course_id ORDER BY 2 DESC LIMIT 50`)).rows;
+        const late = await overdueByCourse(tx);
         const overdue = late.reduce((a, r) => a + r.overdue, 0);
         if (overdue > 0) {
           for (const a of admins)
             if (await mark(tx, a.user_id, `team-overdue:${week}`)) out.push({ userId: a.user_id, kind: 'team_overdue', data: { overdue, courses: late.slice(0, 5) } });
+        }
+        // managers and trainers hear about their own people: their view of the data is the same one they get in the app
+        for (const l of leads) {
+          if (admins.some((a) => a.user_id === l.user_id) || out.some((o) => o.userId === l.user_id && o.kind === 'team_overdue')) continue;
+          try {
+            const cand = (await findLoginCandidates(deps.authPool, l.email)).find((c) => c.tenantId === t.tenant_id);
+            if (!cand) continue;
+            const mine = await withRequestTx(deps.appPool, candidateToIdentity(cand).ctx, overdueByCourse);
+            const n = mine.reduce((a, r) => a + r.overdue, 0);
+            if (n > 0 && await mark(tx, l.user_id, `team-overdue:${week}`)) out.push({ userId: l.user_id, kind: 'team_overdue', data: { overdue: n, courses: mine.slice(0, 5) } });
+          } catch { /* skip this person */ }
         }
         return out;
       });
