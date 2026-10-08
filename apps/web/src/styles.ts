@@ -285,4 +285,5 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .ov{margin:4px 0 16px}.ov-watch{display:flex;flex-direction:column;gap:6px;border:1px solid #f3cfca;background:#fff6f5;border-radius:12px;padding:10px 12px}.ov-watch b{font-size:13px;color:#b3261e}.ov-row{display:flex;justify-content:space-between;gap:10px;border:0;background:none;padding:6px 0;font:inherit;color:var(--ink);text-align:left;border-top:1px solid #f3cfca}.ov-row:first-of-type{border-top:0}.ov-row em{font-style:normal;font-weight:600;color:#b3261e;white-space:nowrap}.ov-row:hover span{text-decoration:underline}
 .mailbox{padding:12px 14px}.mailbox.bad{border-color:#f3cfca;background:#fff6f5}.mailbox.bad p{color:#b3261e}
 .sigset{margin:0 0 14px;border:1px solid var(--line);border-radius:12px;padding:8px 14px;background:var(--bg)}.sigset summary{cursor:pointer;font-weight:600;color:var(--navy)}.sigset .erow{margin-top:8px;flex-wrap:wrap}
+@media(max-width:700px){.erow.assignform select,.erow.assignform input:not([type=color]){flex:1 1 100%;min-width:100%;box-sizing:border-box}.erow.assignform .btn{flex:1 1 40%}}
 `;

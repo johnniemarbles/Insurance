@@ -223,7 +223,7 @@ function CoursePage({ id, call, t, locale, onBack, onLesson, onOpenCourse }: { i
                 const rule = () => ({ nodeId: assignNode, ...(assignRole ? { role: assignRole } : {}), ...(assignDue ? { dueAt: new Date(`${assignDue}T23:59:00`).toISOString() } : assignDays ? { dueInDays: Number(assignDays) } : {}) });
                 const names = (r: { sample: { name: string }[]; willEnrol: number }) => (r.sample.length ? `${L ? ' : ' : ': '}${r.sample.map((x) => x.name).join(', ')}${r.willEnrol > r.sample.length ? '…' : ''}` : '');
                 return <>
-                  <form class="erow" onSubmit={(e) => { e.preventDefault(); if (!assignNode) return; void act(async () => { const r = await call('POST', `/v1/courses/${id}/assignments`, rule()); setPv(''); setNote(t.assigned(r.enrolled)); }, ''); }}>
+                  <form class="erow assignform" onSubmit={(e) => { e.preventDefault(); if (!assignNode) return; void act(async () => { const r = await call('POST', `/v1/courses/${id}/assignments`, rule()); setPv(''); setNote(t.assigned(r.enrolled)); }, ''); }}>
                     <select aria-label={t.assignTo} value={assignNode} onChange={(e) => { setAssignNode((e.target as HTMLSelectElement).value); setPv(''); }}>
                       <option value="">{t.assignTo}…</option>{nodes.map((n) => <option value={n.id}>{n.name}</option>)}
                     </select>
