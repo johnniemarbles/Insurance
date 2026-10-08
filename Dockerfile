@@ -3,6 +3,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/web ./apps/web
 COPY apps/extension/package.json ./apps/extension/package.json
+# The demo inbox bundles the extension's own sidebar code.
+COPY apps/extension/src ./apps/extension/src
 COPY apps/api/package.json ./apps/api/package.json
 COPY packages ./packages
 RUN npm ci --workspaces --include-workspace-root && npm run build --workspace @pii/web
