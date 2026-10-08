@@ -3,7 +3,7 @@ import type { Strings } from './i18n.ts';
 import type { Locale } from './types.ts';
 import { CourseCe, MyCe, PeopleCe, ceStrings } from './ce.tsx';
 import { MyLearning } from './mylearning.tsx';
-import { CompletionReport, type Learner } from './report.tsx';
+import { CompletionReport, TrainingOverview, type Learner } from './report.tsx';
 import { Catalog, themeOf, ICONS } from './catalog.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -55,6 +55,17 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
       else if (p.toArchive === 0) alert(msg.replace(/ Continue\?| Continuer \?/, ''));
     } catch (x) { setErr((x as Error).message); }
   };
+  const refreshQuizzes = async () => {
+    const fr = locale === 'fr-CA'; setErr('');
+    try {
+      const p = await call('POST', '/v1/courses/starter/refresh-quizzes', { apply: false });
+      const n = p.courses.length, sk = p.skipped.length;
+      if (n === 0) { alert(fr ? `Tous les quiz sont à jour.${sk ? ` ${sk} cours ignoré(s) car des apprenants ont déjà passé le quiz.` : ''}` : `All starter quizzes are already up to date.${sk ? ` ${sk} course(s) skipped because learners have taken the quiz.` : ''}`); return; }
+      const msg = fr ? `${n} cours recevront la banque de questions complète (les questions seront tirées au hasard à chaque tentative).${sk ? ` ${sk} cours ignoré(s) : des apprenants ont déjà passé le quiz.` : ''} Continuer ?`
+        : `${n} course${n === 1 ? '' : 's'} will get the full question bank (questions are drawn at random on each attempt).${sk ? ` ${sk} skipped because learners have taken the quiz.` : ''} Continue?`;
+      if (confirm(msg)) { await call('POST', '/v1/courses/starter/refresh-quizzes', { apply: true }); load(); }
+    } catch (x) { setErr((x as Error).message); }
+  };
   const openStarters = () => { setShowStarters(true); call('GET', '/v1/courses/starter').then((r) => setStarters(r.courses), (e) => setErr((e as Error).message)); };
   const load = useCallback(() => { call('GET', `/v1/courses?locale=${locale}`).then((r) => setCourses(r.courses), (e) => setErr((e as Error).message)); }, [call, locale]);
   useEffect(load, [load]);
@@ -69,9 +80,11 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
         <h1>{t.training}</h1><span class="spacer" />
         {canAuthor && <button class="btn quiet" onClick={openStarters}>{t.starterCourse}</button>}
         {canAuthor && <button class="btn quiet" onClick={() => void dedupe()}>{locale === 'fr-CA' ? 'Retirer les doublons' : 'Remove duplicates'}</button>}
+        {canAuthor && <button class="btn quiet" onClick={() => void refreshQuizzes()}>{locale === 'fr-CA' ? 'Mettre à jour les quiz' : 'Update starter quizzes'}</button>}
         {canAuthor && <button class="btn" onClick={() => setAdding(true)}>+ {t.newCourse}</button>}
       </div>
       {err && <div class="err">{err}</div>}
+      {canAuthor && <TrainingOverview call={call} locale={locale} onOpen={onOpen} />}
       {adding && (
         <form class="erow" onSubmit={create}>
           <input autofocus placeholder={t.courseTitle} aria-label={t.courseTitle} value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} />

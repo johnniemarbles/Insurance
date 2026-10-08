@@ -628,6 +628,37 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     return reply.code(out.existing ? 200 : 201).send(out);
   });
 
+  /** Older copies of a starter course kept their short quiz. Give them the current question bank, but only where the quiz is untouched (still the original length) and nobody has taken it. */
+  app.post('/v1/courses/starter/refresh-quizzes', { schema: { body: { type: 'object', additionalProperties: false, properties: { apply: { type: 'boolean' } } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const apply = (req.body as { apply?: boolean } | undefined)?.apply === true;
+    return run(ctx, async (tx) => {
+      const rows = (await tx.query<{ id: string; owner_node_id: string; starter_key: string; qid: string; n: number; attempts: number }>(
+        `SELECT c.id, c.owner_node_id, c.starter_key, l.id AS qid,
+                (SELECT count(*)::int FROM quiz_questions q WHERE q.lesson_id = l.id) AS n,
+                (SELECT count(*)::int FROM quiz_attempts a JOIN enrollments e ON e.id = a.enrollment_id WHERE e.course_id = c.id) AS attempts
+           FROM courses c JOIN lessons l ON l.course_id = c.id AND l.type = 'quiz'
+          WHERE c.starter_key IS NOT NULL AND c.status <> 'archived'`)).rows;
+      const done: { courseId: string; key: string; from: number; to: number }[] = [], skipped: { courseId: string; key: string; reason: string }[] = [];
+      for (const r of rows) {
+        const sc = STARTER_COURSES.find((c) => c.key === r.starter_key);
+        if (!sc || !canAuthorAt(ctx, r.owner_node_id)) continue;
+        if (r.n >= sc.quiz.length) continue;
+        if (r.attempts > 0) { skipped.push({ courseId: r.id, key: r.starter_key, reason: 'learners have taken the quiz' }); continue; }
+        done.push({ courseId: r.id, key: r.starter_key, from: r.n, to: sc.quiz.length });
+        if (!apply) continue;
+        await tx.query('DELETE FROM quiz_questions WHERE lesson_id = $1', [r.qid]);
+        for (const [i, q] of sc.quiz.entries()) {
+          const content = Object.fromEntries((['en', 'fr-CA'] as const).map((loc) => { const k = loc === 'en' ? 'en' : 'fr'; return [loc, { prompt: q.q[k], options: q.options.map((o, n) => ({ key: String(n), text: o[k] })) }]; }));
+          await tx.query(`INSERT INTO quiz_questions (tenant_id, lesson_id, position, type, content, correct, points) VALUES ($1,$2,$3,'single',$4,$5,1)`, [ctx.tenantId, r.qid, i + 1, JSON.stringify(content), JSON.stringify([String(q.correct)])]);
+        }
+        await tx.query('UPDATE lessons SET quiz_draw = $2 WHERE id = $1', [r.qid, sc.draw ?? null]);
+        await audit(tx, ctx, 'course_quiz_refreshed', 'course', r.id, { starter: r.starter_key, from: r.n, to: sc.quiz.length });
+      }
+      return { applied: apply, courses: done, skipped };
+    });
+  });
+
   // ------------------------------------------------------------------ asking to join a course
   app.post('/v1/courses/:id/request', { schema: { params: idParams, body: { type: 'object', additionalProperties: false, properties: { note: { type: 'string', maxLength: 500 } } } } }, async (req, reply) => {
     const { ctx } = await deps.authenticate(req);
@@ -725,6 +756,24 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
              LEFT JOIN LATERAL (SELECT max(score_pct)::float8 AS best, count(*)::int AS n FROM quiz_attempts q WHERE q.enrollment_id = e.id) qa ON true
             WHERE e.course_id = $1 ORDER BY u.display_name NULLS LAST, u.email`, [id])).rows,
       };
+    });
+  });
+
+  /** Company-wide training health for trainers, managers and administrators: what RLS lets them see, totalled and broken down by course. */
+  app.get('/v1/training/overview', { schema: { querystring: { type: 'object', properties: { locale: localeProp } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const l = loc(req.query as { locale?: string });
+    return run(ctx, async (tx) => {
+      if (authorNodes(ctx).length === 0 && !ctx.isTenantAdmin) throw forbidden('Only trainers, managers and administrators can see training totals');
+      const rows = (await tx.query(
+        `SELECT c.id, ${courseText('title', l)} AS title, count(e.id)::int AS enrolled,
+                count(e.id) FILTER (WHERE e.status = 'completed')::int AS completed,
+                count(e.id) FILTER (WHERE e.status <> 'completed' AND e.due_at IS NOT NULL AND e.due_at < now())::int AS overdue
+           FROM courses c JOIN enrollments e ON e.course_id = c.id
+          WHERE c.status <> 'archived' GROUP BY c.id ORDER BY overdue DESC, enrolled DESC`)).rows as Array<{ id: string; title: string; enrolled: number; completed: number; overdue: number }>;
+      const learners = (await tx.query<{ n: number }>('SELECT count(DISTINCT user_id)::int AS n FROM enrollments')).rows[0]?.n ?? 0;
+      const enrolled = rows.reduce((a, r) => a + r.enrolled, 0), completed = rows.reduce((a, r) => a + r.completed, 0), overdue = rows.reduce((a, r) => a + r.overdue, 0);
+      return { learners, enrolled, completed, overdue, completionPct: enrolled ? Math.round((completed / enrolled) * 100) : null, courses: rows.slice(0, 5) };
     });
   });
 

@@ -341,3 +341,31 @@ test('remove duplicates: keeps the course people use, archives empty copies, lea
   assert.equal((await call(ADMIN, 'POST', '/v1/courses/duplicates', { apply: false })).json.groups.some((g: any) => g.title.trim().toLowerCase() === 'dupe course'), false);
   void a;
 });
+
+test('training overview: totals for authors and admins, refused for plain learners', async () => {
+  const r = await call(ADMIN, 'GET', '/v1/training/overview');
+  assert.equal(r.status, 200);
+  for (const k of ['learners', 'enrolled', 'completed', 'overdue']) assert.equal(typeof r.json[k], 'number');
+  assert.equal(r.json.completed <= r.json.enrolled, true);
+  assert.equal(Array.isArray(r.json.courses), true);
+  assert.equal((await call(A, 'GET', '/v1/training/overview')).status, 403);
+});
+
+test('refresh quizzes: gives an old short quiz the current bank, never touches a quiz learners have taken', async () => {
+  const key = (await call(ADMIN, 'GET', '/v1/courses/starter')).json.courses[0].key;
+  const id = (await call(ADMIN, 'POST', '/v1/courses/starter', { key })).json.id;
+  const lessons = (await call(ADMIN, 'GET', `/v1/courses/${id}`)).json.lessons ?? [];
+  assert.equal(lessons.length > 0, true);
+  const pre = await call(ADMIN, 'POST', '/v1/courses/starter/refresh-quizzes', { apply: false });
+  assert.equal(pre.status, 200); assert.equal(Array.isArray(pre.json.courses), true);
+  assert.equal((await call(A, 'POST', '/v1/courses/starter/refresh-quizzes', { apply: true })).json.courses.length, 0, 'a learner is not an author of any course');
+  const count = () => owner(async (o) => (await o.query('SELECT count(*)::int AS n FROM quiz_questions q JOIN lessons l ON l.id = q.lesson_id WHERE l.course_id = $1', [id])).rows[0].n as number);
+  const full = await count();
+  await owner(async (o) => { await o.query('DELETE FROM quiz_questions WHERE id IN (SELECT q.id FROM quiz_questions q JOIN lessons l ON l.id = q.lesson_id WHERE l.course_id = $1 ORDER BY q.position DESC LIMIT 2)', [id]); });
+  assert.equal(await count(), full - 2);
+  const prev = await call(ADMIN, 'POST', '/v1/courses/starter/refresh-quizzes', { apply: false });
+  assert.equal(prev.json.courses.some((c: any) => c.courseId === id), true);
+  assert.equal(await count(), full - 2, 'a preview changes nothing');
+  await call(ADMIN, 'POST', '/v1/courses/starter/refresh-quizzes', { apply: true });
+  assert.equal(await count(), full, 'the full bank is back');
+});

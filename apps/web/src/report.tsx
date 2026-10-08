@@ -1,4 +1,4 @@
-import { useMemo } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
 
 export interface Learner { userId: string; displayName: string | null; email: string; status: string; progressPct: number; dueAt: string | null; completedAt?: string | null; startedAt?: string | null; bestScore?: number | null; attempts?: number }
@@ -48,5 +48,32 @@ export function CompletionReport({ learners, courseTitle, locale }: { learners: 
         </>
       )}
     </div>
+  );
+}
+
+interface Overview { learners: number; enrolled: number; completed: number; overdue: number; completionPct: number | null; courses: { id: string; title: string; enrolled: number; completed: number; overdue: number }[] }
+
+/** Company-wide training health for trainers and administrators, shown above the course list. */
+export function TrainingOverview({ call, locale, onOpen }: { call: (m: 'GET', p: string) => Promise<any>; locale: Locale; onOpen: (id: string) => void }) {
+  const fr = locale === 'fr-CA';
+  const [o, setO] = useState<Overview | null>(null);
+  useEffect(() => { call('GET', `/v1/training/overview?locale=${locale}`).then(setO, () => setO(null)); }, [call, locale]);
+  if (!o || o.enrolled === 0) return null;
+  const tile = (v: string | number, l: string, cls = '') => <div class={`rp-t ${cls}`}><b>{v}</b><span>{l}</span></div>;
+  const watch = o.courses.filter((c) => c.overdue > 0);
+  return (
+    <section class="rp ov" aria-label={fr ? 'Aperçu de la formation' : 'Training overview'}>
+      <div class="rp-tiles">
+        {tile(o.learners, fr ? 'Apprenants' : 'Learners')}
+        {tile(o.completionPct == null ? '–' : `${o.completionPct}%`, fr ? `Terminé (${o.completed} sur ${o.enrolled})` : `Completed (${o.completed} of ${o.enrolled})`, 'ok')}
+        {tile(o.overdue, fr ? 'En retard' : 'Overdue', o.overdue ? 'bad' : '')}
+        {tile(o.courses.length, fr ? 'Cours utilisés' : 'Courses in use')}
+      </div>
+      {watch.length > 0 && (
+        <div class="ov-watch"><b>{fr ? 'À surveiller' : 'Needs attention'}</b>
+          {watch.map((c) => <button class="ov-row" onClick={() => onOpen(c.id)}><span>{c.title}</span><em>{fr ? `${c.overdue} en retard` : `${c.overdue} overdue`}</em></button>)}
+        </div>
+      )}
+    </section>
   );
 }
