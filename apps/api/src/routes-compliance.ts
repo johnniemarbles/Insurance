@@ -16,7 +16,7 @@ import { snapshotBefore } from './snapshots.ts';
 export const countryOf = (region: string): Country => (region === 'us' ? 'US' : 'CA');
 
 /** The smallest E&O limit that applies: the country default (EO_MIN_LIMIT) raised, never lowered, by the company's own setting. */
-async function eoMinFor(tx: Tx, ctx: RequestContext): Promise<number> {
+export async function eoMinFor(tx: Tx, ctx: RequestContext): Promise<number> {
   const company = (await resolveSettings(tx, ctx.userId, ['compliance.eoMinLimit']))['compliance.eoMinLimit']?.value as number | undefined;
   return effectiveEoMin(Number(process.env.EO_MIN_LIMIT ?? 0), company);
 }

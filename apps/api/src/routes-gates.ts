@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
-import { DOC_TYPES, MIN_OVERRIDE_REASON, type RequestContext } from '@pii/domain';
+import { DOC_TYPES, MIN_OVERRIDE_REASON, clearanceReasons, type RequestContext } from '@pii/domain';
+import { eoMinFor } from './routes-compliance.ts';
 import { audit } from './audit.ts';
 import { forbidden, invalid, notFound } from './errors.ts';
 import { requireCrm, uuid } from './crm-helpers.ts';
@@ -93,6 +94,28 @@ export function registerGateRoutes(app: FastifyInstance, deps: AppDeps): void {
       const waivers = (await tx.query(
         `SELECT count(*)::int AS n FROM gate_overrides WHERE created_at > now() - interval '90 days'`)).rows[0]!.n as number;
       return { files: rows, waivers90d: waivers };
+    });
+  });
+
+  // Who is not cleared to transact today: approval, a licence in force, and E&O in force at or above the minimum. RLS limits it to the caller's branch.
+  app.get('/v1/compliance/clearance', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    return run(ctx, async (tx) => {
+      const eoMin = await eoMinFor(tx, ctx);
+      const rows = (await tx.query<{ id: string; name: string; status: string | null; licences: number; validLicences: number; eoPolicies: number; validEo: number; eoMax: number | null }>(
+        `SELECT n.id, n.name, p.status,
+                (SELECT count(*)::int FROM compliance_items i WHERE i.node_id = n.id AND i.kind = 'licence') AS licences,
+                (SELECT count(*)::int FROM compliance_items i WHERE i.node_id = n.id AND i.kind = 'licence' AND (i.expires_on IS NULL OR i.expires_on >= current_date)) AS "validLicences",
+                (SELECT count(*)::int FROM compliance_items i WHERE i.node_id = n.id AND i.kind = 'eo') AS "eoPolicies",
+                (SELECT count(*)::int FROM compliance_items i WHERE i.node_id = n.id AND i.kind = 'eo' AND (i.expires_on IS NULL OR i.expires_on >= current_date)) AS "validEo",
+                (SELECT max(i.limit_amount)::float FROM compliance_items i WHERE i.node_id = n.id AND i.kind = 'eo' AND (i.expires_on IS NULL OR i.expires_on >= current_date)) AS "eoMax"
+           FROM org_nodes n LEFT JOIN compliance_profiles p ON p.node_id = n.id
+          WHERE n.type = 'partner' AND n.is_active AND org_node_at_or_below(n.tenant_id, n.id)
+          ORDER BY n.name LIMIT 1000`)).rows;
+      const all = rows.map((r) => ({ nodeId: r.id, name: r.name, reasons: clearanceReasons({ status: r.status, licences: r.licences, validLicences: r.validLicences, eoPolicies: r.eoPolicies, validEo: r.validEo, eoMaxLimit: r.eoMax, eoMin }) }));
+      const notCleared = all.filter((a) => a.reasons.length > 0);
+      return { total: all.length, cleared: all.length - notCleared.length, notCleared };
     });
   });
 }

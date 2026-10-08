@@ -111,3 +111,13 @@ test('files at risk lists a record past a gate without paperwork or waiver, and 
   assert.equal((await call(OTHER, 'GET', '/v1/compliance/files-at-risk')).json.files.length, 0);
   assert.equal((await call(OTHER, 'GET', `/v1/boxes/${id}/gates`)).status, 404);
 });
+
+test('the clearance list names who is not cleared to transact, and stays inside the company', async () => {
+  const r = await call(ADMIN, 'GET', '/v1/compliance/clearance');
+  assert.equal(r.status, 200);
+  const mine = r.json.notCleared.find((x: any) => x.name === 'Partner A');
+  assert.ok(mine, 'a partner with no paperwork is not cleared');
+  assert.ok(mine.reasons.includes('not_approved') && mine.reasons.includes('no_licence') && mine.reasons.includes('no_eo'));
+  assert.equal(r.json.total, r.json.cleared + r.json.notCleared.length);
+  assert.ok(!(await call(OTHER, 'GET', '/v1/compliance/clearance')).json.notCleared.some((x: any) => x.name === 'Partner A'));
+});

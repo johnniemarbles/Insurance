@@ -82,7 +82,34 @@ function Bar({ pct }: { pct: number }) { return <span class="cbar" role="img" ar
 
 export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions }) {
   const [open, setOpen] = useState<string | null>(null);
-  return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <><ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} />{!isHeadOffice && <FilesAtRisk call={call} locale={locale} go={go} />}</>;
+  return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <><ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} />{!isHeadOffice && <><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /></>}</>;
+}
+
+const CL: Record<string, { en: string; 'fr-CA': string }> = {
+  not_approved: { en: 'File not approved', 'fr-CA': 'Dossier non approuvé' }, no_licence: { en: 'No licence on file', 'fr-CA': 'Aucun permis au dossier' },
+  licence_expired: { en: 'Licence expired', 'fr-CA': 'Permis expiré' }, no_eo: { en: 'No E&O policy on file', 'fr-CA': 'Aucune police E&O au dossier' },
+  eo_expired: { en: 'E&O policy expired', 'fr-CA': 'Police E&O expirée' }, eo_limit_low: { en: 'E&O limit below the minimum', 'fr-CA': 'Limite E&O sous le minimum' },
+};
+const NC = {
+  'en': { h: 'Not cleared to transact', all: 'All partners are cleared to transact.', of: 'cleared' },
+  'fr-CA': { h: 'Non autorisés à transiger', all: 'Tous les partenaires sont autorisés à transiger.', of: 'autorisés' },
+};
+/** Partners who may not sell today: file not approved, no licence in force, or E&O missing, expired or too low. */
+function NotCleared({ call, locale }: { call: Call; locale: Locale }) {
+  const x = NC[locale];
+  const [d, setD] = useState<{ total: number; cleared: number; notCleared: { nodeId: string; name: string; reasons: string[] }[] } | null>(null);
+  useEffect(() => { void call('GET', '/v1/compliance/clearance').then(setD, () => undefined); }, []);
+  if (!d || d.total === 0) return null;
+  return (
+    <section class="rec-form" aria-label={x.h} style={{ marginTop: '16px' }}>
+      <h3>{x.h} ({d.notCleared.length})</h3>
+      <p class="muted">{d.cleared}/{d.total} {x.of}</p>
+      {d.notCleared.length === 0 && <p class="muted">{x.all}</p>}
+      {d.notCleared.map((p) => (
+        <div class="ev" key={p.nodeId}><strong>{p.name}</strong><div style={{ color: '#b3261e' }}>{p.reasons.map((r) => CL[r]?.[locale] ?? r).join(' · ')}</div></div>
+      ))}
+    </section>
+  );
 }
 
 const FR = {
