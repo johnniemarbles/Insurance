@@ -196,6 +196,8 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
         stageIds.push(sid);
         await client.query('INSERT INTO stages (id, tenant_id, pipeline_id, name, position, is_won, is_lost) VALUES ($1,$2,$3,$4,$5,$6,$7)', [sid, tenantId, id, nm, pos++, won, lost]);
       }
+      // Compliance gates on the Life & Health pipeline, so the demo shows files at risk.
+      if (p.name === 'Life & Health' && stageIds[2]) for (const t of ['privacy_consent', 'needs_analysis']) await client.query('INSERT INTO stage_doc_requirements (stage_id, doc_type, tenant_id) VALUES ($1,$2,$3)', [stageIds[2], t, tenantId]);
       let fp = 1;
       for (const [key, labels, type, options] of p.fields) {
         await client.query('INSERT INTO field_defs (tenant_id, pipeline_id, key, labels, type, options, required, position) VALUES ($1,$2,$3,$4,$5,$6,false,$7)', [tenantId, id, key, JSON.stringify(labels), type, options ? JSON.stringify(options) : null, fp++]);

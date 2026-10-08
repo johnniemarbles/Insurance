@@ -122,7 +122,8 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
           if (c.rowCount === 0) throw invalid('A contact does not exist');
           await tx.query('INSERT INTO box_contacts (box_id, contact_id, tenant_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [id, cid, ctx.tenantId]);
         }
-        await checkStageRules(tx, stageId!, id);
+        // A new record has no paperwork yet, so the document gate applies when it moves, not when it is created.
+        await checkStageRules(tx, stageId!, id, false);
         await fireAutomations(tx, ctx, id, stageId!, 'enter', effects);
         await audit(tx, ctx, 'box_created', 'box', id, { pipelineId: b.pipelineId, ownerNodeId });
         const sn = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1', [stageId])).rows[0]?.name ?? null;

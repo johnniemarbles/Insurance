@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useDialogFocus } from './a11y.ts';
 import { AiBox } from './ai.tsx';
+import { DOC_TYPES, docLabel } from './doctypes.ts';
 import type { Strings } from './i18n.ts';
 import type { Box, FieldDef, Locale, Pipeline, Stage } from './types.ts';
 
@@ -51,10 +52,10 @@ function FieldInput({ f, value, onChange, locale, disabled }: { f: FieldDef; val
 }
 
 const DX = {
-  'en': { tab: 'Files', h: 'Documents', none: 'No documents yet.', add: 'Add a document', help: 'PDF, images, Word, Excel, PowerPoint, text or CSV, up to 8 MB. Stored in PII only, encrypted, and seen by whoever can see this record.', del: 'Remove', confirm: 'Remove this document for everyone?', big: 'That file is over 8 MB.', by: 'added by', open: 'Download', busy: 'Working…', saved: 'Saved', removed: 'Removed', wait: 'Uploading and encrypting…' },
-  'fr-CA': { tab: 'Fichiers', h: 'Documents', none: 'Aucun document pour l’instant.', add: 'Ajouter un document', help: 'PDF, images, Word, Excel, PowerPoint, texte ou CSV, jusqu’à 8 Mo. Conservé dans PII seulement, chiffré, et visible par toute personne qui voit ce dossier.', del: 'Retirer', confirm: 'Retirer ce document pour tout le monde?', big: 'Ce fichier dépasse 8 Mo.', by: 'ajouté par', open: 'Télécharger', busy: 'En cours…', saved: 'Enregistré', removed: 'Retiré', wait: 'Téléversement et chiffrement…' },
+  'en': { tab: 'Files', h: 'Documents', none: 'No documents yet.', add: 'Add a document', help: 'PDF, images, Word, Excel, PowerPoint, text or CSV, up to 8 MB. Stored in PII only, encrypted, and seen by whoever can see this record.', del: 'Remove', confirm: 'Remove this document for everyone?', big: 'That file is over 8 MB.', by: 'added by', open: 'Download', busy: 'Working…', saved: 'Saved', removed: 'Removed', wait: 'Uploading and encrypting…', req: 'Required paperwork', here: 'current stage', waive: 'Waive…', waiveHelp: 'A waiver is permanent and names you. Say why this record may go ahead without it.', reason: 'Reason (at least 10 characters)', waiveGo: 'Waive for this record', cancel: 'Cancel', waived: 'Waiver recorded', kind: 'Document type', untyped: 'Document type (optional)' },
+  'fr-CA': { tab: 'Fichiers', h: 'Documents', none: 'Aucun document pour l’instant.', add: 'Ajouter un document', help: 'PDF, images, Word, Excel, PowerPoint, texte ou CSV, jusqu’à 8 Mo. Conservé dans PII seulement, chiffré, et visible par toute personne qui voit ce dossier.', del: 'Retirer', confirm: 'Retirer ce document pour tout le monde?', big: 'Ce fichier dépasse 8 Mo.', by: 'ajouté par', open: 'Télécharger', busy: 'En cours…', saved: 'Enregistré', removed: 'Retiré', wait: 'Téléversement et chiffrement…', req: 'Documents requis', here: 'étape actuelle', waive: 'Déroger…', waiveHelp: 'Une dérogation est permanente et porte votre nom. Expliquez pourquoi ce dossier peut avancer sans ce document.', reason: 'Motif (au moins 10 caractères)', waiveGo: 'Déroger pour ce dossier', cancel: 'Annuler', waived: 'Dérogation enregistrée', kind: 'Type de document', untyped: 'Type de document (facultatif)' },
 };
-interface Doc { id: string; name: string; mime: string; sizeBytes: number; createdAt: string; uploadedBy: string | null }
+interface Doc { id: string; name: string; mime: string; sizeBytes: number; createdAt: string; uploadedBy: string | null; docType?: string | null }
 const MIME_BY_EXT: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', txt: 'text/plain', csv: 'text/csv', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
 const size = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call; locale: Locale; canEdit: boolean }) {
@@ -63,8 +64,16 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [ok, setOk] = useState('');
-  const load = () => call('GET', `/v1/boxes/${boxId}/documents`).then((r) => setDocs(r.documents), (e) => setErr((e as Error).message));
+  const [dtype, setDtype] = useState('');
+  const [gates, setGates] = useState<{ gates: { stageId: string; stageName: string; current: boolean; required: string[]; missing: string[]; overridden: string[] }[]; overrides: { id: string; stageId: string; docTypes: string[]; reason: string; approvedBy: string; createdAt: string }[]; canWaive: boolean } | null>(null);
+  const [waive, setWaive] = useState<{ stageId: string; types: string[]; reason: string } | null>(null);
+  const loadGates = () => call('GET', `/v1/boxes/${boxId}/gates`).then(setGates, () => undefined);
+  const load = () => { void loadGates(); return call('GET', `/v1/boxes/${boxId}/documents`).then((r) => setDocs(r.documents), (e) => setErr((e as Error).message)); };
   useEffect(() => { void load(); }, [boxId]);
+  const sendWaiver = async () => {
+    if (!waive) return; setErr('');
+    try { await call('POST', `/v1/boxes/${boxId}/gate-overrides`, { stageId: waive.stageId, docTypes: waive.types, reason: waive.reason.trim() }); setWaive(null); await load(); setOk(`✓ ${x.waived}`); } catch (e2) { setErr((e2 as Error).message); }
+  };
   const pick = async (e: Event) => {
     const input = e.target as HTMLInputElement;
     const f = input.files?.[0]; input.value = '';
@@ -76,7 +85,7 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
     setBusy(true);
     try {
       const dataBase64 = await new Promise<string>((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] ?? ''); r.onerror = () => no(new Error('read')); r.readAsDataURL(f); });
-      await call('POST', `/v1/boxes/${boxId}/documents`, { name: f.name, mime, dataBase64 });
+      await call('POST', `/v1/boxes/${boxId}/documents`, { name: f.name, mime, dataBase64, ...(dtype ? { docType: dtype } : {}) });
       await load();
       setOk(`✓ ${x.saved}: ${f.name}`);
     } catch (x2) { setErr((x2 as Error).message); } finally { setBusy(false); }
@@ -99,12 +108,39 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
       {err && <div class="err" role="alert">{err}</div>}
       {busy && <div class="muted" role="status">{x.wait}</div>}
       {ok && !busy && <div role="status" style={{ background: '#e6f4ea', color: '#137333', padding: '8px 10px', borderRadius: '8px', margin: '8px 0', fontWeight: 600 }}>{ok}</div>}
+      {gates && gates.gates.length > 0 && (
+        <div class="rec-form" style={{ marginBottom: '10px' }}>
+          <h4>{x.req}</h4>
+          {gates.gates.map((g) => (
+            <div key={g.stageId} style={{ marginBottom: '6px' }}>
+              <strong>{g.stageName}</strong>{g.current ? ` (${x.here})` : ''}
+              <div>{g.required.map((k) => <span key={k} style={{ marginRight: '10px', color: g.missing.includes(k) ? '#b3261e' : '#137333' }}>{g.missing.includes(k) ? '✕' : g.overridden.includes(k) ? '⚖' : '✓'} {docLabel(k, locale)}</span>)}</div>
+              {gates.canWaive && g.missing.length > 0 && <button class="btn quiet" onClick={() => setWaive({ stageId: g.stageId, types: [...g.missing], reason: '' })}>{x.waive}</button>}
+            </div>
+          ))}
+          {waive && (
+            <div class="confirm" style={{ display: 'block' }}>
+              <p class="muted">{x.waiveHelp}</p>
+              {gates.gates.find((g) => g.stageId === waive.stageId)?.missing.map((k) => (
+                <label class="check" key={k}><input type="checkbox" checked={waive.types.includes(k)} onChange={(e) => { const on = (e.target as HTMLInputElement).checked; setWaive({ ...waive, types: on ? [...waive.types, k] : waive.types.filter((y) => y !== k) }); }} /> {docLabel(k, locale)}</label>
+              ))}
+              <textarea aria-label={x.reason} placeholder={x.reason} value={waive.reason} onInput={(e) => setWaive({ ...waive, reason: (e.target as HTMLTextAreaElement).value })} style={{ width: '100%' }} />
+              <button class="btn" disabled={waive.types.length === 0 || waive.reason.trim().length < 10} onClick={() => void sendWaiver()}>{x.waiveGo}</button>{' '}
+              <button class="btn quiet" onClick={() => setWaive(null)}>{x.cancel}</button>
+            </div>
+          )}
+          {gates.overrides.map((o) => <small key={o.id} style={{ display: 'block' }}>⚖ {o.docTypes.map((k) => docLabel(k, locale)).join(', ')} — {o.reason} ({o.approvedBy}, {when(o.createdAt, locale)})</small>)}
+        </div>
+      )}
+      {canEdit && <select aria-label={x.kind} value={dtype} onChange={(e) => setDtype((e.target as HTMLSelectElement).value)} style={{ marginRight: '8px' }}>
+        <option value="">{x.untyped}</option>{DOC_TYPES.map((d) => <option value={d.k}>{d.l[locale]}</option>)}
+      </select>}
       {canEdit && <label class="btn quiet" style={{ display: 'inline-block', cursor: 'pointer' }}>{busy ? x.busy : x.add}<input type="file" hidden disabled={busy} accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={(e) => void pick(e)} /></label>}
       {docs.length === 0 && <p class="muted">{x.none}</p>}
       {docs.map((d) => (
         <div class="ev" key={d.id}>
           <button class="link" onClick={() => void download(d)} aria-label={`${x.open} ${d.name}`}>{d.name}</button>
-          <small>{size(d.sizeBytes)} · {x.by} {d.uploadedBy ?? '—'} · {when(d.createdAt, locale)}</small>
+          <small>{d.docType ? `${docLabel(d.docType, locale)} · ` : ''}{size(d.sizeBytes)} · {x.by} {d.uploadedBy ?? '—'} · {when(d.createdAt, locale)}</small>
           <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
             <button class="btn quiet" onClick={() => void download(d)} aria-label={`${x.open} ${d.name}`}>⬇ {x.open}</button>
             {canEdit && <button class="ib danger" aria-label={`${x.del} ${d.name}`} onClick={() => void remove(d)}>✕</button>}

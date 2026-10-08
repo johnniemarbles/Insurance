@@ -1,3 +1,4 @@
+import { DOC_TYPES } from './doctypes.ts';
 import { useDialogFocus } from './a11y.ts';
 import { useEffect, useState } from 'preact/hooks';
 import { stageColor } from './theme.ts';
@@ -57,10 +58,15 @@ export function PipelineEditor({ pipeline, call, t, locale, onClose, onChanged }
             </div>
           )}
           <details class="reqd">
-            <summary>{t.requiredToEnter}{(s.requiredFields?.length ?? 0) > 0 ? ` (${s.requiredFields!.length})` : ''}</summary>
+            <summary>{t.requiredToEnter}{((s.requiredFields?.length ?? 0) + (s.requiredDocs?.length ?? 0)) > 0 ? ` (${(s.requiredFields?.length ?? 0) + (s.requiredDocs?.length ?? 0)})` : ''}</summary>
             {[{ k: 'value', l: t.value }, { k: 'closeDate', l: t.closeDate }, { k: 'owner', l: t.owner }, ...pipeline.fields.map((f) => ({ k: f.key, l: f.labels[locale] ?? f.labels.en ?? f.key }))].map((o) => (
               <label class="check" key={o.k}><input type="checkbox" checked={s.requiredFields?.includes(o.k) ?? false}
                 onChange={(e) => { const on = (e.target as HTMLInputElement).checked; const cur = s.requiredFields ?? []; void act(() => call('PATCH', `${P}/stages/${s.id}`, { requiredFields: on ? [...cur, o.k] : cur.filter((x) => x !== o.k) })); }} /> {o.l}</label>
+            ))}
+            <div class="muted" style={{ marginTop: '8px', fontWeight: 600 }}>{locale === 'fr-CA' ? 'Documents requis (conformité)' : 'Required paperwork (compliance)'}</div>
+            {DOC_TYPES.map((o) => (
+              <label class="check" key={o.k}><input type="checkbox" checked={s.requiredDocs?.includes(o.k) ?? false}
+                onChange={(e) => { const on = (e.target as HTMLInputElement).checked; const cur = s.requiredDocs ?? []; void act(() => call('PATCH', `${P}/stages/${s.id}`, { requiredDocs: on ? [...cur, o.k] : cur.filter((x) => x !== o.k) })); }} /> {o.l[locale]}</label>
             ))}
           </details>
         </div>

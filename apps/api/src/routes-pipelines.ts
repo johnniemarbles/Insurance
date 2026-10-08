@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { FIELD_KEY_RE, FIELD_TYPES, validateCustomValues, type RequestContext } from '@pii/domain';
+import { DOC_TYPES, FIELD_KEY_RE, FIELD_TYPES, validateCustomValues, type RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { forbidden, notFound, invalid, HttpError } from './errors.ts';
@@ -140,7 +140,9 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
     return run(ctx, async (tx) => {
       const pipes = (await tx.query(`SELECT id, name, owner_node_id AS "ownerNodeId", is_shared_down AS "sharedDown", color_theme AS "colorTheme", created_at AS "createdAt", cloned_from AS "clonedFrom", template_code AS "templateCode", template_version AS "templateVersion" FROM pipelines ORDER BY name`)).rows;
       const ids = pipes.map((p) => p.id);
-      const stages = (await tx.query(`SELECT id, pipeline_id AS "pipelineId", name, position, color, is_won AS "isWon", is_lost AS "isLost", required_fields AS "requiredFields" FROM stages WHERE pipeline_id = ANY($1::uuid[]) ORDER BY position`, [ids])).rows;
+      const stages = (await tx.query(`SELECT id, pipeline_id AS "pipelineId", name, position, color, is_won AS "isWon", is_lost AS "isLost", required_fields AS "requiredFields",
+          coalesce((SELECT array_agg(r.doc_type ORDER BY r.doc_type) FROM stage_doc_requirements r WHERE r.stage_id = stages.id), '{}') AS "requiredDocs"
+          FROM stages WHERE pipeline_id = ANY($1::uuid[]) ORDER BY position`, [ids])).rows;
       const fields = (await tx.query(`SELECT id, pipeline_id AS "pipelineId", key, labels, type, options, required, position FROM field_defs WHERE pipeline_id = ANY($1::uuid[]) ORDER BY position`, [ids])).rows;
       return { pipelines: pipes.map((p) => ({ ...p, stages: stages.filter((s) => s.pipelineId === p.id), fields: fields.filter((f) => f.pipelineId === p.id) })) };
     });
@@ -293,27 +295,38 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
 
   app.patch(
     '/v1/pipelines/:id/stages/:stageId',
-    { schema: { params: stageParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { name: { type: 'string', minLength: 1, maxLength: 100 }, color: { anyOf: [colorProp, { type: 'null' }] }, isWon: { type: 'boolean' }, isLost: { type: 'boolean' }, requiredFields: { type: 'array', maxItems: 40, items: { type: 'string', maxLength: 60 } } } } } },
+    { schema: { params: stageParams, body: { type: 'object', additionalProperties: false, minProperties: 1, properties: { name: { type: 'string', minLength: 1, maxLength: 100 }, color: { anyOf: [colorProp, { type: 'null' }] }, isWon: { type: 'boolean' }, isLost: { type: 'boolean' }, requiredFields: { type: 'array', maxItems: 40, items: { type: 'string', maxLength: 60 } }, requiredDocs: { type: 'array', maxItems: 10, uniqueItems: true, items: { enum: [...DOC_TYPES] } } } } } },
     async (req, reply) => {
       const { ctx } = await deps.authenticate(req);
       requireCrm(ctx);
       const { id, stageId } = req.params as { id: string; stageId: string };
-      const b = req.body as { name?: string; color?: string | null; isWon?: boolean; isLost?: boolean; requiredFields?: string[] };
+      const b = req.body as { name?: string; color?: string | null; isWon?: boolean; isLost?: boolean; requiredFields?: string[]; requiredDocs?: string[] };
+      // Paperwork rules are compliance rules: only an administrator or the compliance role sets them.
+      if (b.requiredDocs && !(ctx.isTenantAdmin || ctx.roles.some((r) => r.role === 'compliance'))) throw forbidden('Only an administrator or the compliance role can set required documents');
       if (b.isWon && b.isLost) throw invalid('A stage cannot be both won and lost');
       await run(ctx, async (tx) => {
-        await loadForManage(tx, ctx, id);
+        // Setting paperwork alone is the compliance role's job and needs no right to edit the pipeline itself.
+        const docsOnly = Object.keys(b).every((k) => k === 'requiredDocs');
+        if (docsOnly) {
+          const ok = await tx.query('SELECT 1 FROM stages WHERE id = $1 AND pipeline_id = $2', [stageId, id]);
+          if (!ok.rowCount) throw notFound('Stage not found');
+        } else await loadForManage(tx, ctx, id);
         if (b.requiredFields) {
           const keys = (await tx.query<{ key: string }>('SELECT key FROM field_defs WHERE pipeline_id = $1', [id])).rows.map((r) => r.key);
           const bad = b.requiredFields.filter((k) => !['value', 'closeDate', 'owner'].includes(k) && !keys.includes(k));
           if (bad.length) throw invalid(`Unknown required field: ${bad.join(', ')}`);
         }
-        const r = await tx.query(
+        const r = docsOnly ? { rowCount: 1 } : await tx.query(
           `UPDATE stages SET name = coalesce($3, name), color = CASE WHEN $4 THEN $5 ELSE color END,
              is_won = coalesce($6, is_won), is_lost = coalesce($7, is_lost), required_fields = coalesce($8::text[], required_fields) WHERE id = $1 AND pipeline_id = $2`,
           [stageId, id, b.name?.trim() ?? null, 'color' in b, b.color ?? null, b.isWon ?? null, b.isLost ?? null, b.requiredFields ?? null],
         );
         if (r.rowCount === 0) throw notFound('Stage not found');
-        await audit(tx, ctx, 'stage_updated', 'pipeline', id, { stageId, fields: Object.keys(b) });
+        if (b.requiredDocs) {
+          await tx.query('DELETE FROM stage_doc_requirements WHERE stage_id = $1', [stageId]);
+          for (const t of b.requiredDocs) await tx.query('INSERT INTO stage_doc_requirements (stage_id, doc_type, tenant_id) VALUES ($1,$2,$3)', [stageId, t, ctx.tenantId]);
+        }
+        await audit(tx, ctx, 'stage_updated', 'pipeline', id, { stageId, fields: Object.keys(b), ...(b.requiredDocs ? { requiredDocs: b.requiredDocs } : {}) });
       });
       return reply.code(204).send();
     },

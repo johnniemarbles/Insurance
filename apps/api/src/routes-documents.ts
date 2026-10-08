@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
-import type { RequestContext } from '@pii/domain';
+import { DOC_TYPES, type RequestContext } from '@pii/domain';
 import { open, seal } from '@pii/platform';
 import { audit } from './audit.ts';
 import { HttpError, invalid, notFound } from './errors.ts';
@@ -39,7 +39,7 @@ export function registerDocumentRoutes(app: FastifyInstance, deps: AppDeps): voi
     return run(ctx, async (tx) => {
       await box(tx, id);
       const rows = (await tx.query(
-        `SELECT d.id, d.name, d.mime, d.size_bytes AS "sizeBytes", d.created_at AS "createdAt", coalesce(u.display_name, u.email::text) AS "uploadedBy"
+        `SELECT d.id, d.name, d.mime, d.doc_type AS "docType", d.size_bytes AS "sizeBytes", d.created_at AS "createdAt", coalesce(u.display_name, u.email::text) AS "uploadedBy"
            FROM box_documents d LEFT JOIN app_users u ON u.id = d.uploaded_by WHERE d.box_id = $1 ORDER BY d.created_at DESC LIMIT 200`, [id])).rows;
       return { documents: rows, maxBytes: MAX_BYTES, types: Object.values(TYPES).flat() };
     });
@@ -47,13 +47,13 @@ export function registerDocumentRoutes(app: FastifyInstance, deps: AppDeps): voi
 
   app.post('/v1/boxes/:id/documents', {
     bodyLimit: 14 * 1024 * 1024,
-    schema: { params: idp, body: { type: 'object', required: ['name', 'mime', 'dataBase64'], additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 300 }, mime: { type: 'string', maxLength: 100 }, dataBase64: { type: 'string', minLength: 4, maxLength: 12 * 1024 * 1024 } } } },
+    schema: { params: idp, body: { type: 'object', required: ['name', 'mime', 'dataBase64'], additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 300 }, mime: { type: 'string', maxLength: 100 }, docType: { enum: [...DOC_TYPES] }, dataBase64: { type: 'string', minLength: 4, maxLength: 12 * 1024 * 1024 } } } },
   }, async (req, reply) => {
     const { ctx, user } = await (async () => { const i = await deps.authenticate(req); return { ctx: i.ctx, user: i.user }; })();
     requireCrm(ctx);
     const kp = keys();
     const { id } = req.params as { id: string };
-    const b = req.body as { name: string; mime: string; dataBase64: string };
+    const b = req.body as { name: string; mime: string; dataBase64: string; docType?: string };
     const name = cleanName(b.name);
     if (!name) throw invalid('Give the file a name');
     const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
@@ -70,9 +70,9 @@ export function registerDocumentRoutes(app: FastifyInstance, deps: AppDeps): voi
       requireEdit(ctx, bx.owner_node_id);
       const sealed = seal(kp, data, `${ctx.tenantId}:doc:${docId}`);
       await tx.query(
-        `INSERT INTO box_documents (id, tenant_id, box_id, name, mime, size_bytes, data_enc, key_id, uploaded_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [docId, ctx.tenantId, id, name, b.mime, data.length, sealed.data, sealed.keyId, ctx.userId]);
-      await audit(tx, ctx, 'document_added', 'box', id, { documentId: docId, name, size: data.length });
+        `INSERT INTO box_documents (id, tenant_id, box_id, name, mime, size_bytes, data_enc, key_id, uploaded_by, doc_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [docId, ctx.tenantId, id, name, b.mime, data.length, sealed.data, sealed.keyId, ctx.userId, b.docType ?? null]);
+      await audit(tx, ctx, 'document_added', 'box', id, { documentId: docId, name, size: data.length, ...(b.docType ? { docType: b.docType } : {}) });
       if (bx.owner_user_id) await notify(tx, { tenantId: ctx.tenantId, userId: bx.owner_user_id, actorId: ctx.userId, kind: 'document_added', boxId: id, data: { boxName: bx.name, name } });
       return { id: docId, name };
     });

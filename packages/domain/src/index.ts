@@ -8,3 +8,4 @@ export * from './compliance.ts';
 export * from './ce.ts';
 export * from './forecast.ts';
 export * from './assessment.ts';
+export * from './gates.ts';

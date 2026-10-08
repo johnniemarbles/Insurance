@@ -1,3 +1,4 @@
+import { docLabel } from './doctypes.ts';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
 import type { HostOptions, Locale } from './types.ts';
@@ -81,7 +82,32 @@ function Bar({ pct }: { pct: number }) { return <span class="cbar" role="img" ar
 
 export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions }) {
   const [open, setOpen] = useState<string | null>(null);
-  return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} />;
+  return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <><ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} />{!isHeadOffice && <FilesAtRisk call={call} locale={locale} go={go} />}</>;
+}
+
+const FR = {
+  'en': { h: 'Files at risk', none: 'No records are past a paperwork gate without the required documents.', waivers: 'waivers in the last 90 days', at: 'now in', gate: 'gate', missing: 'missing', open: 'Open' },
+  'fr-CA': { h: 'Dossiers à risque', none: 'Aucun dossier n’a franchi une étape sans les documents requis.', waivers: 'dérogations au cours des 90 derniers jours', at: 'maintenant à', gate: 'étape', missing: 'manque', open: 'Ouvrir' },
+};
+/** Records that sit in or past a stage whose required paperwork is not on file and not waived. */
+function FilesAtRisk({ call, locale }: { call: Call; locale: Locale; go: (page: string, id?: string) => void }) {
+  const x = FR[locale];
+  const [d, setD] = useState<{ files: { id: string; name: string; pipeline: string; stage: string; gateStage: string; missing: string[]; owner: string | null }[]; waivers90d: number } | null>(null);
+  useEffect(() => { void call('GET', '/v1/compliance/files-at-risk').then(setD, () => setD({ files: [], waivers90d: 0 })); }, []);
+  if (!d) return null;
+  return (
+    <section class="rec-form" aria-label={x.h} style={{ marginTop: '16px' }}>
+      <h3>{x.h} ({d.files.length})</h3>
+      <p class="muted">{d.waivers90d} {x.waivers}</p>
+      {d.files.length === 0 && <p class="muted">{x.none}</p>}
+      {d.files.map((f, i) => (
+        <div class="ev" key={f.id + i}>
+          <strong>{f.name}</strong> <small>{f.pipeline} · {x.at} {f.stage} · {x.gate} {f.gateStage} · {f.owner ?? '—'}</small>
+          <div style={{ color: '#b3261e' }}>{x.missing}: {f.missing.map((k) => docLabel(k, locale)).join(', ')}</div>
+        </div>
+      ))}
+    </section>
+  );
 }
 
 function ListView({ call, locale, ho, openFile, host }: { call: Call; locale: Locale; ho: boolean; openFile: (id: string) => void; host?: HostOptions }) {
