@@ -76,12 +76,16 @@ export async function clientFilePackage(tx: Tx, ctx: RequestContext, keys: KeyPr
   const ids = await q<Record<string, unknown>>(`SELECT method, result, verified_on::text AS verified_on, verifier_name, documents_seen FROM client_id_records WHERE box_id = $1 ORDER BY created_at`);
   const scr = await q<Record<string, unknown>>(`SELECT list, result, screened_on::text AS screened_on, reviewer_name, note FROM screening_results WHERE box_id = $1 ORDER BY created_at`);
   const cash = await q<Record<string, unknown>>(`SELECT amount::text AS amount, currency, occurred_on::text AS occurred_on, report_required, report_ref, reported_at FROM cash_transactions WHERE box_id = $1 ORDER BY created_at`);
+  const consents = await q<Record<string, unknown>>(`SELECT kind, wording_version, channel, granted_on::text AS granted_on, recorded_by_name, withdrawn_at, withdrawn_by_name, withdrawn_note FROM client_consents WHERE box_id = $1 ORDER BY created_at`);
+  const holds = await q<Record<string, unknown>>(`SELECT reason, placed_by_name, placed_at, released_at, released_by_name FROM legal_holds WHERE box_id = $1 ORDER BY placed_at`);
   const waivers = await q<Record<string, unknown>>(`SELECT (SELECT name FROM stages WHERE id = o.stage_id) AS stage, doc_types, reason, approver_name, created_at FROM gate_overrides o WHERE box_id = $1 ORDER BY created_at`);
   const audits = await q<Record<string, unknown>>(`SELECT a.created_at, a.action, coalesce(u.display_name, u.email::text) AS actor, a.detail::text AS detail FROM audit_log a LEFT JOIN app_users u ON u.id = a.actor_user_id WHERE a.entity_type = 'box' AND a.entity_id = $1 ORDER BY a.created_at, a.id LIMIT 5000`);
   const sections: Section[] = [
     { title: 'Record', head: ['Name', 'Pipeline', 'Stage', 'Owner', 'Created'], rows: [[box.name, box.pipeline, box.stage, box.owner ?? '', iso(box.created_at)]] },
     { title: 'Paperwork required by stage', head: ['Stage', 'Document', 'Status'], rows: gates },
     { title: 'Waivers', head: ['Stage', 'Documents', 'Reason', 'Approved by', 'At'], rows: waivers.map((w) => [w.stage, (w.doc_types as string[]).join('; '), w.reason, w.approver_name, iso(w.created_at)]) },
+    { title: 'Client consents', head: ['Kind', 'Wording', 'Channel', 'Granted', 'Recorded by', 'Withdrawn', 'Withdrawn by', 'Note'], rows: consents.map((c) => [c.kind, c.wording_version, c.channel, c.granted_on, c.recorded_by_name, iso(c.withdrawn_at), c.withdrawn_by_name ?? '', c.withdrawn_note ?? '']) },
+    { title: 'Legal holds', head: ['Reason', 'Placed by', 'Placed', 'Released', 'Released by'], rows: holds.map((h) => [h.reason, h.placed_by_name, iso(h.placed_at), iso(h.released_at), h.released_by_name ?? '']) },
     { title: 'Documents', head: ['Name', 'Type', 'Added', 'By', 'SHA-256 (first 16)', 'File'], rows: docRows },
     { title: 'Advice records', head: ['Kind', 'Title', 'Status', 'Client', 'Signed by', 'Vendor / ref', 'Signed at', 'Content hash'], rows: advice.map((a) => [a.kind, a.title, a.status, a.client_name, a.signed_method ?? '', a.vendor_name ? `${a.vendor_name} / ${a.vendor_ref}` : '', iso(a.signed_at), a.content_hash ?? '']) },
     { title: 'Client ID checks', head: ['Method', 'Result', 'Date', 'Verified by', 'Documents seen'], rows: ids.map((r) => [r.method, r.result, r.verified_on, r.verifier_name, (r.documents_seen as string[]).join('; ')]) },

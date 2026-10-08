@@ -1,7 +1,7 @@
 import { createHash, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
-import { ADVICE_KINDS, ADVICE_LABELS, OTP_MAX_ATTEMPTS, OTP_MINUTES, gateTypeFor, signingTierFor, type AdviceKind, type RequestContext } from '@pii/domain';
+import { ADVICE_KINDS, ADVICE_LABELS, OTP_MAX_ATTEMPTS, OTP_MINUTES, consentStates, gateTypeFor, signingTierFor, type AdviceKind, type RequestContext } from '@pii/domain';
 import { seal } from '@pii/platform';
 import { audit } from './audit.ts';
 import { HttpError, invalid, notFound } from './errors.ts';
@@ -109,6 +109,8 @@ export function registerAdviceRoutes(app: FastifyInstance, deps: AppDeps): void 
       if (r.tier !== 'builtin') throw new HttpError(409, 'needs_vendor', 'This kind of paperwork must be signed through a certified e-signature vendor. Record the vendor signature instead.');
       if (r.status === 'signed') throw new HttpError(409, 'advice_locked', 'Already signed');
       if (!r.client_email) throw invalid('Add the client’s email address first');
+      const cs = (await tx.query<{ kind: string; createdAt: string; withdrawnAt: string | null }>(`SELECT kind, created_at AS "createdAt", withdrawn_at AS "withdrawnAt" FROM client_consents WHERE box_id = $1 AND kind = 'electronic_comms' ORDER BY created_at`, [r.box_id])).rows;
+      if (consentStates(cs).withdrawn.includes('electronic_comms')) throw new HttpError(409, 'comms_withdrawn', 'This client has withdrawn consent to electronic messages. Do not email them; sign in person or by a vendor instead.');
       const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
       await tx.query(`UPDATE advice_records SET status = 'awaiting_signature', content_hash = $2, otp_hash = $3, otp_expires_at = now() + ($4 || ' minutes')::interval, otp_attempts = 0, updated_at = now() WHERE id = $1`,
         [id, contentHash(r), sha(`${code}:${id}`), String(OTP_MINUTES)]);

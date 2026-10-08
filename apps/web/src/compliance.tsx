@@ -82,7 +82,58 @@ function Bar({ pct }: { pct: number }) { return <span class="cbar" role="img" ar
 
 export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions }) {
   const [open, setOpen] = useState<string | null>(null);
-  return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <><ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} />{!isHeadOffice && <><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /></>}</>;
+  return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <><ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} />{!isHeadOffice && <><Overview call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}</>;
+}
+
+const OV = {
+  'en': { h: 'Today at a glance', expiring90: 'Expiring in 90 days', expired: 'Expired', waivers90d: 'Waivers (90 days)', withdrawals30d: 'Consent withdrawals (30 days)', openHolds: 'Open legal holds', cashReportsDue: 'Cash reports due', openScreeningHits: 'Open screening hits', note: 'Records on file, not a finding that anyone is compliant.' },
+  'fr-CA': { h: 'Aujourd’hui en un coup d’œil', expiring90: 'Expirent dans 90 jours', expired: 'Expirés', waivers90d: 'Dérogations (90 jours)', withdrawals30d: 'Retraits de consentement (30 jours)', openHolds: 'Gels juridiques ouverts', cashReportsDue: 'Déclarations d’espèces à produire', openScreeningHits: 'Correspondances ouvertes', note: 'Documents au dossier, et non une constatation de conformité.' },
+};
+/** The Principal Broker's counts. */
+function Overview({ call, locale }: { call: Call; locale: Locale }) {
+  const x = OV[locale] as Record<string, string>;
+  const [d, setD] = useState<Record<string, number> | null>(null);
+  useEffect(() => { void call('GET', '/v1/compliance/overview').then(setD, () => undefined); }, []);
+  if (!d) return null;
+  return (
+    <section class="rec-form" aria-label={x.h} style={{ marginTop: '16px' }}>
+      <h3>{x.h}</h3>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+        {Object.keys(d).map((k) => <div key={k} class="hcard" style={{ minWidth: '120px', padding: '8px 12px' }}><div style={{ fontSize: '1.6em', fontWeight: 700, color: d[k]! > 0 && k !== 'expiring90' ? '#b3261e' : undefined }}>{d[k]}</div><small class="muted">{x[k]}</small></div>)}
+      </div>
+      <p class="muted">{x.note}</p>
+    </section>
+  );
+}
+
+const RT = {
+  'en': { h: 'Retention', help: 'How long closed client files are kept. You may lengthen a period, never shorten it below the minimum. This reports only: nothing is deleted automatically.', years: 'years', min: 'minimum', save: 'Save', due: 'Past retention (review)', held: 'Under legal hold', soon: 'Reaching the end within 12 months', holds: 'Legal holds', none: 'Nothing is past its retention period.', state: { due: 'Due for review', held: 'Held', retained: 'Retained', active: 'Active' } as Record<string, string> },
+  'fr-CA': { h: 'Conservation', help: 'Durée de conservation des dossiers clients fermés. Vous pouvez allonger une période, jamais la réduire sous le minimum. Rapport seulement : rien n’est supprimé automatiquement.', years: 'ans', min: 'minimum', save: 'Enregistrer', due: 'Période de conservation échue (à examiner)', held: 'Sous gel juridique', soon: 'Échéance dans les 12 mois', holds: 'Gels juridiques', none: 'Aucun dossier n’a dépassé sa période de conservation.', state: { due: 'À examiner', held: 'Gelé', retained: 'Conservé', active: 'Actif' } as Record<string, string> },
+};
+interface Ret { policies: { kind: string; label: Record<Locale, string>; years: number; min: number; max: number }[]; holds: { id: string; boxId: string; name: string; reason: string }[]; summary: { due: number; held: number; dueWithin12Months: number }; files: { boxId: string; name: string; kind: string; records: number; closedAt: string; retainUntil: string | null; state: string }[] }
+/** Retention periods, holds and what is due. Visible to administrators and the compliance role. */
+function RetentionPanel({ call, locale }: { call: Call; locale: Locale }) {
+  const x = RT[locale];
+  const [d, setD] = useState<Ret | null>(null);
+  const [yrs, setYrs] = useState<Record<string, string>>({});
+  const [err, setErr] = useState('');
+  const load = () => call('GET', '/v1/compliance/retention').then(setD, () => undefined);
+  useEffect(() => { void load(); }, []);
+  if (!d) return null;
+  const label = (k: string) => d.policies.find((p) => p.kind === k)?.label[locale] ?? k;
+  return (
+    <section class="rec-form" aria-label={x.h} style={{ marginTop: '16px' }}>
+      <h3>{x.h}</h3><p class="muted">{x.help}</p>
+      {err && <p class="err" role="alert">{err}</p>}
+      {d.policies.map((p) => (
+        <div class="ev" key={p.kind}>{p.label[locale]}: <input type="number" min={p.min} max={p.max} style={{ width: '70px' }} aria-label={p.label[locale]} value={yrs[p.kind] ?? String(p.years)} onInput={(e) => setYrs({ ...yrs, [p.kind]: (e.target as HTMLInputElement).value })} /> {x.years} <small class="muted">({x.min} {p.min})</small>{' '}
+          <button class="btn quiet" disabled={(yrs[p.kind] ?? String(p.years)) === String(p.years)} onClick={() => { setErr(''); void call('PUT', `/v1/compliance/retention/${p.kind}`, { years: Number(yrs[p.kind]) }).then(() => { setYrs({ ...yrs, [p.kind]: undefined as unknown as string }); return load(); }, (e) => setErr((e as Error).message)); }}>{x.save}</button></div>
+      ))}
+      <p><strong>{d.summary.due}</strong> {x.due} · <strong>{d.summary.held}</strong> {x.held} · <strong>{d.summary.dueWithin12Months}</strong> {x.soon}</p>
+      {d.files.length === 0 && <p class="muted">{x.none}</p>}
+      {d.files.map((f, i) => <div class="ev" key={f.boxId + f.kind + i}><strong>{f.name}</strong> <small>{label(f.kind)} · {f.records} · {f.closedAt} → {f.retainUntil ?? '—'} · {x.state[f.state]}</small></div>)}
+    </section>
+  );
 }
 
 const CL: Record<string, { en: string; 'fr-CA': string }> = {

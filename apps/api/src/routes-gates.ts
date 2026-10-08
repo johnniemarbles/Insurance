@@ -89,6 +89,8 @@ export function registerGateRoutes(app: FastifyInstance, deps: AppDeps): void {
            LEFT JOIN app_users u ON u.id = b.owner_user_id
           WHERE NOT cs.is_lost
             AND NOT EXISTS (SELECT 1 FROM box_documents d WHERE d.box_id = b.id AND d.doc_type = r.doc_type)
+            AND NOT EXISTS (SELECT 1 FROM (VALUES ('privacy_consent','collection_use'),('pink_slip_optin','pink_slip_optin')) m(dt, ck)
+                             WHERE m.dt = r.doc_type AND EXISTS (SELECT 1 FROM (SELECT withdrawn_at FROM client_consents c WHERE c.box_id = b.id AND c.kind = m.ck ORDER BY created_at DESC LIMIT 1) x WHERE x.withdrawn_at IS NULL))
             AND NOT (r.doc_type = 'id_record' AND EXISTS (SELECT 1 FROM client_id_records c WHERE c.box_id = b.id AND c.result = 'verified'))
             AND NOT EXISTS (SELECT 1 FROM gate_overrides o WHERE o.box_id = b.id AND o.stage_id = g.id AND r.doc_type = ANY(o.doc_types))
           GROUP BY b.id, b.name, b.pipeline_id, p.name, cs.name, cs.position, g.id, g.name, u.display_name, u.email, b.stage_entered_at

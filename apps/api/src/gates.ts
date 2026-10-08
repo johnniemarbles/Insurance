@@ -1,5 +1,5 @@
 import type { Tx } from '@pii/db';
-import { DOC_TYPE_LABELS, isDocType, missingDocs, openScreeningHits, type DocType } from '@pii/domain';
+import { CONSENT_GATE_TYPE, DOC_TYPE_LABELS, consentStates, isDocType, missingDocs, openScreeningHits, type ConsentKind, type DocType } from '@pii/domain';
 import { HttpError } from './errors.ts';
 
 /** What a record holds against what a stage requires. All three lists are document type keys. */
@@ -12,6 +12,8 @@ export async function gateStatus(tx: Tx, stageId: string, boxId: string): Promis
   if (required.length === 0) return { stageId, stageName: st.name, required, filed: [], overridden: [], missing: [] };
   const filed = (await tx.query<{ doc_type: string }>('SELECT DISTINCT doc_type FROM box_documents WHERE box_id = $1 AND doc_type IS NOT NULL', [boxId])).rows.map((r) => r.doc_type);
   if (!filed.includes('id_record') && (await tx.query("SELECT 1 FROM client_id_records WHERE box_id = $1 AND result = 'verified' LIMIT 1", [boxId])).rowCount) filed.push('id_record');
+  const consents = (await tx.query<{ kind: string; createdAt: string; withdrawnAt: string | null }>('SELECT kind, created_at AS "createdAt", withdrawn_at AS "withdrawnAt" FROM client_consents WHERE box_id = $1 ORDER BY created_at', [boxId])).rows;
+  for (const k of consentStates(consents).active) { const t = CONSENT_GATE_TYPE[k as ConsentKind]; if (t && !filed.includes(t)) filed.push(t); }
   const overridden = (await tx.query<{ t: string }>('SELECT DISTINCT unnest(doc_types) AS t FROM gate_overrides WHERE box_id = $1 AND stage_id = $2', [boxId, stageId])).rows.map((r) => r.t);
   return { stageId, stageName: st.name, required, filed, overridden, missing: missingDocs(required, filed, overridden) };
 }

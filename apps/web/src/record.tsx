@@ -3,6 +3,7 @@ import { useDialogFocus } from './a11y.ts';
 import { AiBox } from './ai.tsx';
 import { AdviceTab, adviceTabLabel } from './advice.tsx';
 import { AmlTab, amlTabLabel } from './aml.tsx';
+import { ConsentTab, consentTabLabel } from './consent.tsx';
 import { DOC_TYPES, docLabel } from './doctypes.ts';
 import type { Strings } from './i18n.ts';
 import type { Box, FieldDef, Locale, Pipeline, Stage } from './types.ts';
@@ -166,7 +167,7 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
 export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, onChanged }: { box: Box; pipeline: Pipeline; call: Call; t: Strings; locale: Locale; people: Person[]; onClose: () => void; onChanged: () => void }) {
   const x = R[locale];
   const dlg = useDialogFocus<HTMLElement>();
-  const [tab, setTab] = useState<'details' | 'activity' | 'files' | 'advice' | 'aml'>('details');
+  const [tab, setTab] = useState<'details' | 'activity' | 'files' | 'advice' | 'aml' | 'consent'>('details');
   const [full, setFull] = useState<Box & { canEdit?: boolean; contacts?: { id: string; fullName: string | null; email: string | null }[] }>(box);
   const [draft, setDraft] = useState({ name: box.name, ownerUserId: box.ownerUserId ?? '', valueAmount: box.valueAmount == null ? '' : String(box.valueAmount), closeDate: box.closeDate ?? '', custom: { ...box.custom } as Record<string, unknown> });
   const [stageId, setStageId] = useState(box.stageId);
@@ -275,6 +276,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
           <button role="tab" aria-selected={tab === 'files'} class={tab === 'files' ? 'on' : ''} onClick={() => setTab('files')}>{DX[locale].tab}</button>
           <button role="tab" aria-selected={tab === 'advice'} class={tab === 'advice' ? 'on' : ''} onClick={() => setTab('advice')}>{adviceTabLabel(locale)}</button>
           <button role="tab" aria-selected={tab === 'aml'} class={tab === 'aml' ? 'on' : ''} onClick={() => setTab('aml')}>{amlTabLabel(locale)}</button>
+          <button role="tab" aria-selected={tab === 'consent'} class={tab === 'consent' ? 'on' : ''} onClick={() => setTab('consent')}>{consentTabLabel(locale)}</button>
         </div>
       </header>
 
@@ -304,6 +306,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
         {tab === 'files' && <Documents boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
         {tab === 'advice' && <AdviceTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
         {tab === 'aml' && <AmlTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
+        {tab === 'consent' && <ConsentTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
 
         {tab === 'activity' && (
           <div>
