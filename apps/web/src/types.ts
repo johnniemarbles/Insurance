@@ -10,7 +10,7 @@ export interface Box {
   threadCount?: number; emailCount?: number; openTasks?: number; overdueTasks?: number; doneTasks?: number; nextTaskDue?: string | null; noteCount?: number; lastNoteAt?: string | null;
 }
 export interface BoxEvent { id: string; kind: 'created' | 'stage_changed'; fromStage: string | null; toStage: string | null; createdAt: string }
-export interface Me { minExtension?: string; supportEmail?: string; needsConsent: boolean; user: { displayName: string | null; email: string; locale: Locale }; tenant: { name: string }; product: { name: string; logoUrl: string } }
+export interface Me { minExtension?: string; supportEmail?: string; needsConsent: boolean; user: { id?: string; displayName: string | null; email: string; locale: Locale }; tenant: { name: string }; product: { name: string; logoUrl: string } }
 export type Scope = 'all' | 'mine' | 'below';
 export type SortKey = 'updated' | 'name' | 'value' | 'closeDate' | 'daysInStage' | 'created' | 'lastEmail';
 

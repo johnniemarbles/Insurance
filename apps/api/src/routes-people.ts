@@ -5,6 +5,7 @@ import { newToken } from '@pii/platform';
 import { audit } from './audit.ts';
 import { hasAcceptedFirstLogin } from './routes-consent.ts';
 import { HttpError, conflict, forbidden, invalid, notFound } from './errors.ts';
+import { isDemoTenant } from './routes-demo.ts';
 import type { AppDeps } from './app.ts';
 
 const INVITE_DAYS = 7;
@@ -54,6 +55,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
       termsUrl: deps.config.termsUrl,
       product: { name: deps.config.productDisplayName, logoUrl: `${deps.config.appOrigin}/brand/logo.png` },
       isTenantAdmin: ctx.isTenantAdmin,
+      demo: await isDemoTenant(deps, user.tenantId),
       roles: ctx.roles,
       isHeadOffice: (await run(ctx, async (tx) => (await tx.query<{ h: boolean }>('SELECT app_is_head_office() AS h')).rows[0]!.h)),
       country: deps.config.region === 'us' ? 'US' : 'CA',

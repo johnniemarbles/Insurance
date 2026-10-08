@@ -286,4 +286,5 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .mailbox{padding:12px 14px}.mailbox.bad{border-color:#f3cfca;background:#fff6f5}.mailbox.bad p{color:#b3261e}
 .sigset{margin:0 0 14px;border:1px solid var(--line);border-radius:12px;padding:8px 14px;background:var(--bg)}.sigset summary{cursor:pointer;font-weight:600;color:var(--navy)}.sigset .erow{margin-top:8px;flex-wrap:wrap}
 @media(max-width:700px){.erow.assignform select,.erow.assignform input:not([type=color]){flex:1 1 100%;min-width:100%;box-sizing:border-box}.erow.assignform .btn{flex:1 1 40%}}
+.demobar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;background:#fff7e0;color:#6b4e00;border:1px solid #f0d98a;border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:13px}.demobar label{margin-left:auto;display:flex;align-items:center;gap:6px;font-weight:600}.demobar select{max-width:260px}.freshkey{background:#e6f4ea;color:#137333;padding:10px;border-radius:8px;margin:8px 0}
 `;

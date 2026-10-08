@@ -35,6 +35,8 @@ Competency frameworks, SCORM/LTI/xAPI, discussions and moderation, AI pipeline /
 
 A fictional company ("Maple Demo Insurance" on pii-ca, "Liberty Demo Insurance" on pii-us) filled with sample data for demos and testing. Invite-only: only the address in `DEMO_ADMIN_EMAIL` can sign in as its admin; the other users have `@demo.invalid` addresses, so nobody can sign in as them and the mailer never sends to them. Others are invited through the normal invitation flow.
 
+**Private demo links (no Google account):** a head-office admin creates them under Integrations > API keys > Demo access (`POST /v1/demo/invites`). Opening `/demo?invite=<token>` signs the visitor in to the demo as its admin for 12 hours; a "View as" switcher then lets them become any demo user. Links expire (1 to 30 days), cap their uses, are revocable and only their hash is stored. They work only for tenants flagged `is_demo`. Inside the demo, sending mail, inviting people, API keys, AI calls and privacy requests are refused. The Chrome extension is unchanged.
+
 - Set `SEED_DEMO=true` and `DEMO_ADMIN_EMAIL=<address>` to create it at deploy time. Add `DEMO_RESET=true` for one deploy to rebuild its CRM data, then remove it.
 - Or run `node packages/db/src/cli.ts seed-demo --admin-email <address> [--reset]`.
 - Data is deterministic and dated relative to today: org tree with partners, about 14 users in every role and state, 4 pipelines (one branch-only), 150 contacts, 200 deals with overdue and stale cases, notes, call logs, tasks and linked threads.

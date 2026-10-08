@@ -23,6 +23,7 @@ import { CompliancePage } from './compliance.tsx';
 import { setHeadOffice } from './ho.ts';
 import { tabArrows } from './a11y.ts';
 import { DuplicatesDialog } from './duplicates.tsx';
+import { DemoBar } from './demo.tsx';
 import { SettingsPage, useSettings, type SettingsApi } from './settings.tsx';
 import { FeedPanel, Palette, ReportsPanel, StageChart, WeeklyLine, type PaletteAction, type Report, type Viz } from './insights.tsx';
 import { buildColumns, Cell, ColumnPicker, loadColumns, saveColumns, type Ctx } from './columns.tsx';
@@ -86,7 +87,7 @@ export function App({ host }: { host: HostOptions }) {
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
   setHeadOffice(Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice));
-  return <Shell isHeadOffice={Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice)} isAdmin={!(me as unknown as { isHeadOffice?: boolean }).isHeadOffice && (((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => r.role === 'admin') || Boolean((me as unknown as { isTenantAdmin?: boolean }).isTenantAdmin))} call={call} t={t} locale={locale} onLocale={(l: Locale) => { setLocale(l); void call('PUT', '/v1/me/locale', { locale: l }).catch(() => undefined); }} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} meName={me.user.displayName ?? ''} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
+  return <Shell isHeadOffice={Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice)} isAdmin={!(me as unknown as { isHeadOffice?: boolean }).isHeadOffice && (((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => r.role === 'admin') || Boolean((me as unknown as { isTenantAdmin?: boolean }).isTenantAdmin))} call={call} t={t} locale={locale} onLocale={(l: Locale) => { setLocale(l); void call('PUT', '/v1/me/locale', { locale: l }).catch(() => undefined); }} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} meName={me.user.displayName ?? ''} demoUserId={(me as unknown as { demo?: boolean }).demo ? me.user.id : undefined} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
 }
 
 class Boundary extends Component<{ msg: string; retry: string; children?: ComponentChildren }, { bad: boolean }> {
@@ -108,7 +109,7 @@ type PageId = 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance'
 const PAGES: PageId[] = (['home', 'notifications', 'pipelines', 'renewals', 'training', 'compliance', 'contacts', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
-function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, meEmail, meName, compose, host, minExt, supportEmail }: { isHeadOffice: boolean; isAdmin: boolean; call: Call; t: Strings; locale: Locale; onLocale: (l: Locale) => void; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
+function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, meEmail, meName, demoUserId, compose, host, minExt, supportEmail }: { demoUserId?: string; isHeadOffice: boolean; isAdmin: boolean; call: Call; t: Strings; locale: Locale; onLocale: (l: Locale) => void; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
   const [page, setPage] = useState<PageId>(() => {
     if (host.route) return pageOf(host.route.page);
     try { const v = localStorage.getItem('pii.page'); return pageOf(v ?? undefined); } catch { return 'pipelines'; }
@@ -128,6 +129,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
     <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
+      {demoUserId && <DemoBar call={call} locale={locale} meId={demoUserId} />}
       {older(host.extVersion, minExt) && <div class="banner warn" role="alert">{t.updateNeeded}</div>}
       {(
         <div class="tabs" role="tablist">
