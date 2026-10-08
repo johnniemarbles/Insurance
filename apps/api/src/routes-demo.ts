@@ -60,7 +60,7 @@ export function registerDemoRoutes(app: FastifyInstance, deps: AppDeps): void {
     const session = await createSession(deps.authPool, inv.tenant_id, u.id, DEMO_SESSION_MINUTES);
     await audit(inv.tenant_id, u.id, 'demo_link_used', inv.id, { label: inv.label });
     reply.header('set-cookie', cookie(session));
-    return reply.redirect(`${deps.config.appOrigin}/?signed_in=1&demo=1`, 302);
+    return reply.redirect(`${deps.config.appOrigin}/app`, 302);
   });
 
   // The people a visitor can become inside the demo.
