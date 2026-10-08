@@ -7,7 +7,7 @@ export interface Mailer { send(m: Mail): Promise<void> }
 export function resendMailer(config: Config, env: Record<string, string | undefined> = process.env): Mailer | undefined {
   const key = env.RESEND_API_KEY;
   if (!key) return undefined;
-  const from = env.MAIL_FROM ?? `${config.productDisplayName} <reminders@punjabinsurance.co>`;
+  const from = env.MAIL_FROM ?? `${config.productDisplayName} <notifications@punjabinsurance.co>`;
   return {
     async send(m) {
       const res = await fetch('https://api.resend.com/emails', {

@@ -23,7 +23,7 @@ Competency frameworks, SCORM/LTI/xAPI, discussions and moderation, AI pipeline /
 
 
 ## Follow-ups (done)
-- **Email reminders via Resend.** Learning-due, CE and licence-expiry reminders are also emailed (en / fr-CA by the person's language), unless the person turns off "Email reminders" on their Notifications page. Needs `RESEND_API_KEY` (and optionally `MAIL_FROM`, default `PII by Punjab Insurance <reminders@punjabinsurance.co>`; the sending domain must be verified in Resend). With no key, reminders stay in-app only.
+- **Email reminders via Resend.** Learning-due, CE and licence-expiry reminders are also emailed (en / fr-CA by the person's language), unless the person turns off "Email reminders" on their Notifications page. Needs `RESEND_API_KEY` (and optionally `MAIL_FROM`, default `PII by Punjab Insurance <notifications@punjabinsurance.co>`; the sending domain must be verified in Resend). With no key, reminders stay in-app only.
 - **Fourth starter course:** Handling client money (draft, en + fr-CA, counsel review needed).
 - **Unicode PDF certificates:** Gurmukhi, Devanagari and accented Latin names print with Noto fonts (no more redirect to the printable page).
 - **Quiz rules in the editor** (pass mark, max attempts, wait between tries) and **managers can give a learner extra attempts**.
