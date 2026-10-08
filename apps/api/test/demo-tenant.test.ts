@@ -44,7 +44,24 @@ test('the demo admin sees every pipeline and all contacts; a branch manager sees
 
   const mgrPipes = (await get('aisha.khan@demo.invalid', '/v1/pipelines')).json;
   const mgrNames = mgrPipes.pipelines.map((p: any) => p.name);
-  assert.ok(mgrNames.includes('Branch referrals'), 'Toronto manager sees the Toronto-only pipeline');
+  assert.ok(mgrNames.includes('Walk-ins (Toronto branch)'), 'Toronto manager sees the Toronto-only pipeline');
   const otherPipes = (await get('wei.chen@demo.invalid', '/v1/pipelines')).json;
-  assert.ok(!otherPipes.pipelines.map((p: any) => p.name).includes('Branch referrals'), 'Vancouver manager does not');
+  assert.ok(!otherPipes.pipelines.map((p: any) => p.name).includes('Walk-ins (Toronto branch)'), 'Vancouver manager does not');
+});
+
+test('a demo inbox email can be linked to a new record, and mail to a shared address suggests its pipeline', async () => {
+  const rules = (await get(ADMIN, '/v1/alias-rules')).json.rules;
+  assert.ok(rules.some((r: any) => r.alias === 'supervisa@maple-demo.example.com' && r.pipelineName === 'Super Visa'));
+  const pipes = (await get(ADMIN, '/v1/pipelines')).json.pipelines;
+  const sv = pipes.find((p: any) => p.name === 'Super Visa');
+  const post = async (url: string, body: unknown) => { const r = await app.inject({ method: 'POST', url, headers: { 'x-dev-user-email': ADMIN }, payload: body as object }); return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null }; };
+  const box = await post('/v1/boxes', { pipelineId: sv.id, stageId: sv.stages[0].id, name: 'Super Visa insurance for my parents' });
+  assert.equal(box.status, 201);
+  const linked = await post(`/v1/boxes/${box.json.id}/threads`, {
+    gmailThreadId: 'demo-inbox-1', subject: 'Super Visa insurance for my parents', acceptedNotice: true,
+    messages: [{ gmailMessageId: 'demo-inbox-1-m1a', sentAt: new Date().toISOString(), from: 'anita.verma@example.com', to: [{ email: ADMIN, name: 'Demo Admin' }], body: 'Hello, my parents arrive in December.', attachments: [] }],
+  });
+  assert.equal(linked.status, 201);
+  const found = await get(ADMIN, '/v1/threads/lookup?gmailThreadId=demo-inbox-1');
+  assert.equal(found.json.boxes[0].id, box.json.id);
 });

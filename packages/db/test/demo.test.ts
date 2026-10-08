@@ -25,6 +25,7 @@ test('demo tenant is seeded once, with data in every scenario, and can be reset'
   assert.equal(await count(`SELECT count(*) n FROM app_users WHERE tenant_id = $1 AND status = 'disabled'`, [a.tenantId]), 1);
   assert.ok(await count(`SELECT count(*) n FROM app_users WHERE tenant_id = $1 AND locale = 'fr-CA'`, [a.tenantId]) >= 2);
   assert.equal(await count(`SELECT count(*) n FROM pipelines WHERE tenant_id = $1`, [a.tenantId]), 4);
+  assert.equal(await count(`SELECT count(*) n FROM alias_rules WHERE tenant_id = $1`, [a.tenantId]), 3);
   assert.ok(await count(`SELECT count(*) n FROM contacts WHERE tenant_id = $1`, [a.tenantId]) >= 150);
   assert.ok(await count(`SELECT count(*) n FROM boxes WHERE tenant_id = $1`, [a.tenantId]) >= 200);
   // Every stage of the head-office pipelines holds at least one deal; won and lost both appear.

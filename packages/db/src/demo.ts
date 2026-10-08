@@ -180,7 +180,7 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
         fields: [['coverage_amount', { en: 'Coverage amount', 'fr-CA': 'Montant de couverture' }, 'currency', null], ['renewal_date', { en: 'Renewal date', 'fr-CA': 'Date de renouvellement' }, 'date', null], ['medical_required', { en: 'Medical exam', 'fr-CA': 'Examen médical' }, 'dropdown', ['Not required', 'Scheduled', 'Done']]],
       },
       {
-        name: 'Branch referrals', owner: (firstLoc.find((n) => /^(Toronto|New York)/.test(n.name)) ?? firstLoc[0]!).id, shared: false, products: ['Referral'],
+        name: ca ? 'Walk-ins (Toronto branch)' : 'Walk-ins (New York branch)', owner: (firstLoc.find((n) => /^(Toronto|New York)/.test(n.name)) ?? firstLoc[0]!).id, shared: false, products: ['Referral'],
         stages: [['Received', false, false], ['Contacted', false, false], ['Converted', true, false], ['Not a fit', false, true]],
         fields: [['referrer', { en: 'Referred by', 'fr-CA': 'Référé par' }, 'text', null]],
       },
@@ -202,6 +202,13 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
       }
       pipes.push({ id, stageIds, def: p });
       bump('pipelines');
+    }
+
+    // Mail sent to these addresses is suggested into the matching pipeline and first stage by the sidebar.
+    for (const [alias, name] of [['travel@maple-demo.example.com', 'Travel & Visitor'], ['supervisa@maple-demo.example.com', 'Super Visa'], ['life@maple-demo.example.com', 'Life & Health']] as const) {
+      const p = pipes.find((x) => x.def.name === name)!;
+      await client.query(`INSERT INTO alias_rules (tenant_id, pipeline_id, stage_id, alias, created_by) VALUES ($1,$2,$3,$4,$5)`, [tenantId, p.id, p.stageIds[0], alias, adminRow.id]);
+      bump('alias_rules');
     }
 
     // Accounts (companies) owned by branches.
