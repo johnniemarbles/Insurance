@@ -91,6 +91,7 @@ export function Catalog({ courses, locale, onOpen }: { courses: CatalogCourse[];
               {c.myDueAt && !fin && <span class="cc-tag req">{x.req}</span>}
               {c.myDueAt && !fin && <span class="cc-tag">{x.due} {new Date(c.myDueAt).toLocaleDateString(locale, { month: 'short', day: 'numeric' })}</span>}
               {(c.videos ?? 0) > 0 && <span class="cc-tag">▶ {x.video}</span>}
+              {c.starterKey === 'using-pii-video' && <span class="cc-tag">{locale === 'fr-CA' ? '💬 SOUS-TITRES' : '🔊 NARRATED'}</span>}
               {c.ceHours ? <span class="cc-tag ce">{x.ce(c.ceHours)}</span> : null}
             </div>
             <svg viewBox="0 0 100 100" aria-hidden="true">{ICONS[t.icon]}</svg>

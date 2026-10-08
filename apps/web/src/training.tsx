@@ -279,7 +279,7 @@ function LessonPage({ id, call, t, locale, onBack, onLesson }: { id: string; cal
         <svg class="lp-ico" viewBox="0 0 100 100" aria-hidden="true">{ICONS[th.icon]}</svg>
         <small class="lp-kick">{idx >= 0 ? (fr ? `Leçon ${idx + 1} sur ${ls.length}` : `Lesson ${idx + 1} of ${ls.length}`) : (fr ? 'Leçon' : 'Lesson')}</small>
         <h1>{l.title}{l.done && <span class="lp-ok">✓ {fr ? 'Terminé' : 'Done'}</span>}</h1>
-        <div class="lp-chips"><span>{l.type === 'video' ? (fr ? '▶ Vidéo' : '▶ Video') : l.type === 'quiz' ? (fr ? '❓ Test' : '❓ Quiz') : (fr ? '📖 Lecture' : '📖 Reading')}</span>{idx >= 0 && <span>⏱ {lessonMin(ls[idx]!)} min</span>}{l.required && <span>{fr ? 'Obligatoire' : 'Required'}</span>}</div>
+        <div class="lp-chips"><span>{l.type === 'video' ? (fr ? '▶ Vidéo' : '▶ Video') : l.type === 'quiz' ? (fr ? '❓ Test' : '❓ Quiz') : (fr ? '📖 Lecture' : '📖 Reading')}</span>{idx >= 0 && <span>⏱ {lessonMin(ls[idx]!)} min</span>}{l.type === 'video' && /pii-guide-\d-en\.mp4/.test(l.body.url ?? '') && <span>🔊 {fr ? 'Narration' : 'Narrated'}</span>}{l.type === 'video' && /pii-guide-\d-fr\.mp4/.test(l.body.url ?? '') && <span>💬 {fr ? 'Sous-titres' : 'Captions'}</span>}{l.required && <span>{fr ? 'Obligatoire' : 'Required'}</span>}</div>
       </div>
       {err && <div class="err">{err}</div>}
       {l.type === 'richtext' && <div class="prose lp-card">{(l.body.text ?? '').split(/\n{2,}/).map((p) => <p>{p}</p>)}</div>}
