@@ -276,7 +276,7 @@ function FileView({ call, locale, nodeId, ho, back }: { call: Call; locale: Loca
   const openDoc = (d: Doc) => act(async () => { const r = await call('GET', `${ho ? '/v1/ho' : '/v1/compliance'}/documents/${d.id}`); save(r.filename, r.mime, r.dataBase64); });
   return (
     <div class="home">
-      <div class="erow"><button class="link" onClick={back}>← {x.back}</button></div>
+      <div class="erow"><button class="link" onClick={back}>← {x.back}</button>{!ho && <button class="btn quiet" onClick={() => void act(async () => { const r = await call('GET', `/v1/compliance/partners/${nodeId}/audit-package`); save(r.filename, r.mime, r.dataBase64); })}>{locale === 'fr-CA' ? 'Exporter le dossier d’audit' : 'Export audit package'}</button>}</div>
       <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{f.node.name}</h2><span class="muted">{f.company ? `${f.company} · ` : ''}{x.status[p?.status ?? 'incomplete']}{f.eoMin ? ` · ${x.min(money(f.eoMin, locale))}` : ''}</span></div><Bar pct={f.checklist.percent} /></div>
       {err && <p class="err" role="alert">{err}</p>}{msg && <p class="muted" role="status">{msg}</p>}
       {p?.status === 'rejected' && p.reviewNote && <div class="banner warn" role="alert">{p.reviewedByName ? x.reviewedBy(p.reviewedByName) + ': ' : ''}{p.reviewNote}</div>}

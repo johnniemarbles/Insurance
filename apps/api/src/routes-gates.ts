@@ -3,9 +3,10 @@ import { withRequestTx, type Tx } from '@pii/db';
 import { DOC_TYPES, MIN_OVERRIDE_REASON, clearanceReasons, type RequestContext } from '@pii/domain';
 import { eoMinFor } from './routes-compliance.ts';
 import { audit } from './audit.ts';
-import { forbidden, invalid, notFound } from './errors.ts';
+import { HttpError, forbidden, invalid, notFound } from './errors.ts';
 import { requireCrm, uuid } from './crm-helpers.ts';
 import { gateStatus } from './gates.ts';
+import { clientFilePackage, producerPackage } from './audit-package.ts';
 import type { AppDeps } from './app.ts';
 
 /** The people who may waive a paperwork requirement for one record, and who may set the requirements. */
@@ -117,6 +118,32 @@ export function registerGateRoutes(app: FastifyInstance, deps: AppDeps): void {
       const all = rows.map((r) => ({ nodeId: r.id, name: r.name, reasons: clearanceReasons({ status: r.status, licences: r.licences, validLicences: r.validLicences, eoPolicies: r.eoPolicies, validEo: r.validEo, eoMaxLimit: r.eoMax, eoMin }) }));
       const notCleared = all.filter((a) => a.reasons.length > 0);
       return { total: all.length, cleared: all.length - notCleared.length, notCleared };
+    });
+  });
+
+  // One-click audit package (ZIP): summary PDF and CSV, every supporting document as stored, the audit entries, and a SHA-256 manifest.
+  const pkgWho = async (tx: Tx, ctx: RequestContext) => (await tx.query<{ n: string }>('SELECT coalesce(display_name, email::text) AS n FROM app_users WHERE id = $1', [ctx.userId])).rows[0]!.n;
+  app.get('/v1/boxes/:id/audit-package', { schema: { params: idp } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    if (!canWaive(ctx)) throw forbidden('Only an administrator or the compliance role can export an audit package');
+    if (!deps.keys) throw new HttpError(503, 'keys_unavailable', 'Documents are not available on this server yet');
+    const { id } = req.params as { id: string };
+    const keys = deps.keys;
+    return run(ctx, async (tx) => {
+      const p = await clientFilePackage(tx, ctx, keys, id, await pkgWho(tx, ctx));
+      await audit(tx, ctx, 'audit_package_exported', 'box', id, { files: p.fileCount, bytes: p.zip.length });
+      return { filename: p.filename, mime: 'application/zip', dataBase64: p.zip.toString('base64') };
+    });
+  });
+  app.get('/v1/compliance/partners/:id/audit-package', { schema: { params: idp } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    if (!canWaive(ctx)) throw forbidden('Only an administrator or the compliance role can export an audit package');
+    const { id } = req.params as { id: string };
+    return run(ctx, async (tx) => {
+      const p = await producerPackage(tx, ctx, id, await pkgWho(tx, ctx));
+      await audit(tx, ctx, 'audit_package_exported', 'partner', id, { files: p.fileCount, bytes: p.zip.length });
+      return { filename: p.filename, mime: 'application/zip', dataBase64: p.zip.toString('base64') };
     });
   });
 }
