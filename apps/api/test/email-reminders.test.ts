@@ -83,3 +83,14 @@ test('the weekly team summary reads well in both languages', () => {
   assert.match(en.subject, /Weekly training summary/); assert.match(en.text, /3 learners are overdue.*Privacy \(2\)/);
   assert.match(buildReminderMail(deps.config, 'a@b.c', 'team_overdue', d, 'fr-CA')!.text, /3 apprenant\(s\) en retard/);
 });
+
+test('administrators see whether email is going out, and can send themselves a test; others cannot', async () => {
+  await call('admin@em.test', 'POST', '/v1/consent/first-login');
+  const st = await call('admin@em.test', 'GET', '/v1/mail/status');
+  assert.equal(st.status, 200); assert.equal(st.json.configured, true); assert.match(st.json.from, /notifications@punjabinsurance\.co/);
+  assert.equal((await call('ann@em.test', 'GET', '/v1/mail/status')).status, 403);
+  assert.equal((await call('ann@em.test', 'POST', '/v1/mail/test')).status, 403);
+  const before = sent.length;
+  const ok = await call('admin@em.test', 'POST', '/v1/mail/test');
+  assert.equal(ok.json.ok, true); assert.equal(sent.length, before + 1); assert.equal(sent[sent.length - 1]!.to, 'admin@em.test');
+});

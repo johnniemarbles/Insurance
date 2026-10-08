@@ -3,20 +3,34 @@ import type { Config } from '@pii/platform';
 export interface Mail { to: string; subject: string; text: string; html: string }
 export interface Mailer { send(m: Mail): Promise<void> }
 
+/** What the last sends did, since this server started. Shown to administrators so a refused send is never silent. */
+export const mailStatus: { lastOkAt: string | null; lastErrorAt: string | null; lastError: string | null } = { lastOkAt: null, lastErrorAt: null, lastError: null };
+
+export const mailFrom = (config: Config, env: Record<string, string | undefined> = process.env): string => env.MAIL_FROM ?? `${config.productDisplayName} <notifications@punjabinsurance.co>`;
+
 /** Sends through Resend. With no RESEND_API_KEY it does nothing, so a deployment without a mail account still works (in-app reminders only). */
 export function resendMailer(config: Config, env: Record<string, string | undefined> = process.env): Mailer | undefined {
   const key = env.RESEND_API_KEY;
   if (!key) return undefined;
-  const from = env.MAIL_FROM ?? `${config.productDisplayName} <notifications@punjabinsurance.co>`;
+  const from = mailFrom(config, env);
   return {
     async send(m) {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ from, to: [m.to], subject: m.subject, text: m.text, html: m.html }),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!res.ok) throw new Error(`Resend answered ${res.status}`);
+      try {
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ from, to: [m.to], subject: m.subject, text: m.text, html: m.html }),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) {
+          let why = ''; try { why = ((await res.json()) as { message?: string }).message ?? ''; } catch { /* no body */ }
+          throw new Error(`Resend answered ${res.status}${why ? `: ${why.slice(0, 200)}` : ''}`);
+        }
+        mailStatus.lastOkAt = new Date().toISOString();
+      } catch (e) {
+        mailStatus.lastErrorAt = new Date().toISOString(); mailStatus.lastError = (e as Error).message;
+        throw e;
+      }
     },
   };
 }

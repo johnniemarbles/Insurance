@@ -75,6 +75,17 @@ export function NotificationsPage({ call, locale, go }: { call: Call; locale: Lo
   const [list, setList] = useState<N[] | null>(null);
   const [err, setErr] = useState('');
   const [mail, setMail] = useState<{ enabled: boolean; available: boolean } | null>(null);
+  const [ms, setMs] = useState<{ configured: boolean; from: string; lastOkAt: string | null; lastErrorAt: string | null; lastError: string | null } | null>(null);
+  const [testMsg, setTestMsg] = useState('');
+  useEffect(() => { call('GET', '/v1/mail/status').then(setMs, () => setMs(null)); }, [call]);
+  const sendTest = async () => {
+    const fr = locale === 'fr-CA'; setTestMsg('…');
+    try {
+      const r = await call('POST', '/v1/mail/test');
+      setTestMsg(r.ok ? (fr ? `Courriel de test envoyé à ${r.to}.` : `Test email sent to ${r.to}.`) : (fr ? `Échec : ${r.error}` : `Failed: ${r.error}`));
+      call('GET', '/v1/mail/status').then(setMs, () => {});
+    } catch (e) { setTestMsg((e as Error).message); }
+  };
   useEffect(() => { call('GET', '/v1/me/email-reminders').then(setMail, () => setMail(null)); }, [call]);
   const toggleMail = async (enabled: boolean) => { try { await call('PUT', '/v1/me/email-reminders', { enabled }); setMail((m) => (m ? { ...m, enabled } : m)); } catch (e) { setErr((e as Error).message); } };
   const load = () => call('GET', '/v1/notifications').then((r) => setList(r.notifications), (e) => setErr((e as Error).message));
@@ -94,6 +105,22 @@ export function NotificationsPage({ call, locale, go }: { call: Call; locale: Lo
       <div class="erow"><h2 style={{ margin: 0 }}>{x.title}</h2><span class="spacer" />
         <button class="link" onClick={() => go('settings', 'notifications')}>{x.settings}</button>
         <button class="btn quiet" disabled={!list.some((n) => !n.readAt)} onClick={() => void markAll()}>{x.markAll}</button></div>
+      {ms && (() => {
+        const fr = locale === 'fr-CA';
+        const bad = !ms.configured || (ms.lastErrorAt && (!ms.lastOkAt || ms.lastErrorAt > ms.lastOkAt));
+        return (
+          <div class={`hcard mailbox${bad ? ' bad' : ''}`} style={{ marginTop: '8px' }}>
+            <b>{fr ? 'Livraison des courriels' : 'Email delivery'}</b>
+            <p class="muted" style={{ margin: '4px 0' }}>
+              {!ms.configured ? (fr ? 'Les courriels ne sont pas configurés sur ce serveur : les rappels restent dans l’application.' : 'Email is not set up on this server, so reminders stay in the app.')
+                : bad ? (fr ? `Le dernier envoi a été refusé : ${ms.lastError}` : `The last send was refused: ${ms.lastError}`)
+                : ms.lastOkAt ? (fr ? `Les courriels partent de ${ms.from}. Dernier envoi réussi : ${new Date(ms.lastOkAt).toLocaleString(locale)}.` : `Email goes out from ${ms.from}. Last successful send: ${new Date(ms.lastOkAt).toLocaleString(locale)}.`)
+                : (fr ? `Les courriels partent de ${ms.from}. Aucun envoi depuis le dernier redémarrage — envoyez-vous un test.` : `Email goes out from ${ms.from}. Nothing sent since the last restart — send yourself a test.`)}
+            </p>
+            {ms.configured && <div class="erow"><button class="btn quiet" onClick={() => void sendTest()}>{fr ? 'M’envoyer un courriel de test' : 'Send me a test email'}</button>{testMsg && <span class="muted">{testMsg}</span>}</div>}
+          </div>
+        );
+      })()}
       {mail?.available && <label class="erow" style={{ marginTop: '8px' }}><input type="checkbox" checked={mail.enabled} onChange={(e) => void toggleMail((e.target as HTMLInputElement).checked)} /> {x.emailRem}</label>}
       <div class="hcard" style={{ marginTop: '12px' }}>
         {list.length === 0 && <p class="muted">{x.none}</p>}
