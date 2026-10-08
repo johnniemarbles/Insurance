@@ -65,3 +65,15 @@ test('a demo inbox email can be linked to a new record, and mail to a shared add
   const found = await get(ADMIN, '/v1/threads/lookup?gmailThreadId=demo-inbox-1');
   assert.equal(found.json.boxes[0].id, box.json.id);
 });
+
+test('the demo shows compliance: one partner not cleared, an expiring E&O policy, and a reset does not double it', async () => {
+  const check = async () => {
+    const c = await get(ADMIN, '/v1/compliance/clearance');
+    assert.equal(c.status, 200);
+    assert.equal(c.json.notCleared.length, 1);
+    assert.deepEqual(c.json.notCleared[0].reasons.sort(), ['licence_expired', 'no_eo', 'not_approved']);
+  };
+  await check();
+  await seedDemoTenant(db.ownerUrl, { adminEmail: ADMIN, reset: true });
+  await check();
+});

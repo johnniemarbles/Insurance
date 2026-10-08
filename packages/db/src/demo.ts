@@ -206,6 +206,26 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
       bump('pipelines');
     }
 
+    // Compliance: one partner in good standing with an E&O policy about to run out, one with an expired licence and no E&O.
+    const partners = nodes.filter((n) => n.type === 'partner');
+    const north = partners.find((n) => n.name.startsWith('Northwind'));
+    const harbour = partners.find((n) => n.name.startsWith('Harbour'));
+    for (const t of ['compliance_items', 'compliance_profiles']) await client.query(`DELETE FROM ${t} WHERE tenant_id = $1`, [tenantId]);
+    if (north) {
+      await client.query(`INSERT INTO compliance_profiles (node_id, tenant_id, entity_type, legal_name, business_number, agreement_status, agreement_signed_on, attested_at, attested_by, status, submitted_at, reviewed_by_name, reviewed_at)
+        VALUES ($1,$2,'corporation','Northwind Partner Agency Inc.',$3,'signed',$4,$5,$6,'approved',$5,'Priya Nair',$5)`, [north.id, tenantId, ca ? '123456789RC0001' : '12-3456789', dateOnly(ago(60)), ago(55), adminRow.id]);
+      await client.query(`INSERT INTO compliance_items (tenant_id, node_id, kind, label, number, jurisdiction, lines, expires_on) VALUES ($1,$2,'licence',$3,$4,$5,$6,$7)`,
+        [tenantId, north.id, ca ? 'RIBO general licence' : 'Producer licence', 'LIC-48213', ca ? 'ON' : 'NY', ca ? ['life', 'accident_sickness'] : ['life', 'accident_health'], dateOnly(ahead(210))]);
+      await client.query(`INSERT INTO compliance_items (tenant_id, node_id, kind, label, number, jurisdiction, limit_amount, expires_on) VALUES ($1,$2,'eo','Demo Mutual E&O','EO-90311',$3,2000000,$4)`, [tenantId, north.id, ca ? 'ON' : 'NY', dateOnly(ahead(24))]);
+      bump('compliance_items', 2); bump('compliance_profiles');
+    }
+    if (harbour) {
+      await client.query(`INSERT INTO compliance_profiles (node_id, tenant_id, entity_type, legal_name, agreement_status, status, submitted_at) VALUES ($1,$2,'sole_proprietor','Harbour Brokers','sent','submitted',$3)`, [harbour.id, tenantId, ago(3)]);
+      await client.query(`INSERT INTO compliance_items (tenant_id, node_id, kind, label, number, jurisdiction, lines, expires_on) VALUES ($1,$2,'licence',$3,'LIC-77120',$4,$5,$6)`,
+        [tenantId, harbour.id, ca ? 'RIBO general licence' : 'Producer licence', ca ? 'ON' : 'NY', ['life'], dateOnly(ago(12))]);
+      bump('compliance_items'); bump('compliance_profiles');
+    }
+
     // Mail sent to these addresses is suggested into the matching pipeline and first stage by the sidebar.
     for (const [alias, name] of [['travel@maple-demo.example.com', 'Travel & Visitor'], ['supervisa@maple-demo.example.com', 'Super Visa'], ['life@maple-demo.example.com', 'Life & Health']] as const) {
       const p = pipes.find((x) => x.def.name === name)!;
