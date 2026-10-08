@@ -44,6 +44,17 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
   const [starters, setStarters] = useState<{ key: string; title: Record<string, string>; description: Record<string, string>; courseId: string | null }[]>([]);
   const [showStarters, setShowStarters] = useState(false);
   const addStarter = async (key: string) => { try { const r = await call('POST', '/v1/courses/starter', { key }); onOpen(r.id); } catch (x) { setErr((x as Error).message); } };
+  const dedupe = async () => {
+    const fr = locale === 'fr-CA'; setErr('');
+    try {
+      const p = await call('POST', '/v1/courses/duplicates', { apply: false });
+      if (p.toArchive === 0 && p.blocked === 0) { alert(fr ? 'Aucun doublon trouvé.' : 'No duplicate courses found.'); return; }
+      const msg = fr ? `${p.toArchive} copie(s) en double seront archivées (la version la plus utilisée est conservée).${p.blocked ? ` ${p.blocked} copie(s) avec des apprenants inscrits seront laissées telles quelles.` : ''} Continuer ?`
+        : `${p.toArchive} duplicate cop${p.toArchive === 1 ? 'y' : 'ies'} will be archived (the most-used version is kept).${p.blocked ? ` ${p.blocked} cop${p.blocked === 1 ? 'y' : 'ies'} with learners enrolled will be left alone.` : ''} Continue?`;
+      if (p.toArchive > 0 && confirm(msg)) { await call('POST', '/v1/courses/duplicates', { apply: true }); load(); }
+      else if (p.toArchive === 0) alert(msg.replace(/ Continue\?| Continuer \?/, ''));
+    } catch (x) { setErr((x as Error).message); }
+  };
   const openStarters = () => { setShowStarters(true); call('GET', '/v1/courses/starter').then((r) => setStarters(r.courses), (e) => setErr((e as Error).message)); };
   const load = useCallback(() => { call('GET', `/v1/courses?locale=${locale}`).then((r) => setCourses(r.courses), (e) => setErr((e as Error).message)); }, [call, locale]);
   useEffect(load, [load]);
@@ -57,6 +68,7 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
       <div class="bar" style={{ padding: 0, border: 0 }}>
         <h1>{t.training}</h1><span class="spacer" />
         {canAuthor && <button class="btn quiet" onClick={openStarters}>{t.starterCourse}</button>}
+        {canAuthor && <button class="btn quiet" onClick={() => void dedupe()}>{locale === 'fr-CA' ? 'Retirer les doublons' : 'Remove duplicates'}</button>}
         {canAuthor && <button class="btn" onClick={() => setAdding(true)}>+ {t.newCourse}</button>}
       </div>
       {err && <div class="err">{err}</div>}

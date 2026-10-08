@@ -842,4 +842,35 @@ export function registerLmsRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
     return reply.code(201).send(out);
   });
+
+  // ------------------------------------------------------------------ duplicate courses
+  /** Courses sharing a title are duplicates. Keep the one people already use (most enrolments, then published, then oldest) and archive the empty copies; copies with learners are left alone and reported. */
+  app.post('/v1/courses/duplicates', { schema: { body: { type: 'object', additionalProperties: false, properties: { apply: { type: 'boolean' } } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const apply = (req.body as { apply?: boolean } | null)?.apply === true;
+    if (!ctx.isTenantAdmin) throw forbidden('Only an administrator can remove duplicate courses');
+    return run(ctx, async (tx) => {
+      const rows = (await tx.query<{ id: string; title: string; status: string; owner_node_id: string; enrolled: number }>(
+        `SELECT c.id, coalesce((SELECT title FROM course_locales WHERE course_id = c.id AND locale = 'en'), (SELECT title FROM course_locales WHERE course_id = c.id LIMIT 1), '') AS title,
+                c.status, c.owner_node_id, (SELECT count(*)::int FROM enrollments e WHERE e.course_id = c.id) AS enrolled, c.created_at
+           FROM courses c WHERE c.status <> 'archived' ORDER BY c.created_at`)).rows;
+      const groups = new Map<string, typeof rows>();
+      for (const r of rows) { const k = r.title.trim().toLowerCase(); if (!k) continue; groups.set(k, [...(groups.get(k) ?? []), r]); }
+      const out: { title: string; kept: string; archived: string[]; blocked: string[] }[] = [];
+      for (const g of groups.values()) {
+        if (g.length < 2) continue;
+        const rank = (r: (typeof rows)[number]) => [-r.enrolled, r.status === 'published' ? 0 : 1];
+        const sorted = [...g].sort((a, b) => { const x = rank(a), y = rank(b); return x[0]! - y[0]! || x[1]! - y[1]!; });
+        const keep = sorted[0]!;
+        const dupes = sorted.slice(1);
+        const archivable = dupes.filter((d) => d.enrolled === 0), blocked = dupes.filter((d) => d.enrolled > 0);
+        if (apply) for (const d of archivable) {
+          await tx.query(`UPDATE courses SET status = 'archived', updated_at = now() WHERE id = $1`, [d.id]);
+          await audit(tx, ctx, 'course_archived', 'course', d.id, { duplicateOf: keep.id });
+        }
+        out.push({ title: keep.title, kept: keep.id, archived: archivable.map((d) => d.id), blocked: blocked.map((d) => d.id) });
+      }
+      return { applied: apply, groups: out, toArchive: out.reduce((n, g) => n + g.archived.length, 0), blocked: out.reduce((n, g) => n + g.blocked.length, 0) };
+    });
+  });
 }

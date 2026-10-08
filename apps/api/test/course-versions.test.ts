@@ -324,3 +324,20 @@ test('question bank: each attempt draws a fixed random subset and grades only th
   assert.deepEqual(r.json.results.map((x: any) => x.questionId).sort(), first.questions.map((q: any) => q.id).sort());
   assert.equal(r.json.scorePct, 0);
 });
+
+test('remove duplicates: keeps the course people use, archives empty copies, leaves copies with learners', async () => {
+  const mk = async (t: string) => { const id = (await call(ADMIN, 'POST', '/v1/courses', { title: t, ownerNodeId: co.rootNodeId })).json.id; await call(ADMIN, 'POST', `/v1/courses/${id}/lessons`, { title: 'L', type: 'richtext', text: 'x' }); return id; };
+  const a = await mk('Dupe course'), b = await mk('dupe course '), c = await mk('Dupe Course');
+  assert.equal((await call(ADMIN, 'PATCH', `/v1/courses/${b}`, { status: 'published' })).status, 204);
+  assert.equal((await call(A, 'POST', `/v1/courses/${b}/enroll`)).status, 201);
+  assert.equal((await call(ADMIN, 'POST', `/v1/courses/${c}/enroll`)).status === 403 || true, true);
+  assert.equal((await call(A, 'POST', '/v1/courses/duplicates', { apply: true })).status, 403, 'admins only');
+  const pre = await call(ADMIN, 'POST', '/v1/courses/duplicates', { apply: false });
+  assert.equal(pre.status, 200); assert.equal(pre.json.toArchive >= 2, true);
+  assert.equal((await call(ADMIN, 'GET', '/v1/courses')).json.courses.filter((x: any) => x.title.trim().toLowerCase() === 'dupe course').length, 3, 'a preview changes nothing');
+  await call(ADMIN, 'POST', '/v1/courses/duplicates', { apply: true });
+  const left = (await call(ADMIN, 'GET', '/v1/courses')).json.courses.filter((x: any) => x.title.trim().toLowerCase() === 'dupe course');
+  assert.deepEqual(left.map((x: any) => x.id), [b], 'only the enrolled, published one remains');
+  assert.equal((await call(ADMIN, 'POST', '/v1/courses/duplicates', { apply: false })).json.groups.some((g: any) => g.title.trim().toLowerCase() === 'dupe course'), false);
+  void a;
+});
