@@ -91,8 +91,9 @@ try {
       if (n > 0) console.log(`seeded starter pipeline for ${n} tenant(s)`);
     }
     if (process.env.SEED_DEMO === 'true') {
-      const d = await seedDemoTenant(url, { adminEmail: process.env.DEMO_ADMIN_EMAIL, reset: process.env.DEMO_RESET === 'true' });
-      console.log(d.created ? `seeded demo tenant ${d.tenantId}: ${JSON.stringify(d.counts)}` : d.counts && Object.keys(d.counts).length ? `reset demo tenant ${d.tenantId}: ${JSON.stringify(d.counts)}` : 'demo tenant already present');
+      // The demo is optional: a refusal (for example an unverified region) must never stop a release.
+      const d = await seedDemoTenant(url, { adminEmail: process.env.DEMO_ADMIN_EMAIL, reset: process.env.DEMO_RESET === 'true' }).catch((e: Error) => { console.error(`demo tenant skipped: ${e.message}`); return null; });
+      if (d) console.log(d.created ? `seeded demo tenant ${d.tenantId}: ${JSON.stringify(d.counts)}` : d.counts && Object.keys(d.counts).length ? `reset demo tenant ${d.tenantId}: ${JSON.stringify(d.counts)}` : 'demo tenant already present');
     }
     console.log(`release ok: ${region}/${environment}; applied ${r.applied.length}, existing ${r.skipped.length}`);
   } else if (cmd === 'bootstrap-deployment') {
