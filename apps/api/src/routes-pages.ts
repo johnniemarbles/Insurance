@@ -179,6 +179,7 @@ ${tips.length ? `<ul>${tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '
     privacyEmail: deps.config.privacyEmail,
     supportEmail: deps.config.supportEmail,
     stored: deps.config.dataCountry,
+    archive: deps.vault ? (deps.vault.region.startsWith('ca-') ? 'CA' : 'US') : null,
     governing: process.env.TERMS_GOVERNING_LAW || undefined,
     updated: process.env.LEGAL_UPDATED ?? '6 October 2026',
   };

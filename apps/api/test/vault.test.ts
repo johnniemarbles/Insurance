@@ -88,3 +88,10 @@ test('the vault record cannot be edited or removed by the application', async ()
   await o.end();
   assert.deepEqual(p.rows[0], { u: false, d: false });
 });
+
+test('the privacy page names the archive storage when a vault is connected', async () => {
+  const en = await app.inject({ method: 'GET', url: '/privacy?lang=en' });
+  assert.match(en.body, /Amazon Web Services in Canada/);
+  const fr = await app.inject({ method: 'GET', url: '/privacy?lang=fr-CA' });
+  assert.match(fr.body, /Amazon Web Services au Canada/);
+});
