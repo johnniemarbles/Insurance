@@ -95,7 +95,7 @@ export async function tell(deps: AppDeps, tenantId: string, userIds: string[], k
   }
 }
 
-const EMAILED = new Set(['learning_due', 'ce_reminder', 'compliance_expiry', 'team_overdue']);
+const EMAILED = new Set(['learning_due', 'ce_reminder', 'compliance_expiry', 'team_overdue', 'aml_alert', 'vault_alert']);
 
 /** Reminders also go by email, unless the person turned that off. A failed send never blocks the work. Inside withDigest they are gathered and sent as one email per person. */
 async function emailReminder(deps: AppDeps, userId: string, kind: string, data: Record<string, unknown>): Promise<void> {
@@ -505,7 +505,7 @@ export async function sweepCompliance(deps: AppDeps): Promise<number> {
   type Cand = { id: string; tenant_id: string; node_id: string; name: string; kind: string; label: string; expires_on: string; days: number };
   const tenants = (await deps.authPool.query<{ tenant_id: string; node: string; admin: string | null }>(
     `SELECT n.tenant_id, n.id AS node, (SELECT r.user_id FROM user_node_roles r WHERE r.node_id = n.id AND r.role = 'admin' ORDER BY r.user_id LIMIT 1) AS admin
-       FROM org_nodes n JOIN tenants t ON t.id = n.tenant_id AND NOT t.is_head_office WHERE n.type = 'tenant' AND n.is_active LIMIT 500`)).rows;
+       FROM org_nodes n JOIN tenants t ON t.id = n.tenant_id WHERE n.type = 'tenant' AND n.is_active LIMIT 500`)).rows;
   let made = 0;
   const hoPeople = await headOfficeAudience(deps);
   for (const t of tenants) {
@@ -533,7 +533,7 @@ export async function sweepCompliance(deps: AppDeps): Promise<number> {
         const who = await fileAudience(deps, c.node_id);
         const data = { name: c.name, label: c.label, itemKind: c.kind, daysLeft: c.days, threshold: th, expiresOn: c.expires_on, nodeId: c.node_id };
         await tell(deps, who.tenantId, who.userIds, 'compliance_expiry', null, data);
-        for (const h of hoPeople) await tell(deps, h.tenantId, h.userIds, 'compliance_expiry', null, { ...data, company: (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [c.tenant_id])).rows[0]?.name });
+        for (const h of hoPeople.filter((x) => x.tenantId !== c.tenant_id)) await tell(deps, h.tenantId, h.userIds, 'compliance_expiry', null, { ...data, company: (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [c.tenant_id])).rows[0]?.name });
         made++;
       }
     } catch { /* next company */ }

@@ -114,6 +114,14 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'A licence or E&O policy is about to expire', 'fr-CA': 'Un permis ou une police E&O arrive à échéance' }, help: { en: 'Reminders come 90, 60, 30 and 0 days before the date.', 'fr-CA': 'Des rappels sont envoyés 90, 60, 30 et 0 jour avant la date.' }, keywords: 'notification alert compliance licence expiry E&O insurance reminder',
   },
   {
+    key: 'notify.aml_alert', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'A cash report or screening hit needs attention', 'fr-CA': 'Une déclaration d’espèces ou un résultat de vérification demande votre attention' }, help: { en: 'A large cash receipt with no report reference after 15 days, or a screening hit not reviewed after 2 days. Sent to administrators and compliance.', 'fr-CA': 'Un encaissement important en espèces sans référence de déclaration après 15 jours, ou un résultat de vérification non examiné après 2 jours. Envoyé aux administrateurs et à la conformité.' }, keywords: 'notification alert aml cash fintrac screening sanctions pep compliance',
+  },
+  {
+    key: 'notify.vault_alert', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'Signed paperwork is waiting to be archived', 'fr-CA': 'Des documents signés attendent d’être archivés' }, help: { en: 'Signed documents have waited more than a day to reach the archive vault. At most once a week. Sent to administrators and compliance.', 'fr-CA': 'Des documents signés attendent depuis plus d’un jour d’être copiés dans la voûte d’archives. Au plus une fois par semaine. Envoyé aux administrateurs et à la conformité.' }, keywords: 'notification alert vault archive signed paperwork storage',
+  },
+  {
     key: 'notify.learning_due', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
     label: { en: 'A course is due soon or late', 'fr-CA': 'Une formation arrive à échéance ou est en retard' }, help: { en: 'One reminder a week before the due date, and one when it is late.', 'fr-CA': 'Un rappel une semaine avant l’échéance, et un autre quand elle est dépassée.' }, keywords: 'notification alert course training due overdue reminder learning',
   },

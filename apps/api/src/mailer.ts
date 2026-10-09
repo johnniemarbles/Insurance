@@ -62,6 +62,17 @@ export function reminderText(kind: string, d: D, loc: Locale): { subject: string
       const line = `${d.name ?? (fr ? 'Un partenaire' : 'A partner')} : ${d.label ?? (fr ? 'un permis' : 'a licence')} ${w}${d.company ? ` (${d.company})` : ''}`;
       return { subject: fr ? 'Rappel de conformité' : 'Compliance reminder', line };
     }
+    case 'aml_alert': {
+      const what = d.issue === 'cash_overdue'
+        ? (fr ? `encaissement en espèces de ${d.detail} du ${d.since} sans référence de déclaration` : `cash receipt of ${d.detail} on ${d.since} still has no report reference`)
+        : (fr ? `résultat de vérification (${d.detail}) du ${d.since} non examiné` : `screening hit (${d.detail}) from ${d.since} has not been reviewed`);
+      return { subject: fr ? 'Conformité : point à traiter' : 'Compliance: item needs attention', line: `${d.name ?? ''} : ${what}` };
+    }
+    case 'vault_alert': {
+      const n = Number(d.pending) || 0;
+      return { subject: fr ? 'Voûte d’archives : documents en attente' : 'Archive vault: documents waiting',
+        line: fr ? `${n} document(s) signé(s) attendent depuis plus d’un jour d’être copiés dans la voûte d’archives` : `${n} signed document${n === 1 ? ' has' : 's have'} waited more than a day to be copied to the archive vault` };
+    }
     case 'team_overdue': {
       const n = Number(d.overdue) || 0;
       const top = Array.isArray(d.courses) ? (d.courses as { title: string; overdue: number }[]).slice(0, 3).map((c) => `${c.title} (${c.overdue})`).join(', ') : '';

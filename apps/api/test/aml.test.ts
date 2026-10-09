@@ -7,8 +7,10 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import type { AppDeps } from '../src/app.ts';
+import { sweepComplianceAlerts } from '../src/compliance-alerts.ts';
 
-let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
+let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let deps: AppDeps;
 let co: { tenantId: string };
 type M = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 async function call(email: string, method: M, url: string, body?: unknown) {
@@ -32,7 +34,8 @@ before(async () => {
   db = await createTestDb('ca-qc');
   const appPool = createPool(db.appUrl, 4), authPool = createPool(db.authUrl, 2); pools = [appPool, authPool];
   const config = loadConfig({ APP_ENV: 'test', REGION: 'ca-qc', DATABASE_URL: db.ownerUrl, APP_DATABASE_URL: db.appUrl, AUTH_DATABASE_URL: db.authUrl, DEV_AUTH: 'true' });
-  app = buildApp({ config, appPool, authPool, authenticate: devAuthenticator(authPool), keys: localKeyProvider('0123456789abcdef0123') });
+  deps = { config, appPool, authPool, authenticate: devAuthenticator(authPool), keys: localKeyProvider('0123456789abcdef0123') };
+  app = buildApp(deps);
   co = await bootstrapTenant(db.ownerUrl, { name: 'Maple Insurance', countryCode: 'CA', adminEmail: ADMIN });
   await bootstrapTenant(db.ownerUrl, { name: 'Birch Insurance', countryCode: 'CA', adminEmail: OTHER });
   await call(ADMIN, 'POST', '/v1/consent/first-login'); await call(OTHER, 'POST', '/v1/consent/first-login');
@@ -101,6 +104,28 @@ test('files at risk also lists open identity, screening and cash items, and they
   assert.equal((await call(COMP, 'POST', `/v1/boxes/${b2}/screenings`, { list: 'sanctions', result: 'cleared_after_review', note: 'Reviewed, different person' })).status, 201);
   assert.equal((await call(PA, 'POST', `/v1/cash/${cash}/report`, { reference: 'LCTR-9' })).status, 200);
   assert.deepEqual(await mine(), []);
+});
+
+test('administrators and compliance are told once about a cash receipt past its window and an unreviewed screening hit', async () => {
+  const b3 = (await call(PA, 'POST', '/v1/boxes', { pipelineId: pipe, name: 'Alert client' })).json.id as string;
+  const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+  await call(PA, 'POST', `/v1/boxes/${b3}/cash`, { amount: 12000, occurredOn: day(20) });
+  await call(PA, 'POST', `/v1/boxes/${b3}/cash`, { amount: 11000, occurredOn: day(5) }); // still inside its 15 days
+  assert.equal((await call(PA, 'POST', `/v1/boxes/${b3}/screenings`, { list: 'pep', result: 'hit', note: 'Name match' })).status, 201); // today: not yet 2 days old
+  assert.equal(await sweepComplianceAlerts(deps), 1, 'only the cash receipt past 15 days');
+  assert.equal(await sweepComplianceAlerts(deps), 0, 'told once');
+  const mine = async (who: string) => ((await call(who, 'GET', '/v1/notifications')).json.notifications as { kind: string; data: any }[]).filter((n) => n.kind === 'aml_alert');
+  assert.deepEqual([(await mine(ADMIN)).length, (await mine(COMP)).length], [1, 1]);
+    { // three days on, the screening hit is told too
+    const o = new pg.Client({ connectionString: db.ownerUrl }); await o.connect();
+    await o.query(`UPDATE screening_results SET screened_on = current_date - 3 WHERE box_id = $1`, [b3]); await o.end();
+    deps.vault = { bucket: 'test' } as never; // with a vault connected the pending-archive check also runs (nothing is waiting here)
+    assert.equal(await sweepComplianceAlerts(deps), 1);
+    delete deps.vault;
+    assert.deepEqual((await mine(ADMIN)).map((n) => n.data.issue).sort(), ['cash_overdue', 'screening_hit']);
+  }
+  assert.equal((await mine(PA)).length, 0, 'the advisor is not on the list');
+  assert.equal((await mine(OTHER)).length, 0, 'another company hears nothing');
 });
 
 test('records stay inside their record, branch and company', async () => {
