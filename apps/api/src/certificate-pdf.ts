@@ -16,7 +16,7 @@ const tidy = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"'
 const drawable = (s: string) => /^[\x20-\x7E\xA0-\xFF]*$/.test(s);
 
 /** Fonts for names and titles the standard fonts cannot draw (Gurmukhi, Devanagari, accented capitals): each character uses the first face that has it. */
-async function loadFallbacks(doc: PDFDocument, weight: 400 | 700): Promise<{ font: PDFFont; has: Set<number> }[]> {
+export async function loadFallbacks(doc: PDFDocument, weight: 400 | 700): Promise<{ font: PDFFont; has: Set<number> }[]> {
   doc.registerFontkit(fontkit);
   const files: [string, string][] = [
     ['noto-sans', `noto-sans-latin-${weight}-normal.woff`], ['noto-sans', `noto-sans-latin-ext-${weight}-normal.woff`],

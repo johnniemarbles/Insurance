@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, rgb } from 'pdf-lib';
+import { pdfText } from './pdf-text.ts';
 import type { Tx } from '@pii/db';
 import { ADVICE_LABELS, gateTypeFor, type AdviceKind, type RequestContext } from '@pii/domain';
 import { seal, type KeyProvider } from '@pii/platform';
@@ -9,41 +10,42 @@ export interface SealInput {
   adviceId: string; boxId: string; kind: AdviceKind; title: string; body: string; clientName: string; clientEmail: string | null; contentHash: string;
   firm: string; method: 'otp'; typedName: string | null; ip: string | null; agent: string | null; signer: 'client' | 'advisor';
 }
-const clean = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/…/g, '...').replace(/[^\x20-\x7E\xA0-\xFF\n]/g, '?');
 
 /** The advice wording as a PDF with no signature page, for sending to a vendor to be signed. */
 export async function unsignedAdvicePdf(i: Pick<SealInput, 'kind' | 'title' | 'body' | 'clientName' | 'firm'>): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica); const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const tk = await pdfText(doc, [i.firm, i.title, i.body, i.clientName].join(' '));
+  const font = tk.font, bold = tk.bold;
   const W = 595, H = 842, M = 54;
   let page = doc.addPage([W, H]); let y = H - M;
   const wrap = (text: string, f = font, sz = 10.5, color = rgb(0.1, 0.1, 0.1)) => {
-    for (const para of clean(text).split('\n')) {
+    for (const para of text.split('\n')) {
       let cur = '';
-      const flush = () => { if (y < M + 15) { page = doc.addPage([W, H]); y = H - M; } page.drawText(cur, { x: M, y, size: sz, font: f, color }); y -= sz + 4; cur = ''; };
-      for (const w of para.split(' ')) { const t = cur ? `${cur} ${w}` : w; if (f.widthOfTextAtSize(t, sz) > W - 2 * M && cur) { flush(); cur = w; } else cur = t; }
+      const flush = () => { if (y < M + 15) { page = doc.addPage([W, H]); y = H - M; } tk.draw(page, tk.runs(cur, f), M, y, sz, color); y -= sz + 4; cur = ''; };
+      for (const w of para.split(' ')) { const t = cur ? `${cur} ${w}` : w; if (tk.width(tk.runs(t, f), sz) > W - 2 * M && cur) { flush(); cur = w; } else cur = t; }
       flush();
     }
   };
   wrap(i.firm, bold, 10, rgb(0.35, 0.35, 0.35)); y -= 4;
   wrap(i.title, bold, 17); wrap(`${ADVICE_LABELS[i.kind].en} - prepared for ${i.clientName}`, font, 10, rgb(0.35, 0.35, 0.35)); y -= 8;
   wrap(i.body);
-  doc.setTitle(clean(i.title)); doc.setProducer('PII');
+  doc.setTitle(tk.clean(i.title)); doc.setProducer('PII');
   return doc.save();
 }
 
 /** The signed advice as a PDF with a signature page: who signed, when, how, from where, and the fingerprint of the wording. */
 export async function sealedAdvicePdf(i: SealInput, signedAt: Date): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica); const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const tk = await pdfText(doc, [i.firm, i.title, i.body, i.clientName, i.clientEmail ?? '', i.typedName ?? '', i.agent ?? ''].join(' '));
+  const font = tk.font, bold = tk.bold;
   const W = 595, H = 842, M = 54, size = 10.5, lead = 15;
   let page = doc.addPage([W, H]); let y = H - M;
   const ensure = () => { if (y < M + lead) { page = doc.addPage([W, H]); y = H - M; } };
   const wrap = (text: string, f = font, sz = size, color = rgb(0.1, 0.1, 0.1), gap = 4) => {
-    for (const para of clean(text).split('\n')) {
+    for (const para of text.split('\n')) {
       let cur = '';
-      const flush = () => { ensure(); page.drawText(cur, { x: M, y, size: sz, font: f, color }); y -= sz + gap; cur = ''; };
-      for (const w of para.split(' ')) { const t = cur ? `${cur} ${w}` : w; if (f.widthOfTextAtSize(t, sz) > W - 2 * M && cur) { flush(); cur = w; } else cur = t; }
+      const flush = () => { ensure(); tk.draw(page, tk.runs(cur, f), M, y, sz, color); y -= sz + gap; cur = ''; };
+      for (const w of para.split(' ')) { const t = cur ? `${cur} ${w}` : w; if (tk.width(tk.runs(t, f), sz) > W - 2 * M && cur) { flush(); cur = w; } else cur = t; }
       flush();
     }
   };
@@ -63,7 +65,7 @@ export async function sealedAdvicePdf(i: SealInput, signedAt: Date): Promise<Uin
   for (const [k, v] of rows) { wrap(k, bold, 9, rgb(0.35, 0.35, 0.35), 1); wrap(v, font, 10.5, rgb(0.1, 0.1, 0.1), 7); }
   y -= 6;
   wrap('The fingerprint above is calculated from the title, wording, client name and email shown in this document. A change to any of them gives a different fingerprint. The SHA-256 of this PDF file is kept in the audit package manifest.', font, 9, rgb(0.35, 0.35, 0.35));
-  doc.setTitle(clean(i.title)); doc.setProducer('PII'); doc.setCreationDate(signedAt);
+  doc.setTitle(tk.clean(i.title)); doc.setProducer('PII'); doc.setCreationDate(signedAt);
   return doc.save();
 }
 

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, rgb } from 'pdf-lib';
+import { pdfText } from './pdf-text.ts';
 import type { Tx } from '@pii/db';
 import { DOC_TYPE_LABELS, isDocType, type DocType, type RequestContext } from '@pii/domain';
 import { open, type KeyProvider } from '@pii/platform';
@@ -13,17 +14,17 @@ const sha = (b: Buffer | string) => createHash('sha256').update(b).digest('hex')
 const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? '' : String(v));
 const safe = (n: string) => n.replace(/[\\/\u0000-\u001f\u007f<>:"|?*]/g, '_').replace(/^\.+/, '').slice(0, 120) || 'file';
 
-/** Two lines per record: the summary PDF a person reads and the CSV a spreadsheet opens. Latin text only in the PDF; anything else prints as ?. */
+/** Two lines per record: the summary PDF a person reads and the CSV a spreadsheet opens. Gurmukhi and Devanagari print with embedded Noto fonts; a character in no font prints as ?. */
 async function summaryPdf(title: string, meta: string[], sections: Section[]): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica); const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const tk = await pdfText(doc, [title, ...meta, ...sections.flatMap((s) => [s.title, ...s.head, ...s.rows.flat().map((c) => String(c ?? ''))])].join(' '));
+  const font = tk.font, bold = tk.bold;
   const W = 595, H = 842, M = 40, size = 9, lead = 12;
-  const clean = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/[^\x20-\x7E\xA0-\xFF]/g, '?');
   let page = doc.addPage([W, H]); let y = H - M;
   const line = (text: string, f = font, sz = size, color = rgb(0, 0, 0)) => {
-    const words = clean(text).split(' '); let cur = '';
-    const flush = () => { if (y < M + lead) { page = doc.addPage([W, H]); y = H - M; } page.drawText(cur, { x: M, y, size: sz, font: f, color }); y -= sz + 3; cur = ''; };
-    for (const w of words) { const t = cur ? `${cur} ${w}` : w; if (f.widthOfTextAtSize(t, sz) > W - 2 * M && cur) { flush(); cur = w; } else cur = t; }
+    const words = text.split(' '); let cur = '';
+    const flush = () => { if (y < M + lead) { page = doc.addPage([W, H]); y = H - M; } tk.draw(page, tk.runs(cur, f), M, y, sz, color); y -= sz + 3; cur = ''; };
+    for (const w of words) { const t = cur ? `${cur} ${w}` : w; if (tk.width(tk.runs(t, f), sz) > W - 2 * M && cur) { flush(); cur = w; } else cur = t; }
     flush();
   };
   line(title, bold, 16); y -= 4; for (const m of meta) line(m);
