@@ -77,3 +77,20 @@ test('the demo shows compliance: one partner not cleared, an expiring E&O policy
   await seedDemoTenant(db.ownerUrl, { adminEmail: ADMIN, reset: true });
   await check();
 });
+
+test('the demo has client compliance records: open ID, screening and cash items, a legal hold, files due for retention review, and a reset rebuilds them', async () => {
+  const check = async () => {
+    const r = await get(ADMIN, '/v1/compliance/files-at-risk');
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json.aml.map((a: any) => a.issue).sort(), ['cash_unreported', 'id_failed', 'screening_hit']);
+    assert.equal(r.json.aml.find((a: any) => a.issue === 'cash_unreported').overdue, true);
+    const t = await get(ADMIN, '/v1/compliance/retention');
+    assert.equal(t.status, 200);
+    assert.equal(t.json.holds.length, 1);
+    const kinds = t.json.files.filter((f: any) => f.state === 'due').map((f: any) => f.kind).sort();
+    assert.ok(kinds.includes('aml') && kinds.includes('consent'), `due kinds: ${kinds}`);
+  };
+  await check();
+  await seedDemoTenant(db.ownerUrl, { adminEmail: ADMIN, reset: true });
+  await check();
+});

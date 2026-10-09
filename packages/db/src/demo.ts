@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { MAX_PARTNER_LEVELS } from '@pii/domain';
 
@@ -85,6 +85,10 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
     if (existing) {
       root = (await client.query<{ id: string }>(`SELECT id FROM org_nodes WHERE tenant_id = $1 AND type = 'tenant'`, [tenantId])).rows[0]!.id;
       for (const [k, v] of SETTINGS(tenantId, randomUUID(), root)) await client.query('SELECT set_config($1, $2, true)', [k, v]);
+      // Client compliance records first. A signed advice record is locked, so the lock is lifted only for this demo-company delete.
+      await client.query('ALTER TABLE advice_records DISABLE TRIGGER advice_records_lock');
+      for (const t of ['advice_records', 'client_consents', 'legal_holds', 'cash_transactions', 'screening_results', 'client_id_records']) await client.query(`DELETE FROM ${t} WHERE tenant_id = $1`, [tenantId]);
+      await client.query('ALTER TABLE advice_records ENABLE TRIGGER advice_records_lock');
       // Children first. Everything below hangs off boxes, contacts, accounts or pipelines.
       for (const t of ['box_threads', 'notes', 'tasks', 'box_contacts', 'boxes', 'email_threads', 'contacts', 'accounts', 'field_defs', 'stages', 'pipelines']) {
         await client.query(`DELETE FROM ${t} WHERE tenant_id = $1`, [tenantId]);
@@ -347,6 +351,96 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
       }
     }
     // Edge case: a box with no owner or contact, a very long name, and an empty pipeline stage (Lost) are already covered by the weights above.
+
+    // Client compliance sample on the Life & Health pipeline: advice, consents, ID checks, screening, large cash, a legal hold and
+    // files closed long enough ago to be due for retention review. Names are the fictional demo clients; nothing here is real.
+    {
+      const lh = pipes[2]!;
+      const comp = ctxRow.find((u) => u.role === 'compliance');
+      const rows = (await client.query<{ id: string; name: string; owner: string; won: boolean }>(
+        `SELECT b.id, b.name, b.owner_user_id AS owner, s.is_won AS won FROM boxes b JOIN stages s ON s.id = b.stage_id
+          WHERE b.tenant_id = $1 AND b.pipeline_id = $2 AND NOT s.is_lost ORDER BY b.name, b.id`, [tenantId, lh.id])).rows;
+      const open = rows.filter((b) => !b.won); const won = rows.filter((b) => b.won);
+      const who = (id: string) => ctxRow.find((u) => u.id === id)?.name ?? 'Demo advisor';
+      const cname = (b: { name: string }) => b.name.split(':')[0]!.trim();
+      const hash = (t: string) => createHash('sha256').update(t).digest('hex');
+      const advice = async (b: { id: string; name: string; owner: string }, kind: string, title: string, body: string, status: 'draft' | 'awaiting_signature' | 'signed', tier: 'builtin' | 'vendor', daysAgo: number, vendor?: [string, string]) => {
+        await client.query(
+          `INSERT INTO advice_records (tenant_id, box_id, kind, title, body, tier, status, client_name, client_email, content_hash, signed_at, signed_method, vendor_name, vendor_ref, created_by, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16)`,
+          [tenantId, b.id, kind, title, body, tier, status, cname(b), `${cname(b).toLowerCase().replace(/[^a-z]+/g, '.')}@demo.invalid`, status === 'signed' ? hash(body) : null,
+            status === 'signed' ? ago(daysAgo) : null, status === 'signed' ? (tier === 'vendor' ? 'vendor' : 'otp') : null, vendor?.[0] ?? null, vendor?.[1] ?? null, b.owner, ago(daysAgo + 1)]);
+        bump('advice_records');
+      };
+      const consent = async (b: { id: string; owner: string }, kind: string, daysAgo: number, withdrawn = false) => {
+        await client.query(
+          `INSERT INTO client_consents (tenant_id, box_id, kind, wording_version, channel, granted_on, recorded_by, recorded_by_name, withdrawn_at, withdrawn_by_name, withdrawn_note, created_at)
+           VALUES ($1,$2,$3,'draft-1','in_person',$4,$5,$6,$7,$8,$9,$10)`,
+          [tenantId, b.id, kind, dateOnly(ago(daysAgo)), b.owner, who(b.owner), withdrawn ? ago(Math.max(1, daysAgo - 20)) : null, withdrawn ? 'Priya Nair' : null, withdrawn ? 'Client asked to stop email' : null, ago(daysAgo)]);
+        bump('client_consents');
+      };
+      const idrec = async (b: { id: string; owner: string }, result: 'verified' | 'failed', daysAgo: number) => {
+        await client.query(
+          `INSERT INTO client_id_records (tenant_id, box_id, method, documents_seen, result, verified_on, verifier_id, verifier_name, note, created_at)
+           VALUES ($1,$2,'in_person',$3,$4,$5,$6,$7,$8,$9)`,
+          [tenantId, b.id, ['Driver licence (Ontario)'], result, dateOnly(ago(daysAgo)), b.owner, who(b.owner), result === 'failed' ? 'Photo did not match the person present' : null, ago(daysAgo)]);
+        bump('client_id_records');
+      };
+      const screen = async (b: { id: string }, list: 'pep' | 'sanctions', result: 'clear' | 'hit' | 'cleared_after_review', daysAgo: number, reviewer = comp) => {
+        await client.query(
+          `INSERT INTO screening_results (tenant_id, box_id, list, result, screened_on, reviewer_id, reviewer_name, note, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [tenantId, b.id, list, result, dateOnly(ago(daysAgo)), reviewer!.id, reviewer!.name, result === 'hit' ? 'Name match, not yet reviewed' : null, ago(daysAgo)]);
+        bump('screening_results');
+      };
+      const cash = async (b: { id: string; owner: string }, amount: number, daysAgo: number, ref?: string) => {
+        await client.query(
+          `INSERT INTO cash_transactions (tenant_id, box_id, amount, currency, occurred_on, report_required, report_ref, reported_at, recorded_by, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [tenantId, b.id, amount, ca ? 'CAD' : 'USD', dateOnly(ago(daysAgo)), amount >= 10000, ref ?? null, ref ? ago(daysAgo - 3) : null, b.owner, ago(daysAgo)]);
+        bump('cash_transactions');
+      };
+      const NEEDS = 'Client goals: protect the mortgage and income for the family. Needs reviewed with the client: term life, critical illness top-up. Questions answered; client understands the limits and exclusions.';
+      const REC = 'Recommendation: 20-year term life at the quoted amount, with a conversion option. Alternatives discussed: 10-year term and permanent cover. Reason for the choice: lowest premium that meets the stated goal.';
+      const BEN = 'Beneficiary designation: spouse as primary, children equally as contingent. Client confirmed the wording and that it can be changed later in writing.';
+      const REPL = 'Replacement disclosure: the client is replacing an existing policy. Differences in premium, cover and surrender charges were explained and a written comparison was given.';
+      const [a, b2, c, d, e, f, g, h] = open;
+      if (comp && a) { // A complete file
+        await consent(a, 'collection_use', 60); await consent(a, 'carrier_sharing', 60); await consent(a, 'electronic_comms', 60);
+        await advice(a, 'needs_analysis', 'Needs analysis', NEEDS, 'signed', 'builtin', 40); await advice(a, 'recommendation', 'Recommendation', REC, 'signed', 'builtin', 38);
+        await idrec(a, 'verified', 59); await screen(a, 'pep', 'clear', 59); await screen(a, 'sanctions', 'clear', 59);
+      }
+      if (comp && b2) { // Waiting on the client
+        await consent(b2, 'collection_use', 12);
+        await advice(b2, 'needs_analysis', 'Needs analysis', NEEDS, 'signed', 'builtin', 9);
+        await advice(b2, 'recommendation', 'Recommendation', REC, 'awaiting_signature', 'builtin', 3);
+        await idrec(b2, 'verified', 11);
+      }
+      if (comp && c) { // Vendor-tier paperwork signed outside PII
+        await consent(c, 'collection_use', 30);
+        await advice(c, 'beneficiary_designation', 'Beneficiary designation', BEN, 'signed', 'vendor', 20, ['Adobe Acrobat Sign', 'DEMO-AGR-1001']);
+        await advice(c, 'replacement_disclosure', 'Replacement disclosure', REPL, 'draft', 'vendor', 2);
+        await idrec(c, 'verified', 29); await screen(c, 'pep', 'clear', 29);
+      }
+      if (comp && d) { // Open identity, screening and cash items: shows under Files at risk
+        await idrec(d, 'failed', 8); await screen(d, 'sanctions', 'hit', 7); await cash(d, 15000, 21);
+      }
+      if (comp && e) { // Large cash, reported; and a screening hit that was reviewed
+        await cash(e, 12500, 40, 'LCTR-DEMO-0042'); await screen(e, 'pep', 'hit', 35); await screen(e, 'pep', 'cleared_after_review', 33);
+        await idrec(e, 'verified', 45);
+      }
+      if (f) { await consent(f, 'collection_use', 90); await consent(f, 'electronic_comms', 90, true); } // email consent withdrawn
+      if (g && comp) { await consent(g, 'collection_use', 70); await client.query(`INSERT INTO legal_holds (tenant_id, box_id, reason, placed_by_name, placed_at) VALUES ($1,$2,$3,$4,$5)`, [tenantId, g.id, 'Client complaint under review; keep everything until closed.', comp.name, ago(14)]); bump('legal_holds'); }
+      if (h) { await consent(h, 'collection_use', 25); await cash(h, 4200, 18); }
+      // Closed files: one closed 6.5 years ago (identity records past 5 years), one closed 4 years ago (consents past 3 years).
+      const [w1, w2] = won;
+      if (w1 && comp) {
+        await client.query('UPDATE boxes SET stage_entered_at = $2 WHERE id = $1', [w1.id, ago(365 * 6 + 180)]);
+        await idrec(w1, 'verified', 365 * 6 + 200); await screen(w1, 'pep', 'clear', 365 * 6 + 200); await advice(w1, 'recommendation', 'Recommendation', REC, 'signed', 'builtin', 365 * 6 + 190);
+      }
+      if (w2 && comp) {
+        await client.query('UPDATE boxes SET stage_entered_at = $2 WHERE id = $1', [w2.id, ago(365 * 4)]);
+        await consent(w2, 'collection_use', 365 * 4 + 20); await consent(w2, 'carrier_sharing', 365 * 4 + 20);
+      }
+    }
 
     await client.query('COMMIT');
     return { tenantId, created: !existing, counts };
