@@ -17,7 +17,7 @@ export function VaultPanel({ call, locale }: { call: Call; locale: Locale }) {
   if (!d) return null;
   const act = async (fn: () => Promise<string>) => { setErr(''); setMsg(''); try { setMsg(await fn()); await load(); } catch (e) { setErr((e as Error).message); } };
   return (
-    <section class="rec-form" aria-label={x.h} style={{ marginTop: '16px' }}>
+    <section class="vpanel" aria-label={x.h}>
       <h3>{x.h}</h3><p class="muted">{x.help}</p>
       {err && <p class="err" role="alert">{err}</p>}{msg && <p role="status">{msg}</p>}
       {!d.connected ? <p class="muted">{x.off}</p> : <>

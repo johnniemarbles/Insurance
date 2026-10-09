@@ -35,7 +35,7 @@ function AdobeConnect({ call, locale, onChange }: { call: Call; locale: Locale; 
     } catch (e) { setErr((e as Error).message); }
   };
   return (
-    <div style={{ marginTop: '6px' }}>
+    <div class="adobebox">
       <strong>{x.adobeH}</strong>
       {err && <p class="err" role="alert">{err}</p>}{ok && <p role="status">{ok}</p>}
       {st.connected ? <p>{x.connectedAs}: {st.apiAccessPoint}{' '}<button class="btn quiet" onClick={() => { setErr(''); void call('DELETE', '/v1/compliance/esign/adobe').then(() => { void load(); onChange(); }, (e) => setErr((e as Error).message)); }}>{x.disconnect}</button></p> : <>
@@ -60,7 +60,7 @@ export function VendorPanel({ call, locale }: { call: Call; locale: Locale }) {
   if (!d) return null;
   const set = (v: VendorRow, enabled: boolean, note: string) => { setErr(''); void call('PUT', `/v1/compliance/signing-vendors/${v.id}`, { enabled, note }).then(load, (e) => setErr((e as Error).message)); };
   return (
-    <section class="rec-form" aria-label={x.h} style={{ marginTop: '16px' }}>
+    <section class="vpanel" aria-label={x.h}>
       <h3>{x.h}</h3><p class="muted">{x.help}</p>
       {!d.canManage && <p class="muted">{x.readonly}</p>}
       {err && <p class="err" role="alert">{err}</p>}
