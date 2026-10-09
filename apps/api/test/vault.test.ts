@@ -74,6 +74,11 @@ test('signed paperwork is copied encrypted to the vault, verified, retried after
   const blob = [...store.values()][0]!;
   assert.ok(!blob.includes(Buffer.from('%PDF')));
   assert.deepEqual((await call(ADMIN, 'GET', `/v1/compliance/vault/${s1.recent[0].documentId}/verify`)).json, { intact: true });
+  // the copy can be downloaded back out as the original PDF, by an administrator only
+  const dl = (await call(ADMIN, 'GET', `/v1/compliance/vault/${s1.recent[0].documentId}/download`)).json;
+  assert.ok(Buffer.from(dl.dataBase64, 'base64').subarray(0, 4).toString() === '%PDF', 'the download is the original PDF');
+  assert.match(dl.filename, /\.pdf$/);
+  assert.equal((await call(OTHER, 'GET', `/v1/compliance/vault/${s1.recent[0].documentId}/download`)).status, 404);
   // running again archives nothing new
   assert.deepEqual((await call(ADMIN, 'POST', '/v1/compliance/vault/archive-now')).json, { archived: 0, failed: 0 });
   // another company sees nothing

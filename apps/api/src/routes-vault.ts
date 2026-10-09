@@ -53,4 +53,22 @@ export function registerVaultRoutes(app: FastifyInstance, deps: AppDeps): void {
     await run(ctx, (tx) => audit(tx, ctx, 'vault_verified', 'document', id, { intact: ok }));
     return { intact: ok };
   });
+
+  // Recovery: fetch the copy out of the vault, decrypt it, check its fingerprint and hand it over. Audited.
+  app.get('/v1/compliance/vault/:id/download', { schema: { params: { type: 'object', properties: { id: uuid } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    if (!canWaive(ctx)) throw forbidden('Only an administrator or the compliance role can download from the archive');
+    if (!deps.vault) throw new HttpError(503, 'vault_unavailable', 'The archive vault is not connected on this server yet');
+    const { id } = req.params as { id: string };
+    const row = await run(ctx, async (tx) => (await tx.query<{ plain_sha256: string; name: string | null; mime: string | null }>(
+      'SELECT v.plain_sha256, d.name, d.mime FROM vault_objects v LEFT JOIN box_documents d ON d.id = v.document_id WHERE v.document_id = $1', [id])).rows[0]);
+    if (!row) throw notFound('That document is not in the vault');
+    const { createHash } = await import('node:crypto');
+    const plain = await readArchived(deps, ctx.tenantId, id);
+    const intact = createHash('sha256').update(plain).digest('hex') === row.plain_sha256;
+    await run(ctx, (tx) => audit(tx, ctx, 'vault_downloaded', 'document', id, { intact, bytes: plain.length }));
+    if (!intact) throw new HttpError(409, 'vault_mismatch', 'The archived copy does not match its recorded fingerprint, so it was not released');
+    return { filename: (row.name ?? `${id}.pdf`).replace(/[\\/\u0000-\u001f]/g, '_'), mime: row.mime ?? 'application/pdf', dataBase64: plain.toString('base64') };
+  });
 }
