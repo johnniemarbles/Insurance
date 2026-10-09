@@ -6,6 +6,8 @@ import { sweepRenewals } from './renewals.ts';
 import { sweepCompliance, withDigest } from './routes-compliance.ts';
 import { sweepAssignments, sweepLearnerReminders } from './routes-forecast.ts';
 import { sweepSnapshots } from './snapshots.ts';
+import { sweepEsign } from './routes-esign.ts';
+import { archiveSigned } from './vault.ts';
 import { emitEventNow } from './webhooks.ts';
 import type { AppDeps } from './app.ts';
 
@@ -84,7 +86,7 @@ export function startBackgroundJobs(deps: AppDeps): () => void {
   const tick = async () => {
     if (running) return;
     running = true;
-    try { await sweepStale(deps); await sweepDigests(deps); await sweepStaleInvitations(deps); await sweepRenewals(deps); await withDigest(deps, async (d) => { await sweepCompliance(d); await sweepLearnerReminders(d); }); await sweepAssignments(deps); await sweepSnapshots(deps); } catch { /* next tick */ } finally { running = false; }
+    try { await sweepStale(deps); await sweepDigests(deps); await sweepStaleInvitations(deps); await sweepRenewals(deps); await withDigest(deps, async (d) => { await sweepCompliance(d); await sweepLearnerReminders(d); }); await sweepAssignments(deps); await sweepSnapshots(deps); await sweepEsign(deps); await archiveSigned(deps); } catch { /* next tick */ } finally { running = false; }
   };
   const t = setInterval(() => void tick(), 10 * 60_000);
   t.unref();

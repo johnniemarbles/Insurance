@@ -23,6 +23,8 @@ import { registerGateRoutes } from './routes-gates.ts';
 import { registerAdviceRoutes } from './routes-advice.ts';
 import { registerAmlRoutes } from './routes-aml.ts';
 import { registerSignRoutes } from './routes-sign.ts';
+import { registerVaultRoutes } from './routes-vault.ts';
+import { registerEsignRoutes } from './routes-esign.ts';
 import { registerClientConsentRoutes } from './routes-client-consent.ts';
 import { registerRetentionRoutes } from './routes-retention.ts';
 import { registerIntegrationRoutes } from './routes-integrations.ts';
@@ -59,6 +61,10 @@ export interface AppDeps {
   ai?: AiClient;
   /** Sends reminder emails. Absent: reminders stay in the app. */
   mailer?: import('./mailer.ts').Mailer;
+  /** Write-once archive (S3 with Object Lock). Absent: signed paperwork stays in the database only. */
+  vault?: import('./vault.ts').Vault;
+  /** Replaces the network for outside services (used by tests). */
+  fetchImpl?: typeof fetch;
   /** While set, reminder emails are gathered here and sent as one message per person. */
   digest?: Map<string, { kind: string; data: Record<string, unknown> }[]>;
 }
@@ -149,6 +155,8 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerAdviceRoutes(app, deps);
   registerAmlRoutes(app, deps);
   registerSignRoutes(app, deps);
+  registerVaultRoutes(app, deps);
+  registerEsignRoutes(app, deps);
   registerClientConsentRoutes(app, deps);
   registerRetentionRoutes(app, deps);
   registerIntegrationRoutes(app, deps);

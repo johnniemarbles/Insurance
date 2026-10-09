@@ -15,11 +15,21 @@ interface Row {
   signed_at: string | null; signed_method: string | null; vendor_name: string | null; vendor_ref: string | null; document_id: string | null; owner_node_id: string; box_name: string;
 }
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
-const contentHash = (r: Pick<Row, 'box_id' | 'kind' | 'title' | 'body' | 'client_name' | 'client_email'>) =>
+export const contentHash = (r: Pick<Row, 'box_id' | 'kind' | 'title' | 'body' | 'client_name' | 'client_email'>) =>
   sha(JSON.stringify({ box: r.box_id, kind: r.kind, title: r.title, body: r.body, client: r.client_name, email: r.client_email ?? '' }));
 const PUBLIC = `a.id, a.box_id AS "boxId", a.kind, a.title, a.body, a.tier, a.status, a.client_name AS "clientName", a.client_email AS "clientEmail", a.content_hash AS "contentHash",
   a.signed_at AS "signedAt", a.signed_method AS "signedMethod", a.vendor_name AS "vendorName", a.vendor_ref AS "vendorRef", a.document_id AS "documentId", a.created_at AS "createdAt",
   coalesce(u.display_name, u.email::text) AS "createdBy"`;
+
+/** Lock an advice record as signed by a certified vendor, with the vendor's reference and the completed document. Runs inside the caller's transaction. */
+export async function recordVendorSigned(tx: Tx, ctx: RequestContext, r: Pick<Row, 'id' | 'box_id' | 'kind' | 'title' | 'body' | 'client_name' | 'client_email'>, v: { vendorId: string | null; label: string; ref: string; documentId: string }): Promise<void> {
+  const g = gateTypeFor(r.kind);
+  if (g) await tx.query('UPDATE box_documents SET doc_type = $2 WHERE id = $1 AND doc_type IS NULL', [v.documentId, g]);
+  const now = new Date().toISOString();
+  await tx.query(`UPDATE advice_records SET status = 'signed', signed_at = $2, signed_method = 'vendor', vendor_name = $3, vendor_ref = $4, document_id = $5, content_hash = $6, vendor_id = $7, updated_at = now() WHERE id = $1`,
+    [r.id, now, v.label, v.ref, v.documentId, contentHash(r), v.vendorId]);
+  await audit(tx, ctx, 'advice_signed', 'box', r.box_id, { adviceId: r.id, method: 'vendor', vendor: v.label, ref: v.ref });
+}
 
 /** Advice records: the brokerage's own system of record for advice given, with a built-in one-time-code signature or a record of a vendor signature. */
 export function registerAdviceRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -171,12 +181,7 @@ export function registerAdviceRoutes(app: FastifyInstance, deps: AppDeps): void 
       }
       const doc = (await tx.query('SELECT 1 FROM box_documents WHERE id = $1 AND box_id = $2', [b.documentId, r.box_id])).rowCount;
       if (!doc) throw invalid('Upload the completed, vendor-signed document to this record first');
-      const g = gateTypeFor(r.kind);
-      if (g) await tx.query('UPDATE box_documents SET doc_type = $2 WHERE id = $1 AND doc_type IS NULL', [b.documentId, g]);
-      const now = new Date().toISOString();
-      await tx.query(`UPDATE advice_records SET status = 'signed', signed_at = $2, signed_method = 'vendor', vendor_name = $3, vendor_ref = $4, document_id = $5, content_hash = $6, vendor_id = $7, updated_at = now() WHERE id = $1`,
-        [id, now, label, b.vendorRef.trim(), b.documentId, contentHash(r), b.vendorId ?? null]);
-      await audit(tx, ctx, 'advice_signed', 'box', r.box_id, { adviceId: id, method: 'vendor', vendor: label, ref: b.vendorRef.trim() });
+      await recordVendorSigned(tx, ctx, r, { vendorId: b.vendorId ?? null, label, ref: b.vendorRef.trim(), documentId: b.documentId });
       return { ok: true };
     });
   });
@@ -188,7 +193,9 @@ export function registerAdviceRoutes(app: FastifyInstance, deps: AppDeps): void 
     return run(ctx, async (tx) => {
       const rows = (await tx.query<{ vendor: string; enabled: boolean; note: string | null }>('SELECT vendor, enabled, note FROM signing_vendors')).rows;
       const anySet = rows.some((r) => r.enabled);
-      return { vendors: VENDOR_CATALOG.map((v) => ({ ...v, enabled: anySet ? !!rows.find((r) => r.vendor === v.id)?.enabled : true, note2: rows.find((r) => r.vendor === v.id)?.note ?? null })), restricted: anySet, canManage: canWaive(ctx) };
+      const adobe = !!(await tx.query(`SELECT 1 FROM esign_connections WHERE vendor = 'adobe_sign'`)).rowCount;
+      const live = new Set(['adobe_sign']);
+      return { vendors: VENDOR_CATALOG.map((v) => ({ ...v, live: live.has(v.id), connected: v.id === 'adobe_sign' ? adobe : v.connected, enabled: anySet ? !!rows.find((r) => r.vendor === v.id)?.enabled : true, note2: rows.find((r) => r.vendor === v.id)?.note ?? null })), restricted: anySet, canManage: canWaive(ctx) };
     });
   });
   app.put('/v1/compliance/signing-vendors/:vendor', {

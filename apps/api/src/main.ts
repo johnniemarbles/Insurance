@@ -2,6 +2,7 @@ import { loadConfig, localKeyProvider } from '@pii/platform';
 import { assertDeployment, createPool } from '@pii/db';
 import { buildApp } from './app.ts';
 import { resendMailer } from './mailer.ts';
+import { s3Vault } from './vault.ts';
 import { devAuthenticator, firstOf, sessionAuthenticator } from './auth.ts';
 import { realGoogleClient } from './google.ts';
 import { aiFromEnv } from './ai.ts';
@@ -25,6 +26,8 @@ if (!keys) console.warn('No encryption keys configured: linking email conversati
 const ai = aiFromEnv();
 const mailer = resendMailer(config);
 if (!mailer) console.warn('RESEND_API_KEY is not set: reminders stay in the app and are not emailed.');
-const app = buildApp({ config, appPool, authPool, authenticate, google, keys, ai, mailer });
+const vault = s3Vault();
+if (!vault) console.warn('VAULT_S3_BUCKET / VAULT_S3_REGION are not set: signed paperwork is kept in the database only.');
+const app = buildApp({ config, appPool, authPool, authenticate, google, keys, ai, mailer, vault });
 await app.listen({ port: config.port, host: '0.0.0.0' });
-startBackgroundJobs({ config, appPool, authPool, authenticate, google, keys, mailer });
+startBackgroundJobs({ config, appPool, authPool, authenticate, google, keys, mailer, vault });

@@ -11,6 +11,27 @@ export interface SealInput {
 }
 const clean = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/…/g, '...').replace(/[^\x20-\x7E\xA0-\xFF\n]/g, '?');
 
+/** The advice wording as a PDF with no signature page, for sending to a vendor to be signed. */
+export async function unsignedAdvicePdf(i: Pick<SealInput, 'kind' | 'title' | 'body' | 'clientName' | 'firm'>): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica); const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const W = 595, H = 842, M = 54;
+  let page = doc.addPage([W, H]); let y = H - M;
+  const wrap = (text: string, f = font, sz = 10.5, color = rgb(0.1, 0.1, 0.1)) => {
+    for (const para of clean(text).split('\n')) {
+      let cur = '';
+      const flush = () => { if (y < M + 15) { page = doc.addPage([W, H]); y = H - M; } page.drawText(cur, { x: M, y, size: sz, font: f, color }); y -= sz + 4; cur = ''; };
+      for (const w of para.split(' ')) { const t = cur ? `${cur} ${w}` : w; if (f.widthOfTextAtSize(t, sz) > W - 2 * M && cur) { flush(); cur = w; } else cur = t; }
+      flush();
+    }
+  };
+  wrap(i.firm, bold, 10, rgb(0.35, 0.35, 0.35)); y -= 4;
+  wrap(i.title, bold, 17); wrap(`${ADVICE_LABELS[i.kind].en} - prepared for ${i.clientName}`, font, 10, rgb(0.35, 0.35, 0.35)); y -= 8;
+  wrap(i.body);
+  doc.setTitle(clean(i.title)); doc.setProducer('PII');
+  return doc.save();
+}
+
 /** The signed advice as a PDF with a signature page: who signed, when, how, from where, and the fingerprint of the wording. */
 export async function sealedAdvicePdf(i: SealInput, signedAt: Date): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
