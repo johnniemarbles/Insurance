@@ -40,10 +40,10 @@ function AdobeConnect({ call, locale, onChange }: { call: Call; locale: Locale; 
       {err && <p class="err" role="alert">{err}</p>}{ok && <p role="status">{ok}</p>}
       {st.connected ? <p>{x.connectedAs}: {st.apiAccessPoint}{' '}<button class="btn quiet" onClick={() => { setErr(''); void call('DELETE', '/v1/compliance/esign/adobe').then(() => { void load(); onChange(); }, (e) => setErr((e as Error).message)); }}>{x.disconnect}</button></p> : <>
         <p class="muted">{x.adobeHelp}</p>
-        <div><input aria-label={x.point} placeholder={x.point} style={{ width: '320px' }} value={f.apiAccessPoint} onInput={set('apiAccessPoint')} /></div>
-        <div><input aria-label={x.token} placeholder={x.token} type="password" autocomplete="off" value={f.accessToken} onInput={set('accessToken')} /></div>
-        <div><input aria-label={x.cid} placeholder={x.cid} autocomplete="off" value={f.clientId} onInput={set('clientId')} />{' '}
-          <input aria-label={x.csec} placeholder={x.csec} type="password" autocomplete="off" value={f.clientSecret} onInput={set('clientSecret')} />{' '}
+        <div class="afields"><input class="wide" aria-label={x.point} placeholder={x.point} value={f.apiAccessPoint} onInput={set('apiAccessPoint')} />
+        <input class="wide" aria-label={x.token} placeholder={x.token} type="password" autocomplete="off" value={f.accessToken} onInput={set('accessToken')} />
+        <input aria-label={x.cid} placeholder={x.cid} autocomplete="off" value={f.clientId} onInput={set('clientId')} />
+          <input aria-label={x.csec} placeholder={x.csec} type="password" autocomplete="off" value={f.clientSecret} onInput={set('clientSecret')} />
           <input aria-label={x.rtok} placeholder={x.rtok} type="password" autocomplete="off" value={f.refreshToken} onInput={set('refreshToken')} /></div>
         <button class="btn" disabled={!f.apiAccessPoint.trim() || !(f.accessToken.trim() || (f.clientId.trim() && f.clientSecret.trim() && f.refreshToken.trim()))} onClick={() => void save()}>{x.connect}</button>
       </>}

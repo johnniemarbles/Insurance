@@ -21,11 +21,11 @@ export function VaultPanel({ call, locale }: { call: Call; locale: Locale }) {
       <h3>{x.h}</h3><p class="muted">{x.help}</p>
       {err && <p class="err" role="alert">{err}</p>}{msg && <p role="status">{msg}</p>}
       {!d.connected ? <p class="muted">{x.off}</p> : <>
-        <p><strong>{x.on}</strong> · {x.where}: {d.bucket} ({d.region}) · {x.lock}: {d.lockMode}</p>
-        <p><strong>{d.archived}</strong> {x.archived} · <strong>{d.pending}</strong> {x.pending}{d.lastArchivedAt ? ` · ${x.last}: ${d.lastArchivedAt.slice(0, 16)}` : ''}</p>
+        <p class="vstat"><strong>{x.on}</strong> · {x.where}: {d.bucket} ({d.region}) · {x.lock}: {d.lockMode}</p>
+        <p class="vstat"><strong>{d.archived}</strong> {x.archived} · <strong>{d.pending}</strong> {x.pending}{d.lastArchivedAt ? ` · ${x.last}: ${d.lastArchivedAt.slice(0, 16)}` : ''}</p>
         <button class="btn quiet" onClick={() => void act(async () => { await call('POST', '/v1/compliance/vault/archive-now'); return x.ok; })}>{x.now}</button>
         {d.recent.length === 0 && <p class="muted">{x.none}</p>}
-        {d.recent.map((r) => <div class="ev" key={r.documentId}>{r.name ?? r.documentId.slice(0, 8)} <small class="muted">{x.until} {r.retainUntil}</small>{' '}
+        {d.recent.map((r) => <div class="vrow" key={r.documentId}><span>{r.name ?? r.documentId.slice(0, 8)} <small class="muted">{x.until} {r.retainUntil}</small></span>
           <button class="btn quiet" onClick={() => void act(async () => ((await call('GET', `/v1/compliance/vault/${r.documentId}/verify`)).intact ? x.intact : x.bad))}>{x.verify}</button></div>)}
       </>}
     </section>
