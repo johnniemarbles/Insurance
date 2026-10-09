@@ -97,7 +97,24 @@ export function registerGateRoutes(app: FastifyInstance, deps: AppDeps): void {
           ORDER BY b.stage_entered_at LIMIT 200`)).rows;
       const waivers = (await tx.query(
         `SELECT count(*)::int AS n FROM gate_overrides WHERE created_at > now() - interval '90 days'`)).rows[0]!.n as number;
-      return { files: rows, waivers90d: waivers };
+      // Client identity and anti-money-laundering items that need someone: a screening hit nobody has reviewed, a failed ID check that
+      // is still the latest word, and a large cash receipt with no report reference after the 15 days the rules allow.
+      const aml = (await tx.query<{ boxId: string; name: string; issue: string; detail: string; since: string; overdue: boolean }>(
+        `SELECT b.id AS "boxId", b.name, i.issue, i.detail, to_char(i.since, 'YYYY-MM-DD') AS since,
+                (i.issue = 'cash_unreported' AND i.since < current_date - 15) AS overdue
+           FROM boxes b JOIN stages st ON st.id = b.stage_id AND NOT st.is_lost
+           JOIN LATERAL (
+             SELECT 'screening_hit' AS issue, s.list AS detail, s.screened_on AS since
+               FROM (SELECT DISTINCT ON (list) list, result, screened_on FROM screening_results WHERE box_id = b.id ORDER BY list, created_at DESC) s WHERE s.result = 'hit'
+             UNION ALL
+             SELECT 'id_failed', c.method, c.verified_on
+               FROM (SELECT result, method, verified_on FROM client_id_records WHERE box_id = b.id ORDER BY created_at DESC LIMIT 1) c WHERE c.result = 'failed'
+             UNION ALL
+             SELECT 'cash_unreported', t.amount::text || ' ' || t.currency, t.occurred_on
+               FROM cash_transactions t WHERE t.box_id = b.id AND t.report_required AND t.reported_at IS NULL
+           ) i ON true
+          ORDER BY overdue DESC, i.since LIMIT 200`)).rows;
+      return { files: rows, waivers90d: waivers, aml };
     });
   });
 

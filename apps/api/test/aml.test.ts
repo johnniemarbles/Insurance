@@ -87,6 +87,22 @@ test('large cash is flagged at $10,000, the report reference is added once, and 
   await o.end();
 });
 
+test('files at risk also lists open identity, screening and cash items, and they go when resolved', async () => {
+  const b2 = (await call(PA, 'POST', '/v1/boxes', { pipelineId: pipe, name: 'Open AML items' })).json.id as string;
+  assert.equal((await call(PA, 'POST', `/v1/boxes/${b2}/id-records`, { method: 'in_person', result: 'failed', documentsSeen: ['Passport'] })).status, 201);
+  assert.equal((await call(PA, 'POST', `/v1/boxes/${b2}/screenings`, { list: 'sanctions', result: 'hit', note: 'Possible match' })).status, 201);
+  const cash = (await call(PA, 'POST', `/v1/boxes/${b2}/cash`, { amount: 15000, occurredOn: '2026-01-05' })).json.id as string;
+  const mine = async () => ((await call(ADMIN, 'GET', '/v1/compliance/files-at-risk')).json.aml as { boxId: string; issue: string; overdue: boolean }[]).filter((a) => a.boxId === b2);
+  const open = await mine();
+  assert.deepEqual(open.map((a) => a.issue).sort(), ['cash_unreported', 'id_failed', 'screening_hit']);
+  assert.equal(open.find((a) => a.issue === 'cash_unreported')!.overdue, true, 'past 15 days');
+  assert.equal((await call(OTHER, 'GET', '/v1/compliance/files-at-risk')).json.aml.filter((a: any) => a.boxId === b2).length, 0, 'another company sees nothing');
+  assert.equal((await call(PA, 'POST', `/v1/boxes/${b2}/id-records`, { method: 'in_person', result: 'verified', documentsSeen: ['Passport'] })).status, 201);
+  assert.equal((await call(COMP, 'POST', `/v1/boxes/${b2}/screenings`, { list: 'sanctions', result: 'cleared_after_review', note: 'Reviewed, different person' })).status, 201);
+  assert.equal((await call(PA, 'POST', `/v1/cash/${cash}/report`, { reference: 'LCTR-9' })).status, 200);
+  assert.deepEqual(await mine(), []);
+});
+
 test('records stay inside their record, branch and company', async () => {
   assert.equal((await call(PB, 'GET', `/v1/boxes/${box}/aml`)).status, 404);
   assert.equal((await call(OTHER, 'GET', `/v1/boxes/${box}/aml`)).status, 404);

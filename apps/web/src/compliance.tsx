@@ -169,13 +169,13 @@ function NotCleared({ call, locale }: { call: Call; locale: Locale }) {
 }
 
 const FR = {
-  'en': { h: 'Files at risk', none: 'No records are past a paperwork gate without the required documents.', waivers: 'waivers in the last 90 days', at: 'now in', gate: 'gate', missing: 'missing', open: 'Open' },
-  'fr-CA': { h: 'Dossiers à risque', none: 'Aucun dossier n’a franchi une étape sans les documents requis.', waivers: 'dérogations au cours des 90 derniers jours', at: 'maintenant à', gate: 'étape', missing: 'manque', open: 'Ouvrir' },
+  'en': { h: 'Files at risk', amlH: 'Identity, screening and cash', amlNone: 'No open identity, screening or cash-report items.', issue: { screening_hit: 'Screening hit not yet reviewed', id_failed: 'ID check failed, none passed since', cash_unreported: 'Large cash receipt, no report reference' } as Record<string, string>, overdue: 'overdue', none: 'No records are past a paperwork gate without the required documents.', waivers: 'waivers in the last 90 days', at: 'now in', gate: 'gate', missing: 'missing', open: 'Open' },
+  'fr-CA': { h: 'Dossiers à risque', amlH: 'Identité, vérification et espèces', amlNone: 'Aucun point ouvert sur l’identité, la vérification ou les déclarations d’espèces.', issue: { screening_hit: 'Résultat de vérification non examiné', id_failed: 'Vérification d’identité échouée, aucune réussie depuis', cash_unreported: 'Encaissement important en espèces, sans référence de déclaration' } as Record<string, string>, overdue: 'en retard', none: 'Aucun dossier n’a franchi une étape sans les documents requis.', waivers: 'dérogations au cours des 90 derniers jours', at: 'maintenant à', gate: 'étape', missing: 'manque', open: 'Ouvrir' },
 };
 /** Records that sit in or past a stage whose required paperwork is not on file and not waived. */
 function FilesAtRisk({ call, locale }: { call: Call; locale: Locale; go: (page: string, id?: string) => void }) {
   const x = FR[locale];
-  const [d, setD] = useState<{ files: { id: string; name: string; pipeline: string; stage: string; gateStage: string; missing: string[]; owner: string | null }[]; waivers90d: number } | null>(null);
+  const [d, setD] = useState<{ files: { id: string; name: string; pipeline: string; stage: string; gateStage: string; missing: string[]; owner: string | null }[]; waivers90d: number; aml?: { boxId: string; name: string; issue: string; detail: string; since: string; overdue: boolean }[] } | null>(null);
   useEffect(() => { void call('GET', '/v1/compliance/files-at-risk').then(setD, () => setD({ files: [], waivers90d: 0 })); }, []);
   if (!d) return null;
   return (
@@ -187,6 +187,14 @@ function FilesAtRisk({ call, locale }: { call: Call; locale: Locale; go: (page: 
         <div class="ev" key={f.id + i}>
           <strong>{f.name}</strong> <small>{f.pipeline} · {x.at} {f.stage} · {x.gate} {f.gateStage} · {f.owner ?? '—'}</small>
           <div style={{ color: '#b3261e' }}>{x.missing}: {f.missing.map((k) => docLabel(k, locale)).join(', ')}</div>
+        </div>
+      ))}
+      <h3 style={{ marginTop: '14px' }}>{x.amlH} ({(d.aml ?? []).length})</h3>
+      {(d.aml ?? []).length === 0 && <p class="muted">{x.amlNone}</p>}
+      {(d.aml ?? []).map((a, n) => (
+        <div class="ev" key={a.boxId + a.issue + n}>
+          <strong>{a.name}</strong> <small>{a.detail} · {a.since}</small>
+          <div style={{ color: '#b3261e' }}>{x.issue[a.issue] ?? a.issue}{a.overdue ? ` · ${x.overdue}` : ''}</div>
         </div>
       ))}
     </section>
