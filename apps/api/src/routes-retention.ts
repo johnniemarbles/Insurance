@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
-import { RETENTION_DEFAULT, RETENTION_KINDS, RETENTION_LABELS, RETENTION_MAX, RETENTION_MIN, lifecycleState, retentionKindForDoc, retentionYears, type RequestContext, type RetentionKind } from '@pii/domain';
+import { RETENTION_DEFAULT, RETENTION_KINDS, retentionLabels, RETENTION_MAX, RETENTION_MIN, lifecycleState, retentionKindForDoc, retentionYears, type RequestContext, type RetentionKind } from '@pii/domain';
 import { audit } from './audit.ts';
 import { HttpError, forbidden, invalid, notFound } from './errors.ts';
 import { requireCrm, uuid } from './crm-helpers.ts';
@@ -18,7 +18,7 @@ export function registerRetentionRoutes(app: FastifyInstance, deps: AppDeps): vo
   async function policies(tx: Tx) {
     const rows = (await tx.query<{ record_kind: RetentionKind; years: number }>('SELECT record_kind, years FROM retention_policies')).rows;
     const custom = new Map(rows.map((r) => [r.record_kind, r.years]));
-    return RETENTION_KINDS.map((k) => ({ kind: k, label: RETENTION_LABELS[k], years: retentionYears(k, custom.get(k)), default: RETENTION_DEFAULT[k], min: RETENTION_MIN[k], max: RETENTION_MAX, custom: custom.has(k) }));
+    return RETENTION_KINDS.map((k) => ({ kind: k, label: retentionLabels(deps.config.region === 'us' ? 'US' : 'CA')[k], years: retentionYears(k, custom.get(k)), default: RETENTION_DEFAULT[k], min: RETENTION_MIN[k], max: RETENTION_MAX, custom: custom.has(k) }));
   }
 
   app.get('/v1/compliance/retention', async (req) => {

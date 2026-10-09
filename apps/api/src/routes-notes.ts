@@ -11,6 +11,46 @@ import type { AppDeps } from './app.ts';
 const idParams = { type: 'object', properties: { id: uuid } } as const;
 const boxParams = idParams;
 
+/** Compliance events for a record's feed. Only the web app asks for them: the shipped extension does not know this kind and would show blank rows. */
+const COMPLIANCE_EVENTS = `
+           UNION ALL
+           SELECT 'compliance', a.id, a.created_at, u.display_name, 'advice_created', NULL, NULL, NULL, NULL, NULL, NULL, a.kind || ': ' || a.title, NULL::int
+             FROM advice_records a LEFT JOIN app_users u ON u.id = a.created_by WHERE a.box_id = $1
+           UNION ALL
+           SELECT 'compliance', a.id, a.signed_at, a.client_name, 'advice_signed', NULL, NULL, NULL, NULL, NULL, NULL, a.title, NULL::int
+             FROM advice_records a WHERE a.box_id = $1 AND a.signed_at IS NOT NULL
+           UNION ALL
+           SELECT 'compliance', d.id, d.created_at, u.display_name, 'doc_filed', NULL, NULL, NULL, NULL, NULL, NULL, d.name, NULL::int
+             FROM box_documents d LEFT JOIN app_users u ON u.id = d.uploaded_by WHERE d.box_id = $1
+           UNION ALL
+           SELECT 'compliance', v.id, v.created_at, NULL, 'vault_archived', NULL, NULL, NULL, NULL, NULL, NULL, coalesce(d.name, ''), NULL::int
+             FROM vault_objects v LEFT JOIN box_documents d ON d.id = v.document_id WHERE v.box_id = $1
+           UNION ALL
+           SELECT 'compliance', c.id, c.created_at, c.recorded_by_name, 'consent_recorded', NULL, NULL, NULL, NULL, NULL, NULL, c.kind, NULL::int
+             FROM client_consents c WHERE c.box_id = $1
+           UNION ALL
+           SELECT 'compliance', c.id, c.withdrawn_at, c.withdrawn_by_name, 'consent_withdrawn', NULL, NULL, NULL, NULL, NULL, NULL, c.kind, NULL::int
+             FROM client_consents c WHERE c.box_id = $1 AND c.withdrawn_at IS NOT NULL
+           UNION ALL
+           SELECT 'compliance', r.id, r.created_at, r.verifier_name, 'id_checked', NULL, NULL, NULL, NULL, NULL, NULL, r.result, NULL::int
+             FROM client_id_records r WHERE r.box_id = $1
+           UNION ALL
+           SELECT 'compliance', r.id, r.created_at, r.reviewer_name, 'screened', NULL, NULL, NULL, NULL, NULL, NULL, r.list || ': ' || r.result, NULL::int
+             FROM screening_results r WHERE r.box_id = $1
+           UNION ALL
+           SELECT 'compliance', t.id, t.created_at, u.display_name, 'cash_recorded', NULL, NULL, NULL, NULL, NULL, NULL, t.amount::text || ' ' || t.currency, NULL::int
+             FROM cash_transactions t LEFT JOIN app_users u ON u.id = t.recorded_by WHERE t.box_id = $1
+           UNION ALL
+           SELECT 'compliance', g.id, g.created_at, g.approver_name, 'gate_waived', NULL, NULL, NULL, NULL, NULL, NULL, g.reason, NULL::int
+             FROM gate_overrides g WHERE g.box_id = $1
+           UNION ALL
+           SELECT 'compliance', h.id, h.placed_at, h.placed_by_name, 'hold_placed', NULL, NULL, NULL, NULL, NULL, NULL, h.reason, NULL::int
+             FROM legal_holds h WHERE h.box_id = $1
+           UNION ALL
+           SELECT 'compliance', h.id, h.released_at, h.released_by_name, 'hold_released', NULL, NULL, NULL, NULL, NULL, NULL, coalesce(h.release_note, ''), NULL::int
+             FROM legal_holds h WHERE h.box_id = $1 AND h.released_at IS NOT NULL
+`;
+
 export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
 
@@ -77,10 +117,11 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   // ---- one feed: notes, tasks and stage moves, newest first ----
-  app.get('/v1/boxes/:id/timeline', { schema: { params: boxParams } }, async (req) => {
+  app.get('/v1/boxes/:id/timeline', { schema: { params: boxParams, querystring: { type: 'object', properties: { include: { type: 'string', maxLength: 20 } } } } }, async (req) => {
     const { ctx } = await deps.authenticate(req);
     requireCrm(ctx);
     const { id } = req.params as { id: string };
+    const withCompliance = (req.query as { include?: string }).include === 'compliance';
     return run(ctx, async (tx) => {
       await boxScope(tx, id);
       const items = (await tx.query(
@@ -93,42 +134,7 @@ export function registerNoteRoutes(app: FastifyInstance, deps: AppDeps): void {
            UNION ALL
            SELECT CASE e.kind WHEN 'created' THEN 'created' ELSE 'stage' END, e.id, e.created_at, u.display_name, NULL, NULL, NULL, fs.name, ts.name, NULL, NULL, NULL, NULL::int
              FROM box_events e LEFT JOIN stages fs ON fs.id = e.from_stage_id LEFT JOIN stages ts ON ts.id = e.to_stage_id LEFT JOIN app_users u ON u.id = e.actor_id WHERE e.box_id = $1
-           UNION ALL
-           SELECT 'compliance', a.id, a.created_at, u.display_name, 'advice_created', NULL, NULL, NULL, NULL, NULL, NULL, a.kind || ': ' || a.title, NULL::int
-             FROM advice_records a LEFT JOIN app_users u ON u.id = a.created_by WHERE a.box_id = $1
-           UNION ALL
-           SELECT 'compliance', a.id, a.signed_at, a.client_name, 'advice_signed', NULL, NULL, NULL, NULL, NULL, NULL, a.title, NULL::int
-             FROM advice_records a WHERE a.box_id = $1 AND a.signed_at IS NOT NULL
-           UNION ALL
-           SELECT 'compliance', d.id, d.created_at, u.display_name, 'doc_filed', NULL, NULL, NULL, NULL, NULL, NULL, d.name, NULL::int
-             FROM box_documents d LEFT JOIN app_users u ON u.id = d.uploaded_by WHERE d.box_id = $1
-           UNION ALL
-           SELECT 'compliance', v.id, v.created_at, NULL, 'vault_archived', NULL, NULL, NULL, NULL, NULL, NULL, coalesce(d.name, ''), NULL::int
-             FROM vault_objects v LEFT JOIN box_documents d ON d.id = v.document_id WHERE v.box_id = $1
-           UNION ALL
-           SELECT 'compliance', c.id, c.created_at, c.recorded_by_name, 'consent_recorded', NULL, NULL, NULL, NULL, NULL, NULL, c.kind, NULL::int
-             FROM client_consents c WHERE c.box_id = $1
-           UNION ALL
-           SELECT 'compliance', c.id, c.withdrawn_at, c.withdrawn_by_name, 'consent_withdrawn', NULL, NULL, NULL, NULL, NULL, NULL, c.kind, NULL::int
-             FROM client_consents c WHERE c.box_id = $1 AND c.withdrawn_at IS NOT NULL
-           UNION ALL
-           SELECT 'compliance', r.id, r.created_at, r.verifier_name, 'id_checked', NULL, NULL, NULL, NULL, NULL, NULL, r.result, NULL::int
-             FROM client_id_records r WHERE r.box_id = $1
-           UNION ALL
-           SELECT 'compliance', r.id, r.created_at, r.reviewer_name, 'screened', NULL, NULL, NULL, NULL, NULL, NULL, r.list || ': ' || r.result, NULL::int
-             FROM screening_results r WHERE r.box_id = $1
-           UNION ALL
-           SELECT 'compliance', t.id, t.created_at, u.display_name, 'cash_recorded', NULL, NULL, NULL, NULL, NULL, NULL, t.amount::text || ' ' || t.currency, NULL::int
-             FROM cash_transactions t LEFT JOIN app_users u ON u.id = t.recorded_by WHERE t.box_id = $1
-           UNION ALL
-           SELECT 'compliance', g.id, g.created_at, g.approver_name, 'gate_waived', NULL, NULL, NULL, NULL, NULL, NULL, g.reason, NULL::int
-             FROM gate_overrides g WHERE g.box_id = $1
-           UNION ALL
-           SELECT 'compliance', h.id, h.placed_at, h.placed_by_name, 'hold_placed', NULL, NULL, NULL, NULL, NULL, NULL, h.reason, NULL::int
-             FROM legal_holds h WHERE h.box_id = $1
-           UNION ALL
-           SELECT 'compliance', h.id, h.released_at, h.released_by_name, 'hold_released', NULL, NULL, NULL, NULL, NULL, NULL, coalesce(h.release_note, ''), NULL::int
-             FROM legal_holds h WHERE h.box_id = $1 AND h.released_at IS NOT NULL
+${withCompliance ? COMPLIANCE_EVENTS : ''}
          ) x ORDER BY at DESC, id LIMIT 200`, [id])).rows;
       return { items };
     });

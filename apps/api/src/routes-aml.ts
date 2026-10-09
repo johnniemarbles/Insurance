@@ -32,7 +32,7 @@ export function registerAmlRoutes(app: FastifyInstance, deps: AppDeps): void {
       const cash = (await tx.query(`SELECT id, amount::float AS amount, currency, occurred_on::text AS "occurredOn", report_required AS "reportRequired", report_ref AS "reportRef", reported_at AS "reportedAt" FROM cash_transactions WHERE box_id = $1 ORDER BY created_at DESC LIMIT 100`, [id])).rows;
       const asc = [...screenings].reverse();
       return {
-        idRecords, screenings, cash, threshold: CASH_REPORT_THRESHOLD, canReview: canWaive(ctx),
+        idRecords, screenings, cash, threshold: CASH_REPORT_THRESHOLD, country: deps.config.region === 'us' ? 'US' : 'CA', canReview: canWaive(ctx),
         status: { idVerified: idRecords.some((r) => r.result === 'verified'), openHits: openScreeningHits(asc), reportsDue: cash.filter((c) => c.reportRequired && !c.reportedAt).length },
       };
     });
@@ -98,11 +98,12 @@ export function registerAmlRoutes(app: FastifyInstance, deps: AppDeps): void {
     const b = req.body as { amount: number; currency?: string; occurredOn: string };
     const out = await run(ctx, async (tx) => {
       requireEdit(ctx, await boxOwner(tx, id));
-      const need = cashReportRequired(b.amount); // the threshold is $10,000 CAD or its equivalent
+      const need = cashReportRequired(b.amount); // $10,000 in the local currency (CAD in Canada, USD in the US); counsel confirms how foreign currency is converted
+      const cur = b.currency ?? (deps.config.region === 'us' ? 'USD' : 'CAD');
       const r = await tx.query<{ id: string }>(
         `INSERT INTO cash_transactions (tenant_id, box_id, amount, currency, occurred_on, report_required, recorded_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-        [ctx.tenantId, id, b.amount, b.currency ?? 'CAD', b.occurredOn, need, ctx.userId]);
-      await audit(tx, ctx, 'cash_recorded', 'box', id, { amount: b.amount, currency: b.currency ?? 'CAD', reportRequired: need });
+        [ctx.tenantId, id, b.amount, cur, b.occurredOn, need, ctx.userId]);
+      await audit(tx, ctx, 'cash_recorded', 'box', id, { amount: b.amount, currency: cur, reportRequired: need });
       return { id: r.rows[0]!.id, reportRequired: need };
     });
     return reply.code(201).send(out);

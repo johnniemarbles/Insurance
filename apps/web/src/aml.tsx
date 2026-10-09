@@ -14,13 +14,22 @@ interface Aml {
   idRecords: { id: string; method: string; documentsSeen: string[]; result: string; verifiedOn: string; verifier: string; note: string | null }[];
   screenings: { id: string; list: string; result: string; screenedOn: string; reviewer: string; note: string | null }[];
   cash: { id: string; amount: number; currency: string; occurredOn: string; reportRequired: boolean; reportRef: string | null; reportedAt: string | null }[];
-  canReview: boolean; status: { idVerified: boolean; openHits: string[]; reportsDue: number };
+  country?: 'CA' | 'US'; canReview: boolean; status: { idVerified: boolean; openHits: string[]; reportsDue: number };
 }
 
 /** Client identity checks, PEP/sanctions screening and the large-cash log for one record. */
 export function AmlTab({ boxId, call, locale, canEdit }: { boxId: string; call: Call; locale: Locale; canEdit: boolean }) {
-  const x = T[locale] as Record<string, string>;
+  const base = T[locale] as Record<string, string>;
   const [d, setD] = useState<Aml | null>(null);
+  const us = d?.country === 'US';
+  // The US server names FinCEN and Form 8300 and uses OFAC for sanctions; the PEP check is shown as enhanced due diligence.
+  const x: Record<string, string> = us ? {
+    ...base,
+    cashHelp: locale === 'fr-CA' ? 'Une somme de 10 000 $ ou plus en espèces exige habituellement le formulaire 8300 (FinCEN), produit hors de PII dans les 15 jours. Consignez l’entrée et la référence reçue. À confirmer avec le conseiller juridique.' : 'Cash of $10,000 or more usually needs IRS/FinCEN Form 8300, filed outside PII within 15 days. Record the entry and the reference you were given. Counsel confirms the rule for your business.',
+    scr: locale === 'fr-CA' ? 'Vérification OFAC et vigilance renforcée' : 'OFAC sanctions and enhanced due diligence',
+    pep: locale === 'fr-CA' ? 'Personnalité exposée (vigilance renforcée)' : 'Politically exposed person (enhanced due diligence)',
+    sanctions: locale === 'fr-CA' ? 'Sanctions OFAC' : 'OFAC sanctions',
+  } : base;
   const [err, setErr] = useState('');
   const [idf, setIdf] = useState({ method: 'in_person', result: 'verified', docs: '', note: '' });
   const [sf, setSf] = useState({ list: 'pep', result: 'clear', note: '' });

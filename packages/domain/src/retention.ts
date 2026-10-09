@@ -10,6 +10,10 @@ export const RETENTION_LABELS: Record<RetentionKind, { en: string; 'fr-CA': stri
   consent: { en: 'Privacy and electronic-message consents', 'fr-CA': 'Consentements à la vie privée et aux messages électroniques' },
   ce_certificate: { en: 'CE certificates', 'fr-CA': 'Certificats de formation continue' },
 };
+/** The US server names its own regulator for money records. */
+export const retentionLabels = (country: 'CA' | 'US'): typeof RETENTION_LABELS => country === 'US'
+  ? { ...RETENTION_LABELS, aml: { en: 'ID, screening and cash records (BSA / FinCEN)', 'fr-CA': 'Dossiers d’identité, de vérification et d’espèces (BSA / FinCEN)' } }
+  : RETENTION_LABELS;
 const DOC_KIND: Record<string, RetentionKind> = { privacy_consent: 'consent', pink_slip_optin: 'consent', id_record: 'aml' };
 /** Which clock a typed document follows. Anything else (advice, mandates, untyped) follows the longest one. */
 export const retentionKindForDoc = (docType: string | null): RetentionKind => (docType ? DOC_KIND[docType] : undefined) ?? 'advice';

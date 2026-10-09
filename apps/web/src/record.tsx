@@ -202,7 +202,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
     setFull(r); setStageId(r.stageId);
     if (resetDraft) setDraft(toDraft(r));
   };
-  const loadFeed = async () => { const r = await call('GET', `/v1/boxes/${box.id}/timeline`); setItems(r.items); };
+  const loadFeed = async () => { const r = await call('GET', `/v1/boxes/${box.id}/timeline?include=compliance`); setItems(r.items); };
   useEffect(() => { void loadFull(true).catch((e) => setErr((e as Error).message)); void loadFeed().catch(() => undefined); }, [box.id]);
 
   const dirty = useMemo(() => {
