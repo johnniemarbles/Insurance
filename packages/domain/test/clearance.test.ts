@@ -13,3 +13,4 @@ test('each gap is named', () => {
   assert.deepEqual(clearanceReasons({ ...ok, eoMaxLimit: 500_000 }), ['eo_limit_low']);
   assert.deepEqual(clearanceReasons({ ...ok, eoMaxLimit: 1, eoMin: 0 }), [], 'no minimum means any limit passes');
 });
+test('a short prior continuing-education term is flagged', () => { assert.deepEqual(clearanceReasons({ ...ok, cePriorShort: true }), ['ce_prior_term_short']); });

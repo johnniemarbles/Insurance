@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
+import { cePriorShortNodes } from './routes-ce.ts';
 import { DOC_TYPES, MIN_OVERRIDE_REASON, clearanceReasons, type RequestContext } from '@pii/domain';
 import { eoMinFor } from './routes-compliance.ts';
 import { audit } from './audit.ts';
@@ -134,7 +135,8 @@ export function registerGateRoutes(app: FastifyInstance, deps: AppDeps): void {
            FROM org_nodes n LEFT JOIN compliance_profiles p ON p.node_id = n.id
           WHERE n.type = 'partner' AND n.is_active AND org_node_at_or_below(n.tenant_id, n.id)
           ORDER BY n.name LIMIT 1000`)).rows;
-      const all = rows.map((r) => ({ nodeId: r.id, name: r.name, reasons: clearanceReasons({ status: r.status, licences: r.licences, validLicences: r.validLicences, eoPolicies: r.eoPolicies, validEo: r.validEo, eoMaxLimit: r.eoMax, eoMin }) }));
+      const ceShort = await cePriorShortNodes(tx);
+      const all = rows.map((r) => ({ nodeId: r.id, name: r.name, reasons: clearanceReasons({ status: r.status, licences: r.licences, validLicences: r.validLicences, eoPolicies: r.eoPolicies, validEo: r.validEo, eoMaxLimit: r.eoMax, eoMin, cePriorShort: ceShort.has(r.id) }) }));
       const notCleared = all.filter((a) => a.reasons.length > 0);
       return { total: all.length, cleared: all.length - notCleared.length, notCleared };
     });

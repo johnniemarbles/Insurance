@@ -145,6 +145,7 @@ const CL: Record<string, { en: string; 'fr-CA': string }> = {
   not_approved: { en: 'File not approved', 'fr-CA': 'Dossier non approuvé' }, no_licence: { en: 'No licence on file', 'fr-CA': 'Aucun permis au dossier' },
   licence_expired: { en: 'Licence expired', 'fr-CA': 'Permis expiré' }, no_eo: { en: 'No E&O policy on file', 'fr-CA': 'Aucune police E&O au dossier' },
   eo_expired: { en: 'E&O policy expired', 'fr-CA': 'Police E&O expirée' }, eo_limit_low: { en: 'E&O limit below the minimum', 'fr-CA': 'Limite E&O sous le minimum' },
+  ce_prior_term_short: { en: 'Continuing education short for the last term (check the rules)', 'fr-CA': 'Formation continue insuffisante pour la dernière période (vérifier les règles)' },
 };
 const NC = {
   'en': { h: 'Not cleared to transact', all: 'All partners are cleared to transact.', of: 'cleared' },

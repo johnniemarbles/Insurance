@@ -64,6 +64,29 @@ export async function recordCeForCompletion(tx: Tx, ctx: RequestContext, enrollm
     [ctx.tenantId, ctx.userId, who.home_node_id, c.ce_pack, c.title.slice(0, 200) || 'Course', who.company.slice(0, 120), c.ce_category, c.ce_hours, day, enrollmentId, retain]);
 }
 
+/** Partner nodes with a tracked learner who fell short of continuing education in the term that just ended (only licences PII was tracking by then). */
+export async function cePriorShortNodes(tx: Tx): Promise<Set<string>> {
+  const packs = await loadPacks(tx);
+  const lic = (await tx.query<{ user_id: string; node_id: string; pack_code: string; licence_class: string; licensed_since: string | null; created_on: string }>(
+    `SELECT l.user_id, l.node_id, l.pack_code, l.licence_class, l.licensed_since::text, l.created_at::date::text AS created_on
+       FROM learner_licences l JOIN app_users u ON u.id = l.user_id WHERE u.status::text <> 'disabled' LIMIT 2000`)).rows;
+  const out = new Set<string>();
+  if (!lic.length) return out;
+  const entries = (await tx.query<{ user_id: string; pack_code: string; category: string; hours: string; completed_on: string; status: string }>(
+    `SELECT user_id, pack_code, category, hours::text, completed_on::text, status FROM ce_entries WHERE user_id = ANY($1::uuid[])`, [[...new Set(lic.map((l) => l.user_id))]])).rows;
+  const day = today();
+  for (const l of lic) {
+    const p = packs.find((x) => x.code === l.pack_code); if (!p || !l.node_id) continue;
+    const cur = termWindow(toPack(p), day);
+    const prevEnd = new Date(cur.start + 'T00:00:00Z'); prevEnd.setUTCDate(prevEnd.getUTCDate() - 1);
+    const pe = prevEnd.toISOString().slice(0, 10);
+    if (l.created_on > pe) continue;
+    const ev = evaluateFor(p, l.licence_class, hoursIn(entries.filter((e) => e.user_id === l.user_id), p, pe), l.licensed_since, pe);
+    if (ev && ev.state !== 'met' && ev.state !== 'exempt') out.add(l.node_id);
+  }
+  return out;
+}
+
 const csvCell = (v: unknown) => { const s = String(v ?? ''); return /[",\n\r]/.test(s) || /^[=+\-@]/.test(s) ? `"${(/^[=+\-@]/.test(s) ? `'${s}` : s).replace(/"/g, '""')}"` : s; };
 const csv = (rows: unknown[][]) => rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
