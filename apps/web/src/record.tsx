@@ -10,7 +10,15 @@ import type { Box, FieldDef, Locale, Pipeline, Stage } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Person { id: string; displayName: string | null; email: string }
-interface Item { kind: 'note' | 'call' | 'task' | 'stage' | 'created'; outcome?: string | null; minutes?: number | null; id: string; at: string; by: string | null; text: string | null; dueAt: string | null; doneAt: string | null; fromStage: string | null; toStage: string | null; assignee: string | null; fresh?: boolean }
+const CE_EV: Record<string, { en: string; fr: string }> = {
+  advice_created: { en: 'Advice record created', fr: 'Dossier de conseil créé' }, advice_signed: { en: 'Advice signed', fr: 'Conseil signé' },
+  doc_filed: { en: 'Document filed', fr: 'Document classé' }, vault_archived: { en: 'Copied to the archive vault', fr: 'Copié dans la voûte d’archives' },
+  consent_recorded: { en: 'Consent recorded', fr: 'Consentement consigné' }, consent_withdrawn: { en: 'Consent withdrawn', fr: 'Consentement retiré' },
+  id_checked: { en: 'ID check', fr: 'Vérification d’identité' }, screened: { en: 'Screening', fr: 'Filtrage' }, cash_recorded: { en: 'Large cash receipt recorded', fr: 'Encaisse importante consignée' },
+  gate_waived: { en: 'Paperwork requirement waived', fr: 'Exigence documentaire levée' }, hold_placed: { en: 'Legal hold placed', fr: 'Gel juridique appliqué' }, hold_released: { en: 'Legal hold released', fr: 'Gel juridique levé' },
+};
+const complianceLine = (code: string | null, detail: string | null | undefined, locale: string) => `${(CE_EV[code ?? ''] ?? { en: code ?? '', fr: code ?? '' })[locale === 'fr-CA' ? 'fr' : 'en']}${detail ? `: ${detail}` : ''}`;
+interface Item { kind: 'note' | 'call' | 'task' | 'stage' | 'created' | 'compliance'; outcome?: string | null; minutes?: number | null; id: string; at: string; by: string | null; text: string | null; dueAt: string | null; doneAt: string | null; fromStage: string | null; toStage: string | null; assignee: string | null; fresh?: boolean }
 
 const R = {
   'en': {
@@ -19,7 +27,7 @@ const R = {
     call: 'Call', callPh: 'What was discussed?', logCall: 'Log call', callAdded: 'Call logged', minutes: 'Minutes', outcome: 'Outcome', outcomes: { connected: 'Spoke with them', voicemail: 'Left a voicemail', no_answer: 'No answer', wrong_number: 'Wrong number' } as Record<string, string>, copyLink: 'Copy link', linkCopied: 'Link copied',
     note: 'Note', task: 'Task', notePh: 'Write a note for the team…', addNote: 'Add note', taskPh: 'What needs doing?', due: 'Due', assignee: 'Assigned to', addTask: 'Add task', noDate: 'No date',
     noteAdded: 'Note added', taskAdded: 'Task added', empty: 'Nothing yet. Add the first note or task above.', readOnly: 'View only: this record belongs to another branch.', moved: (a: string | null, b: string | null) => `Moved ${a ? `from ${a} ` : ''}to ${b ?? '—'}`, createdIn: (s: string | null) => `Created in ${s ?? '—'}`,
-    filters: { all: 'All', call: 'Calls', note: 'Notes', task: 'Tasks', stage: 'Moves' } as Record<string, string>, newRecord: 'New record', pickContact: 'Link a contact (optional)', noneContact: 'No contact', yes: 'Yes', required: 'required', you: 'You',
+    filters: { all: 'All', call: 'Calls', note: 'Notes', task: 'Tasks', stage: 'Moves', compliance: 'Compliance' } as Record<string, string>, newRecord: 'New record', pickContact: 'Link a contact (optional)', noneContact: 'No contact', yes: 'Yes', required: 'required', you: 'You',
     overdue: 'Overdue', moveFailed: 'Could not move the record',
   },
   'fr-CA': {
@@ -28,7 +36,7 @@ const R = {
     call: 'Appel', callPh: 'De quoi a-t-on discuté?', logCall: 'Consigner l’appel', callAdded: 'Appel consigné', minutes: 'Minutes', outcome: 'Résultat', outcomes: { connected: 'Conversation', voicemail: 'Message laissé', no_answer: 'Sans réponse', wrong_number: 'Mauvais numéro' } as Record<string, string>, copyLink: 'Copier le lien', linkCopied: 'Lien copié',
     note: 'Note', task: 'Tâche', notePh: 'Écrire une note pour l’équipe…', addNote: 'Ajouter la note', taskPh: 'Que faut-il faire?', due: 'Échéance', assignee: 'Assignée à', addTask: 'Ajouter la tâche', noDate: 'Sans date',
     noteAdded: 'Note ajoutée', taskAdded: 'Tâche ajoutée', empty: 'Rien pour l’instant. Ajoutez la première note ou tâche ci-dessus.', readOnly: 'Lecture seule : ce dossier appartient à une autre succursale.', moved: (a: string | null, b: string | null) => `Déplacé ${a ? `de ${a} ` : ''}à ${b ?? '—'}`, createdIn: (s: string | null) => `Créé à ${s ?? '—'}`,
-    filters: { all: 'Tout', call: 'Appels', note: 'Notes', task: 'Tâches', stage: 'Déplacements' } as Record<string, string>, newRecord: 'Nouveau dossier', pickContact: 'Lier un contact (facultatif)', noneContact: 'Aucun contact', yes: 'Oui', required: 'requis', you: 'Vous',
+    filters: { all: 'Tout', call: 'Appels', note: 'Notes', task: 'Tâches', stage: 'Déplacements', compliance: 'Conformité' } as Record<string, string>, newRecord: 'Nouveau dossier', pickContact: 'Lier un contact (facultatif)', noneContact: 'Aucun contact', yes: 'Oui', required: 'requis', you: 'Vous',
     overdue: 'En retard', moveFailed: 'Impossible de déplacer le dossier',
   },
 };
@@ -341,11 +349,11 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
                 )}
               </div>
             )}
-            <div class="feed-filter">{(['all', 'call', 'note', 'task', 'stage'] as const).map((k) => <button class={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{x.filters[k]}</button>)}</div>
+            <div class="feed-filter">{(['all', 'call', 'note', 'task', 'stage', 'compliance'] as const).map((k) => <button class={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{x.filters[k]}</button>)}</div>
             {shown.length === 0 && <p class="muted">{x.empty}</p>}
             <ol class="feed">
               {shown.map((i) => (
-                <li key={`${i.kind}${i.id}`} class={`fi fi-${i.kind}${i.fresh ? ' fresh' : ''}`}>
+                <li key={`${i.kind}${i.id}${i.text ?? ''}`} class={`fi fi-${i.kind}${i.fresh ? ' fresh' : ''}`}>
                   {i.kind === 'note' && <><div class="fi-text">{i.text}</div><small>{i.by ?? ''} · {when(i.at, locale)}</small></>}
                   {i.kind === 'call' && <><div class="fi-call"><b>{x.call}: {x.outcomes[i.outcome ?? 'connected']}{i.minutes ? ` · ${i.minutes} min` : ''}</b></div><div class="fi-text">{i.text}</div><small>{i.by ?? ''} · {when(i.at, locale)}</small></>}
                   {i.kind === 'task' && (
@@ -356,6 +364,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
                     </>
                   )}
                   {i.kind === 'stage' && <><div class="fi-sys">{x.moved(i.fromStage, i.toStage)}</div><small>{i.by ?? ''} · {when(i.at, locale)}</small></>}
+                  {i.kind === 'compliance' && <><div class="fi-sys">{complianceLine(i.text, i.outcome, locale)}</div><small>{i.by ?? ''}{i.by ? ' · ' : ''}{when(i.at, locale)}</small></>}
                   {i.kind === 'created' && <><div class="fi-sys">{x.createdIn(i.toStage)}</div><small>{when(i.at, locale)}</small></>}
                 </li>
               ))}

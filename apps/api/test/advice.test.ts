@@ -60,6 +60,8 @@ test('the built-in signature: code to the client, wrong codes refused, the right
   assert.equal(list[0].status, 'signed'); assert.equal(list[0].signedMethod, 'otp'); assert.match(list[0].contentHash, /^[0-9a-f]{64}$/);
   const docs = (await call(PA, 'GET', `/v1/boxes/${box}/documents`)).json.documents;
   assert.ok(docs.some((d: any) => d.docType === 'needs_analysis'), 'the signed copy counts as typed paperwork');
+  const feed = (await call(PA, 'GET', `/v1/boxes/${box}/timeline`)).json.items.filter((i: any) => i.kind === 'compliance').map((i: any) => i.text);
+  for (const e of ['advice_created', 'advice_signed', 'doc_filed']) assert.ok(feed.includes(e), `the record's activity shows ${e}`);
 });
 
 test('a signed record cannot be edited or removed, even straight in the database', async () => {
