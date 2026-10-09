@@ -152,7 +152,7 @@ export async function sweepEsign(deps: AppDeps): Promise<number> {
   if (!deps.keys) return 0;
   const tenants = (await deps.authPool.query<{ tenant_id: string; node: string; admin: string | null }>(
     `SELECT n.tenant_id, n.id AS node, (SELECT r.user_id FROM user_node_roles r WHERE r.node_id = n.id AND r.role = 'admin' ORDER BY r.user_id LIMIT 1) AS admin
-       FROM org_nodes n JOIN tenants t ON t.id = n.tenant_id AND NOT t.is_head_office WHERE n.type = 'tenant' AND n.is_active LIMIT 500`)).rows;
+       FROM org_nodes n JOIN tenants t ON t.id = n.tenant_id WHERE n.type = 'tenant' AND n.is_active LIMIT 500`)).rows;
   let n = 0;
   for (const t of tenants) {
     if (!t.admin) continue;
