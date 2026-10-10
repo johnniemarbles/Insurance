@@ -35,3 +35,12 @@ test('CE: at risk in the last 60 days, overdue after the term, exempt in the fir
   assert.equal(evaluateCe(ribo, b, {}, '2025-11-01', '2027-01-10').state, 'on_track');
 });
 test('retention dates add whole years', () => assert.equal(addYears('2027-09-30', 7), '2034-09-30'));
+
+test('CE: terms that follow a person\'s own licence repeat every two years from their anchor', () => {
+  const ca = { termStartMonth: 1, termStartDay: 1, termMonths: 24, termAnchor: '2025-03-01' };
+  assert.deepEqual(termWindow(ca, '2026-10-10'), { start: '2025-03-01', end: '2027-02-28' });
+  assert.deepEqual(termWindow(ca, '2027-02-28'), { start: '2025-03-01', end: '2027-02-28' });
+  assert.deepEqual(termWindow(ca, '2027-03-01'), { start: '2027-03-01', end: '2029-02-28' });
+  assert.deepEqual(termWindow(ca, '2025-02-28'), { start: '2023-03-01', end: '2025-02-28' });
+  assert.deepEqual(termWindow({ ...ca, termAnchor: '2025-01-31' }, '2027-02-15'), { start: '2027-01-31', end: '2029-01-30' });
+});

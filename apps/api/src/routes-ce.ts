@@ -17,16 +17,18 @@ const today = () => new Date().toISOString().slice(0, 10);
 const DATE = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } as const;
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-interface PackRow { code: string; country: string; name: string; name_fr: string; source_url: string; term_start_month: number; term_start_day: number; term_months: number; requirements: { classes: any[] }; new_licensee_exempt: boolean; retention_years: number; retention_note: string; notes: string; notes_fr: string; as_of: string }
+interface PackRow { code: string; country: string; name: string; name_fr: string; source_url: string; term_start_month: number; term_start_day: number; term_months: number; requirements: { classes: any[] }; new_licensee_exempt: boolean; retention_years: number; retention_note: string; notes: string; notes_fr: string; as_of: string; term_anchor?: string | null }
 
 /** The country this server belongs to: its people are only ever held to that country's regulators. */
 let deployCountry: 'CA' | 'US' = 'CA';
 export async function loadPacks(tx: Tx): Promise<PackRow[]> {
   return (await tx.query<PackRow>(`SELECT code, country, name, name_fr, source_url, term_start_month, term_start_day, term_months, requirements, new_licensee_exempt, retention_years, retention_note, notes, notes_fr, as_of::text FROM ce_rule_packs WHERE active AND country = $1 ORDER BY name`, [deployCountry])).rows;
 }
+/** The pack as it applies to one person: regulators whose term follows the licence (California) use that person's own term start. */
+const forLicence = (p: PackRow, anchor: string | null | undefined): PackRow => (p.term_months > 12 && anchor ? { ...p, term_anchor: anchor } : p);
 const packOut = (p: PackRow) => ({
   code: p.code, name: p.name, nameFr: p.name_fr, sourceUrl: p.source_url, classes: p.requirements.classes, retentionYears: p.retention_years, retentionNote: p.retention_note,
-  notes: p.notes, notesFr: p.notes_fr, asOf: p.as_of, termStartMonth: p.term_start_month, termStartDay: p.term_start_day,
+  notes: p.notes, notesFr: p.notes_fr, asOf: p.as_of, termStartMonth: p.term_start_month, termStartDay: p.term_start_day, termMonths: p.term_months, perLicenceTerm: p.term_months > 12,
 });
 
 /** Hours by category inside a pack's current term, ignoring rejected entries. */
@@ -67,8 +69,8 @@ export async function recordCeForCompletion(tx: Tx, ctx: RequestContext, enrollm
 /** Partner nodes with a tracked learner who fell short of continuing education in the term that just ended (only licences PII was tracking by then). */
 export async function cePriorShortNodes(tx: Tx): Promise<Set<string>> {
   const packs = await loadPacks(tx);
-  const lic = (await tx.query<{ user_id: string; node_id: string; pack_code: string; licence_class: string; licensed_since: string | null; created_on: string }>(
-    `SELECT l.user_id, l.node_id, l.pack_code, l.licence_class, l.licensed_since::text, l.created_at::date::text AS created_on
+  const lic = (await tx.query<{ user_id: string; node_id: string; pack_code: string; licence_class: string; licensed_since: string | null; term_anchor: string | null; created_on: string }>(
+    `SELECT l.user_id, l.node_id, l.pack_code, l.licence_class, l.licensed_since::text, l.term_anchor::text, l.created_at::date::text AS created_on
        FROM learner_licences l JOIN app_users u ON u.id = l.user_id WHERE u.status::text <> 'disabled' LIMIT 2000`)).rows;
   const out = new Set<string>();
   if (!lic.length) return out;
@@ -76,7 +78,8 @@ export async function cePriorShortNodes(tx: Tx): Promise<Set<string>> {
     `SELECT user_id, pack_code, category, hours::text, completed_on::text, status FROM ce_entries WHERE user_id = ANY($1::uuid[])`, [[...new Set(lic.map((l) => l.user_id))]])).rows;
   const day = today();
   for (const l of lic) {
-    const p = packs.find((x) => x.code === l.pack_code); if (!p || !l.node_id) continue;
+    const p0 = packs.find((x) => x.code === l.pack_code); if (!p0 || !l.node_id) continue;
+    const p = forLicence(p0, l.term_anchor);
     const cur = termWindow(toPack(p), day);
     const prevEnd = new Date(cur.start + 'T00:00:00Z'); prevEnd.setUTCDate(prevEnd.getUTCDate() - 1);
     const pe = prevEnd.toISOString().slice(0, 10);
@@ -116,15 +119,15 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { ctx } = await deps.authenticate(req);
     return run(ctx, async (tx) => {
       const packs = await loadPacks(tx);
-      const lic = (await tx.query<{ id: string; pack_code: string; licence_class: string; licence_number: string | null; licensed_since: string | null }>(
-        `SELECT id, pack_code, licence_class, licence_number, licensed_since::text FROM learner_licences WHERE user_id = $1 ORDER BY created_at`, [ctx.userId])).rows;
+      const lic = (await tx.query<{ id: string; pack_code: string; licence_class: string; licence_number: string | null; licensed_since: string | null; term_anchor: string | null }>(
+        `SELECT id, pack_code, licence_class, licence_number, licensed_since::text, term_anchor::text FROM learner_licences WHERE user_id = $1 ORDER BY created_at`, [ctx.userId])).rows;
       const entries = await entriesFor(tx, [ctx.userId]);
       const day = today();
       return {
         packs: packs.map(packOut),
         licences: lic.map((l) => {
-          const p = packs.find((x) => x.code === l.pack_code)!;
-          return { id: l.id, packCode: l.pack_code, licenceClass: l.licence_class, licenceNumber: l.licence_number, licensedSince: l.licensed_since, hours: hoursIn(entries, p, day), evaluation: evaluateFor(p, l.licence_class, hoursIn(entries, p, day), l.licensed_since, day) };
+          const p = forLicence(packs.find((x) => x.code === l.pack_code)!, l.term_anchor);
+          return { id: l.id, packCode: l.pack_code, licenceClass: l.licence_class, licenceNumber: l.licence_number, licensedSince: l.licensed_since, termAnchor: l.term_anchor, hours: hoursIn(entries, p, day), evaluation: evaluateFor(p, l.licence_class, hoursIn(entries, p, day), l.licensed_since, day) };
         }),
         entries: entries.map(entryOut),
       };
@@ -133,22 +136,24 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.put('/v1/ce/licences', {
     schema: { body: { type: 'object', required: ['packCode', 'licenceClass'], additionalProperties: false, properties: {
-      packCode: { type: 'string', maxLength: 30 }, licenceClass: { type: 'string', maxLength: 30 }, licenceNumber: { type: ['string', 'null'], maxLength: 60 }, licensedSince: { anyOf: [DATE, { type: 'null' }] }, userId: uuid } } },
+      packCode: { type: 'string', maxLength: 30 }, licenceClass: { type: 'string', maxLength: 30 }, licenceNumber: { type: ['string', 'null'], maxLength: 60 }, licensedSince: { anyOf: [DATE, { type: 'null' }] }, termStart: { anyOf: [DATE, { type: 'null' }] }, userId: uuid } } },
   }, async (req, reply) => {
     const { ctx } = await deps.authenticate(req);
-    const b = req.body as { packCode: string; licenceClass: string; licenceNumber?: string | null; licensedSince?: string | null; userId?: string };
+    const b = req.body as { packCode: string; licenceClass: string; licenceNumber?: string | null; licensedSince?: string | null; termStart?: string | null; userId?: string };
     const target = b.userId ?? ctx.userId;
     if (target !== ctx.userId && !manages(ctx)) throw forbidden('Only a manager can set up someone else');
     await run(ctx, async (tx) => {
       const pack = (await loadPacks(tx)).find((p) => p.code === b.packCode);
       if (!pack) throw invalid('Unknown regulator');
       if (!pack.requirements.classes.some((c: { key: string }) => c.key === b.licenceClass)) throw invalid('Unknown licence class for that regulator');
+      if (pack.term_months > 12 && !b.termStart) throw invalid('This regulator needs the date your current CE term started');
+      if (b.termStart && b.termStart > today()) throw invalid('The term start cannot be in the future');
       const u = (await tx.query<{ home_node_id: string }>('SELECT home_node_id FROM app_users WHERE id = $1', [target])).rows[0];
       if (!u) throw notFound('Unknown person');
       await tx.query(
-        `INSERT INTO learner_licences (tenant_id, user_id, node_id, pack_code, licence_class, licence_number, licensed_since) VALUES ($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT (user_id, pack_code) DO UPDATE SET licence_class = $5, licence_number = $6, licensed_since = $7`,
-        [ctx.tenantId, target, u.home_node_id, b.packCode, b.licenceClass, b.licenceNumber ?? null, b.licensedSince ?? null]);
+        `INSERT INTO learner_licences (tenant_id, user_id, node_id, pack_code, licence_class, licence_number, licensed_since, term_anchor) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (user_id, pack_code) DO UPDATE SET licence_class = $5, licence_number = $6, licensed_since = $7, term_anchor = $8`,
+        [ctx.tenantId, target, u.home_node_id, b.packCode, b.licenceClass, b.licenceNumber ?? null, b.licensedSince ?? null, pack.term_months > 12 ? b.termStart ?? null : null]);
       await audit(tx, ctx, 'ce_licence_saved', 'user', target, { pack: b.packCode, class: b.licenceClass });
     });
     return reply.code(204).send();
@@ -214,12 +219,12 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
   // ------------------------------------------------------------ my company (admin, manager, partner, trainer)
   async function teamRows(tx: Tx, day: string) {
     const packs = await loadPacks(tx);
-    const lic = (await tx.query<{ id: string; user_id: string; name: string; email: string; pack_code: string; licence_class: string; licence_number: string | null; licensed_since: string | null }>(
-      `SELECT l.id, l.user_id, coalesce(u.display_name, u.email::text) AS name, u.email::text AS email, l.pack_code, l.licence_class, l.licence_number, l.licensed_since::text
+    const lic = (await tx.query<{ id: string; user_id: string; name: string; email: string; pack_code: string; licence_class: string; licence_number: string | null; licensed_since: string | null; term_anchor: string | null }>(
+      `SELECT l.id, l.user_id, coalesce(u.display_name, u.email::text) AS name, u.email::text AS email, l.pack_code, l.licence_class, l.licence_number, l.licensed_since::text, l.term_anchor::text
          FROM learner_licences l JOIN app_users u ON u.id = l.user_id WHERE u.status::text <> 'disabled' ORDER BY name LIMIT 2000`)).rows;
     const entries = lic.length ? await entriesFor(tx, [...new Set(lic.map((l) => l.user_id))]) : [];
     const rows = lic.map((l) => {
-      const p = packs.find((x) => x.code === l.pack_code)!;
+      const p = forLicence(packs.find((x) => x.code === l.pack_code)!, l.term_anchor);
       const mine = entries.filter((e) => e.user_id === l.user_id);
       const hours = hoursIn(mine, p, day);
       return { userId: l.user_id, name: l.name, email: l.email, packCode: l.pack_code, licenceClass: l.licence_class, licenceNumber: l.licence_number, hours, evaluation: evaluateFor(p, l.licence_class, hours, l.licensed_since, day),
@@ -260,12 +265,12 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
     return reply.code(204).send();
   });
 
-  const exportOf = (title: string, people: { name: string; email: string; company?: string; licenceNumber: string | null; packCode: string; userId: string }[], entries: { user_id: string; pack_code: string; completed_on: string; title: string; provider: string; category: string; hours: string | number; status: string; source: string; has_evidence: boolean; retain_until: string }[], from: string, to: string, withCompany: boolean) => {
+  const exportOf = (title: string, people: { name: string; email: string; company?: string; licenceNumber: string | null; packCode: string; userId: string; evaluation?: { termStart: string; termEnd: string } | null }[], entries: { user_id: string; pack_code: string; completed_on: string; title: string; provider: string; category: string; hours: string | number; status: string; source: string; has_evidence: boolean; retain_until: string }[], from: string, to: string, withCompany: boolean) => {
     const head = ['Person', 'Email', ...(withCompany ? ['Company'] : []), 'Regulator', 'Licence number', 'Completed on', 'Course', 'Provider', 'Category', 'Hours', 'Status', 'Source', 'Proof on file', 'Keep until'];
     const body: unknown[][] = [];
     for (const p of people) for (const e of entries.filter((x) => x.user_id === p.userId && x.pack_code === p.packCode && x.completed_on >= from && x.completed_on <= to))
       body.push([p.name, p.email, ...(withCompany ? [p.company ?? ''] : []), p.packCode, p.licenceNumber ?? '', e.completed_on, e.title, e.provider, e.category, e.hours, e.status, e.source, e.has_evidence ? 'yes' : 'no', e.retain_until]);
-    const data = csv([[title], [`Term ${from} to ${to}`], head, ...body]);
+    const data = csv([[title], [`Term ${from} to ${to} (each person's own term where the regulator sets one per licence)`], head, ...body]);
     return { filename: `ce-${from}-to-${to}.csv`, mime: 'text/csv', dataBase64: Buffer.from(data, 'utf8').toString('base64') };
   };
 
@@ -287,13 +292,13 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
   const ho = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => run(ctx, fn);
   async function hoRows(tx: Tx, day: string) {
     const packs = await loadPacks(tx);
-    const lic = (await tx.query<{ licence_id: string; tenant_id: string; company: string; user_id: string; name: string; email: string; pack_code: string; licence_class: string; licence_number: string | null; licensed_since: string | null }>(
-      `SELECT licence_id, tenant_id, company, user_id, name, email, pack_code, licence_class, licence_number, licensed_since::text FROM ho_ce_licences()`)).rows;
+    const lic = (await tx.query<{ licence_id: string; tenant_id: string; company: string; user_id: string; name: string; email: string; pack_code: string; licence_class: string; licence_number: string | null; licensed_since: string | null; term_anchor: string | null }>(
+      `SELECT licence_id, tenant_id, company, user_id, name, email, pack_code, licence_class, licence_number, licensed_since::text, term_anchor::text FROM ho_ce_licences()`)).rows;
     const since = new Date(Date.now() - 800 * 86_400_000).toISOString().slice(0, 10);
     const entries = (await tx.query<{ entry_id: string; user_id: string; pack_code: string; title: string; provider: string; category: string; hours: string; completed_on: string; source: string; status: string; has_evidence: boolean; retain_until: string; company: string }>(
       `SELECT entry_id, user_id, pack_code, title, provider, category, hours::text, completed_on::text, source, status, has_evidence, retain_until::text, company FROM ho_ce_entries($1)`, [since])).rows;
     const rows = lic.map((l) => {
-      const p = packs.find((x) => x.code === l.pack_code)!;
+      const p = forLicence(packs.find((x) => x.code === l.pack_code)!, l.term_anchor);
       const mine = entries.filter((e) => e.user_id === l.user_id);
       const hours = hoursIn(mine, p, day);
       return { userId: l.user_id, company: l.company, name: l.name, email: l.email, packCode: l.pack_code, licenceClass: l.licence_class, licenceNumber: l.licence_number, hours,

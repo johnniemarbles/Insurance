@@ -7,7 +7,7 @@ const K = {
   en: {
     my: 'My CE', team: 'Team CE', officer: 'Compliance', courses: 'Courses',
     title: 'Continuing education', intro: 'Your hours against what your regulator asks for. Hours from PII courses are added for you. Add courses you took elsewhere, with proof.',
-    setup: 'Which licence are you held to?', regulator: 'Regulator', licClass: 'Licence class', licNo: 'Licence number (optional)', since: 'First licensed on (optional)', saveLic: 'Save licence', changeLic: 'Change',
+    setup: 'Which licence are you held to?', regulator: 'Regulator', licClass: 'Licence class', licNo: 'Licence number (optional)', since: 'First licensed on (optional)', termStart: 'Your current CE term started on (the day after your licence last expired)', saveLic: 'Save licence', changeLic: 'Change',
     term: 'Term', hours: 'hours', of: 'of', daysLeft: (n: number) => (n < 0 ? `${-n} days past the end` : `${n} days left`), needs: 'Still needed', counted: 'Counted',
     state: { met: 'Complete', on_track: 'On track', at_risk: 'At risk', overdue: 'Overdue', exempt: 'Exempt (new licensee)' } as Record<string, string>,
     cat: { technical: 'Technical', management: 'Management', ethics: 'Ethics', professional_development: 'Professional development', general: 'General' } as Record<string, string>,
@@ -26,7 +26,7 @@ const K = {
   'fr-CA': {
     my: 'Ma FC', team: 'FC de l’équipe', officer: 'Conformité', courses: 'Cours',
     title: 'Formation continue', intro: 'Vos heures par rapport aux exigences de votre organisme de réglementation. Les heures des cours PII sont ajoutées automatiquement. Ajoutez les cours suivis ailleurs, avec preuve.',
-    setup: 'À quel permis êtes-vous assujetti?', regulator: 'Organisme', licClass: 'Catégorie de permis', licNo: 'Numéro de permis (facultatif)', since: 'Premier permis le (facultatif)', saveLic: 'Enregistrer le permis', changeLic: 'Modifier',
+    setup: 'À quel permis êtes-vous assujetti?', regulator: 'Organisme', licClass: 'Catégorie de permis', licNo: 'Numéro de permis (facultatif)', since: 'Premier permis le (facultatif)', termStart: 'Début de votre période de FC actuelle (lendemain de la dernière expiration du permis)', saveLic: 'Enregistrer le permis', changeLic: 'Modifier',
     term: 'Période', hours: 'heures', of: 'sur', daysLeft: (n: number) => (n < 0 ? `${-n} jours après la fin` : `${n} jours restants`), needs: 'Encore requis', counted: 'Comptées',
     state: { met: 'Complété', on_track: 'En bonne voie', at_risk: 'À risque', overdue: 'En retard', exempt: 'Exempté (nouveau titulaire)' } as Record<string, string>,
     cat: { technical: 'Technique', management: 'Gestion', ethics: 'Déontologie', professional_development: 'Perfectionnement professionnel', general: 'Général' } as Record<string, string>,
@@ -55,7 +55,7 @@ const fileToBase64 = (f: File) => new Promise<string>((res, rej) => { const r = 
 const hs = (n: number) => (Math.round(n * 10) / 10).toString();
 
 interface Cls { key: string; label: string; label_fr: string; total: number }
-interface Pack { code: string; name: string; nameFr: string; sourceUrl: string; classes: Cls[]; retentionNote: string; notes: string; notesFr: string; asOf: string }
+interface Pack { code: string; name: string; nameFr: string; sourceUrl: string; classes: Cls[]; retentionNote: string; notes: string; notesFr: string; asOf: string; perLicenceTerm?: boolean }
 interface Evaluation { state: string; required: number; counted: number; remaining: number; missing: Record<string, number>; termStart: string; termEnd: string; daysLeft: number }
 const packName = (p: Pack | undefined, l: Locale) => (p ? (l === 'fr-CA' ? p.nameFr : p.name) : '');
 const clsName = (c: Cls | undefined, l: Locale) => (c ? (l === 'fr-CA' ? c.label_fr : c.label) : '');
@@ -76,7 +76,7 @@ export function MyCe({ call, locale }: { call: Call; locale: Locale }) {
   const k = ceStrings(locale);
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState(''); const [note, setNote] = useState('');
-  const [lic, setLic] = useState({ pack: '', cls: '', no: '', since: '' });
+  const [lic, setLic] = useState({ pack: '', cls: '', no: '', since: '', term: '' });
   const [editLic, setEditLic] = useState(false);
   const blank = { packCode: '', title: '', provider: '', category: 'technical', hours: '1', completedOn: new Date().toISOString().slice(0, 10) };
   const [f, setF] = useState(blank); const [file, setFile] = useState<File | null>(null);
@@ -88,11 +88,12 @@ export function MyCe({ call, locale }: { call: Call; locale: Locale }) {
   const pack = (c: string) => packs.find((p) => p.code === c);
   const hasLic = d.licences.length > 0;
   const licForm = (
-    <form class="cform" onSubmit={(e) => { e.preventDefault(); void act(async () => { await call('PUT', '/v1/ce/licences', { packCode: lic.pack, licenceClass: lic.cls, licenceNumber: lic.no || null, licensedSince: lic.since || null }); setEditLic(false); }, '✓'); }}>
+    <form class="cform" onSubmit={(e) => { e.preventDefault(); void act(async () => { await call('PUT', '/v1/ce/licences', { packCode: lic.pack, licenceClass: lic.cls, licenceNumber: lic.no || null, licensedSince: lic.since || null, termStart: pack(lic.pack)?.perLicenceTerm ? lic.term || null : null }); setEditLic(false); }, '✓'); }}>
       <label class="fl">{k.regulator}<select class="wide" required value={lic.pack} onChange={(e) => setLic({ ...lic, pack: (e.target as HTMLSelectElement).value, cls: '' })}><option value="">…</option>{packs.map((p) => <option value={p.code}>{packName(p, locale)}</option>)}</select></label>
       <label class="fl">{k.licClass}<select class="wide" required value={lic.cls} onChange={(e) => setLic({ ...lic, cls: (e.target as HTMLSelectElement).value })}><option value="">…</option>{(pack(lic.pack)?.classes ?? []).map((c) => <option value={c.key}>{clsName(c, locale)} ({c.total} {k.hours})</option>)}</select></label>
       <label class="fl">{k.licNo}<input class="wide" value={lic.no} onInput={(e) => setLic({ ...lic, no: (e.target as HTMLInputElement).value })} /></label>
       <label class="fl">{k.since}<input class="wide" type="date" value={lic.since} onInput={(e) => setLic({ ...lic, since: (e.target as HTMLInputElement).value })} /></label>
+      {pack(lic.pack)?.perLicenceTerm && <label class="fl">{k.termStart}<input class="wide" type="date" required max={new Date().toISOString().slice(0, 10)} value={lic.term} onInput={(e) => setLic({ ...lic, term: (e.target as HTMLInputElement).value })} /></label>}
       <div><button class="btn" disabled={!lic.pack || !lic.cls}>{k.saveLic}</button></div>
     </form>
   );
@@ -106,7 +107,7 @@ export function MyCe({ call, locale }: { call: Call; locale: Locale }) {
         const p = pack(l.packCode); const c = p?.classes.find((x) => x.key === l.licenceClass);
         return (
           <div class="ccard" style={{ display: 'block', margin: '12px 0', padding: '12px 14px' }} key={l.id}>
-            <div class="erow" style={{ margin: 0 }}><b>{packName(p, locale)}</b><span class="tag">{clsName(c, locale)}</span>{l.licenceNumber && <span class="muted">#{l.licenceNumber}</span>}<span class="spacer" style={{ flex: 1 }} /><button class="btn quiet" onClick={() => { setLic({ pack: l.packCode, cls: l.licenceClass, no: l.licenceNumber ?? '', since: l.licensedSince ?? '' }); setEditLic(true); }}>{k.changeLic}</button></div>
+            <div class="erow" style={{ margin: 0 }}><b>{packName(p, locale)}</b><span class="tag">{clsName(c, locale)}</span>{l.licenceNumber && <span class="muted">#{l.licenceNumber}</span>}<span class="spacer" style={{ flex: 1 }} /><button class="btn quiet" onClick={() => { setLic({ pack: l.packCode, cls: l.licenceClass, no: l.licenceNumber ?? '', since: l.licensedSince ?? '', term: l.termAnchor ?? '' }); setEditLic(true); }}>{k.changeLic}</button></div>
             {l.evaluation && <Status e={l.evaluation} k={k} />}
             <small class="muted">{k.asOf(p?.asOf ?? '')} · <a href={p?.sourceUrl} target="_blank" rel="noopener noreferrer">{k.source1}</a><br />{locale === 'fr-CA' ? p?.notesFr : p?.notes} {k.confirm}</small>
           </div>

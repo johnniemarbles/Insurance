@@ -9,6 +9,8 @@ export type CeCategory = (typeof CE_CATEGORIES)[number];
 export interface CeClass { key: string; label: string; label_fr: string; total: number; min: Partial<Record<CeCategory, number>>; max: Partial<Record<CeCategory, number>> }
 export interface CePack {
   code: string; termStartMonth: number; termStartDay: number; termMonths: number; classes: CeClass[]; newLicenseeExempt: boolean; retentionYears: number;
+  /** A date a term started on, for regulators whose term follows each person's own licence (California). Terms repeat every `termMonths` from it. */
+  termAnchor?: string | null;
 }
 export type Hours = Partial<Record<CeCategory, number>>;
 
@@ -16,7 +18,8 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const ymd = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`;
 
 /** The term a date falls in: start (inclusive) and end (the last day). */
-export function termWindow(pack: Pick<CePack, 'termStartMonth' | 'termStartDay' | 'termMonths'>, on: string): { start: string; end: string } {
+export function termWindow(pack: Pick<CePack, 'termStartMonth' | 'termStartDay' | 'termMonths'> & { termAnchor?: string | null }, on: string): { start: string; end: string } {
+  if (pack.termAnchor) return anchoredWindow(pack.termAnchor, pack.termMonths, on);
   const y = Number(on.slice(0, 4));
   const thisYear = ymd(y, pack.termStartMonth, pack.termStartDay);
   const startYear = on >= thisYear ? y : y - 1;
@@ -27,6 +30,19 @@ export function termWindow(pack: Pick<CePack, 'termStartMonth' | 'termStartDay' 
   const endDate = new Date(Date.UTC(startYear + Math.floor(endIdx / 12), endIdx % 12, pack.termStartDay));
   endDate.setUTCDate(endDate.getUTCDate() - 1);
   return { start, end: endDate.toISOString().slice(0, 10) };
+}
+
+/** The term that holds `on` when terms of `months` months repeat from `anchor` (a term start). Works before and after the anchor. */
+function anchoredWindow(anchor: string, months: number, on: string): { start: string; end: string } {
+  const ay = Number(anchor.slice(0, 4)), am = Number(anchor.slice(5, 7)), ad = Number(anchor.slice(8, 10));
+  const total = (y: number, m: number) => y * 12 + (m - 1);
+  const diff = total(Number(on.slice(0, 4)), Number(on.slice(5, 7))) - total(ay, am);
+  const startAt = (k: number) => { const t = total(ay, am) + k * months; const y = Math.floor(t / 12), m = t % 12; return new Date(Date.UTC(y, m, Math.min(ad, new Date(Date.UTC(y, m + 1, 0)).getUTCDate()))); };
+  let k = Math.floor(diff / months);
+  while (startAt(k).toISOString().slice(0, 10) > on) k--;
+  while (startAt(k + 1).toISOString().slice(0, 10) <= on) k++;
+  const end = startAt(k + 1); end.setUTCDate(end.getUTCDate() - 1);
+  return { start: startAt(k).toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 }
 
 /** A day after `date` by `years` years (retention). */
@@ -71,6 +87,6 @@ export function evaluateCe(pack: CePack, cls: CeClass, hours: Hours, licensedSin
 }
 
 /** Turn the stored JSON pack row into the typed pack. */
-export function toPack(row: { code: string; term_start_month: number; term_start_day: number; term_months: number; requirements: { classes: CeClass[] }; new_licensee_exempt: boolean; retention_years: number }): CePack {
-  return { code: row.code, termStartMonth: row.term_start_month, termStartDay: row.term_start_day, termMonths: row.term_months, classes: row.requirements.classes, newLicenseeExempt: row.new_licensee_exempt, retentionYears: row.retention_years };
+export function toPack(row: { code: string; term_start_month: number; term_start_day: number; term_months: number; requirements: { classes: CeClass[] }; new_licensee_exempt: boolean; retention_years: number; term_anchor?: string | null }): CePack {
+  return { termAnchor: row.term_anchor ?? null, code: row.code, termStartMonth: row.term_start_month, termStartDay: row.term_start_day, termMonths: row.term_months, classes: row.requirements.classes, newLicenseeExempt: row.new_licensee_exempt, retentionYears: row.retention_years };
 }
