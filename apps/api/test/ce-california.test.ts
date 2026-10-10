@@ -43,9 +43,9 @@ before(async () => {
 });
 after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });
 
-test('the US server loads California only, and no Canadian regulator', async () => {
+test('the US server loads the US states only, and no Canadian regulator', async () => {
   const r = (await call(L1, 'GET', '/v1/ce/packs')).json.packs;
-  assert.deepEqual(r.map((p: { code: string }) => p.code), ['ca_doi']);
+  assert.deepEqual(r.map((p: { code: string }) => p.code).sort(), ['ca_doi', 'tx_tdi']);
   assert.equal(r[0].perLicenceTerm, true);
   assert.equal(r[0].classes.find((c: { key: string }) => c.key === 'agent').total, 24);
   assert.equal(r[0].classes.find((c: { key: string }) => c.key === 'limited_auto').total, 20);

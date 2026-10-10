@@ -1,0 +1,16 @@
+-- Texas continuing education (second US state). The Texas Department of Insurance sets a two-year term for each licence; for most
+-- agents the licence expires at the end of the birth month. Like California, the term follows each licence, so the person enters the
+-- date their current term started (the day after the licence last expired) and the engine repeats it every term_months.
+-- Texas Department of Insurance, as of 2026-10-10.
+INSERT INTO ce_rule_packs (code, country, name, name_fr, source_url, term_start_month, term_start_day, term_months, requirements, new_licensee_exempt,
+                           retention_years, retention_note, notes, notes_fr, as_of) VALUES
+('tx_tdi', 'US', 'Texas Department of Insurance', 'Texas Department of Insurance',
+ 'https://tdi.texas.gov/agent/agcehome.html', 1, 1, 24,
+ '{"classes":[
+    {"key":"agent","label":"General lines (life, accident and health, property and casualty), life agent, personal lines, or managing general agent","label_fr":"Lignes générales (vie, accident et maladie, dommages), agent vie, lignes personnelles ou agent général de gestion","total":24,"min":{"ethics":3},"max":{}},
+    {"key":"limited","label":"County mutual, life insurance under $25,000, or limited lines agent","label_fr":"Mutuelle de comté, assurance vie de moins de 25 000 $ ou agent de lignes limitées","total":10,"min":{"ethics":3},"max":{}}]}',
+ false, 5,
+ 'Texas points to its licensee records rule (28 TAC §19.1013) for how long to keep CE records. We could not confirm the period; 5 years is used until counsel confirms.',
+ 'Two-year term. For most agents the licence expires at the end of the birth month; enter the date your current term started (the day after the licence last expired). Finish before the expiry date, and TDI asks for at least 30 days early so the provider can report your hours. At least half of the hours must be classroom or classroom equivalent (shown as guidance, not counted by PII). Repeating the same course in a term earns credit once. If hours are short at expiry there are 90 days to finish them and a fine of $50 per missing hour; after that the licence is inactivated. Funeral prearrangement licences need no CE. Not yet confirmed with counsel: the record retention period, whether extra hours carry over, exemptions and extensions (TDI Form FIN517), and the separate training for annuity, long-term-care and Medicare products. Check with the Department before relying on this.',
+ 'Période de deux ans. Pour la plupart des agents, le permis expire à la fin du mois de naissance; saisissez la date de début de la période en cours (le lendemain de la dernière expiration). Terminez avant l’expiration, et au moins 30 jours avant selon le TDI. Au moins la moitié des heures doivent être en classe ou l’équivalent (indication seulement, non comptée par PII). Un cours répété dans la même période ne donne droit qu’à un seul crédit. En cas de manque à l’expiration, 90 jours pour terminer et une amende de 50 $ par heure manquante, puis le permis est désactivé. Les permis de préarrangement funéraire n’exigent aucune FC. À confirmer avec un conseiller : la durée de conservation, le report des heures excédentaires, les exemptions et prolongations (formulaire FIN517) et la formation distincte sur les rentes, les soins de longue durée et Medicare.',
+ '2026-10-10');
