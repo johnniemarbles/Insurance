@@ -7,6 +7,9 @@ const hash = (t: string) => createHash('sha256').update(t).digest();
 
 export const EMBED_TOKEN_MINUTES = 30;
 
+/** How often to touch last_seen_at (reduces write load under active CRM use). */
+const LAST_SEEN_TOUCH_MS = 10 * 60_000;
+
 /** A new session token. Cookie sign-in uses the default 14 days; the embedded screens inside Gmail use a short one. */
 export async function createSession(authPool: Db, tenantId: string, userId: string, ttlMinutes = SESSION_DAYS * 24 * 60): Promise<string> {
   const token = randomBytes(32).toString('base64url');
@@ -19,15 +22,19 @@ export async function createSession(authPool: Db, tenantId: string, userId: stri
 
 /** Returns the signed-in user for a session token, or null if missing, expired or the user is disabled. */
 export async function findSessionUser(authPool: Db, token: string): Promise<LoginCandidate | null> {
-  const { rows } = await authPool.query<{ email: string; tenant_id: string; user_id: string }>(
-    `UPDATE sessions s SET last_seen_at = now()
-       FROM app_users u
-      WHERE s.token_hash = $1 AND s.expires_at > now() AND u.id = s.user_id AND u.status <> 'disabled'
-      RETURNING u.email::text AS email, s.tenant_id, s.user_id`,
-    [hash(token)],
+  const tokenHash = hash(token);
+  const { rows } = await authPool.query<{ email: string; tenant_id: string; user_id: string; last_seen_at: Date | string | null }>(
+    `SELECT u.email::text AS email, s.tenant_id, s.user_id, s.last_seen_at
+       FROM sessions s JOIN app_users u ON u.id = s.user_id
+      WHERE s.token_hash = $1 AND s.expires_at > now() AND u.status <> 'disabled'`,
+    [tokenHash],
   );
   const r = rows[0];
   if (!r) return null;
+  const last = r.last_seen_at ? new Date(r.last_seen_at).getTime() : 0;
+  if (!last || Date.now() - last > LAST_SEEN_TOUCH_MS) {
+    await authPool.query(`UPDATE sessions SET last_seen_at = now() WHERE token_hash = $1`, [tokenHash]).catch(() => undefined);
+  }
   const candidates = await findLoginCandidates(authPool, r.email);
   return candidates.find((c) => c.userId === r.user_id) ?? null;
 }

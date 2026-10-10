@@ -14,6 +14,22 @@ export const RULES: Rule[] = [
   { name: 'api', windowMs: 60_000, max: 1500, match: (_m, p) => p.startsWith('/v1/') && !p.startsWith('/v1/hooks/') },
 ];
 
+function evictStale(hits: Map<string, number[]>, now: number, maxKeys: number): void {
+  if (hits.size <= maxKeys) return;
+  for (const [k, v] of hits) {
+    if (v.length === 0 || now - v[v.length - 1]! > 600_000) hits.delete(k);
+  }
+  // Still over capacity: drop oldest keys without wiping active counters (avoids reset-under-attack).
+  if (hits.size > maxKeys) {
+    const overflow = hits.size - Math.floor(maxKeys * 0.75);
+    let n = 0;
+    for (const k of hits.keys()) {
+      hits.delete(k);
+      if (++n >= overflow) break;
+    }
+  }
+}
+
 export function createLimiter(rules: Rule[] = RULES) {
   const hits = new Map<string, number[]>();
   return (ip: string, method: string, path: string): { limited: boolean; retryAfter: number; rule?: string } => {
@@ -28,7 +44,7 @@ export function createLimiter(rules: Rule[] = RULES) {
     }
     list.push(now);
     hits.set(key, list);
-    if (hits.size > 20_000) for (const [k, v] of hits) if (v.length === 0 || now - v[v.length - 1]! > 600_000) hits.delete(k);
+    evictStale(hits, now, 20_000);
     return { limited: false, retryAfter: 0 };
   };
 }
