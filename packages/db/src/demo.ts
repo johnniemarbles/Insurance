@@ -48,6 +48,21 @@ const NOTE_FR = [
 const TASK_TITLES = ['Send revised quote', 'Call client back', 'Collect passport copy', 'Confirm payment', 'Send policy documents', 'Follow up on application', 'Check licence before quote', 'Renewal reminder call'];
 const THREAD_SUBJECTS = ['Quote for Super Visa insurance', 'Travel insurance for parents visiting in June', 'Re: Policy documents', 'Question about pre-existing conditions', 'Renewal quote please', 'Assurance voyage: demande de soumission', 'Payment confirmation', 'Documents you asked for'];
 
+const COMPANIES_US = ['Lone Star Freight', 'Golden Gate Bakery', 'Hudson Valley Dental', 'Redwood Builders', 'Sunset Boulevard Tours', 'Prairie Winds Farms', 'Bayside Physio', 'Route 66 Auto Glass', 'Summit Tech Consulting', 'Cedar & Pine Furniture', 'Mission District Creamery', 'Pacific Coast Imports'];
+const NOTE_TEXT_US = [
+  'Spoke with the client; wants a homeowners quote that includes flood cover. Sending three options.',
+  'Client compared our quote with another agency. Asked for a lower deductible option.',
+  'Documents received: driver licence copy and prior policy declarations. Waiting on the vehicle details.',
+  'Left a message about the renewal. Will try again tomorrow morning.',
+  'Client confirmed the move date shifted by two weeks. Updating the quote.',
+  'Explained the waiting period and what it means for a claim. Client understood.',
+  'Spouse will be added as a second driver. Need her date of birth.',
+  'Client prefers text messages for follow-ups. Noted on contact.',
+];
+const THREAD_SUBJECTS_US = ['Quote for auto and home bundle', 'Term life quote for my family', 'Re: Policy documents', 'Question about the deductible', 'Renewal quote please', 'Medicare supplement options', 'Payment confirmation', 'Documents you asked for'];
+const TASK_TITLES_US = ['Send revised quote', 'Call client back', 'Collect driver licence copy', 'Confirm payment', 'Send policy documents', 'Follow up on application', 'Check licence before quote', 'Renewal reminder call'];
+const US_CARRIERS = ['Mutual of Omaha', 'Progressive', 'State Farm', 'Allstate', 'Liberty Mutual', 'Travelers', 'Pacific Life'];
+
 export interface DemoInit {
   /** Real address of the person who will sign in to the demo as its admin. Others are invited through the app. */
   adminEmail?: string;
@@ -59,6 +74,8 @@ export interface DemoResult {
   created: boolean;
   counts: Record<string, number>;
 }
+
+const U_US: Record<string, string> = { 'Jean-Philippe Gagnon': 'Jordan Reyes', 'Camille Roy': 'Casey Morgan' };
 
 const SETTINGS = (tenantId: string, userId: string, root: string) => [
   ['app.tenant_id', tenantId], ['app.user_id', userId], ['app.node_ids', `{${root}}`], ['app.is_tenant_admin', 'true'], ['app.can_write', 'true'],
@@ -72,6 +89,10 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
     if (!dep) throw new Error('deployment_info is empty: run bootstrap-deployment first');
     const ca = dep.region === 'ca-qc';
     const name = ca ? 'Maple Demo Insurance' : 'Liberty Demo Insurance';
+    const NOTES = ca ? NOTE_TEXT : NOTE_TEXT_US;
+    const SUBJECTS = ca ? THREAD_SUBJECTS : THREAD_SUBJECTS_US;
+    const TASKS = ca ? TASK_TITLES : TASK_TITLES_US;
+    const COMPANY_LIST = ca ? COMPANIES : COMPANIES_US;
     const existing = (await client.query<{ id: string }>('SELECT id FROM tenants WHERE is_demo LIMIT 1')).rows[0];
     if (existing && !init.reset) return { tenantId: existing.id, created: false, counts: {} };
 
@@ -89,6 +110,10 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
       await client.query('ALTER TABLE advice_records DISABLE TRIGGER advice_records_lock');
       for (const t of ['advice_records', 'client_consents', 'legal_holds', 'cash_transactions', 'screening_results', 'client_id_records']) await client.query(`DELETE FROM ${t} WHERE tenant_id = $1`, [tenantId]);
       await client.query('ALTER TABLE advice_records ENABLE TRIGGER advice_records_lock');
+      // CE records are kept by law and locked for their retention period; the demo company's fictional ones are cleared the same way.
+      await client.query('ALTER TABLE ce_entries DISABLE TRIGGER ce_entries_guard');
+      for (const t of ['ce_entries', 'learner_licences']) await client.query(`DELETE FROM ${t} WHERE tenant_id = $1`, [tenantId]);
+      await client.query('ALTER TABLE ce_entries ENABLE TRIGGER ce_entries_guard');
       // Children first. Everything below hangs off boxes, contacts, accounts or pipelines.
       for (const t of ['box_threads', 'notes', 'tasks', 'box_contacts', 'boxes', 'email_threads', 'contacts', 'accounts', 'field_defs', 'stages', 'pipelines']) {
         await client.query(`DELETE FROM ${t} WHERE tenant_id = $1`, [tenantId]);
@@ -143,11 +168,11 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
         const status = u.status ?? 'active';
         await client.query(
           `INSERT INTO app_users (id, tenant_id, email, display_name, locale, status, home_node_id, last_login_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [id, tenantId, u.email, u.name, u.locale ?? 'en', status, u.node, status === 'active' ? ago(r.int(0, 6), r.int(0, 20)) : null],
+          [id, tenantId, u.email, ca ? u.name : (U_US[u.name] ?? u.name), ca ? u.locale ?? 'en' : 'en', status, u.node, status === 'active' ? ago(r.int(0, 6), r.int(0, 20)) : null],
         );
         await client.query(`INSERT INTO user_node_roles (tenant_id, user_id, node_id, role) VALUES ($1,$2,$3,$4)`, [tenantId, id, u.node, u.role]);
         if (status === 'active') {
-          await client.query(`INSERT INTO consent_records (tenant_id, user_id, kind, notice_version, locale, region) VALUES ($1,$2,'first_login','v1',$3,$4)`, [tenantId, id, u.locale ?? 'en', dep.region]);
+          await client.query(`INSERT INTO consent_records (tenant_id, user_id, kind, notice_version, locale, region) VALUES ($1,$2,'first_login','v1',$3,$4)`, [tenantId, id, ca ? u.locale ?? 'en' : 'en', dep.region]);
         }
         bump('users');
       }
@@ -167,8 +192,9 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
 
     // Pipelines: three shared down from the head office, one visible only to one branch.
     type Fd = [string, Record<string, string>, 'text' | 'date' | 'currency' | 'dropdown', string[] | null];
-    const PIPES: { name: string; owner: string; shared: boolean; stages: [string, boolean, boolean][]; fields: Fd[]; products: string[] }[] = [
-      {
+    type PipeDef = { name: string; owner: string; shared: boolean; stages: [string, boolean, boolean][]; fields: Fd[]; products: string[] };
+    const PIPES: PipeDef[] = [
+      ...((ca ? [      {
         name: 'Travel & Visitor', owner: root, shared: true, products: ['Single-trip travel', 'Multi-trip annual', 'Visitor to Canada', 'Student coverage'],
         stages: [['New enquiry', false, false], ['Needs analysis', false, false], ['Quote sent', false, false], ['Accepted', false, false], ['Policy issued', true, false], ['Lost', false, true]],
         fields: [['destination', { en: 'Destination', 'fr-CA': 'Destination' }, 'text', null], ['departure', { en: 'Departure date', 'fr-CA': 'Date de départ' }, 'date', null], ['premium', { en: 'Premium', 'fr-CA': 'Prime' }, 'currency', null], ['carrier', { en: 'Carrier', 'fr-CA': 'Assureur' }, 'dropdown', ['Allianz Global Assistance', 'GMS', 'RSA', 'Tugo', 'Travelance', 'MRM', 'Travel Shield']]],
@@ -178,6 +204,18 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
         stages: [['Enquiry', false, false], ['Documents', false, false], ['Quote sent', false, false], ['Application', false, false], ['Policy issued', true, false], ['Declined', false, true]],
         fields: [['applicant_age', { en: 'Oldest applicant age', 'fr-CA': 'Âge du plus âgé' }, 'text', null], ['premium', { en: 'Premium', 'fr-CA': 'Prime' }, 'currency', null], ['carrier', { en: 'Carrier', 'fr-CA': 'Assureur' }, 'dropdown', ['Allianz Global Assistance', 'GMS', 'RSA', 'Tugo', 'Travelance', 'MRM', 'Travel Shield']]],
       },
+      ] : [
+      {
+        name: 'Personal Lines', owner: root, shared: true, products: ['Auto', 'Homeowners', 'Renters', 'Umbrella'],
+        stages: [['New enquiry', false, false], ['Needs analysis', false, false], ['Quote sent', false, false], ['Accepted', false, false], ['Policy issued', true, false], ['Lost', false, true]],
+        fields: [['premium', { en: 'Premium', 'fr-CA': 'Prime' }, 'currency', null], ['renewal_date', { en: 'Renewal date', 'fr-CA': 'Date de renouvellement' }, 'date', null], ['carrier', { en: 'Carrier', 'fr-CA': 'Assureur' }, 'dropdown', US_CARRIERS]],
+      },
+      {
+        name: 'Medicare & Senior Health', owner: root, shared: true, products: ['Medicare Supplement', 'Medicare Advantage review', 'Dental and vision'],
+        stages: [['Enquiry', false, false], ['Documents', false, false], ['Quote sent', false, false], ['Application', false, false], ['Policy issued', true, false], ['Declined', false, true]],
+        fields: [['applicant_age', { en: 'Age of oldest applicant', 'fr-CA': 'Âge du plus âgé' }, 'text', null], ['premium', { en: 'Premium', 'fr-CA': 'Prime' }, 'currency', null], ['carrier', { en: 'Carrier', 'fr-CA': 'Assureur' }, 'dropdown', US_CARRIERS]],
+      },
+      ]) as PipeDef[]),
       {
         name: 'Life & Health', owner: root, shared: true, products: ['Term life 20', 'Living benefits', 'Group health', 'Savings plan'],
         stages: [['Lead', false, false], ['Meeting booked', false, false], ['Quote sent', false, false], ['Underwriting', false, false], ['Policy issued', true, false], ['Lost', false, true]],
@@ -230,16 +268,42 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
       bump('compliance_items'); bump('compliance_profiles');
     }
 
+    // US demo: two California licensees, one part-way through a two-year term and one close to the end of it.
+    if (!ca) {
+      const months = (n: number) => { const d = new Date(); d.setUTCMonth(d.getUTCMonth() - n); return dateOnly(d); };
+      const plus5 = (d: string) => `${Number(d.slice(0, 4)) + 5}${d.slice(4)}`;
+      const people: [string, number, [string, string, number, number, string][]][] = [
+        ['Sofia Rossi', 14, [['Ethics in insurance practice', 'ethics', 3, 11, 'verified'], ['Property and casualty update', 'technical', 8, 9, 'verified'], ['Personal lines workshop', 'technical', 3, 1, 'recorded']]],
+        ['Wei Chen', 23, [['California ethics requirement', 'ethics', 3, 15, 'verified'], ['Life and health update', 'technical', 10, 8, 'verified']]],
+      ];
+      for (const [nm, anchorMonthsAgo, items] of people) {
+        const u = ctxRow.find((x) => x.name === nm);
+        if (!u) continue;
+        await client.query(`INSERT INTO learner_licences (tenant_id, user_id, node_id, pack_code, licence_class, licence_number, licensed_since, term_anchor) VALUES ($1,$2,$3,'ca_doi','agent',$4,$5,$6)`,
+          [tenantId, u.id, u.node, nm === 'Wei Chen' ? '0K12345' : '0M67890', months(80), months(anchorMonthsAgo)]);
+        bump('learner_licences');
+        for (const [title, cat, hrs, ago_m, status] of items) {
+          const done = months(ago_m);
+          await client.query(`INSERT INTO ce_entries (tenant_id, user_id, node_id, pack_code, title, provider, category, hours, completed_on, source, status, reviewed_by_name, reviewed_at, retain_until)
+            VALUES ($1,$2,$3,'ca_doi',$4,'Demo CE Provider',$5,$6,$7,'external',$8,$9,$10,$11)`,
+            [tenantId, u.id, u.node, title, cat, hrs, done, status, status === 'verified' ? 'Priya Nair' : null, status === 'verified' ? ago(1) : null, plus5(done)]);
+          bump('ce_entries');
+        }
+      }
+    }
+
     // Mail sent to these addresses is suggested into the matching pipeline and first stage by the sidebar.
-    for (const [alias, name] of [['travel@maple-demo.example.com', 'Travel & Visitor'], ['supervisa@maple-demo.example.com', 'Super Visa'], ['life@maple-demo.example.com', 'Life & Health']] as const) {
-      const p = pipes.find((x) => x.def.name === name)!;
+    for (const [alias, pname] of (ca
+      ? [['travel@maple-demo.example.com', 'Travel & Visitor'], ['supervisa@maple-demo.example.com', 'Super Visa'], ['life@maple-demo.example.com', 'Life & Health']]
+      : [['personal@liberty-demo.example.com', 'Personal Lines'], ['medicare@liberty-demo.example.com', 'Medicare & Senior Health'], ['life@liberty-demo.example.com', 'Life & Health']]) as [string, string][]) {
+      const p = pipes.find((x) => x.def.name === pname)!;
       await client.query(`INSERT INTO alias_rules (tenant_id, pipeline_id, stage_id, alias, created_by) VALUES ($1,$2,$3,$4,$5)`, [tenantId, p.id, p.stageIds[0], alias, adminRow.id]);
       bump('alias_rules');
     }
 
     // Accounts (companies) owned by branches.
     const accountIds: { id: string; node: string }[] = [];
-    for (const [i, co] of COMPANIES.entries()) {
+    for (const [i, co] of COMPANY_LIST.entries()) {
       const n = firstLoc[i % firstLoc.length]!.id;
       const id = randomUUID();
       await client.query(`INSERT INTO accounts (id, tenant_id, owner_node_id, name, domain) VALUES ($1,$2,$3,$4,$5)`, [id, tenantId, n, co, `${co.toLowerCase().replace(/[^a-z]+/g, '')}.example.com`]);
@@ -329,19 +393,19 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
         const isCall = r.chance(0.3);
         await client.query(
           `INSERT INTO notes (tenant_id, box_id, owner_node_id, author_id, body, kind, call_outcome, call_minutes, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-          [tenantId, id, c.node, owner.id, c.fr ? r.pick(NOTE_FR) : r.pick(NOTE_TEXT), isCall ? 'call' : 'note', isCall ? r.pick(['connected', 'connected', 'voicemail', 'no_answer']) : null, isCall ? r.int(2, 25) : null, ago(r.int(0, 30), r.int(0, 20))],
+          [tenantId, id, c.node, owner.id, c.fr ? r.pick(NOTE_FR) : r.pick(NOTES), isCall ? 'call' : 'note', isCall ? r.pick(['connected', 'connected', 'voicemail', 'no_answer']) : null, isCall ? r.int(2, 25) : null, ago(r.int(0, 30), r.int(0, 20))],
         );
         bump('notes');
       }
       if (r.chance(0.55)) {
         const kind = r.pick(['overdue', 'today', 'soon', 'later', 'done'] as const);
         const due = kind === 'overdue' ? ago(r.int(1, 9)) : kind === 'today' ? new Date(Date.now() + r.int(1, 8) * 3_600_000) : kind === 'soon' ? ahead(r.int(1, 3)) : kind === 'later' ? ahead(r.int(5, 25)) : ago(r.int(1, 6));
-        await client.query(`INSERT INTO tasks (tenant_id, box_id, owner_node_id, assignee_id, title, due_at, done_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [tenantId, id, c.node, owner.id, r.pick(TASK_TITLES), due, kind === 'done' ? ago(r.int(0, 5)) : null]);
+        await client.query(`INSERT INTO tasks (tenant_id, box_id, owner_node_id, assignee_id, title, due_at, done_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [tenantId, id, c.node, owner.id, r.pick(TASKS), due, kind === 'done' ? ago(r.int(0, 5)) : null]);
         bump('tasks');
       }
       if (r.chance(0.3)) {
         const tid = randomUUID();
-        const subj = c.fr ? THREAD_SUBJECTS[5]! : r.pick(THREAD_SUBJECTS);
+        const subj = c.fr ? SUBJECTS[5]! : r.pick(SUBJECTS);
         await client.query(
           `INSERT INTO email_threads (id, tenant_id, owner_node_id, gmail_thread_id, subject, snippet, participants, last_message_at, message_count, linked_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
           [tid, tenantId, c.node, `demo-${i}`, subj, 'Thanks for getting back to me. Could you confirm the coverage dates and the deductible?', JSON.stringify([owner.id, c.name]), ago(r.int(0, 20)), r.int(2, 9), owner.id],
