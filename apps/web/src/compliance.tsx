@@ -1,6 +1,7 @@
 import { docLabel } from './doctypes.ts';
 import { VendorPanel } from './vendors.tsx';
 import { VaultPanel } from './vault.tsx';
+import { FirstWeekPanel } from './firstweek.tsx';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
@@ -346,6 +347,7 @@ function FileView({ call, locale, nodeId, ho, back }: { call: Call; locale: Loca
       <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{f.node.name}</h2><span class="muted">{f.company ? `${f.company} · ` : ''}{x.status[p?.status ?? 'incomplete']}{f.eoMin ? ` · ${x.min(money(f.eoMin, locale))}` : ''}</span></div><Bar pct={f.checklist.percent} /></div>
       {err && <p class="err" role="alert">{err}</p>}{msg && <p class="muted" role="status">{msg}</p>}
       {p?.status === 'rejected' && p.reviewNote && <div class="banner warn" role="alert">{p.reviewedByName ? x.reviewedBy(p.reviewedByName) + ': ' : ''}{p.reviewNote}</div>}
+      <FirstWeekPanel call={call} locale={locale} nodeId={nodeId} ho={ho} />
       <section class="hcard"><ol class="csteps">{f.checklist.steps.map((s) => <li class={s.done ? 'done' : ''}><span aria-hidden="true">{s.done ? '✓' : '○'}</span> {x.steps[s.id]}{!s.done && stepText(s) ? <small class="muted"> · {stepText(s)}</small> : null}</li>)}</ol></section>
 
       <section class="hcard"><h3>{x.steps.profile}</h3><Profile f={f} x={x} locale={locale} locked={locked} onSave={(b) => act(() => call('PUT', `/v1/compliance/partners/${nodeId}/profile`, b), x.saved)} /></section>

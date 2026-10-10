@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { hashToken } from '@pii/platform';
 import type { AppDeps } from './app.ts';
 import { privacy, support, terms, type Lang, type LegalInfo } from './legal.ts';
+import { guideFor, renderGuide, type GuideLang } from './partner-guide.ts';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
@@ -39,7 +40,7 @@ export function registerPageRoutes(app: FastifyInstance, deps: AppDeps): void {
           : { hi: first ? `Welcome, ${esc(first)}` : 'Welcome', in: `You are now part of <b>${esc(company)}</b>.`, s1: 'Install the PII Chrome extension', s1x: ext ? 'Install it' : 'If you do not have it yet, ask the person who invited you.', s2: 'Open Gmail', s3: 'Look for <b>PII</b> in the left panel', go: 'Open Gmail', back: 'You are signed in. You can close this tab.' };
         body = q.welcome
           ? `<p>${T.in}</p><ol style="text-align:left;line-height:1.7;padding-left:22px"><li><b>${T.s1}</b><br><span style="color:#6b7280;font-size:14px">${ext ? `<a href="${esc(ext)}">${T.s1x}</a>` : T.s1x}</span></li><li><b>${T.s2}</b></li><li>${T.s3}</li></ol><p><a href="https://mail.google.com" style="display:inline-block;background:#1d4ed8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">${T.go}</a></p>`
-          : `<p>${T.back}</p><p><a href="https://mail.google.com">${T.go}</a></p>`;
+          : `<p>${T.back}</p><p><a href="https://mail.google.com">${T.go}</a></p><p><a href="/guide?lang=${lang}">${lang === 'fr-CA' ? 'Guide du partenaire' : 'Partner guide'}</a></p>`;
         return reply.type('text/html; charset=utf-8').send(page(product, body, T.hi).replace('<html lang="en">', `<html lang="${lang}">`));
       } catch { /* not signed in after all: show the plain signed-in page */ }
       return reply.type('text/html; charset=utf-8').send(page(product, body, product));
@@ -200,6 +201,24 @@ h1{font-size:28px;margin:18px 0 8px;letter-spacing:-.01em}h2{font-size:18px;marg
   app.get('/privacy', doc('privacy', privacy));
   app.get('/terms', doc('terms', terms));
   app.get('/support', doc('support', support));
+
+  // The partner guide. Not public: it needs a signed-in person who belongs to a company here (every role counts). Never cached or indexed.
+  app.get('/guide', async (req, reply) => {
+    const q = (req.query as { lang?: string }).lang;
+    const send = (code: number, html: string) => reply.code(code).type('text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex, nofollow').send(html);
+    let id;
+    try { id = await deps.authenticate(req); } catch {
+      const fr = q ? q.startsWith('fr') : String(req.headers['accept-language'] ?? '').toLowerCase().startsWith('fr');
+      return send(401, page(product, fr
+        ? '<p>Le guide du partenaire est réservé aux personnes connectées.</p><p><a href="/login?lang=fr-CA">Se connecter</a>, puis rouvrir ce lien.</p>'
+        : '<p>The partner guide is for signed-in partners.</p><p><a href="/login">Sign in</a>, then open this link again.</p>', product));
+    }
+    if (!id.ctx.canUseCrm) return send(403, page(product, '<p>This guide is for people who belong to a partner company. Ask your administrator for a role.</p>', product));
+    const lang: GuideLang = q ? (q.startsWith('fr') ? 'fr-CA' : 'en') : id.user.locale === 'fr-CA' ? 'fr-CA' : 'en';
+    const country = deps.config.region === 'us' ? 'US' : 'CA';
+    const other: GuideLang = lang === 'fr-CA' ? 'en' : 'fr-CA';
+    return send(200, renderGuide(guideFor(lang, country), { lang, product, support: deps.config.supportEmail, otherLangHref: `/guide?lang=${other}`, otherLangLabel: other === 'fr-CA' ? 'Français' : 'English' }));
+  });
 
   // The full-page PII app. The same bundle is also built into the Gmail extension.
   app.get('/app', async (_req, reply) =>

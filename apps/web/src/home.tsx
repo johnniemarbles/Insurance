@@ -8,6 +8,7 @@ import { OverviewPanel, overviewLabels } from './overview.tsx';
 import { HomeLearning } from './ce.tsx';
 import { LMS } from './features.ts';
 import { DashboardPanel } from './dashboard.tsx';
+import { FirstWeekCard } from './firstweek.tsx';
 import type { ComposeApi } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -176,6 +177,7 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
         <div class={`ktile${d.risks.length ? ' hot' : ''}`}><b>{d.risks.length}</b><span>{k.stuck}</span></div>
       </div>
 
+      <FirstWeekCard call={call} locale={locale} go={go} />
       {LMS && <HomeLearning call={call} locale={locale} go={go} />}
 
       <div class="hcols">

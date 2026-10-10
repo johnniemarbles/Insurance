@@ -5,6 +5,7 @@ export * from './consent.ts';
 export * from './fields.ts';
 export * from './settings.ts';
 export * from './compliance.ts';
+export * from './firstweek.ts';
 export * from './ce.ts';
 export * from './forecast.ts';
 export * from './assessment.ts';
