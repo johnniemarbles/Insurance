@@ -268,25 +268,28 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
       bump('compliance_items'); bump('compliance_profiles');
     }
 
-    // US demo: two California licensees, one part-way through a two-year term and one close to the end of it.
+    // US demo: two California licensees and two Texas licensees, each pair with one part-way through a two-year term and one close to the end of it.
     if (!ca) {
       const months = (n: number) => { const d = new Date(); d.setUTCMonth(d.getUTCMonth() - n); return dateOnly(d); };
       const plus5 = (d: string) => `${Number(d.slice(0, 4)) + 5}${d.slice(4)}`;
-      const people: [string, number, [string, string, number, number, string][]][] = [
-        ['Sofia Rossi', 14, [['Ethics in insurance practice', 'ethics', 3, 11, 'verified'], ['Property and casualty update', 'technical', 8, 9, 'verified'], ['Personal lines workshop', 'technical', 3, 1, 'recorded']]],
-        ['Wei Chen', 23, [['California ethics requirement', 'ethics', 3, 15, 'verified'], ['Life and health update', 'technical', 10, 8, 'verified']]],
+      const people: [string, string, string, number, [string, string, number, number, string][]][] = [
+        ['Sofia Rossi', 'ca_doi', '0M67890', 14, [['Ethics in insurance practice', 'ethics', 3, 11, 'verified'], ['Property and casualty update', 'technical', 8, 9, 'verified'], ['Personal lines workshop', 'technical', 3, 1, 'recorded']]],
+        ['Wei Chen', 'ca_doi', '0K12345', 23, [['California ethics requirement', 'ethics', 3, 15, 'verified'], ['Life and health update', 'technical', 10, 8, 'verified']]],
+        // Texas: Casey is part-way through; Jordan is close to expiry with the ethics hours still missing, so the alerts have something to show.
+        ['Casey Morgan', 'tx_tdi', '2345678', 9, [['Texas ethics for agents', 'ethics', 3, 6, 'verified'], ['General lines update', 'technical', 9, 4, 'verified']]],
+        ['Jordan Reyes', 'tx_tdi', '1987654', 22, [['Life and health products', 'technical', 14, 14, 'verified'], ['Property and casualty update', 'technical', 6, 5, 'verified']]],
       ];
-      for (const [nm, anchorMonthsAgo, items] of people) {
+      for (const [nm, pack, licNo, anchorMonthsAgo, items] of people) {
         const u = ctxRow.find((x) => x.name === nm);
         if (!u) continue;
-        await client.query(`INSERT INTO learner_licences (tenant_id, user_id, node_id, pack_code, licence_class, licence_number, licensed_since, term_anchor) VALUES ($1,$2,$3,'ca_doi','agent',$4,$5,$6)`,
-          [tenantId, u.id, u.node, nm === 'Wei Chen' ? '0K12345' : '0M67890', months(80), months(anchorMonthsAgo)]);
+        await client.query(`INSERT INTO learner_licences (tenant_id, user_id, node_id, pack_code, licence_class, licence_number, licensed_since, term_anchor) VALUES ($1,$2,$3,$7,'agent',$4,$5,$6)`,
+          [tenantId, u.id, u.node, licNo, months(80), months(anchorMonthsAgo), pack]);
         bump('learner_licences');
         for (const [title, cat, hrs, ago_m, status] of items) {
           const done = months(ago_m);
           await client.query(`INSERT INTO ce_entries (tenant_id, user_id, node_id, pack_code, title, provider, category, hours, completed_on, source, status, reviewed_by_name, reviewed_at, retain_until)
-            VALUES ($1,$2,$3,'ca_doi',$4,'Demo CE Provider',$5,$6,$7,'external',$8,$9,$10,$11)`,
-            [tenantId, u.id, u.node, title, cat, hrs, done, status, status === 'verified' ? 'Priya Nair' : null, status === 'verified' ? ago(1) : null, plus5(done)]);
+            VALUES ($1,$2,$3,$12,$4,'Demo CE Provider',$5,$6,$7,'external',$8,$9,$10,$11)`,
+            [tenantId, u.id, u.node, title, cat, hrs, done, status, status === 'verified' ? 'Priya Nair' : null, status === 'verified' ? ago(1) : null, plus5(done), pack]);
           bump('ce_entries');
         }
       }
