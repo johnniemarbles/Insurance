@@ -19,10 +19,14 @@ export async function safeTarget(raw: string, allowLocal: boolean): Promise<{ ur
   const local = allowLocal && (url.hostname === '127.0.0.1' || url.hostname === 'localhost');
   if (url.protocol !== 'https:' && !local) throw new Error('Webhook addresses must start with https://');
   if (url.username || url.password) throw new Error('Webhook addresses cannot contain a password');
+  // Literal private IP in the URL is never acceptable outside tests.
+  if (isIP(url.hostname) && !local && isPrivate(url.hostname)) throw new Error('Webhook addresses must be public');
   const addrs = await lookup(url.hostname, { all: true });
   if (addrs.length === 0) throw new Error('That address does not resolve');
-  if (!local && addrs.some((a) => isPrivate(a.address))) throw new Error('Webhook addresses must be public');
-  return { url, address: addrs[0]!.address };
+  // Prefer a public address when DNS returns a mix (reduces rebinding risk from dual A/AAAA answers).
+  const candidates = local ? addrs : addrs.filter((a) => !isPrivate(a.address));
+  if (candidates.length === 0) throw new Error('Webhook addresses must be public');
+  return { url, address: candidates[0]!.address };
 }
 
 function post(target: { url: URL; address: string }, body: string, headers: Record<string, string>): Promise<number> {

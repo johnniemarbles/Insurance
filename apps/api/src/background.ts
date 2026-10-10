@@ -12,6 +12,8 @@ import { sweepComplianceAlerts } from './compliance-alerts.ts';
 import { emitEventNow } from './webhooks.ts';
 import type { AppDeps } from './app.ts';
 
+/** Postgres advisory lock key so only one API instance runs the ten-minute sweep at a time. */
+const BACKGROUND_LOCK_KEY = 0x50494942;
 
 /** Records that have sat in a stage longer than an automation allows. Each stay triggers an automation once. */
 export async function sweepStale(deps: AppDeps): Promise<number> {
@@ -81,13 +83,46 @@ export async function sweepStaleInvitations(deps: AppDeps): Promise<number> {
   return r.rowCount ?? 0;
 }
 
-let running = false;
-/** Every ten minutes; safe to run on several instances because each automation acts once per stay. */
+async function runSweeps(deps: AppDeps): Promise<void> {
+  await sweepStale(deps);
+  await sweepDigests(deps);
+  await sweepStaleInvitations(deps);
+  await sweepRenewals(deps);
+  await withDigest(deps, async (d) => {
+    await sweepCompliance(d);
+    await sweepLearnerReminders(d);
+    await sweepComplianceAlerts(d);
+  });
+  await sweepAssignments(deps);
+  await sweepSnapshots(deps);
+  await sweepEsign(deps);
+  await archiveSigned(deps);
+}
+
+/**
+ * Every ten minutes. Uses a Postgres session advisory lock so concurrent API replicas
+ * do not double-run digests and notifications. Automations remain once-per-stay as a second line of defence.
+ */
 export function startBackgroundJobs(deps: AppDeps): () => void {
+  let running = false;
   const tick = async () => {
     if (running) return;
     running = true;
-    try { await sweepStale(deps); await sweepDigests(deps); await sweepStaleInvitations(deps); await sweepRenewals(deps); await withDigest(deps, async (d) => { await sweepCompliance(d); await sweepLearnerReminders(d); await sweepComplianceAlerts(d); }); await sweepAssignments(deps); await sweepSnapshots(deps); await sweepEsign(deps); await archiveSigned(deps); } catch { /* next tick */ } finally { running = false; }
+    const client = await deps.appPool.connect();
+    try {
+      const locked = (await client.query<{ ok: boolean }>('SELECT pg_try_advisory_lock($1) AS ok', [BACKGROUND_LOCK_KEY])).rows[0]?.ok;
+      if (!locked) return;
+      try {
+        await runSweeps(deps);
+      } finally {
+        await client.query('SELECT pg_advisory_unlock($1)', [BACKGROUND_LOCK_KEY]).catch(() => undefined);
+      }
+    } catch {
+      /* next tick */
+    } finally {
+      client.release();
+      running = false;
+    }
   };
   const t = setInterval(() => void tick(), 10 * 60_000);
   t.unref();

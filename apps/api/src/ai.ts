@@ -4,6 +4,22 @@ export interface AiClient {
   complete(input: { system: string; user: string; maxTokens: number }): Promise<string>;
 }
 
+/** Sensible defaults when AI_MODEL is unset. Prefer setting AI_MODEL explicitly in each environment. */
+const ANTHROPIC_DEFAULT = 'claude-sonnet-4-5';
+const OPENAI_DEFAULT = 'gpt-4.1-mini';
+
+/** Reject garbage or injection-looking model ids before they hit a provider. */
+export function resolveAiModel(env: Record<string, string | undefined>, provider: 'anthropic' | 'openai'): string {
+  const raw = (env.AI_MODEL ?? '').trim();
+  if (raw) {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$/.test(raw)) {
+      throw new Error('AI_MODEL has an invalid format');
+    }
+    return raw;
+  }
+  return provider === 'anthropic' ? ANTHROPIC_DEFAULT : OPENAI_DEFAULT;
+}
+
 export function anthropicClient(apiKey: string, model: string): AiClient {
   return {
     model,
@@ -41,7 +57,12 @@ export function openaiClient(apiKey: string, model: string): AiClient {
 
 /** Anthropic if its key is set, else OpenAI if that key is set, else no AI (the AI features answer 503). */
 export function aiFromEnv(env: Record<string, string | undefined> = process.env): AiClient | undefined {
-  if (env.ANTHROPIC_API_KEY) return anthropicClient(env.ANTHROPIC_API_KEY, env.AI_MODEL ?? 'claude-sonnet-5-5');
-  if (env.OPENAI_API_KEY) return openaiClient(env.OPENAI_API_KEY, env.AI_MODEL ?? 'gpt-4.1-mini');
+  try {
+    if (env.ANTHROPIC_API_KEY) return anthropicClient(env.ANTHROPIC_API_KEY, resolveAiModel(env, 'anthropic'));
+    if (env.OPENAI_API_KEY) return openaiClient(env.OPENAI_API_KEY, resolveAiModel(env, 'openai'));
+  } catch (err) {
+    console.warn('AI disabled:', (err as Error).message);
+    return undefined;
+  }
   return undefined;
 }
