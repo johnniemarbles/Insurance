@@ -16,6 +16,22 @@ test('config requires a valid region and database urls', () => {
   assert.throws(() => loadConfig({ REGION: 'us' }));
 });
 
+test('dataCountry follows REGION and rejects a conflicting override in prod', () => {
+  assert.equal(loadConfig({ ...env, REGION: 'ca-qc' }).dataCountry, 'CA');
+  assert.equal(loadConfig({ ...env, REGION: 'us' }).dataCountry, 'US');
+  assert.equal(loadConfig({ ...env, REGION: 'ca-qc', DATA_COUNTRY: 'CA' }).dataCountry, 'CA');
+  // dev may set a mismatch (local experiments); staging/prod may not
+  assert.equal(loadConfig({ ...env, REGION: 'ca-qc', APP_ENV: 'dev', DATA_COUNTRY: 'US' }).dataCountry, 'US');
+  assert.throws(
+    () => loadConfig({ ...env, REGION: 'ca-qc', APP_ENV: 'prod', DATA_COUNTRY: 'US' }),
+    /DATA_COUNTRY=US conflicts with REGION=ca-qc/,
+  );
+  assert.throws(
+    () => loadConfig({ ...env, REGION: 'us', APP_ENV: 'staging', DATA_COUNTRY: 'CA' }),
+    /DATA_COUNTRY=CA conflicts with REGION=us/,
+  );
+});
+
 test('seal/open round trip, and ciphertext is bound to its row', () => {
   const kp = localKeyProvider('0123456789abcdef0123');
   const s = seal(kp, 'refresh-token', 'tenant:1/row:1');

@@ -62,6 +62,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const appOrigin = env.APP_ORIGIN ?? 'https://app.punjabinsurance.co';
   // Privacy and support live on the country's own website: .ca for Canada, .com for the USA.
   const site = region === 'us' ? 'punjabinsurance.com' : 'punjabinsurance.ca';
+  // Residency country follows the deployment region. An explicit DATA_COUNTRY may only match the region
+  // (staging/prod refuse a mismatch so notices cannot claim the wrong country).
+  const dataCountryFromRegion: 'US' | 'CA' = region === 'us' ? 'US' : 'CA';
+  let dataCountry = dataCountryFromRegion;
+  if (env.DATA_COUNTRY === 'CA' || env.DATA_COUNTRY === 'US') {
+    dataCountry = env.DATA_COUNTRY;
+    if (dataCountry !== dataCountryFromRegion && (appEnv === 'prod' || appEnv === 'staging')) {
+      throw new Error(`DATA_COUNTRY=${dataCountry} conflicts with REGION=${region} (expected ${dataCountryFromRegion})`);
+    }
+  }
   return {
     extensionOrigins: (env.EXTENSION_ORIGINS ?? '').split(',').map((x) => x.trim()).filter(Boolean),
     googleClientId,
@@ -72,7 +82,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     supportEmail: env.SUPPORT_EMAIL ?? 'support.crm@punjabinsurance.com',
     supportUrl: env.SUPPORT_URL ?? `https://${site}/support`,
     termsUrl: env.TERMS_URL ?? `https://${site}/terms`,
-    dataCountry: env.DATA_COUNTRY === 'CA' ? 'CA' : 'US',
+    dataCountry,
     appEnv,
     region,
     productName: env.PRODUCT_NAME ?? 'PII',
