@@ -63,6 +63,15 @@ test('rule packs: RIBO and BC are loaded with their sources and retention', asyn
   assert.ok(ribo.sourceUrl.startsWith('https://'));
 });
 
+test('the Canadian server refuses US state packs (California, Texas)', async () => {
+  for (const packCode of ['ca_doi', 'tx_tdi']) {
+    const r = await call(L1, 'PUT', '/v1/ce/licences', { packCode, licenceClass: 'agent', termStart: '2025-01-01' });
+    assert.ok(r.status >= 400 && r.status < 500, packCode + ' got ' + r.status);
+    const e = await call(L1, 'POST', '/v1/ce/entries', { packCode, title: 'x', provider: 'y', category: 'ethics', hours: 1, completedOn: new Date().toISOString().slice(0, 10) });
+    assert.ok(e.status >= 400 && e.status < 500, packCode + ' entry got ' + e.status);
+  }
+});
+
 test('a licensee picks a regulator and class; the status counts hours by category', async () => {
   assert.equal((await call(L1, 'PUT', '/v1/ce/licences', { packCode: 'ribo', licenceClass: 'nope' })).status, 422);
   assert.equal((await call(L1, 'PUT', '/v1/ce/licences', { packCode: 'zzz', licenceClass: 'broker' })).status, 422);

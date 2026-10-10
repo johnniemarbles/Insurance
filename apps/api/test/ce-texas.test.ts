@@ -57,3 +57,10 @@ test('Texas: hours count inside the licence term; ethics minimum is enforced', a
   me = (await call(L1, 'GET', '/v1/ce/me')).json.licences.find((l: { packCode: string }) => l.packCode === 'tx_tdi');
   assert.equal(me.evaluation.state, 'met');
 });
+
+test('the US server refuses the Canadian regulators', async () => {
+  for (const packCode of ['ribo', 'icbc']) {
+    const r = await call(L1, 'PUT', '/v1/ce/licences', { packCode, licenceClass: 'broker' });
+    assert.ok(r.status >= 400 && r.status < 500, packCode + ' got ' + r.status);
+  }
+});
