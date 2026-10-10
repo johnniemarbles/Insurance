@@ -68,6 +68,11 @@ export function reminderText(kind: string, d: D, loc: Locale): { subject: string
         : (fr ? `résultat de vérification (${d.detail}) du ${d.since} non examiné` : `screening hit (${d.detail}) from ${d.since} has not been reviewed`);
       return { subject: fr ? 'Conformité : point à traiter' : 'Compliance: item needs attention', line: `${d.name ?? ''} : ${what}` };
     }
+    case 'first_week_late': {
+      const open = Number(d.total) - Number(d.done);
+      return { subject: fr ? 'Nouveau partenaire : première semaine dépassée' : 'New partner: first week is over',
+        line: fr ? `${d.name ?? 'Un partenaire'} : la première semaine est terminée et il reste ${open} étape(s) ouverte(s) sur ${d.total}` : `${d.name ?? 'A partner'}: the first week is over and ${open} of ${d.total} steps are still open` };
+    }
     case 'vault_alert': {
       const n = Number(d.pending) || 0;
       return { subject: fr ? 'Voûte d’archives : documents en attente' : 'Archive vault: documents waiting',

@@ -118,6 +118,11 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'A cash report or screening hit needs attention', 'fr-CA': 'Une déclaration d’espèces ou un résultat de vérification demande votre attention' }, help: { en: 'A large cash receipt with no report reference after 15 days, or a screening hit not reviewed after 2 days. Sent to administrators and compliance.', 'fr-CA': 'Un encaissement important en espèces sans référence de déclaration après 15 jours, ou un résultat de vérification non examiné après 2 jours. Envoyé aux administrateurs et à la conformité.' }, keywords: 'notification alert aml cash fintrac screening sanctions pep compliance',
   },
   {
+    key: 'notify.first_week_late', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'A new partner company is past its first week', 'fr-CA': 'Une nouvelle entreprise partenaire a dépassé sa première semaine' }, help: { en: 'A partner company still has first-week steps open after seven days. Sent once per partner.', 'fr-CA': 'Une entreprise partenaire a encore des étapes de première semaine ouvertes après sept jours. Un seul envoi par partenaire.' },
+    keywords: 'notification alert first week new partner onboarding checklist compliance',
+  },
+  {
     key: 'notify.vault_alert', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
     label: { en: 'Signed paperwork is waiting to be archived', 'fr-CA': 'Des documents signés attendent d’être archivés' }, help: { en: 'Signed documents have waited more than a day to reach the archive vault. At most once a week. Sent to administrators and compliance.', 'fr-CA': 'Des documents signés attendent depuis plus d’un jour d’être copiés dans la voûte d’archives. Au plus une fois par semaine. Envoyé aux administrateurs et à la conformité.' }, keywords: 'notification alert vault archive signed paperwork storage',
   },

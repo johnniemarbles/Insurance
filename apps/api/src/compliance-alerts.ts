@@ -1,12 +1,13 @@
 import { withRequestTx } from '@pii/db';
 import { actingAs } from './effects.ts';
-import { tell } from './routes-compliance.ts';
+import { tell, countryOf } from './routes-compliance.ts';
+import { firstWeekFor } from './routes-firstweek.ts';
 import type { AppDeps } from './app.ts';
 
 /**
  * Tells each company's administrators and compliance people about items that will not clear on their own: a large cash receipt with no
  * report reference 15 days on, a screening hit nobody has reviewed after 2 days, and signed paperwork that has waited more than a day to
- * reach the archive vault. Each item is told once per person (vault warnings once a week while the problem lasts).
+ * reach the archive vault, and a partner company that is past its first week with steps still open. Each item is told once per person (vault warnings once a week while the problem lasts).
  */
 export async function sweepComplianceAlerts(deps: AppDeps): Promise<number> {
   const tenants = (await deps.authPool.query<{ tenant_id: string; node: string; admin: string | null }>(
@@ -22,7 +23,7 @@ export async function sweepComplianceAlerts(deps: AppDeps): Promise<number> {
           WHERE r.tenant_id = $1 AND r.role::text IN ('admin', 'compliance') AND u.status::text <> 'disabled'`, [t.tenant_id])).rows.map((x) => x.user_id);
       if (people.length === 0) continue;
       const items = await withRequestTx(deps.appPool, ctx, async (tx) => {
-        const out: { key: string; kind: 'aml_alert' | 'vault_alert'; data: Record<string, unknown> }[] = [];
+        const out: { key: string; kind: 'aml_alert' | 'vault_alert' | 'first_week_late'; data: Record<string, unknown> }[] = [];
         const cash = (await tx.query<{ id: string; box_id: string; name: string; amount: string; currency: string; occurred_on: string }>(
           `SELECT c.id, c.box_id, b.name, c.amount::text AS amount, c.currency, c.occurred_on::text AS occurred_on
              FROM cash_transactions c JOIN boxes b ON b.id = c.box_id
@@ -41,6 +42,13 @@ export async function sweepComplianceAlerts(deps: AppDeps): Promise<number> {
                 AND EXISTS (SELECT 1 FROM box_documents d WHERE d.id = a.document_id)
                 AND NOT EXISTS (SELECT 1 FROM vault_objects o WHERE o.document_id = a.document_id)`)).rows[0]!;
           if (v.n > 0) out.push({ key: `vault:${v.week}`, kind: 'vault_alert', data: { pending: v.n } });
+        }
+        // A partner company created more than a week ago (but not long ago) that still has first-week steps open.
+        const young = (await tx.query<{ id: string }>(
+          `SELECT id FROM org_nodes WHERE type = 'partner' AND is_active AND created_at::date <= current_date - 7 AND created_at::date > current_date - 60 ORDER BY created_at LIMIT 100`)).rows;
+        for (const p of young) {
+          const w = await firstWeekFor(tx, ctx, p.id, countryOf(deps.config.region));
+          if (!w.complete) out.push({ key: `firstweek:${p.id}`, kind: 'first_week_late', data: { nodeId: p.id, name: w.node.name, done: w.done, total: w.total, next: w.next } });
         }
         return out;
       });

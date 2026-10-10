@@ -7,6 +7,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { sweepComplianceAlerts } from '../src/compliance-alerts.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let deps: AppDeps;
 let co: { tenantId: string; rootNodeId: string }; let ho: { tenantId: string; rootNodeId: string };
@@ -87,4 +88,19 @@ test('partner guide: needs sign-in, then shows in the person\'s language, and is
   assert.match(fr.body, /Guide du partenaire/); assert.match(fr.body, /lang="fr-CA"/);
   const forced = await app.inject({ method: 'GET', url: '/guide?lang=en', headers: { 'x-dev-user-email': FR } });
   assert.match(forced.body, /Partner guide/);
+});
+
+test('first week: administrators hear once when a partner is past day 7 with steps open, and not before', async () => {
+  const count = () => owner(async (o) => Number((await o.query(`SELECT count(*) n FROM notifications WHERE kind = 'first_week_late' AND tenant_id = $1`, [co.tenantId])).rows[0].n));
+  await sweepComplianceAlerts(deps);
+  assert.equal(await count(), 0, 'a partner on day 1 is not late');
+  await owner((o) => o.query(`UPDATE org_nodes SET created_at = now() - interval '10 days' WHERE id = $1`, [NODE]));
+  await sweepComplianceAlerts(deps);
+  assert.equal(await count(), 1);
+  const n = (await call(ADMIN, 'GET', '/v1/notifications')).json;
+  const item = (n.items ?? n.notifications ?? []).find((x: { kind: string }) => x.kind === 'first_week_late');
+  assert.ok(item, JSON.stringify(n).slice(0, 300)); assert.equal(item.data.name, 'New Partner Agency'); assert.equal(item.data.total, 12);
+  await sweepComplianceAlerts(deps);
+  assert.equal(await count(), 1, 'told once');
+  assert.equal((await call(PART, 'GET', '/v1/first-week')).json.late, true);
 });
