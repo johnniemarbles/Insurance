@@ -24,4 +24,21 @@ When Adobe approves API access: Compliance > Vendors > Adobe: enter the access p
 ## 6. Decisions for counsel
 - Vault lock: `GOVERNANCE` (can be overridden by a privileged AWS user) or `COMPLIANCE` (cannot be undone). Switch `VAULT_LOCK_MODE` only after counsel confirms.
 - Continuing-education grace periods, privacy and consent wording, French wording of starter courses, retention periods, and the purge job.
+- AI assistance: data can leave the region when a company admin turns AI on. Get counsel sign-off on the cross-border wording before real Canadian users use AI.
 - US items: see US_COMPLIANCE.md.
+
+## 7. Before real Canadian users (residency and keys)
+- Confirm `REGION=ca-qc` on the Canadian Railway service and that `DATA_COUNTRY` is unset or `CA` (the app refuses a mismatch in staging/prod).
+- Confirm the privacy page (EN and fr-CA) says data is held in Canada — open `/privacy?lang=fr` on the live Canadian host.
+- Move the Canadian stack to a Montréal region host when ready; set physical region verified in `deployment_info`.
+- Replace `LOCAL_KEYS` with KMS-backed field encryption before storing real client PII at rest.
+- Custom domain `app.punjabinsurance.co` routed to the two regional stacks.
+
+## 8. Demo company on the Canadian server
+- Railway > pii-ca API service > Variables: if `DEMO_RESET` (or equivalent) is **on**, each deploy resets the demo company. Switch it **off** before any real demo users you want to keep.
+- After a deploy, sign in as the demo admin once and confirm the company is still there if reset is off.
+
+## 9. Chrome extension review
+- Do not change anything under `apps/extension` while the package is under Chrome Web Store review.
+- Keep the listed extension endpoints backward-compatible on the live hosts until review finishes.
+- After approval or rejection, a new extension version needs its own review if the package changes.
