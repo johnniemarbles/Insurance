@@ -29,14 +29,16 @@ When Adobe approves API access: Compliance > Vendors > Adobe: enter the access p
 
 ## 7. Before real Canadian users (residency and keys)
 - Confirm `REGION=ca-qc` on the Canadian Railway service and that `DATA_COUNTRY` is unset or `CA` (the app refuses a mismatch in staging/prod).
-- Confirm the privacy page (EN and fr-CA) says data is held in Canada — open `/privacy?lang=fr` on the live Canadian host.
+- Confirm the privacy page (EN and fr-CA) says data is held in Canada — open `/privacy?lang=fr` on the live Canadian host. If you still see "servers are in the United States" while claiming Canada, the US-authority sentence in `legal.ts` must be gated on `stored === 'US'` (see AUDIT_NOTES).
 - Move the Canadian stack to a Montréal region host when ready; set physical region verified in `deployment_info`.
 - Replace `LOCAL_KEYS` with KMS-backed field encryption before storing real client PII at rest.
 - Custom domain `app.punjabinsurance.co` routed to the two regional stacks.
 
 ## 8. Demo company on the Canadian server
-- Railway > pii-ca API service > Variables: if `DEMO_RESET` (or equivalent) is **on**, each deploy resets the demo company. Switch it **off** before any real demo users you want to keep.
-- After a deploy, sign in as the demo admin once and confirm the company is still there if reset is off.
+- Railway > pii-ca API service > Variables:
+  - `SEED_DEMO=true` creates/keeps the demo company at deploy.
+  - **`DEMO_RESET`:** in **prod**, only `DEMO_RESET=confirm` wipes demo CRM data ( `DEMO_RESET=true` is ignored so a leftover flag cannot reset every deploy). In non-prod, `DEMO_RESET=true` still rebuilds. Always **remove** `DEMO_RESET` after a one-shot rebuild.
+- After a deploy, sign in as the demo admin once and confirm the company is still there if you did not intend a reset.
 
 ## 9. Chrome extension review
 - Do not change anything under `apps/extension` while the package is under Chrome Web Store review.
