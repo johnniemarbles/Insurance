@@ -11,24 +11,18 @@ Web/API work only. **Chrome extension frozen** for store review (`apps/extension
 - Webhooks: prefer public DNS answers; reject private IP literals
 - AI: model id format check; default remains `claude-sonnet-5-5`
 - HTTP cross-tenant isolation: `apps/api/test/tenant-isolation.test.ts`
-- **DEMO_RESET prod safety:** `DEMO_RESET=true` is ignored in prod; use `DEMO_RESET=confirm` for a one-shot wipe, then remove the variable
+- **DEMO_RESET prod safety:** `DEMO_RESET=true` ignored in prod; use `DEMO_RESET=confirm` for one-shot wipe
+- **Privacy notice:** US-authorities sentence only when `stored === 'US'` (no more "Canada" + "US servers" contradiction)
 
-## Privacy notice follow-up (apply next)
-In `apps/api/src/legal.ts`, the "Where it is stored" section still appends a US-authorities sentence whenever `country === 'CA'`, even if `stored === 'CA'`. That contradicts "conservées au Canada".
-
-Change both FR and EN conditions from:
-`...(ca ? ['…servers…United States…'] : [])`
-to:
-`...(i.stored === 'US' ? ['…'] : [])`
-
-Also update the home page privacy one-liner in `routes-pages.ts` (still hardcodes United States) to follow `deps.config.dataCountry`.
+## Still optional polish
+- Home page privacy one-liner in `routes-pages.ts` still hardcodes United States; should follow `deps.config.dataCountry`
 
 ## Still owner / counsel
 - KMS-backed field encryption before real CA client PII
 - Vault key rotation + AWS root MFA (see GO_LIVE_CHECKLIST)
 - Counsel on AI cross-border and privacy wording
 - Montréal region host + custom domain
-- Confirm demo vars on Canadian Railway (`SEED_DEMO`, `DEMO_RESET` unset or not `confirm` unless intentional)
+- Confirm demo vars on Canadian Railway (`SEED_DEMO`, `DEMO_RESET` unset unless intentional)
 - Partner usability test; extension update only after Chrome review ends
 
 ## Before every push to main

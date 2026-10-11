@@ -201,7 +201,12 @@ test('landing pages exist for sign-in return, errors and privacy', async () => {
     }
     assert.match((await app.inject({ method: 'GET', url: '/terms' })).body, /Province of Ontario|State of California/);
     const p = (await app.inject({ method: 'GET', url: '/privacy' })).body;
-    assert.match(p, /Google API Services User Data Policy/); assert.match(p, /United States/); assert.ok(!/in Canada \(Quebec\)/.test(p));
+    assert.match(p, /Google API Services User Data Policy/);
+    assert.match(p, /in Canada/);
+    assert.equal(/servers are in the United States/.test(p), false);
+    const pfr = (await app.inject({ method: 'GET', url: '/privacy?lang=fr' })).body;
+    assert.match(pfr, /au Canada/);
+    assert.equal(/serveurs sont situés aux États-Unis/.test(pfr), false);
   }
   assert.equal((await app.inject({ method: 'GET', url: '/login?error=<script>' })).statusCode, 403);
   const logo = await app.inject({ method: 'GET', url: '/brand/logo.png' });
