@@ -92,7 +92,20 @@ try {
     }
     if (process.env.SEED_DEMO === 'true') {
       // The demo is optional: a refusal (for example an unverified region) must never stop a release.
-      const d = await seedDemoTenant(url, { adminEmail: process.env.DEMO_ADMIN_EMAIL, reset: process.env.DEMO_RESET === 'true' }).catch((e: Error) => { console.error(`demo tenant skipped: ${e.message}`); return null; });
+      // Prod: only DEMO_RESET=confirm wipes (not DEMO_RESET=true), so a flag left on cannot keep resetting every deploy.
+      let reset = process.env.DEMO_RESET === 'true';
+      if (environment === 'prod') {
+        if (process.env.DEMO_RESET === 'true') {
+          console.error('DEMO_RESET=true is ignored in prod; set DEMO_RESET=confirm for a one-shot wipe, then remove it.');
+          reset = false;
+        } else if (process.env.DEMO_RESET === 'confirm') {
+          console.warn('DEMO_RESET=confirm: wiping demo CRM data this deploy. Remove DEMO_RESET after deploy.');
+          reset = true;
+        }
+      } else if (reset) {
+        console.warn('DEMO_RESET=true: demo CRM data will be rebuilt this deploy. Remove DEMO_RESET when done.');
+      }
+      const d = await seedDemoTenant(url, { adminEmail: process.env.DEMO_ADMIN_EMAIL, reset }).catch((e: Error) => { console.error(`demo tenant skipped: ${e.message}`); return null; });
       if (d) console.log(d.created ? `seeded demo tenant ${d.tenantId}: ${JSON.stringify(d.counts)}` : d.counts && Object.keys(d.counts).length ? `reset demo tenant ${d.tenantId}: ${JSON.stringify(d.counts)}` : 'demo tenant already present');
     }
     console.log(`release ok: ${region}/${environment}; applied ${r.applied.length}, existing ${r.skipped.length}`);
