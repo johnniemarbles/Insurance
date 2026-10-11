@@ -5,7 +5,7 @@ export interface AiClient {
 }
 
 /** Sensible defaults when AI_MODEL is unset. Prefer setting AI_MODEL explicitly in each environment. */
-const ANTHROPIC_DEFAULT = 'claude-sonnet-4-5';
+const ANTHROPIC_DEFAULT = 'claude-sonnet-5-5';
 const OPENAI_DEFAULT = 'gpt-4.1-mini';
 
 /** Reject garbage or injection-looking model ids before they hit a provider. */

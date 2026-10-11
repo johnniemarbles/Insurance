@@ -81,7 +81,7 @@ test('invited tenant admin signs in, binds the Google id, sees the French notice
   assert.equal(me.needsConsent, true);
   assert.equal((await raw('GET', '/v1/org/nodes', as(r.session))).statusCode, 403);
   const notice = JSON.parse((await raw('GET', '/v1/consent/first-login', as(r.session))).body);
-  assert.match(notice.text, /aux États-Unis/);
+  assert.match(notice.text, /conservées au Canada/);
   assert.match(notice.text, /Auth Co/);
   assert.equal((await raw('POST', '/v1/consent/first-login', { ...as(r.session), origin: ORIGIN })).statusCode, 204);
   assert.equal((await raw('GET', '/v1/org/nodes', as(r.session))).statusCode, 200);
