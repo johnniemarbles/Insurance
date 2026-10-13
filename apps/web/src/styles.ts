@@ -297,4 +297,17 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .dibox-att{display:inline-block;border:1px solid var(--line);border-radius:8px;padding:2px 8px;font-size:12px;margin-right:6px}.dibox-reply{margin-top:12px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}.dibox-reply textarea{width:100%;box-sizing:border-box}
 .dibox-panel{border:1px solid var(--line);border-radius:12px;background:#fff;min-height:240px}.dibox-back{display:none}.dibox-empty{margin:20px 0;text-align:center}
 @media(max-width:900px){.dibox-cols{grid-template-columns:1fr}.dibox.reading .dibox-list{display:none}.dibox:not(.reading) .dibox-read,.dibox:not(.reading) .dibox-panel{display:none}.dibox-back{display:inline-block}}
+.obrow{align-items:center;flex-wrap:wrap;gap:10px}.obrow .rname{flex:1 1 220px;min-width:180px}
+.obprog{display:inline-grid;grid-template-columns:repeat(9,1fr);gap:3px;width:160px;vertical-align:middle}.obprog i{display:block;height:8px;border-radius:99px;background:var(--tint2)}.obprog i.done{background:var(--pri)}.obprog i.cur{background:var(--pri);opacity:.45}
+.obsteps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.obsteps li{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px 10px;color:var(--mute);background:var(--bg)}
+.obsteps li span:last-child{display:grid;line-height:1.25}.obsteps li small{font-size:12px;color:var(--mute)}
+.obsteps li.done{color:var(--ink)}.obsteps li.done small{color:var(--ok,#0a7d3b)}
+.obsteps li.cur{border-color:var(--pri);color:var(--ink);box-shadow:0 0 0 2px var(--tint2)}.obsteps li.cur small{color:var(--pri);font-weight:600}
+.obdot{width:22px;height:22px;border-radius:50%;display:inline-grid;place-items:center;flex:none;background:var(--tint2);font-size:11px;font-weight:700;color:var(--mute)}
+.obsteps li.done .obdot{background:var(--ok,#0a7d3b);color:#fff}.obsteps li.cur .obdot{background:var(--pri);color:#fff}
+.obnext{border-left:4px solid var(--pri);padding:10px 14px;border-radius:8px;background:var(--tint2);color:var(--ink)}
+.obgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:14px}
+.obpartner .hcard{margin-bottom:0}
+@media(max-width:700px){.obprog{width:120px}.obsteps{grid-template-columns:1fr}}
 `;

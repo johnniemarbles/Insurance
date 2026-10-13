@@ -19,7 +19,7 @@ import { HomePage } from './home.tsx';
 import { NotificationsPage } from './notifications.tsx';
 import { RenewalsPage } from './renewals.tsx';
 import { CompliancePage } from './compliance.tsx';
-import { OnboardingPage } from './onboarding.tsx';
+
 import { setHeadOffice } from './ho.ts';
 import { tabArrows } from './a11y.ts';
 import { DuplicatesDialog } from './duplicates.tsx';
@@ -106,8 +106,8 @@ const older = (have?: string, need?: string) => {
   return false;
 };
 
-type PageId = 'inbox' | 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance' | 'onboarding' | 'contacts' | 'merges' | 'training' | 'settings';
-const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewals', 'training', 'compliance', 'onboarding', 'contacts', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
+type PageId = 'inbox' | 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance' | 'contacts' | 'merges' | 'training' | 'settings';
+const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewals', 'training', 'compliance', 'contacts', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
 function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, meEmail, meName, demoUserId, compose, host, minExt, supportEmail }: { demoUserId?: string; isHeadOffice: boolean; isAdmin: boolean; call: Call; t: Strings; locale: Locale; onLocale: (l: Locale) => void; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
@@ -126,7 +126,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
     const next = pageOf(p); setPage(next); setRouteId(id);
     try { localStorage.setItem('pii.page', next); } catch { /* private window */ }
   };
-  const label: Record<PageId, string> = { inbox: locale === 'fr-CA' ? 'Boîte de démo' : 'Demo inbox', home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', onboarding: locale === 'fr-CA' ? 'Intégration' : 'Onboarding', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
+  const label: Record<PageId, string> = { inbox: locale === 'fr-CA' ? 'Boîte de démo' : 'Demo inbox', home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   return (
     <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
@@ -143,7 +143,6 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'renewals' ? <RenewalsPage call={call} locale={locale} go={go} />
         : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} host={host} />
-        : page === 'onboarding' ? <OnboardingPage call={call} locale={locale} />
         : page === 'contacts' ? <ContactsView call={call} t={t} />
         : page === 'training' && LMS ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} isHeadOffice={isHeadOffice} isAdmin={isAdmin} />
         : page === 'inbox' && demoUserId ? <DemoInbox locale={locale} meEmail={meEmail} meName={meName} />

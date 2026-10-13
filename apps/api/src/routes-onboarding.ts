@@ -39,8 +39,8 @@ function caseId(raw: string): string {
 async function loadCase(tx: Tx, id: string): Promise<CaseRow> {
   const r = (await tx.query<CaseRow>(
     `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
-            c.last_checked_at AS "lastCheckedAt", n.name AS "partnerName"
-       FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id WHERE c.id = $1`, [id])).rows[0];
+            c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName"
+       FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id WHERE c.id = $1`, [id])).rows[0];
   if (!r) throw notFound('Unknown onboarding case');
   return r;
 }
@@ -87,8 +87,8 @@ function recheckView(lastCheckedAt: Date | null) {
 async function partnerView(tx: Tx, where: string, params: unknown[]) {
   const c = (await tx.query<CaseRow>(
     `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
-            c.last_checked_at AS "lastCheckedAt", n.name AS "partnerName"
-       FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id WHERE ${where} LIMIT 1`, params)).rows[0];
+            c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName"
+       FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id WHERE ${where} LIMIT 1`, params)).rows[0];
   if (!c) return null;
   const consents = (await tx.query<{ kind: string }>(
     `SELECT DISTINCT kind FROM onboarding_consents WHERE case_id = $1 AND accepted`, [c.id])).rows.map((r) => r.kind);
@@ -133,8 +133,8 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     return run(ctx, async (tx) => {
       const rows = (await tx.query<CaseRow>(
         `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
-                c.last_checked_at AS "lastCheckedAt", n.name AS "partnerName"
-           FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id
+                c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName"
+           FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id
           WHERE app_is_compliance_at_or_above(c.tenant_id, c.node_id)
           ORDER BY c.created_at DESC`)).rows;
       return {
