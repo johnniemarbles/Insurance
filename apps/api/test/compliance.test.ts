@@ -46,8 +46,8 @@ before(async () => {
 });
 after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });
 
-test('the Compliance role exists in head office only', async () => {
-  assert.equal((await call(ADMIN, 'POST', '/v1/invitations', { email: 'x@co.test', nodeId: AGN, role: 'compliance' })).status, 422);
+test('the Compliance role can sit at head office or a regional node', async () => {
+  assert.equal((await call(ADMIN, 'POST', '/v1/invitations', { email: 'x@co.test', nodeId: AGN, role: 'compliance' })).status, 201);
   assert.equal((await call(HOADMIN, 'POST', '/v1/invitations', { email: 'y@ho.test', nodeId: ho.rootNodeId, role: 'compliance' })).status, 201);
   assert.equal((await call(HO, 'GET', '/v1/me')).json.isHeadOffice, true);
   assert.equal((await call(AG, 'GET', '/v1/me')).json.isHeadOffice, false);

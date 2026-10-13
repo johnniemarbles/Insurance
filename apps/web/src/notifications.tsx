@@ -23,6 +23,7 @@ export const X = {
         case 'invite_stale': return `${n.data.email ?? 'Someone'} has not joined yet, 3 days after your invitation. Open Settings > Company and people to resend it.`;
         case 'compliance_expiry': return `${n.data.name ?? 'A partner'}: ${n.data.label ?? 'a licence'} ${n.data.daysLeft < 0 ? 'has expired' : n.data.daysLeft === 0 ? 'expires today' : `expires in ${n.data.daysLeft} days`}${n.data.company ? ` (${n.data.company})` : ''}`;
         case 'compliance_review': return n.data.decision === 'submitted' ? `${n.data.name ?? 'A partner'} sent a compliance file for review${n.data.company ? ` (${n.data.company})` : ''}` : `${n.data.reviewer ?? 'Head office'} ${n.data.decision === 'approved' ? 'approved' : 'sent back'} the compliance file for ${n.data.name ?? 'your partner'}${n.data.note ? `: “${n.data.note}”` : ''}`;
+        case 'onboarding_recheck': return `${n.data.partner ?? 'A partner'}: the 6-month check ${n.data.overdue ? 'is overdue' : `is due on ${String(n.data.dueOn ?? '').slice(0, 10)}`}. Review the good-standing decision.`;
         case 'appointment_request': return `${n.data.name ?? 'A partner'} asked to be appointed with ${n.data.carrier ?? 'a carrier'}${n.data.company ? ` (${n.data.company})` : ''}`;
         case 'thread_shared': return `${who} shared a conversation with you on ${box}${n.data.message ? `: “${n.data.message}”` : ''}`;
         case 'document_added': return `${who} added a document to ${box}: ${n.data.name ?? ''}`;
@@ -56,6 +57,7 @@ export const X = {
         case 'invite_stale': return `${n.data.email ?? 'Quelqu’un'} ne s’est pas encore joint, 3 jours après votre invitation. Ouvrez Paramètres > Entreprise et personnes pour la renvoyer.`;
         case 'compliance_expiry': return `${n.data.name ?? 'Un partenaire'} : ${n.data.label ?? 'un permis'} ${n.data.daysLeft < 0 ? 'est expiré' : n.data.daysLeft === 0 ? 'expire aujourd’hui' : `expire dans ${n.data.daysLeft} jours`}${n.data.company ? ` (${n.data.company})` : ''}`;
         case 'compliance_review': return n.data.decision === 'submitted' ? `${n.data.name ?? 'Un partenaire'} a soumis un dossier de conformité${n.data.company ? ` (${n.data.company})` : ''}` : `${n.data.reviewer ?? 'Le siège social'} a ${n.data.decision === 'approved' ? 'approuvé' : 'renvoyé'} le dossier de conformité de ${n.data.name ?? 'votre partenaire'}${n.data.note ? ` : « ${n.data.note} »` : ''}`;
+        case 'onboarding_recheck': return `${n.data.partner ?? 'Un partenaire'} : la vérification de 6 mois ${n.data.overdue ? 'est en retard' : `est due le ${String(n.data.dueOn ?? '').slice(0, 10)}`}. Revoyez la décision de réputation.`;
         case 'appointment_request': return `${n.data.name ?? 'Un partenaire'} demande une nomination auprès de ${n.data.carrier ?? 'un assureur'}${n.data.company ? ` (${n.data.company})` : ''}`;
         case 'thread_shared': return `${who} a partagé une conversation avec vous sur ${box}${n.data.message ? ` : « ${n.data.message} »` : ''}`;
         case 'document_added': return `${who} a ajouté un document à ${box} : ${n.data.name ?? ''}`;
