@@ -122,7 +122,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
           ORDER BY c.created_at DESC`)).rows;
       return {
         cases: rows.map((c) => ({
-          id: c.id, partnerName: c.partnerName, country: c.country, stage: c.stage,
+          id: c.id, nodeId: c.nodeId, partnerName: c.partnerName, country: c.country, stage: c.stage,
           ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
         })),
       };
