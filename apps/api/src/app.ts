@@ -34,6 +34,7 @@ import { registerSettingRoutes } from './routes-settings.ts';
 import { registerNavRoutes } from './routes-nav.ts';
 import { registerRenewalRoutes } from './renewals.ts';
 import { registerComplianceRoutes } from './routes-compliance.ts';
+import { registerOnboardingRoutes } from './routes-onboarding.ts';
 import { registerCeRoutes } from './routes-ce.ts';
 import { registerFirstWeekRoutes } from './routes-firstweek.ts';
 import { registerForecastRoutes } from './routes-forecast.ts';
@@ -167,6 +168,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerNavRoutes(app, deps);
   registerRenewalRoutes(app, deps);
   registerComplianceRoutes(app, deps);
+  registerOnboardingRoutes(app, deps);
   registerCeRoutes(app, deps);
   registerFirstWeekRoutes(app, deps);
   registerForecastRoutes(app, deps);

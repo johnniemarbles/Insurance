@@ -1,7 +1,7 @@
 -- Partner (broker) onboarding: one case per partner node, the consents given, the checks run, the good-standing decision,
 -- and carrier packets (stage 2: the carrier agreement signed after the PII agency agreement; the existing carrier_appointments table is an appointment request tracker and is left as it is). Stages and outcomes match packages/domain/src/onboarding.ts.
--- Check results and decisions are head-office only (the branch admin sees status, never the checks). Regional compliance officers
--- (Ontario, BC) need their own role before they can see results; until then only head office does. See the PRD.
+-- Check results and decisions are visible to a tenant admin or to the Compliance officer at or above the partner's node
+-- (app_is_compliance_at_or_above). The partner sees only the outcome, through the API, never the checks or reasons.
 CREATE TABLE onboarding_cases (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   uuid NOT NULL REFERENCES tenants(id),
