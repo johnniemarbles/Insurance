@@ -96,9 +96,24 @@ test('the partner completes the form and consents; the officer runs the checks a
   assert.equal((await call(AG, 'GET', `/v1/onboarding/cases/${id}`)).status, 403, 'the partner cannot open the officer file');
   assert.equal((await call(ON_OFF, 'GET', `/v1/onboarding/cases/${id}`)).json.checks.length, 2, 'the officer sees every check');
 
-  assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'agency_agreement_sent' })).status, 200);
-  assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'active' })).status, 409, 'one step at a time');
-  assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'agency_agreement_signed' })).status, 200);
+  const sent = await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/agreement`, { title: 'Agency agreement', body: 'Wording as issued by counsel.', version: 'test-1' });
+  assert.equal(sent.status, 200);
+  const token = new URL(sent.json.url).pathname.split('/').pop() as string;
+  assert.equal((await call(AG, 'GET', `/v1/public/partner-sign/${token}`)).json.signed, false);
+  assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'active' })).status, 409, 'activation waits for the signed agreement');
+  assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: '000000', typedName: 'Agency One', agree: true })).status, 409, 'a code is asked for first');
+  const codeRes = await call(AG, 'POST', `/v1/public/partner-sign/${token}/code`);
+  assert.equal(codeRes.status, 200);
+  const wrong = codeRes.json.devCode === '000000' ? '111111' : '000000';
+  assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: wrong, typedName: 'Agency One', agree: true })).status, 422);
+  assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: codeRes.json.devCode, typedName: 'Agency One', agree: true })).status, 200);
+  const agreements = (await call(ON_OFF, 'GET', `/v1/onboarding/cases/${id}/agreements`)).json.agreements;
+  assert.equal(agreements.length, 1);
+  const pdf = await app.inject({ method: 'GET', url: `/v1/onboarding/agreements/${agreements[0].id}/pdf`, headers: { 'x-dev-user-email': ON_OFF } });
+  assert.equal(pdf.statusCode, 200);
+  assert.ok(pdf.body.startsWith('%PDF'), 'the signed agreement is a PDF');
+  assert.equal((await call(AG, 'GET', `/v1/public/partner-sign/${token}`)).json.signed, true);
+  assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: codeRes.json.devCode, typedName: 'Agency One', agree: true })).status, 404, 'a used link cannot be signed again');
   assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'active' })).status, 200);
 
   const pk = await call(AG, 'POST', `/v1/onboarding/cases/${id}/carrier-packets`, { carrier: 'iA Financial Group', templateVersion: 'F11-92A' });
@@ -122,7 +137,7 @@ test('a partner not in good standing keeps no access, and cannot get an agency a
   const mine = (await call(OTHER, 'GET', '/v1/onboarding/mine')).json.onboarding;
   assert.equal(mine.keepsAccess, true);
   assert.equal(mine.warning, true);
-  assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'agency_agreement_sent' })).status, 409, 'no agreement without good standing');
+  assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/agreement`, { title: 'Agency agreement', body: 'x', version: 'test-1' })).status, 409, 'no agreement without good standing');
   assert.equal((await call(OTHER, 'POST', `/v1/onboarding/cases/${id}/carrier-packets`, { carrier: 'iA Financial Group', templateVersion: 'F11-92A' })).status, 409);
 });
 

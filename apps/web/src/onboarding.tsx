@@ -23,6 +23,9 @@ const T = {
     recordHead: 'Record a check result', provider: 'Provider', score: 'Credit score', adverse: 'Background report', clear: 'Clear', adverseYes: 'Adverse finding',
     record: 'Record check', decisionHead: 'Good-standing decision', suggested: 'Rule suggests', pending: 'Waiting for a check result',
     outcome: 'Decision', reason: 'Reason (kept in the file, never shown to the partner)', decide: 'Record decision', decisions: 'Decisions on file',
+    agTitle: 'Agreement title', agVersion: 'Version', agText: 'Agreement text (as issued by counsel)', agSend: 'Send agency agreement to the partner',
+    agResend: 'Send the agreement again', agWaiting: 'Waiting for the partner to sign. The link was emailed to the partner’s people.', agSigned: 'Signed agreements',
+    agSignedOn: 'Signed', agPdf: 'Sealed PDF', agNone: 'None signed yet.', agSentOk: 'Agreement sent.', agHint: 'The partner signs through a private link with a code sent to their email.',
     agreementHead: 'Agency agreement', nextStage: { agency_agreement_sent: 'Send agency agreement', agency_agreement_signed: 'Mark agreement signed', active: 'Activate partner' } as Record<string, string>,
     packetsHead: 'Carrier packets', noPackets: 'None yet.', saved: 'Saved',
     outcomeL: { good_standing: 'Good standing', needs_review: 'Needs review', not_in_good_standing: 'Not in good standing' } as Record<string, string>,
@@ -41,6 +44,9 @@ const T = {
     recordHead: 'Enregistrer un résultat de vérification', provider: 'Fournisseur', score: 'Pointage de crédit', adverse: 'Rapport d’antécédents', clear: 'Sans constat', adverseYes: 'Constat défavorable',
     record: 'Enregistrer la vérification', decisionHead: 'Décision de bonne réputation', suggested: 'La règle suggère', pending: 'En attente d’un résultat de vérification',
     outcome: 'Décision', reason: 'Motif (conservé au dossier, jamais montré au partenaire)', decide: 'Enregistrer la décision', decisions: 'Décisions au dossier',
+    agTitle: 'Titre de l’entente', agVersion: 'Version', agText: 'Texte de l’entente (tel que publié par les conseillers juridiques)', agSend: 'Envoyer l’entente d’agence au partenaire',
+    agResend: 'Renvoyer l’entente', agWaiting: 'En attente de la signature du partenaire. Le lien a été envoyé par courriel aux personnes du partenaire.', agSigned: 'Ententes signées',
+    agSignedOn: 'Signée', agPdf: 'PDF scellé', agNone: 'Aucune signée pour l’instant.', agSentOk: 'Entente envoyée.', agHint: 'Le partenaire signe par un lien privé avec un code envoyé à son courriel.',
     agreementHead: 'Entente d’agence', nextStage: { agency_agreement_sent: 'Envoyer l’entente d’agence', agency_agreement_signed: 'Marquer l’entente signée', active: 'Activer le partenaire' } as Record<string, string>,
     packetsHead: 'Dossiers auprès des assureurs', noPackets: 'Aucun pour l’instant.', saved: 'Enregistré',
     outcomeL: { good_standing: 'Bonne réputation', needs_review: 'À examiner', not_in_good_standing: 'Réputation non conforme' } as Record<string, string>,
@@ -155,11 +161,19 @@ function CaseFile({ call, t, id, onBack }: { call: Call; t: Dict; id: string; on
   const [busy, setBusy] = useState(false);
   const [check, setCheck] = useState({ kind: 'credit', provider: 'Equifax Canada', status: 'complete', score: '', adverse: 'false' });
   const [decision, setDecision] = useState({ outcome: 'good_standing', reason: '' });
+  const [agr, setAgr] = useState({ title: 'PII agency agreement', version: '', body: '' });
+  const [signed, setSigned] = useState<{ id: string; title: string; version: string; signedAt: string }[]>([]);
+  const [sentOk, setSentOk] = useState(false);
 
   const load = async () => {
     try { setD((await call('GET', `/v1/onboarding/cases/${id}`)) as Detail); setError(''); } catch (e) { setError(errText(e)); }
   };
   useEffect(() => { void load(); }, [id]);
+  useEffect(() => {
+    void (async () => {
+      try { setSigned((await call('GET', `/v1/onboarding/cases/${id}/agreements`)).agreements ?? []); } catch { setSigned([]); }
+    })();
+  }, [id, d?.stage]);
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true); setError('');
@@ -266,9 +280,31 @@ function CaseFile({ call, t, id, onBack }: { call: Call; t: Dict; id: string; on
       )}
 
       <h3>{t.agreementHead}</h3>
-      {nxt ? (
-        <button class="btn" disabled={busy} onClick={() => nextStage(nxt)}>{t.nextStage[nxt]}</button>
-      ) : <p class="muted">{t.dash}</p>}
+      {(d.stage === 'standing_decided' || d.stage === 'agency_agreement_sent') && d.outcome === 'good_standing' && (
+        <>
+          <p class="muted">{t.agHint}</p>
+          <div class="erow">
+            <label class="fl">{t.agTitle}<input value={agr.title} onInput={(e) => setAgr({ ...agr, title: (e.target as HTMLInputElement).value })} /></label>
+            <label class="fl">{t.agVersion}<input value={agr.version} onInput={(e) => setAgr({ ...agr, version: (e.target as HTMLInputElement).value })} /></label>
+          </div>
+          <label class="fl" style={{ display: 'block' }}>{t.agText}
+            <textarea rows={8} value={agr.body} onInput={(e) => setAgr({ ...agr, body: (e.target as HTMLTextAreaElement).value })} />
+          </label>
+          <button class="btn" disabled={busy || agr.body.trim().length < 1 || agr.version.trim().length < 1 || agr.title.trim().length < 1}
+            onClick={() => run(async () => { await call('POST', `/v1/onboarding/cases/${id}/agreement`, agr); setSentOk(true); })}>
+            {d.stage === 'agency_agreement_sent' ? t.agResend : t.agSend}
+          </button>
+          {sentOk && d.stage === 'standing_decided' && <p class="muted">{t.agSentOk}</p>}
+        </>
+      )}
+      {d.stage === 'agency_agreement_sent' && <p class="muted">{t.agWaiting}</p>}
+      <h4>{t.agSigned}</h4>
+      {signed.length === 0 ? <p class="muted">{t.agNone}</p> : (
+        <ul>{signed.map((a) => <li>{a.title} · {a.version} · {t.agSignedOn} {dateOf(a.signedAt)} · <a href={`/v1/onboarding/agreements/${a.id}/pdf`}>{t.agPdf}</a></li>)}</ul>
+      )}
+      {d.stage === 'agency_agreement_signed' && (
+        <button class="btn" disabled={busy} onClick={() => nextStage('active')}>{t.nextStage.active}</button>
+      )}
 
       <h3>{t.packetsHead}</h3>
       {d.carrierPackets.length === 0 ? <p class="muted">{t.noPackets}</p> : (

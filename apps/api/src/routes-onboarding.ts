@@ -17,8 +17,8 @@ const CONSENT_KINDS = ['credit_check', 'background_check', 'carrier_reporting'] 
 const REQUIRED_CONSENTS = ['credit_check', 'background_check'] as const;
 const CHECK_KINDS = ['licence', 'credit', 'background'] as const;
 const CHECK_STATUSES = ['requested', 'complete', 'failed'] as const;
-/** Stages the Compliance officer moves by hand. checks_* move with the checks and standing_decided moves with the decision. */
-const OFFICER_STAGES = ['agency_agreement_sent', 'agency_agreement_signed', 'active'] as const;
+/** Stages the Compliance officer moves by hand. checks_* move with the checks, standing_decided with the decision, the agreement stages with sending and signing (routes-onboarding-sign.ts). */
+const OFFICER_STAGES = ['active'] as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface CaseRow {
@@ -248,7 +248,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     const { ctx } = await deps.authenticate(req);
     const id = caseId((req.params as { id: string }).id);
     const to = body(req).to as OnboardingStage;
-    if (!OFFICER_STAGES.includes(to as never)) throw invalid('The stage must be agency_agreement_sent, agency_agreement_signed or active');
+    if (!OFFICER_STAGES.includes(to as never)) throw invalid('Only activation is set by hand; the agreement stages move when the agreement is sent and signed');
     return run(ctx, async (tx) => {
       const c = await loadCase(tx, id);
       await requireOfficer(tx, c);

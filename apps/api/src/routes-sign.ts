@@ -136,7 +136,7 @@ export function registerSignRoutes(app: FastifyInstance, deps: AppDeps): void {
   void fail;
 }
 
-function signPage(nonce: string): string {
+export function signPage(nonce: string, api = '/v1/public/sign/'): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Review and sign</title>
 <style>body{margin:0;background:#f3f4f6;font:16px/1.55 system-ui,sans-serif;color:#1f2937}main{max-width:720px;margin:0 auto;padding:16px}.card{background:#fff;border-radius:12px;padding:20px 22px;margin:14px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 h1{font-size:22px;margin:0 0 4px}.firm{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#6b7280}pre{white-space:pre-wrap;font:inherit;margin:12px 0 0}label{display:block;margin:12px 0 4px;font-weight:600}
@@ -147,9 +147,9 @@ input[type=text]{width:100%;box-sizing:border-box;padding:10px;font:inherit;bord
 (function(){
 var T={en:{sign:'Sign',read:'Read the document above. When you are ready, we will send a 6-digit code to your email address on file (',send:'Send me a code',sent:'A code was sent. It works for ',min:' minutes.',code:'6-digit code',name:'Type your full name',agree:'I have read this document and I agree to sign it electronically.',go:'Sign',done:'Signed. Thank you. Your advisor has the signed copy; you can close this page.',already:'This document has already been signed.',gone:'This signing link is not valid any more. Ask your advisor for a new one.',fail:'Something went wrong. Please try again.',lang:'Français',dev:'Test code: '},
 fr:{sign:'Signer',read:'Lisez le document ci-dessus. Lorsque vous êtes prêt, nous enverrons un code à 6 chiffres à votre adresse courriel au dossier (',send:'Envoyez-moi un code',sent:'Un code a été envoyé. Il est valide ',min:' minutes.',code:'Code à 6 chiffres',name:'Écrivez votre nom complet',agree:'J’ai lu ce document et j’accepte de le signer électroniquement.',go:'Signer',done:'Signé. Merci. Votre conseiller a la copie signée; vous pouvez fermer cette page.',already:'Ce document a déjà été signé.',gone:'Ce lien de signature n’est plus valide. Demandez-en un nouveau à votre conseiller.',fail:'Une erreur est survenue. Veuillez réessayer.',lang:'English',dev:'Code de test : '}};
-var L=(navigator.language||'en').toLowerCase().indexOf('fr')===0?'fr':'en';var token=location.pathname.split('/').pop();var data=null;
+var API=${JSON.stringify(api)};var L=(navigator.language||'en').toLowerCase().indexOf('fr')===0?'fr':'en';var token=location.pathname.split('/').pop();var data=null;
 function $(i){return document.getElementById(i)}function el(t,p,c){var e=document.createElement(t);if(p)for(var k in p)e[k]=p[k];(c||[]).forEach(function(x){e.append(x)});return e}
-function api(path,body){return fetch('/v1/public/sign/'+token+path,body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j&&j.message||T[L].fail);return j})})}
+function api(path,body){return fetch(API+token+path,body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{}).then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j&&j.message||T[L].fail);return j})})}
 function msg(box,t,cls){var m=box.querySelector('.msg');if(!m){m=el('div',{className:'msg'});box.append(m)}m.className='msg '+(cls||'err');m.textContent=t}
 function render(){var d=data,doc=$('doc');doc.textContent='';doc.append(el('button',{id:'lang',className:'lang',type:'button',textContent:T[L].lang,onclick:function(){L=L==='fr'?'en':'fr';render()}}),el('div',{className:'firm',textContent:d.firm}),el('h1',{textContent:d.title}),el('div',{className:'muted',textContent:d.kind[L==='fr'?'fr-CA':'en']+' · '+d.clientName}),el('pre',{textContent:d.body}));
 var s=$('sign');s.hidden=false;s.textContent='';if(d.signed){s.append(el('div',{className:'ok',textContent:T[L].already}));return}
