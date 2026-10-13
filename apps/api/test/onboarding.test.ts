@@ -2,13 +2,13 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
 import type { FastifyInstance } from 'fastify';
-import { bootstrapTenant, createPool, type Db } from '@pii/db';
+import { bootstrapTenant, createPool, withRequestTx, type Db } from '@pii/db';
 import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 
-let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let co: { tenantId: string; rootNodeId: string };
+let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let co: { tenantId: string; rootNodeId: string }; let deps: AppDeps;
 type M = 'GET' | 'POST' | 'PUT';
 async function call(email: string, method: M, url: string, body?: unknown) {
   const res = await app.inject({ method, url, headers: { 'x-dev-user-email': email }, ...(body ? { payload: body as object } : {}) });
@@ -31,7 +31,7 @@ before(async () => {
   db = await createTestDb('ca-qc');
   const appPool = createPool(db.appUrl, 4), authPool = createPool(db.authUrl, 2); pools = [appPool, authPool];
   const config = loadConfig({ APP_ENV: 'test', REGION: 'ca-qc', DATABASE_URL: db.ownerUrl, APP_DATABASE_URL: db.appUrl, AUTH_DATABASE_URL: db.authUrl, DEV_AUTH: 'true' });
-  const deps: AppDeps = { config, appPool, authPool, authenticate: devAuthenticator(authPool), keys: localKeyProvider('0123456789abcdef0123') };
+  deps = { config, appPool, authPool, authenticate: devAuthenticator(authPool), keys: localKeyProvider('0123456789abcdef0123') };
   app = buildApp(deps);
   co = await bootstrapTenant(db.ownerUrl, { name: 'Maple Insurance', countryCode: 'CA', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
@@ -121,3 +121,18 @@ test('a partner not in good standing keeps no access, and cannot get an agency a
   assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'agency_agreement_sent' })).status, 409, 'no agreement without good standing');
   assert.equal((await call(OTHER, 'POST', `/v1/onboarding/cases/${id}/carrier-packets`, { carrier: 'iA Financial Group', templateVersion: 'F11-92A' })).status, 409);
 });
+
+test('row-level security: the database itself hides checks and decisions from partners and from other regions', async () => {
+  const count = async (email: string, table: string): Promise<number> => {
+    const { ctx } = await deps.authenticate({ headers: { 'x-dev-user-email': email } } as never);
+    return withRequestTx(deps.appPool, ctx, async (tx) => (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${table}`)).rows[0]!.n);
+  };
+  assert.ok((await count(ADMIN, 'onboarding_checks')) >= 4, 'the company admin sees every check');
+  assert.ok((await count(ON_OFF, 'onboarding_checks')) >= 4, 'the Ontario officer sees the Ontario checks');
+  assert.equal(await count(AG, 'onboarding_checks'), 0, 'a partner sees no checks, even its own');
+  assert.equal(await count(AG, 'onboarding_decisions'), 0, 'a partner sees no decisions, even its own');
+  assert.equal(await count(BC_OFF, 'onboarding_checks'), 0, 'the BC officer sees no Ontario checks');
+  assert.equal(await count(BC_OFF, 'onboarding_decisions'), 0, 'the BC officer sees no Ontario decisions');
+  assert.equal(await count(BC_OFF, 'onboarding_cases'), 0, 'the BC officer sees no Ontario cases');
+});
+
