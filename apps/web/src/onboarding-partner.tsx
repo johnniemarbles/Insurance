@@ -1,48 +1,53 @@
-// The partner's own onboarding view. Shows the stage, the outcome and what it means for access, the next check date, and the steps the partner completes.
+// The partner's own onboarding, shown at the top of the Compliance page: the stages as a progress list, the standing and what it means for access, the next check date, and the steps the partner completes.
 // The API never sends the checks, scores or reasons to a partner, so none are shown here.
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
+import { OUTCOME_LABEL, StepList, STAGE_LABEL, type Stage } from './onboarding-shared.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 
 const P = {
   en: {
     title: 'Your partner onboarding', none: 'There is no onboarding for your partner account.',
-    progress: 'Where things stand', stage: 'Stage', outcome: 'Standing', nextCheck: 'Next check due',
-    pending: 'Being checked', keepGood: 'You are in good standing.', keepReview: 'Your file is being reviewed. Your access continues while it is open.',
+    progress: 'Your progress', outcome: 'Standing', nextCheck: 'Next check due', next: 'What happens next', pending: 'Being checked',
+    keepGood: 'You are in good standing.', keepReview: 'Your file is being reviewed. Your access continues while it is open.',
     keepNot: 'Your file is not in good standing. Your access continues, but please contact your compliance officer.',
-    stepProfile: 'Complete your business profile on the Compliance page, submit it, then continue here.', submitForm: 'Submit my profile for onboarding',
+    stepProfile: 'Complete your business profile on this page, submit it, then come back here to give consent.', submitForm: 'Submit my profile for onboarding',
     consentHead: 'Consent to checks', consentIntro: 'PII runs a credit check (Equifax Canada) and a background check (Sterling Backcheck) to decide your standing. You can choose whether to share carrier reporting.',
     cCredit: 'I consent to a credit check', cBackground: 'I consent to a background check', cCarrier: 'I agree that carriers may receive my appointment and standing information',
-    giveConsent: 'Give consent', consentDone: 'Consent recorded.',
-    waitReview: 'Your file is with the compliance team. Nothing more is needed from you right now.',
-    waitNext: 'Your standing is decided. Your agency agreement will be sent to you next.',
-    waitAgreement: 'Your agency agreement has been emailed to you. Open the link in that email to read and sign it.',
-    waitActivate: 'Your agreement is signed. Activation is next.',
+    giveConsent: 'Give consent',
+    next_invited: 'Submit your business profile on this page to start.',
+    next_form_submitted: 'Give your consent to the checks below.',
+    next_consents_recorded: 'Thanks. Your checks are being arranged. Nothing more is needed from you right now.',
+    next_checks_requested: 'Your checks are running. Nothing more is needed from you right now.',
+    next_checks_complete: 'Your checks are complete and your file is with the compliance team.',
+    next_standing_decided: 'Your standing is decided. Your agency agreement will be sent to you next.',
+    next_agency_agreement_sent: 'Your agency agreement has been emailed to you. Open the link in that email to read and sign it.',
+    next_agency_agreement_signed: 'Your agreement is signed. Activation is next.',
+    next_active: 'You are active. You can send carrier packets below.',
     packetsHead: 'Carrier packets', carrier: 'Carrier', template: 'Form version', sendPacket: 'Send carrier packet', noPackets: 'None yet.',
     packetStatus: { draft: 'Draft', sent: 'Sent', signed: 'Signed', carrier_approved: 'Approved by carrier', declined: 'Declined' } as Record<string, string>,
-    stageL: { invited: 'Invited', form_submitted: 'Profile submitted', consents_recorded: 'Consent given', checks_requested: 'Checks requested', checks_complete: 'Checks complete', standing_decided: 'Standing decided', agency_agreement_sent: 'Agreement sent', agency_agreement_signed: 'Agreement signed', active: 'Active' } as Record<string, string>,
-    outcomeL: { good_standing: 'Good standing', needs_review: 'Needs review', not_in_good_standing: 'Not in good standing' } as Record<string, string>,
-    dash: '—',
   },
   'fr-CA': {
     title: 'Votre intégration de partenaire', none: 'Il n’y a pas d’intégration pour votre compte de partenaire.',
-    progress: 'Où en sont les choses', stage: 'Étape', outcome: 'Réputation', nextCheck: 'Prochaine vérification',
-    pending: 'En cours de vérification', keepGood: 'Vous êtes en bonne réputation.', keepReview: 'Votre dossier est en cours d’examen. Votre accès se poursuit pendant l’examen.',
+    progress: 'Votre progression', outcome: 'Réputation', nextCheck: 'Prochaine vérification', next: 'Ce qui suit', pending: 'En cours de vérification',
+    keepGood: 'Vous êtes en bonne réputation.', keepReview: 'Votre dossier est en cours d’examen. Votre accès se poursuit pendant l’examen.',
     keepNot: 'Votre dossier n’est pas en bonne réputation. Votre accès se poursuit, mais veuillez communiquer avec votre responsable de la conformité.',
-    stepProfile: 'Remplissez votre profil d’entreprise dans la page Conformité, soumettez-le, puis revenez ici.', submitForm: 'Soumettre mon profil pour l’intégration',
+    stepProfile: 'Remplissez votre profil d’entreprise sur cette page, soumettez-le, puis revenez ici pour donner votre consentement.', submitForm: 'Soumettre mon profil pour l’intégration',
     consentHead: 'Consentement aux vérifications', consentIntro: 'PII fait une vérification de crédit (Equifax Canada) et une vérification d’antécédents (Sterling Backcheck) pour décider de votre réputation. Vous choisissez si vous partagez les renseignements aux assureurs.',
     cCredit: 'Je consens à une vérification de crédit', cBackground: 'Je consens à une vérification d’antécédents', cCarrier: 'J’accepte que les assureurs reçoivent mes renseignements de nomination et de réputation',
-    giveConsent: 'Donner mon consentement', consentDone: 'Consentement enregistré.',
-    waitReview: 'Votre dossier est auprès de l’équipe de conformité. Rien d’autre n’est requis de votre part pour l’instant.',
-    waitNext: 'Votre réputation est décidée. Votre entente d’agence vous sera envoyée ensuite.',
-    waitAgreement: 'Votre entente d’agence vous a été envoyée par courriel. Ouvrez le lien dans ce courriel pour la lire et la signer.',
-    waitActivate: 'Votre entente est signée. L’activation est la prochaine étape.',
+    giveConsent: 'Donner mon consentement',
+    next_invited: 'Soumettez votre profil d’entreprise sur cette page pour commencer.',
+    next_form_submitted: 'Donnez votre consentement aux vérifications ci-dessous.',
+    next_consents_recorded: 'Merci. Vos vérifications sont en préparation. Rien d’autre n’est requis de votre part pour l’instant.',
+    next_checks_requested: 'Vos vérifications sont en cours. Rien d’autre n’est requis de votre part pour l’instant.',
+    next_checks_complete: 'Vos vérifications sont terminées et votre dossier est auprès de l’équipe de conformité.',
+    next_standing_decided: 'Votre réputation est décidée. Votre entente d’agence vous sera envoyée ensuite.',
+    next_agency_agreement_sent: 'Votre entente d’agence vous a été envoyée par courriel. Ouvrez le lien dans ce courriel pour la lire et la signer.',
+    next_agency_agreement_signed: 'Votre entente est signée. L’activation est la prochaine étape.',
+    next_active: 'Vous êtes actif. Vous pouvez envoyer des dossiers auprès des assureurs ci-dessous.',
     packetsHead: 'Dossiers auprès des assureurs', carrier: 'Assureur', template: 'Version du formulaire', sendPacket: 'Envoyer le dossier', noPackets: 'Aucun pour l’instant.',
     packetStatus: { draft: 'Brouillon', sent: 'Envoyé', signed: 'Signé', carrier_approved: 'Approuvé par l’assureur', declined: 'Refusé' } as Record<string, string>,
-    stageL: { invited: 'Invité', form_submitted: 'Profil soumis', consents_recorded: 'Consentement donné', checks_requested: 'Vérifications demandées', checks_complete: 'Vérifications terminées', standing_decided: 'Réputation décidée', agency_agreement_sent: 'Entente envoyée', agency_agreement_signed: 'Entente signée', active: 'Actif' } as Record<string, string>,
-    outcomeL: { good_standing: 'Bonne réputation', needs_review: 'À examiner', not_in_good_standing: 'Réputation non conforme' } as Record<string, string>,
-    dash: '—',
   },
 };
 
@@ -54,8 +59,10 @@ interface View {
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export function PartnerOnboarding({ call, locale }: { call: Call; locale: Locale }) {
+/** `embedded` (the Compliance page) shows nothing when the account has no onboarding; the standalone form shows a short notice instead. */
+export function PartnerOnboarding({ call, locale, embedded = false }: { call: Call; locale: Locale; embedded?: boolean }) {
   const t = P[locale === 'fr-CA' ? 'fr-CA' : 'en'];
+  const lc = locale === 'fr-CA' ? 'fr-CA' : 'en';
   const [view, setView] = useState<View | null | undefined>(undefined);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -72,62 +79,71 @@ export function PartnerOnboarding({ call, locale }: { call: Call; locale: Locale
     try { await fn(); await load(); } catch (e) { setError(errText(e)); } finally { setBusy(false); }
   };
 
-  if (view === undefined) return <section class="onboarding">{error && <div class="err" role="alert">{error}</div>}</section>;
-  if (view === null) return <section class="onboarding"><div class="msg">{t.none}</div></section>;
+  if (view === undefined) return embedded ? null : <section class="onboarding">{error && <div class="err" role="alert">{error}</div>}</section>;
+  if (view === null) return embedded ? (error ? <div class="err" role="alert">{error}</div> : null) : <section class="onboarding"><div class="msg">{t.none}</div></section>;
 
+  const stage = view.stage as Stage;
   const keepText = view.outcome === 'good_standing' ? t.keepGood : view.outcome === 'needs_review' ? t.keepReview : view.outcome === 'not_in_good_standing' ? t.keepNot : null;
-  const stage = view.stage;
+  const outcomeL = OUTCOME_LABEL;
 
   return (
-    <section class="onboarding">
-      <h2>{t.title}</h2>
-      <h3>{view.partnerName}</h3>
-      <p>{t.stage}: <strong>{t.stageL[stage]}</strong> · {t.outcome}: <strong>{view.outcome ? t.outcomeL[view.outcome] : t.pending}</strong></p>
-      {keepText && <div class={view.warning ? 'banner warn' : 'muted'} role="status">{keepText}</div>}
-      {view.recheck && <p class="muted">{t.nextCheck}: {view.recheck.dueOn.slice(0, 10)}</p>}
+    <section class="onboarding obpartner" aria-label={t.title}>
+      <div class="hcard">
+        <div class="hwelcome" style={{ marginBottom: '8px' }}>
+          <div>
+            <span class="muted">{t.title}</span>
+            <h2 style={{ margin: '2px 0 0' }}>{view.partnerName}</h2>
+          </div>
+          <span class="spacer" />
+          <span class="chip">{STAGE_LABEL[stage][lc]}</span>
+          <span class={`chip ${view.outcome === 'good_standing' ? 'ok' : view.outcome ? 'warn' : ''}`}>{t.outcome}: {view.outcome ? (OUTCOME_LABEL[view.outcome]?.[lc] ?? view.outcome) : t.pending}</span>
+        </div>
+        <h3 style={{ margin: '12px 0 8px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--mute)' }}>{t.progress}</h3>
+        <StepList stage={stage} locale={locale} />
+        {keepText && <div class={`banner ${view.warning ? 'warn' : ''}`} role="status" style={{ marginTop: '12px' }}>{keepText}</div>}
+        {view.recheck && <p class="muted" style={{ margin: '10px 0 0' }}>{t.nextCheck}: {view.recheck.dueOn.slice(0, 10)}</p>}
+      </div>
+
       {error && <div class="err" role="alert">{error}</div>}
 
+      <div class="obnext" role="status" style={{ marginTop: '14px' }}><b>{t.next}:</b> {t[`next_${stage}` as 'next_active']}</div>
+
       {stage === 'invited' && (
-        <>
+        <div style={{ marginTop: '12px' }}>
           <p>{t.stepProfile}</p>
           <button class="btn" disabled={busy} onClick={() => run(() => call('POST', `/v1/onboarding/cases/${view.id}/form`))}>{t.submitForm}</button>
-        </>
+        </div>
       )}
 
       {stage === 'form_submitted' && (
-        <>
+        <section class="hcard" style={{ marginTop: '12px' }}>
           <h3>{t.consentHead}</h3>
           <p>{t.consentIntro}</p>
           <label style={{ display: 'block' }}><input type="checkbox" checked={consent.credit} onChange={(e) => setConsent({ ...consent, credit: (e.target as HTMLInputElement).checked })} /> {t.cCredit}</label>
           <label style={{ display: 'block' }}><input type="checkbox" checked={consent.background} onChange={(e) => setConsent({ ...consent, background: (e.target as HTMLInputElement).checked })} /> {t.cBackground}</label>
           <label style={{ display: 'block' }}><input type="checkbox" checked={consent.carrier} onChange={(e) => setConsent({ ...consent, carrier: (e.target as HTMLInputElement).checked })} /> {t.cCarrier}</label>
-          <button class="btn" disabled={busy || !consent.credit || !consent.background} onClick={() => run(() => call('POST', `/v1/onboarding/cases/${view.id}/consents`, {
+          <button class="btn" style={{ marginTop: '10px' }} disabled={busy || !consent.credit || !consent.background} onClick={() => run(() => call('POST', `/v1/onboarding/cases/${view.id}/consents`, {
             consents: [
               { kind: 'credit_check', accepted: consent.credit },
               { kind: 'background_check', accepted: consent.background },
               { kind: 'carrier_reporting', accepted: consent.carrier },
             ],
           }))}>{t.giveConsent}</button>
-        </>
+        </section>
       )}
 
-      {['consents_recorded', 'checks_requested', 'checks_complete'].includes(stage) && <p class="muted">{t.waitReview}</p>}
-      {stage === 'standing_decided' && <p class="muted">{t.waitNext}</p>}
-      {stage === 'agency_agreement_sent' && <p class="muted">{t.waitAgreement}</p>}
-      {stage === 'agency_agreement_signed' && <p class="muted">{t.waitActivate}</p>}
-
       {stage === 'active' && (
-        <>
+        <section class="hcard" style={{ marginTop: '12px' }}>
           <h3>{t.packetsHead}</h3>
           {view.carrierPackets.length === 0 ? <p class="muted">{t.noPackets}</p> : (
             <ul>{view.carrierPackets.map((p) => <li>{p.carrier} · {t.packetStatus[p.status] ?? p.status}</li>)}</ul>
           )}
-          <div class="erow">
+          <div class="cform" style={{ marginTop: '10px' }}>
             <label class="fl">{t.carrier}<input value={packet.carrier} onInput={(e) => setPacket({ ...packet, carrier: (e.target as HTMLInputElement).value })} /></label>
             <label class="fl">{t.template}<input value={packet.templateVersion} onInput={(e) => setPacket({ ...packet, templateVersion: (e.target as HTMLInputElement).value })} /></label>
             <button class="btn" disabled={busy} onClick={() => run(() => call('POST', `/v1/onboarding/cases/${view.id}/carrier-packets`, packet))}>{t.sendPacket}</button>
           </div>
-        </>
+        </section>
       )}
     </section>
   );

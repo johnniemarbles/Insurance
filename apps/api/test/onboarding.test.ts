@@ -88,7 +88,7 @@ test('the partner completes the form and consents; the officer runs the checks a
   assert.ok(!view.raw.includes('Credit 640'), 'the partner never sees the reason');
   assert.equal(view.json.checks, undefined);
   const mine = await call(AG, 'GET', '/v1/onboarding/mine');
-  assert.equal(mine.json.onboarding.partnerName, 'Agency One');
+  assert.equal(mine.json.onboarding.partnerName, 'Agency One Inc');
   assert.ok(!mine.raw.includes('640'), 'the partner\'s own view has no score');
   assert.equal((await call(BC_OFF, 'GET', '/v1/onboarding/mine')).json.onboarding, null, 'an officer is not a partner in onboarding');
   assert.equal((await call(BC_OFF, 'GET', '/v1/onboarding/mine')).json.officer, true);
@@ -123,7 +123,7 @@ test('the partner completes the form and consents; the officer runs the checks a
 
 test('a partner not in good standing keeps no access, and cannot get an agency agreement or a carrier packet', async () => {
   assert.equal((await call(ON_OFF, 'POST', '/v1/onboarding/cases', { nodeId: OTN })).status, 201);
-  const id = (await call(ON_OFF, 'GET', '/v1/onboarding/cases')).json.cases.find((c: { partnerName: string }) => c.partnerName === 'Agency Two').id;
+  const id = (await call(ON_OFF, 'GET', '/v1/onboarding/cases')).json.cases.find((c: { partnerName: string }) => c.partnerName === 'Agency Two Inc').id;
   assert.equal((await call(OTHER, 'POST', `/v1/onboarding/cases/${id}/form`)).status, 201);
   assert.equal((await call(OTHER, 'POST', `/v1/onboarding/cases/${id}/consents`, consentsAll)).status, 201);
   await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/checks`, { kind: 'credit', provider: 'Equifax Canada', status: 'complete', score: 540 });
@@ -156,7 +156,7 @@ test('row-level security: the database itself hides checks and decisions from pa
 });
 
 test('the 6-month check: officers and the company admin are told once when it falls due; the partner and other regions are not', async () => {
-  const id = (await call(ON_OFF, 'GET', '/v1/onboarding/cases')).json.cases.find((c: { partnerName: string }) => c.partnerName === 'Agency One').id;
+  const id = (await call(ON_OFF, 'GET', '/v1/onboarding/cases')).json.cases.find((c: { partnerName: string }) => c.partnerName === 'Agency One Inc').id;
   await owner((o) => o.query(`UPDATE onboarding_cases SET last_checked_at = now() - interval '5 months 20 days' WHERE id = $1`, [id]));
   const count = async (email: string) => owner(async (o) => (await o.query(
     `SELECT count(*)::int AS n FROM notifications n JOIN app_users u ON u.id = n.user_id WHERE u.email = $1 AND n.kind = 'onboarding_recheck'`, [email])).rows[0].n);
