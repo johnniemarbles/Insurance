@@ -49,18 +49,19 @@ export function ProgressBar({ stage, locale }: { stage: string; locale: Locale }
   );
 }
 
-/** The full stage list with each step marked done, now or to come. */
+/** The nine stages as a track: a dot per stage joined by a line, the current one highlighted. Stacks into a list on phones. */
 export function StepList({ stage, locale }: { stage: string; locale: Locale }) {
   const i = stageIndex(stage);
-  const x = OB[locale === 'fr-CA' ? 'fr-CA' : 'en'];
+  const lc = locale === 'fr-CA' ? 'fr-CA' : 'en';
+  const x = OB[lc === 'fr-CA' ? 'fr-CA' : 'en'];
   return (
-    <ol class="obsteps">
+    <ol class="obtrack" aria-label={x.progress}>
       {STAGES.map((s, k) => {
         const state = k < i || stage === 'active' ? 'done' : k === i ? 'cur' : 'todo';
         return (
           <li key={s} class={state} aria-current={k === i ? 'step' : undefined}>
             <span class="obdot" aria-hidden="true">{state === 'done' ? '✓' : k + 1}</span>
-            <span><b>{STAGE_LABEL[s][locale === 'fr-CA' ? 'fr-CA' : 'en']}</b><small>{state === 'done' ? x.done : state === 'cur' ? x.now : x.todo}</small></span>
+            <span class="oblabel"><b>{STAGE_LABEL[s][lc]}</b><small>{state === 'done' ? x.done : state === 'cur' ? x.now : x.todo}</small></span>
           </li>
         );
       })}

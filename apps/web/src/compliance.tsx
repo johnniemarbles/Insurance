@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
 import type { HostOptions, Locale } from './types.ts';
 import { ExpiryBars, Funnel, needsOf, NeedsYou, titles, Trend, Widgets, type Insights, type NeedTab } from './hoinsights.tsx';
-import { OnboardingDashboard } from './onboarding.tsx';
+import { OnboardingDashboard, SectionHead } from './onboarding.tsx';
 import { PartnerOnboarding } from './onboarding-partner.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -99,18 +99,17 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call:
   const s = SEC[locale === 'fr-CA' ? 'fr-CA' : 'en'];
   // The panels live inside the scrolling page so they share its padding; head office gets the two company settings too.
   const panels = <>{!isHeadOffice && <><Overview call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}<VaultPanel call={call} locale={locale} /></>;
+  // The section switch sits in the page heading, so it lines up with the title on every screen.
   const tabs = officer ? (
-    <div class="home" style={{ paddingBottom: 0 }}>
-      <div class="seg" role="tablist" aria-label={s.label} style={{ marginBottom: '4px' }}>
-        <button role="tab" aria-selected={section === 'files'} onClick={() => { setSection('files'); setOpen(null); }}>{s.files}</button>
-        <button role="tab" aria-selected={section === 'onboarding'} onClick={() => { setSection('onboarding'); setOpen(null); }}>{s.onb}</button>
-      </div>
+    <div class="seg" role="tablist" aria-label={s.label}>
+      <button role="tab" aria-selected={section === 'files'} onClick={() => { setSection('files'); setOpen(null); }}>{s.files}</button>
+      <button role="tab" aria-selected={section === 'onboarding'} onClick={() => { setSection('onboarding'); setOpen(null); }}>{s.onb}</button>
     </div>
-  ) : null;
-  if (officer && section === 'onboarding') return <>{tabs}<OnboardingDashboard call={call} locale={locale} /></>;
-  const own = officer === false ? <div class="home" style={{ paddingBottom: 0 }}><PartnerOnboarding call={call} locale={locale} embedded /></div> : null;
-  const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} extra={panels} />;
-  return <>{tabs}{own}{body}</>;
+  ) : undefined;
+  if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
+  const own = officer === false ? <div class="obwrap"><PartnerOnboarding call={call} locale={locale} embedded /></div> : null;
+  const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} extra={panels} tabs={tabs} />;
+  return <>{own}{body}</>;
 }
 
 const OV = {
@@ -218,7 +217,7 @@ function FilesAtRisk({ call, locale }: { call: Call; locale: Locale; go: (page: 
   );
 }
 
-function ListView({ call, locale, ho, openFile, host, extra }: { call: Call; locale: Locale; ho: boolean; openFile: (id: string) => void; host?: HostOptions; extra?: ComponentChildren }) {
+function ListView({ call, locale, ho, openFile, host, extra, tabs }: { call: Call; locale: Locale; ho: boolean; openFile: (id: string) => void; host?: HostOptions; extra?: ComponentChildren; tabs?: ComponentChildren }) {
   const x = X[locale];
   const base = ho ? '/v1/ho' : '/v1/compliance';
   const [rows, setRows] = useState<any[] | null>(null);
@@ -281,7 +280,7 @@ function ListView({ call, locale, ho, openFile, host, extra }: { call: Call; loc
   const waiting = rows.filter((r) => r.status === 'submitted').length;
   return (
     <div class="home">
-      <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{ho ? x.headTitle : x.title}</h2><span class="muted">{ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub}</span></div></div>
+      <SectionHead title={ho ? x.headTitle : x.title} sub={ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub} right={tabs} />
       {scopeBar}
       {strip}
       {!ho && <ComingUp call={call} locale={locale} />}

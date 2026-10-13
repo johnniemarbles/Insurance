@@ -9,6 +9,7 @@ import {
   suggestedStanding, type OnboardingStage, type RequestContext, type StandingOutcome,
 } from '@pii/domain';
 import { audit } from './audit.ts';
+import { escapeHtml } from './merge-render.ts';
 import { conflict, forbidden, invalid, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 
@@ -121,10 +122,25 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
       const id = (await tx.query<{ id: string }>(
         `INSERT INTO onboarding_cases (tenant_id, node_id, country) VALUES ($1, $2, $3) RETURNING id`, [n.tenantId, nodeId, country])).rows[0]!.id;
       await audit(tx, ctx, 'onboarding.invited', 'onboarding_case', id, { partner: n.name, country });
-      return { id, stage: 'invited' as const };
+      return { id, stage: 'invited' as const, tenantId: n.tenantId };
     });
+    // Tell the partner's people by email, with a link to PII. Nobody is emailed if the partner has no login yet.
+    const { tenantId, ...view } = out;
+    let emailedTo = 0;
+    if (deps.mailer) {
+      const to = (await deps.authPool.query<{ email: string }>(
+        `SELECT DISTINCT u.email::text AS email FROM app_users u JOIN user_node_roles r ON r.user_id = u.id
+          WHERE r.node_id = $1 AND u.status::text <> 'disabled'`, [nodeId])).rows.map((r) => r.email);
+      const firm = (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [tenantId])).rows[0]?.name ?? 'PII';
+      const url = deps.config.appOrigin;
+      const text = `${firm} has started your partner onboarding.\n\nSign in to PII and open Compliance. There you can complete your business profile, give consent to the credit and background checks, and sign your agency agreement once it is sent.\n\n${url}`;
+      const html = `<p>${escapeHtml(firm)} has started your partner onboarding.</p><p>Sign in to PII and open <b>Compliance</b>. There you can complete your business profile, give consent to the credit and background checks, and sign your agency agreement once it is sent.</p><p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`;
+      for (const email of to) {
+        try { await deps.mailer.send({ to: email, subject: `Partner onboarding with ${firm}`, text, html }); emailedTo += 1; } catch { /* the officer can tell the partner */ }
+      }
+    }
     reply.code(201);
-    return out;
+    return { ...view, emailedTo };
   });
 
   /** The cases this officer can see (their region, or all for a tenant admin). */
