@@ -1,5 +1,4 @@
 import { docLabel } from './doctypes.ts';
-import { VendorPanel } from './vendors.tsx';
 import { VaultPanel } from './vault.tsx';
 import { FirstWeekPanel } from './firstweek.tsx';
 import type { ComponentChildren } from 'preact';
@@ -87,7 +86,7 @@ function Bar({ pct }: { pct: number }) { return <span class="cbar" role="img" ar
 export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions }) {
   const [open, setOpen] = useState<string | null>(null);
   // The panels live inside the scrolling page so they share its padding; head office gets the two company settings too.
-  const panels = <>{!isHeadOffice && <><Overview call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}<VendorPanel call={call} locale={locale} /><VaultPanel call={call} locale={locale} /></>;
+  const panels = <>{!isHeadOffice && <><Overview call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}<VaultPanel call={call} locale={locale} /></>;
   return open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} extra={panels} />;
 }
 
@@ -121,20 +120,13 @@ interface Ret { policies: { kind: string; label: Record<Locale, string>; years: 
 function RetentionPanel({ call, locale }: { call: Call; locale: Locale }) {
   const x = RT[locale];
   const [d, setD] = useState<Ret | null>(null);
-  const [yrs, setYrs] = useState<Record<string, string>>({});
-  const [err, setErr] = useState('');
-  const load = () => call('GET', '/v1/compliance/retention').then(setD, () => undefined);
+    const load = () => call('GET', '/v1/compliance/retention').then(setD, () => undefined);
   useEffect(() => { void load(); }, []);
   if (!d) return null;
   const label = (k: string) => d.policies.find((p) => p.kind === k)?.label[locale] ?? k;
   return (
     <section class="rec-form" aria-label={x.h} style={{ marginTop: '16px' }}>
       <h3>{x.h}</h3><p class="muted">{x.help}</p>
-      {err && <p class="err" role="alert">{err}</p>}
-      {d.policies.map((p) => (
-        <div class="ev" key={p.kind}>{p.label[locale]}: <input type="number" min={p.min} max={p.max} style={{ width: '70px' }} aria-label={p.label[locale]} value={yrs[p.kind] ?? String(p.years)} onInput={(e) => setYrs({ ...yrs, [p.kind]: (e.target as HTMLInputElement).value })} /> {x.years} <small class="muted">({x.min} {p.min})</small>{' '}
-          <button class="btn quiet" disabled={(yrs[p.kind] ?? String(p.years)) === String(p.years)} onClick={() => { setErr(''); void call('PUT', `/v1/compliance/retention/${p.kind}`, { years: Number(yrs[p.kind]) }).then(() => { setYrs({ ...yrs, [p.kind]: undefined as unknown as string }); return load(); }, (e) => setErr((e as Error).message)); }}>{x.save}</button></div>
-      ))}
       <p><strong>{d.summary.due}</strong> {x.due} · <strong>{d.summary.held}</strong> {x.held} · <strong>{d.summary.dueWithin12Months}</strong> {x.soon}</p>
       {d.files.length === 0 && <p class="muted">{x.none}</p>}
       {d.files.map((f, i) => <div class="ev" key={f.boxId + f.kind + i}><strong>{f.name}</strong> <small>{label(f.kind)} · {f.records} · {f.closedAt} → {f.retainUntil ?? '—'} · {x.state[f.state]}</small></div>)}

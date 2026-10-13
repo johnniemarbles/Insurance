@@ -5,6 +5,10 @@ import { LMS } from './features.ts';
 import { NAV_ITEMS, SETTINGS, type NavLayout, type SettingDef, type SettingScope, type SettingTab } from '../../../packages/domain/src/settings.ts';
 import type { ComposeApi, Locale } from './types.ts';
 import { AiAdminCard } from './ai.tsx';
+import { VendorPanel } from './vendors.tsx';
+import { CertificateSigner } from './report.tsx';
+import { RetentionPolicies } from './retention-settings.tsx';
+import { SnippetsPanel } from './snippets.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 type Src = { type: 'default' | SettingScope; name?: string };
@@ -123,12 +127,12 @@ function LayoutEditor({ layout, onChange, disabled, x }: { layout: NavLayout; on
   );
 }
 
-export function SettingsPage({ api, call, locale, initialTab, isManager, pipelines, compose }: { compose?: ComposeApi; api: SettingsApi; call: Call; locale: Locale; initialTab?: string; isManager: boolean; pipelines: { id: string; name: string }[] }) {
+export function SettingsPage({ api, call, locale, onLocale, initialTab, isManager, pipelines, compose }: { compose?: ComposeApi; api: SettingsApi; call: Call; locale: Locale; onLocale: (l: Locale) => void; initialTab?: string; isManager: boolean; pipelines: { id: string; name: string }[] }) {
   const x = X[locale];
-  const [who, setWho] = useState<{ canAdminister: boolean; isTenantAdmin: boolean } | null>(null);
-  useEffect(() => { call('GET', '/v1/me').then((m) => setWho({ canAdminister: Boolean(m.canAdminister), isTenantAdmin: Boolean(m.isTenantAdmin) }), () => undefined); }, [call]);
+  const [who, setWho] = useState<{ canAdminister: boolean; isTenantAdmin: boolean; isCompliance: boolean } | null>(null);
+  useEffect(() => { call('GET', '/v1/me').then((m) => setWho({ canAdminister: Boolean(m.canAdminister), isTenantAdmin: Boolean(m.isTenantAdmin), isCompliance: Array.isArray(m.roles) && m.roles.some((r: { role: string }) => r.role === 'compliance') }), () => undefined); }, [call]);
   const showTeam = api.canSet.tenant || api.canSet.node.length > 0;
-  const tabs = (['me', 'leftPanel', 'notifications', 'email', ...(showTeam ? ['team'] : []), ...(who?.canAdminister ? ['organization'] : []), 'privacy'] as SettingTab[]);
+  const tabs = (['me', 'leftPanel', 'notifications', 'email', ...(showTeam ? ['team'] : []), ...(who?.canAdminister || who?.isCompliance ? ['organization'] : []), 'privacy'] as SettingTab[]);
   const [tab, setTab] = useState<SettingTab>(() => (tabs.includes(initialTab as SettingTab) ? (initialTab as SettingTab) : 'me'));
   const [q, setQ] = useState('');
   const [toast, setToast] = useState<{ text: string; undo?: () => Promise<void> } | null>(null);
@@ -194,6 +198,9 @@ export function SettingsPage({ api, call, locale, initialTab, isManager, pipelin
           <div class="tabs sub" role="tablist">
             {tabs.map((k) => <button role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{x.tabs[k]}</button>)}
           </div>
+          {tab === 'me' && <LanguageRow call={call} locale={locale} onLocale={onLocale} />}
+          {tab === 'notifications' && <MailReminders call={call} locale={locale} />}
+          {tab === 'email' && <SnippetsRow call={call} locale={locale} />}
           {tab !== 'team' && tab !== 'privacy' && tab !== 'organization' && SETTINGS.filter((d) => d.tab === tab).map(row)}
           {tab === 'me' && (
             <details class="hist"><summary>{x.history}</summary>
@@ -201,7 +208,15 @@ export function SettingsPage({ api, call, locale, initialTab, isManager, pipelin
               {(hist ?? []).slice(0, 15).map((h) => <div class="ev">{SETTINGS.find((d) => d.key === h.key)?.label[locale] ?? h.key}<small>{h.scopeType === 'user' ? x.you : h.scopeName ?? x.company} · {h.changedBy} · {new Date(h.changedAt).toLocaleString(locale)}</small></div>)}
             </details>
           )}
-          {tab === 'organization' && <PeopleHub call={call} locale={locale} isTenantAdmin={Boolean(who?.isTenantAdmin)} compose={compose} />}
+          {tab === 'organization' && (
+            <>
+              {who?.canAdminister && <PeopleHub call={call} locale={locale} isTenantAdmin={Boolean(who?.isTenantAdmin)} compose={compose} />}
+              {(who?.isTenantAdmin || who?.isCompliance) && <h3 style={{ marginTop: '24px' }}>{locale === 'fr-CA' ? 'Signatures, conservation et certificats' : 'Signatures, retention and certificates'}</h3>}
+              {(who?.isTenantAdmin || who?.isCompliance) && <VendorPanel call={call} locale={locale} />}
+              {(who?.isTenantAdmin || who?.isCompliance) && <RetentionPolicies call={call} locale={locale} />}
+              {who?.isTenantAdmin && <CertificateSigner call={call} locale={locale} />}
+            </>
+          )}
           {tab === 'privacy' && <PrivacyTab call={call} locale={locale} />}
           {tab === 'team' && <TeamTab api={api} call={call} locale={locale} pipelines={pipelines} isManager={isManager} x={x} onError={setErr} />}
         </>
@@ -262,6 +277,66 @@ function TeamTab({ api, call, locale, pipelines, isManager, x, onError }: { api:
         <span class="spacer" />
         <button class="btn" disabled={!lvl} onClick={() => void apply()}>{x.apply}</button>
       </div>
+    </div>
+  );
+}
+
+/** The language of the screens and of emails, one setting per person (saved to the profile). */
+function LanguageRow({ call, locale, onLocale }: { call: Call; locale: Locale; onLocale: (l: Locale) => void }) {
+  const fr = locale === 'fr-CA';
+  const [err, setErr] = useState('');
+  const change = async (v: Locale) => {
+    setErr('');
+    try {
+      await call('PUT', '/v1/me/locale', { locale: v });
+      try { localStorage.setItem('pii.lang', v); } catch { /* private window */ }
+      onLocale(v);
+    } catch (e) { setErr((e as Error).message); }
+  };
+  return (
+    <div class="srow">
+      <div class="srow-h"><strong>{fr ? 'Langue' : 'Language'}</strong></div>
+      <p class="muted">{fr ? 'La langue des écrans et des courriels, pour vous seul.' : 'The language of the screens and emails, for you only.'}</p>
+      <select aria-label={fr ? 'Langue' : 'Language'} value={locale} onChange={(e) => void change((e.target as HTMLSelectElement).value as Locale)}>
+        <option value="en">English</option>
+        <option value="fr-CA">Français (Canada)</option>
+      </select>
+      {err && <p class="err" role="alert">{err}</p>}
+    </div>
+  );
+}
+
+/** Email copies of training, CE and licence reminders. The in-app list stays on the Notifications page. */
+function MailReminders({ call, locale }: { call: Call; locale: Locale }) {
+  const fr = locale === 'fr-CA';
+  const [mail, setMail] = useState<{ enabled: boolean; available: boolean } | null>(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { call('GET', '/v1/me/email-reminders').then(setMail, () => setMail(null)); }, [call]);
+  if (!mail?.available) return null;
+  const toggle = async (enabled: boolean) => {
+    setErr('');
+    try { await call('PUT', '/v1/me/email-reminders', { enabled }); setMail({ ...mail, enabled }); } catch (e) { setErr((e as Error).message); }
+  };
+  return (
+    <div class="srow">
+      <div class="srow-h"><strong>{fr ? 'Rappels par courriel' : 'Email reminders'}</strong></div>
+      <p class="muted">{fr ? 'Recevoir aussi par courriel les rappels de formation, de FPC et d’expiration de permis.' : 'Also send training, CE and licence-expiry reminders by email.'}</p>
+      <label class="erow"><input type="checkbox" checked={mail.enabled} onChange={(e) => void toggle((e.target as HTMLInputElement).checked)} /> {fr ? 'Envoyer les rappels par courriel' : 'Send reminders by email'}</label>
+      {err && <p class="err" role="alert">{err}</p>}
+    </div>
+  );
+}
+
+/** The snippets library (reusable email text), managed here instead of from the pipeline menu. */
+function SnippetsRow({ call, locale }: { call: Call; locale: Locale }) {
+  const [open, setOpen] = useState(false);
+  const fr = locale === 'fr-CA';
+  return (
+    <div class="srow">
+      <div class="srow-h"><strong>{fr ? 'Bibliothèque de textes' : 'Snippets library'}</strong></div>
+      <p class="muted">{fr ? 'Textes réutilisables pour vos courriels. Le bouton d’insertion se règle plus bas.' : 'Reusable text for your emails. The insert button is set below.'}</p>
+      <button class="btn quiet" onClick={() => setOpen(true)}>{fr ? 'Gérer les textes' : 'Manage snippets'}</button>
+      {open && <SnippetsPanel call={call} locale={locale} onClose={() => setOpen(false)} />}
     </div>
   );
 }
