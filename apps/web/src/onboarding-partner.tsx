@@ -16,6 +16,7 @@ const P = {
     cCredit: 'I consent to a credit check', cBackground: 'I consent to a background check', cCarrier: 'I agree that carriers may receive my appointment and standing information',
     giveConsent: 'Give consent', consentDone: 'Consent recorded.',
     waitReview: 'Your file is with the compliance team. Nothing more is needed from you right now.',
+    waitNext: 'Your standing is decided. Your agency agreement will be sent to you next.',
     waitAgreement: 'Your agency agreement is ready to sign. You will be asked to sign it on PII.',
     waitActivate: 'Your agreement is signed. Activation is next.',
     packetsHead: 'Carrier packets', carrier: 'Carrier', template: 'Form version', sendPacket: 'Send carrier packet', noPackets: 'None yet.',
@@ -34,6 +35,7 @@ const P = {
     cCredit: 'Je consens à une vérification de crédit', cBackground: 'Je consens à une vérification d’antécédents', cCarrier: 'J’accepte que les assureurs reçoivent mes renseignements de nomination et de réputation',
     giveConsent: 'Donner mon consentement', consentDone: 'Consentement enregistré.',
     waitReview: 'Votre dossier est auprès de l’équipe de conformité. Rien d’autre n’est requis de votre part pour l’instant.',
+    waitNext: 'Votre réputation est décidée. Votre entente d’agence vous sera envoyée ensuite.',
     waitAgreement: 'Votre entente d’agence est prête à être signée. Elle vous sera présentée dans PII.',
     waitActivate: 'Votre entente est signée. L’activation est la prochaine étape.',
     packetsHead: 'Dossiers auprès des assureurs', carrier: 'Assureur', template: 'Version du formulaire', sendPacket: 'Envoyer le dossier', noPackets: 'Aucun pour l’instant.',
@@ -109,7 +111,8 @@ export function PartnerOnboarding({ call, locale }: { call: Call; locale: Locale
         </>
       )}
 
-      {['consents_recorded', 'checks_requested', 'checks_complete', 'standing_decided'].includes(stage) && <p class="muted">{t.waitReview}</p>}
+      {['consents_recorded', 'checks_requested', 'checks_complete'].includes(stage) && <p class="muted">{t.waitReview}</p>}
+      {stage === 'standing_decided' && <p class="muted">{t.waitNext}</p>}
       {stage === 'agency_agreement_sent' && <p class="muted">{t.waitAgreement}</p>}
       {stage === 'agency_agreement_signed' && <p class="muted">{t.waitActivate}</p>}
 
