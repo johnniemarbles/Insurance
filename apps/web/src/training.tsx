@@ -3,7 +3,7 @@ import type { Strings } from './i18n.ts';
 import type { Locale } from './types.ts';
 import { CourseCe, MyCe, PeopleCe, ceStrings } from './ce.tsx';
 import { MyLearning } from './mylearning.tsx';
-import { CompletionReport, TrainingOverview, CertificateSigner, type Learner } from './report.tsx';
+import { CompletionReport, TrainingOverview, type Learner } from './report.tsx';
 import { Catalog, themeOf, ICONS } from './catalog.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -85,7 +85,6 @@ function CourseList({ call, t, locale, canAuthor, onOpen }: { call: Call; t: Str
       </div>
       {err && <div class="err">{err}</div>}
       {canAuthor && <TrainingOverview call={call} locale={locale} onOpen={onOpen} />}
-      {canAuthor && <CertificateSigner call={call} locale={locale} />}
       {adding && (
         <form class="erow" onSubmit={create}>
           <input autofocus placeholder={t.courseTitle} aria-label={t.courseTitle} value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} />

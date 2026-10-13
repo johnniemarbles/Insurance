@@ -82,7 +82,6 @@ export function NotificationsPage({ call, locale, go }: { call: Call; locale: Lo
   const x = X[locale];
   const [list, setList] = useState<N[] | null>(null);
   const [err, setErr] = useState('');
-  const [mail, setMail] = useState<{ enabled: boolean; available: boolean } | null>(null);
   const [ms, setMs] = useState<{ configured: boolean; from: string; lastOkAt: string | null; lastErrorAt: string | null; lastError: string | null } | null>(null);
   const [testMsg, setTestMsg] = useState('');
   useEffect(() => { call('GET', '/v1/mail/status').then(setMs, () => setMs(null)); }, [call]);
@@ -94,8 +93,6 @@ export function NotificationsPage({ call, locale, go }: { call: Call; locale: Lo
       call('GET', '/v1/mail/status').then(setMs, () => {});
     } catch (e) { setTestMsg((e as Error).message); }
   };
-  useEffect(() => { call('GET', '/v1/me/email-reminders').then(setMail, () => setMail(null)); }, [call]);
-  const toggleMail = async (enabled: boolean) => { try { await call('PUT', '/v1/me/email-reminders', { enabled }); setMail((m) => (m ? { ...m, enabled } : m)); } catch (e) { setErr((e as Error).message); } };
   const load = () => call('GET', '/v1/notifications').then((r) => setList(r.notifications), (e) => setErr((e as Error).message));
   useEffect(() => { void load(); }, [call]);
   const open = async (n: N) => {
@@ -129,7 +126,6 @@ export function NotificationsPage({ call, locale, go }: { call: Call; locale: Lo
           </div>
         );
       })()}
-      {mail?.available && <label class="erow" style={{ marginTop: '8px' }}><input type="checkbox" checked={mail.enabled} onChange={(e) => void toggleMail((e.target as HTMLInputElement).checked)} /> {x.emailRem}</label>}
       <div class="hcard" style={{ marginTop: '12px' }}>
         {list.length === 0 && <p class="muted">{x.none}</p>}
         {list.map((n) => (
