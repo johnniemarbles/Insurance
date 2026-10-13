@@ -188,16 +188,19 @@ export function SettingsPage({ api, call, locale, onLocale, initialTab, isManage
 
   return (
     <div class="settings">
-      <h2>{x.title}</h2>
-      <input class="ssearch" type="search" placeholder={x.search} aria-label={x.search} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+      <div class="shead">
+        <h2>{x.title}</h2>
+        <input class="ssearch" type="search" placeholder={x.search} aria-label={x.search} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+      </div>
       {err && <p class="err" role="alert">{err}</p>}
       {needle ? (
-        matches.length ? matches.map(row) : <p class="muted">{x.noMatch}</p>
+        <div class="smain">{matches.length ? matches.map(row) : <p class="muted">{x.noMatch}</p>}</div>
       ) : (
-        <>
-          <div class="tabs sub" role="tablist">
+        <div class="sgrid">
+          <nav class="snav" role="tablist" aria-label={x.title}>
             {tabs.map((k) => <button role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{x.tabs[k]}</button>)}
-          </div>
+          </nav>
+          <div class="smain">
           {tab === 'me' && <LanguageRow call={call} locale={locale} onLocale={onLocale} />}
           {tab === 'notifications' && <MailReminders call={call} locale={locale} />}
           {tab === 'email' && <SnippetsRow call={call} locale={locale} />}
@@ -219,7 +222,8 @@ export function SettingsPage({ api, call, locale, onLocale, initialTab, isManage
           )}
           {tab === 'privacy' && <PrivacyTab call={call} locale={locale} />}
           {tab === 'team' && <TeamTab api={api} call={call} locale={locale} pipelines={pipelines} isManager={isManager} x={x} onError={setErr} />}
-        </>
+          </div>
+        </div>
       )}
       {dirtyKeys.length > 0 && (
         <div class="savebar" role="region" aria-label={x.unsaved}>
