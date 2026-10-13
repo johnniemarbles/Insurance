@@ -65,6 +65,16 @@ CREATE TABLE carrier_packets (
   updated_at       timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX ON carrier_packets (node_id);
+-- Check results and standing decisions: a tenant admin, or a Compliance officer whose node sits at or above the partner's node.
+-- A regional officer (for example, Ontario or BC) sees only the partners below their region.
+CREATE FUNCTION app_is_compliance_at_or_above(p_tenant uuid, p_node uuid) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  SELECT app_is_tenant_admin() OR EXISTS (
+    SELECT 1 FROM user_node_roles r
+    JOIN org_reach o ON o.ancestor_id = r.node_id AND o.descendant_id = p_node
+    WHERE r.user_id = app_user_id() AND r.tenant_id = p_tenant AND r.role::text = 'compliance');
+$$;
+
 DO $$
 DECLARE t text;
 BEGIN
@@ -77,5 +87,5 @@ END $$;
 CALL apply_visibility_policies('onboarding_cases', 'org_node_at_or_below(tenant_id, node_id)');
 CALL apply_visibility_policies('onboarding_consents', 'org_node_at_or_below(tenant_id, node_id)');
 CALL apply_visibility_policies('carrier_packets', 'org_node_at_or_below(tenant_id, node_id)');
-CALL apply_visibility_policies('onboarding_checks', 'app_is_head_office()');
-CALL apply_visibility_policies('onboarding_decisions', 'app_is_head_office()');
+CALL apply_visibility_policies('onboarding_checks', 'app_is_compliance_at_or_above(tenant_id, node_id)');
+CALL apply_visibility_policies('onboarding_decisions', 'app_is_compliance_at_or_above(tenant_id, node_id)');
