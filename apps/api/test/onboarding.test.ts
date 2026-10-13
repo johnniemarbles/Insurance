@@ -117,8 +117,11 @@ test('a partner not in good standing keeps no access, and cannot get an agency a
   assert.equal(dec.status, 200);
   const view = await call(OTHER, 'GET', `/v1/onboarding/partners/${OTN}`);
   assert.equal(view.json.outcome, 'not_in_good_standing');
-  assert.equal(view.json.keepsAccess, false);
-  assert.equal((await call(OTHER, 'GET', '/v1/onboarding/mine')).json.onboarding.keepsAccess, false);
+  assert.equal(view.json.keepsAccess, true, 'a partner not in good standing keeps access');
+  assert.equal(view.json.warning, true, 'and is shown a warning');
+  const mine = (await call(OTHER, 'GET', '/v1/onboarding/mine')).json.onboarding;
+  assert.equal(mine.keepsAccess, true);
+  assert.equal(mine.warning, true);
   assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'agency_agreement_sent' })).status, 409, 'no agreement without good standing');
   assert.equal((await call(OTHER, 'POST', `/v1/onboarding/cases/${id}/carrier-packets`, { carrier: 'iA Financial Group', templateVersion: 'F11-92A' })).status, 409);
 });

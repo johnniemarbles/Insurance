@@ -111,14 +111,14 @@ export function OnboardingPage({ call, locale }: { call: Call; locale: Locale })
       <p class="muted">{t.sub}</p>
       {error && <div class="err" role="alert">{error}</div>}
       <>
-          <div class="row" style={{ display: 'flex', gap: '8px', alignItems: 'end', flexWrap: 'wrap' }}>
-            <label>{t.partner}
+          <div class="erow">
+            <label class="fl">{t.partner}
               <select value={partnerId} onChange={(e) => setPartnerId((e.target as HTMLSelectElement).value)}>
                 <option value="">—</option>
                 {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
-            <label>{t.country}
+            <label class="fl">{t.country}
               <select value={country} onChange={(e) => setCountry((e.target as HTMLSelectElement).value as 'CA' | 'US')}>
                 <option value="CA">Canada</option><option value="US">US</option>
               </select>
@@ -214,24 +214,24 @@ function CaseFile({ call, t, id, onBack }: { call: Call; t: Dict; id: string; on
         </table>
       )}
       {['consents_recorded', 'checks_requested', 'checks_complete'].includes(d.stage) && (
-        <div class="row" style={{ display: 'flex', gap: '8px', alignItems: 'end', flexWrap: 'wrap' }}>
-          <h4 style={{ width: '100%' }}>{t.recordHead}</h4>
-          <label>{t.checkL}
+        <div class="erow">
+          <h4>{t.recordHead}</h4>
+          <label class="fl">{t.checkL}
             <select value={check.kind} onChange={(e) => setCheck({ ...check, kind: (e.target as HTMLSelectElement).value, provider: (e.target as HTMLSelectElement).value === 'credit' ? 'Equifax Canada' : 'Sterling Backcheck' })}>
               <option value="credit">{t.kind.credit}</option><option value="background">{t.kind.background}</option>
             </select>
           </label>
-          <label>{t.provider}<input value={check.provider} onInput={(e) => setCheck({ ...check, provider: (e.target as HTMLInputElement).value })} /></label>
-          <label>{t.statusL}
+          <label class="fl">{t.provider}<input value={check.provider} onInput={(e) => setCheck({ ...check, provider: (e.target as HTMLInputElement).value })} /></label>
+          <label class="fl">{t.statusL}
             <select value={check.status} onChange={(e) => setCheck({ ...check, status: (e.target as HTMLSelectElement).value })}>
               <option value="complete">{t.status.complete}</option><option value="requested">{t.status.requested}</option><option value="failed">{t.status.failed}</option>
             </select>
           </label>
           {check.kind === 'credit' && check.status === 'complete' && (
-            <label>{t.score}<input type="number" min={300} max={900} value={check.score} onInput={(e) => setCheck({ ...check, score: (e.target as HTMLInputElement).value })} /></label>
+            <label class="fl">{t.score}<input type="number" min={300} max={900} value={check.score} onInput={(e) => setCheck({ ...check, score: (e.target as HTMLInputElement).value })} /></label>
           )}
           {check.kind === 'background' && check.status === 'complete' && (
-            <label>{t.adverse}
+            <label class="fl">{t.adverse}
               <select value={check.adverse} onChange={(e) => setCheck({ ...check, adverse: (e.target as HTMLSelectElement).value })}>
                 <option value="false">{t.clear}</option><option value="true">{t.adverseYes}</option>
               </select>
@@ -245,13 +245,13 @@ function CaseFile({ call, t, id, onBack }: { call: Call; t: Dict; id: string; on
         <>
           <h3>{t.decisionHead}</h3>
           <p>{t.suggested}: <strong>{suggestedLabel}</strong> (credit {d.thresholds.creditPassMin} pass, {d.thresholds.creditReviewMin}–{d.thresholds.creditPassMin - 1} review)</p>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'end', flexWrap: 'wrap' }}>
-            <label>{t.outcome}
+          <div class="erow">
+            <label class="fl">{t.outcome}
               <select value={decision.outcome} onChange={(e) => setDecision({ ...decision, outcome: (e.target as HTMLSelectElement).value })}>
                 {OUTCOMES.map((o) => <option value={o}>{t.outcomeL[o]}</option>)}
               </select>
             </label>
-            <label style={{ flex: '1 1 320px' }}>{t.reason}
+            <label class="fl">{t.reason}
               <textarea rows={3} value={decision.reason} onInput={(e) => setDecision({ ...decision, reason: (e.target as HTMLTextAreaElement).value })} />
             </label>
             <button class="btn" disabled={busy || decision.reason.trim().length < 1} onClick={decide}>{t.decide}</button>

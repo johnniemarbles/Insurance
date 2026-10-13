@@ -5,7 +5,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
 import {
-  CANADA_THRESHOLDS, STANDING_LABELS, STANDING_OUTCOMES, carrierPacketBlocks, keepsAccessWhile, nextCheckDue, recheckStatus, stageMoveBlock,
+  CANADA_THRESHOLDS, STANDING_LABELS, STANDING_OUTCOMES, carrierPacketBlocks, keepsAccessWhile, standingWarning, nextCheckDue, recheckStatus, stageMoveBlock,
   suggestedStanding, type OnboardingStage, type RequestContext, type StandingOutcome,
 } from '@pii/domain';
 import { audit } from './audit.ts';
@@ -74,8 +74,8 @@ async function outcomesOf(tx: Tx, caseId: string) {
 }
 
 const outcomeView = (standing: StandingOutcome | null) => (standing
-  ? { outcome: standing, label: STANDING_LABELS[standing].en, keepsAccess: keepsAccessWhile(standing) }
-  : { outcome: null, label: 'Being checked', keepsAccess: true });
+  ? { outcome: standing, label: STANDING_LABELS[standing].en, keepsAccess: keepsAccessWhile(standing), warning: standingWarning(standing) }
+  : { outcome: null, label: 'Being checked', keepsAccess: true, warning: false });
 
 function recheckView(lastCheckedAt: Date | null) {
   if (!lastCheckedAt) return null;

@@ -122,9 +122,9 @@ export function PartnerOnboarding({ call, locale }: { call: Call; locale: Locale
           {view.carrierPackets.length === 0 ? <p class="muted">{t.noPackets}</p> : (
             <ul>{view.carrierPackets.map((p) => <li>{p.carrier} · {t.packetStatus[p.status] ?? p.status}</li>)}</ul>
           )}
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'end', flexWrap: 'wrap' }}>
-            <label>{t.carrier}<input value={packet.carrier} onInput={(e) => setPacket({ ...packet, carrier: (e.target as HTMLInputElement).value })} /></label>
-            <label>{t.template}<input value={packet.templateVersion} onInput={(e) => setPacket({ ...packet, templateVersion: (e.target as HTMLInputElement).value })} /></label>
+          <div class="erow">
+            <label class="fl">{t.carrier}<input value={packet.carrier} onInput={(e) => setPacket({ ...packet, carrier: (e.target as HTMLInputElement).value })} /></label>
+            <label class="fl">{t.template}<input value={packet.templateVersion} onInput={(e) => setPacket({ ...packet, templateVersion: (e.target as HTMLInputElement).value })} /></label>
             <button class="btn" disabled={busy} onClick={() => run(() => call('POST', `/v1/onboarding/cases/${view.id}/carrier-packets`, packet))}>{t.sendPacket}</button>
           </div>
         </>

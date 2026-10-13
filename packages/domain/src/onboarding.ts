@@ -35,9 +35,14 @@ export function suggestedStanding(c: CheckOutcomes, t: CheckThresholds = CANADA_
   return 'not_in_good_standing';
 }
 
-/** A partner in review keeps current access until the officer decides. Only not_in_good_standing removes access. */
-export function keepsAccessWhile(outcome: StandingOutcome | 'pending'): boolean {
-  return outcome !== 'not_in_good_standing';
+/** Access is never removed by the standing decision. A partner not in good standing keeps access, shown with a warning (decided by the Compliance officer). */
+export function keepsAccessWhile(_outcome: StandingOutcome | 'pending'): boolean {
+  return true;
+}
+
+/** True when the partner should be warned that the file needs attention (not in good standing). */
+export function standingWarning(outcome: StandingOutcome | 'pending'): boolean {
+  return outcome === 'not_in_good_standing';
 }
 
 export const RECHECK_MONTHS = 6;

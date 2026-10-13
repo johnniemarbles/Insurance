@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { suggestedStanding, keepsAccessWhile, nextCheckDue, recheckStatus, stageMoveBlock, carrierPacketBlocks } from '../src/index.ts';
+import { suggestedStanding, keepsAccessWhile, standingWarning, nextCheckDue, recheckStatus, stageMoveBlock, carrierPacketBlocks } from '../src/index.ts';
 
 test('credit 600 and above passes when the background is clear', () => {
   assert.equal(suggestedStanding({ creditScore: 600, backgroundAdverse: false }), 'good_standing');
@@ -25,7 +25,9 @@ test('thresholds can be changed per country without touching the rules', () => {
 test('review keeps access; only not in good standing removes it', () => {
   assert.equal(keepsAccessWhile('needs_review'), true);
   assert.equal(keepsAccessWhile('good_standing'), true);
-  assert.equal(keepsAccessWhile('not_in_good_standing'), false);
+  assert.equal(keepsAccessWhile('not_in_good_standing'), true, 'access continues, with a warning');
+  assert.equal(standingWarning('not_in_good_standing'), true);
+  assert.equal(standingWarning('good_standing'), false);
 });
 test('rechecks fall due every six months and warn 30 days ahead', () => {
   const last = new Date('2026-01-15T00:00:00Z');
