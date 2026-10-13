@@ -83,6 +83,23 @@ function recheckView(lastCheckedAt: Date | null) {
   return { lastCheckedAt: lastCheckedAt.toISOString(), dueOn: due.toISOString().slice(0, 10), status: recheckStatus(lastCheckedAt, new Date()) };
 }
 
+/** The partner's view of one onboarding case, as the partner may see it. Never checks, scores or reasons. */
+async function partnerView(tx: Tx, where: string, params: unknown[]) {
+  const c = (await tx.query<CaseRow>(
+    `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
+            c.last_checked_at AS "lastCheckedAt", n.name AS "partnerName"
+       FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id WHERE ${where} LIMIT 1`, params)).rows[0];
+  if (!c) return null;
+  const consents = (await tx.query<{ kind: string }>(
+    `SELECT DISTINCT kind FROM onboarding_consents WHERE case_id = $1 AND accepted`, [c.id])).rows.map((r) => r.kind);
+  const packets = (await tx.query(
+    `SELECT id, carrier, status, effective_date AS "effectiveDate" FROM carrier_packets WHERE node_id = $1 ORDER BY created_at DESC`, [c.nodeId])).rows;
+  return {
+    id: c.id, partnerName: c.partnerName, country: c.country, stage: c.stage, ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
+    consentsGiven: consents, carrierPackets: packets,
+  };
+}
+
 export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
 
@@ -321,19 +338,20 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     const { ctx } = await deps.authenticate(req);
     const nodeId = caseId((req.params as { nodeId: string }).nodeId);
     return run(ctx, async (tx) => {
-      const c = (await tx.query<CaseRow>(
-        `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
-                c.last_checked_at AS "lastCheckedAt", n.name AS "partnerName"
-           FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id WHERE c.node_id = $1`, [nodeId])).rows[0];
-      if (!c) throw notFound('No onboarding for this partner');
-      const consents = (await tx.query<{ kind: string }>(
-        `SELECT DISTINCT kind FROM onboarding_consents WHERE case_id = $1 AND accepted`, [c.id])).rows.map((r) => r.kind);
-      const packets = (await tx.query(
-        `SELECT id, carrier, status, effective_date AS "effectiveDate" FROM carrier_packets WHERE node_id = $1 ORDER BY created_at DESC`, [nodeId])).rows;
-      return {
-        partnerName: c.partnerName, country: c.country, stage: c.stage, ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
-        consentsGiven: consents, carrierPackets: packets,
-      };
+      const v = await partnerView(tx, `c.node_id = $1`, [nodeId]);
+      if (!v) throw notFound('No onboarding for this partner');
+      return v;
+    });
+  });
+
+  /** Who the signed-in person is for onboarding: an officer (Compliance role or tenant admin), and/or a partner with a case. The screen picks its view from this. */
+  app.get('/v1/onboarding/mine', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    return run(ctx, async (tx) => {
+      const officer = (await tx.query<{ ok: boolean }>(
+        `SELECT app_is_tenant_admin() OR EXISTS (SELECT 1 FROM user_node_roles WHERE user_id = app_user_id() AND role::text = 'compliance') AS ok`)).rows[0]?.ok === true;
+      const onboarding = await partnerView(tx, `c.node_id IN (SELECT node_id FROM user_node_roles WHERE user_id = app_user_id())`, []);
+      return { officer, onboarding };
     });
   });
 }

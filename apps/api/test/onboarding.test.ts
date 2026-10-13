@@ -86,6 +86,12 @@ test('the partner completes the form and consents; the officer runs the checks a
   assert.ok(!view.raw.includes('Sterling') && !view.raw.includes('Equifax'), 'the partner never sees the providers');
   assert.ok(!view.raw.includes('Credit 640'), 'the partner never sees the reason');
   assert.equal(view.json.checks, undefined);
+  const mine = await call(AG, 'GET', '/v1/onboarding/mine');
+  assert.equal(mine.json.onboarding.partnerName, 'Agency One');
+  assert.ok(!mine.raw.includes('640'), 'the partner\'s own view has no score');
+  assert.equal((await call(BC_OFF, 'GET', '/v1/onboarding/mine')).json.onboarding, null, 'an officer is not a partner in onboarding');
+  assert.equal((await call(BC_OFF, 'GET', '/v1/onboarding/mine')).json.officer, true);
+  assert.equal(mine.json.officer, false, 'a partner is not an officer');
   assert.equal((await call(AG, 'GET', `/v1/onboarding/cases/${id}`)).status, 403, 'the partner cannot open the officer file');
   assert.equal((await call(ON_OFF, 'GET', `/v1/onboarding/cases/${id}`)).json.checks.length, 2, 'the officer sees every check');
 
@@ -111,6 +117,7 @@ test('a partner not in good standing keeps no access, and cannot get an agency a
   const view = await call(OTHER, 'GET', `/v1/onboarding/partners/${OTN}`);
   assert.equal(view.json.outcome, 'not_in_good_standing');
   assert.equal(view.json.keepsAccess, false);
+  assert.equal((await call(OTHER, 'GET', '/v1/onboarding/mine')).json.onboarding.keepsAccess, false);
   assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'agency_agreement_sent' })).status, 409, 'no agreement without good standing');
   assert.equal((await call(OTHER, 'POST', `/v1/onboarding/cases/${id}/carrier-packets`, { carrier: 'iA Financial Group', templateVersion: 'F11-92A' })).status, 409);
 });

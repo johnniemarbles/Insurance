@@ -2,6 +2,7 @@
 // The partner's own view is in onboarding-partner.tsx. Results and reasons are shown here only; the API never returns them to partners.
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
+import { PartnerOnboarding } from './onboarding-partner.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 
@@ -67,7 +68,7 @@ export function OnboardingPage({ call, locale }: { call: Call; locale: Locale })
   const [partners, setPartners] = useState<{ id: string; name: string }[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [forbidden, setForbidden] = useState(false);
+  const [who, setWho] = useState<boolean | null>(null);
   const [partnerId, setPartnerId] = useState('');
   const [country, setCountry] = useState<'CA' | 'US'>('CA');
 
@@ -75,17 +76,20 @@ export function OnboardingPage({ call, locale }: { call: Call; locale: Locale })
     try {
       const r = await call('GET', '/v1/onboarding/cases');
       setCases(r.cases as CaseRow[]);
-      setForbidden(false);
       const p = await call('GET', '/v1/compliance/partners');
       const inOnboarding = new Set((r.cases as CaseRow[]).map((c) => c.nodeId));
       setPartners((p.partners as { id: string; name: string }[]).filter((x) => !inOnboarding.has(x.id)));
     } catch (e) {
-      const msg = errText(e);
-      if (/only the compliance|compliance officer/i.test(msg)) setForbidden(true);
-      setError(msg);
+      setError(errText(e));
     }
   };
-  useEffect(() => { void load(); }, [call]);
+  useEffect(() => {
+    call('GET', '/v1/onboarding/mine').then((r) => {
+      const officer = r.officer === true;
+      setWho(officer);
+      if (officer) void load();
+    }, (e) => setError(errText(e)));
+  }, [call]);
 
   const invite = async () => {
     setError('');
@@ -97,16 +101,16 @@ export function OnboardingPage({ call, locale }: { call: Call; locale: Locale })
     } catch (e) { setError(errText(e)); }
   };
 
+  if (who === false) return <PartnerOnboarding call={call} locale={locale} />;
+  if (who === null) return <section class="onboarding">{error && <div class="err" role="alert">{error}</div>}</section>;
   if (openId) return <CaseFile call={call} t={t} id={openId} onBack={() => { setOpenId(null); void load(); }} />;
 
   return (
     <section class="onboarding">
       <h2>{t.title}</h2>
       <p class="muted">{t.sub}</p>
-      {forbidden && <div class="msg">{t.forbidden}</div>}
-      {error && !forbidden && <div class="err" role="alert">{error}</div>}
-      {!forbidden && (
-        <>
+      {error && <div class="err" role="alert">{error}</div>}
+      <>
           <div class="row" style={{ display: 'flex', gap: '8px', alignItems: 'end', flexWrap: 'wrap' }}>
             <label>{t.partner}
               <select value={partnerId} onChange={(e) => setPartnerId((e.target as HTMLSelectElement).value)}>
@@ -141,7 +145,6 @@ export function OnboardingPage({ call, locale }: { call: Call; locale: Locale })
             </table>
           )}
         </>
-      )}
     </section>
   );
 }
