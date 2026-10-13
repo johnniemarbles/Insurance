@@ -7,6 +7,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { sweepOnboardingRechecks } from '../src/onboarding-recheck.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let co: { tenantId: string; rootNodeId: string }; let deps: AppDeps;
 type M = 'GET' | 'POST' | 'PUT';
@@ -134,5 +135,19 @@ test('row-level security: the database itself hides checks and decisions from pa
   assert.equal(await count(BC_OFF, 'onboarding_checks'), 0, 'the BC officer sees no Ontario checks');
   assert.equal(await count(BC_OFF, 'onboarding_decisions'), 0, 'the BC officer sees no Ontario decisions');
   assert.equal(await count(BC_OFF, 'onboarding_cases'), 0, 'the BC officer sees no Ontario cases');
+});
+
+test('the 6-month check: officers and the company admin are told once when it falls due; the partner and other regions are not', async () => {
+  const id = (await call(ON_OFF, 'GET', '/v1/onboarding/cases')).json.cases.find((c: { partnerName: string }) => c.partnerName === 'Agency One').id;
+  await owner((o) => o.query(`UPDATE onboarding_cases SET last_checked_at = now() - interval '5 months 20 days' WHERE id = $1`, [id]));
+  const count = async (email: string) => owner(async (o) => (await o.query(
+    `SELECT count(*)::int AS n FROM notifications n JOIN app_users u ON u.id = n.user_id WHERE u.email = $1 AND n.kind = 'onboarding_recheck'`, [email])).rows[0].n);
+  assert.ok((await sweepOnboardingRechecks(deps)) >= 1);
+  assert.equal(await count(ON_OFF), 1, 'the Ontario officer is told');
+  assert.equal(await count(ADMIN), 1, 'the company administrator is told');
+  assert.equal(await count(AG), 0, 'the partner is not told');
+  assert.equal(await count(BC_OFF), 0, 'the BC officer is not told about Ontario');
+  await sweepOnboardingRechecks(deps);
+  assert.equal(await count(ON_OFF), 1, 'a second sweep does not repeat the reminder');
 });
 

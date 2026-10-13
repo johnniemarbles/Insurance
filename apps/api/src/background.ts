@@ -4,6 +4,7 @@ import { actingAs, flushEffects, type Effect } from './effects.ts';
 import { buildDigest } from './digest.ts';
 import { sweepRenewals } from './renewals.ts';
 import { sweepCompliance, withDigest } from './routes-compliance.ts';
+import { sweepOnboardingRechecks } from './onboarding-recheck.ts';
 import { sweepAssignments, sweepLearnerReminders } from './routes-forecast.ts';
 import { sweepSnapshots } from './snapshots.ts';
 import { sweepEsign } from './routes-esign.ts';
@@ -92,6 +93,7 @@ async function runSweeps(deps: AppDeps): Promise<void> {
     await sweepCompliance(d);
     await sweepLearnerReminders(d);
     await sweepComplianceAlerts(d);
+    await sweepOnboardingRechecks(d);
   });
   await sweepAssignments(deps);
   await sweepSnapshots(deps);

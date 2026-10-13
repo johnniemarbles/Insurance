@@ -10,6 +10,7 @@ CREATE TABLE onboarding_cases (
   stage       text NOT NULL DEFAULT 'invited' CHECK (stage IN ('invited', 'form_submitted', 'consents_recorded', 'checks_requested', 'checks_complete', 'standing_decided', 'agency_agreement_sent', 'agency_agreement_signed', 'active')),
   standing    text CHECK (standing IN ('good_standing', 'needs_review', 'not_in_good_standing')),
   last_checked_at timestamptz,
+  recheck_notified_for date,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, node_id)
