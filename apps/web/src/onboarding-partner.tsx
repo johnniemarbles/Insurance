@@ -79,50 +79,50 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
     try { await fn(); await load(); } catch (e) { setError(errText(e)); } finally { setBusy(false); }
   };
 
-  if (view === undefined) return embedded ? null : <section class="onboarding">{error && <div class="err" role="alert">{error}</div>}</section>;
-  if (view === null) return embedded ? (error ? <div class="err" role="alert">{error}</div> : null) : <section class="onboarding"><div class="msg">{t.none}</div></section>;
+  if (view === undefined) return embedded ? null : <section class="obwrap">{error && <div class="err" role="alert">{error}</div>}</section>;
+  if (view === null) return embedded ? (error ? <div class="err" role="alert">{error}</div> : null) : <section class="obwrap"><div class="calm">{t.none}</div></section>;
 
   const stage = view.stage as Stage;
   const keepText = view.outcome === 'good_standing' ? t.keepGood : view.outcome === 'needs_review' ? t.keepReview : view.outcome === 'not_in_good_standing' ? t.keepNot : null;
-  const outcomeL = OUTCOME_LABEL;
+  const outcome = view.outcome ? (OUTCOME_LABEL[view.outcome]?.[lc] ?? view.outcome) : t.pending;
 
   return (
-    <section class="onboarding obpartner" aria-label={t.title}>
-      <div class="hcard">
-        <div class="hwelcome" style={{ marginBottom: '8px' }}>
-          <div>
-            <span class="muted">{t.title}</span>
-            <h2 style={{ margin: '2px 0 0' }}>{view.partnerName}</h2>
-          </div>
-          <span class="spacer" />
+    <section class="obwrap obpartner" aria-label={t.title}>
+      <header class="obhead">
+        <div><span class="obkicker">{t.title}</span><h2>{view.partnerName}</h2></div>
+        <div class="obhead-right">
           <span class="chip">{STAGE_LABEL[stage][lc]}</span>
-          <span class={`chip ${view.outcome === 'good_standing' ? 'ok' : view.outcome ? 'warn' : ''}`}>{t.outcome}: {view.outcome ? (OUTCOME_LABEL[view.outcome]?.[lc] ?? view.outcome) : t.pending}</span>
+          <span class={`chip ${view.outcome === 'good_standing' ? 'ok' : view.outcome ? 'warn' : ''}`}>{t.outcome}: {outcome}</span>
         </div>
-        <h3 style={{ margin: '12px 0 8px', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--mute)' }}>{t.progress}</h3>
-        <StepList stage={stage} locale={locale} />
-        {keepText && <div class={`banner ${view.warning ? 'warn' : ''}`} role="status" style={{ marginTop: '12px' }}>{keepText}</div>}
-        {view.recheck && <p class="muted" style={{ margin: '10px 0 0' }}>{t.nextCheck}: {view.recheck.dueOn.slice(0, 10)}</p>}
-      </div>
+      </header>
 
       {error && <div class="err" role="alert">{error}</div>}
 
-      <div class="obnext" role="status" style={{ marginTop: '14px' }}><b>{t.next}:</b> {t[`next_${stage}` as 'next_active']}</div>
+      <section class="obcard">
+        <h3>{t.progress}</h3>
+        <StepList stage={stage} locale={locale} />
+        <div class="obnext" role="status"><b>{t.next}:</b> {t[`next_${stage}` as 'next_active']}</div>
+        {keepText && <div class={`banner ${view.warning ? 'warn' : ''}`} role="status">{keepText}</div>}
+        {view.recheck && <p class="muted obnote">{t.nextCheck}: {view.recheck.dueOn.slice(0, 10)}</p>}
+      </section>
 
       {stage === 'invited' && (
-        <div style={{ marginTop: '12px' }}>
+        <section class="obcard">
           <p>{t.stepProfile}</p>
           <button class="btn" disabled={busy} onClick={() => run(() => call('POST', `/v1/onboarding/cases/${view.id}/form`))}>{t.submitForm}</button>
-        </div>
+        </section>
       )}
 
       {stage === 'form_submitted' && (
-        <section class="hcard" style={{ marginTop: '12px' }}>
+        <section class="obcard">
           <h3>{t.consentHead}</h3>
-          <p>{t.consentIntro}</p>
-          <label style={{ display: 'block' }}><input type="checkbox" checked={consent.credit} onChange={(e) => setConsent({ ...consent, credit: (e.target as HTMLInputElement).checked })} /> {t.cCredit}</label>
-          <label style={{ display: 'block' }}><input type="checkbox" checked={consent.background} onChange={(e) => setConsent({ ...consent, background: (e.target as HTMLInputElement).checked })} /> {t.cBackground}</label>
-          <label style={{ display: 'block' }}><input type="checkbox" checked={consent.carrier} onChange={(e) => setConsent({ ...consent, carrier: (e.target as HTMLInputElement).checked })} /> {t.cCarrier}</label>
-          <button class="btn" style={{ marginTop: '10px' }} disabled={busy || !consent.credit || !consent.background} onClick={() => run(() => call('POST', `/v1/onboarding/cases/${view.id}/consents`, {
+          <p class="muted">{t.consentIntro}</p>
+          <div class="obchecks">
+            <label><input type="checkbox" checked={consent.credit} onChange={(e) => setConsent({ ...consent, credit: (e.target as HTMLInputElement).checked })} /> {t.cCredit}</label>
+            <label><input type="checkbox" checked={consent.background} onChange={(e) => setConsent({ ...consent, background: (e.target as HTMLInputElement).checked })} /> {t.cBackground}</label>
+            <label><input type="checkbox" checked={consent.carrier} onChange={(e) => setConsent({ ...consent, carrier: (e.target as HTMLInputElement).checked })} /> {t.cCarrier}</label>
+          </div>
+          <button class="btn" disabled={busy || !consent.credit || !consent.background} onClick={() => run(() => call('POST', `/v1/onboarding/cases/${view.id}/consents`, {
             consents: [
               { kind: 'credit_check', accepted: consent.credit },
               { kind: 'background_check', accepted: consent.background },
@@ -133,16 +133,16 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
       )}
 
       {stage === 'active' && (
-        <section class="hcard" style={{ marginTop: '12px' }}>
+        <section class="obcard">
           <h3>{t.packetsHead}</h3>
           {view.carrierPackets.length === 0 ? <p class="muted">{t.noPackets}</p> : (
-            <ul>{view.carrierPackets.map((p) => <li>{p.carrier} · {t.packetStatus[p.status] ?? p.status}</li>)}</ul>
+            <ul class="oblist">{view.carrierPackets.map((p) => <li>{p.carrier}<span class="muted">{t.packetStatus[p.status] ?? p.status}</span></li>)}</ul>
           )}
-          <div class="cform" style={{ marginTop: '10px' }}>
+          <form class="obform" onSubmit={(e) => { e.preventDefault(); void run(() => call('POST', `/v1/onboarding/cases/${view.id}/carrier-packets`, packet)); }}>
             <label class="fl">{t.carrier}<input value={packet.carrier} onInput={(e) => setPacket({ ...packet, carrier: (e.target as HTMLInputElement).value })} /></label>
             <label class="fl">{t.template}<input value={packet.templateVersion} onInput={(e) => setPacket({ ...packet, templateVersion: (e.target as HTMLInputElement).value })} /></label>
-            <button class="btn" disabled={busy} onClick={() => run(() => call('POST', `/v1/onboarding/cases/${view.id}/carrier-packets`, packet))}>{t.sendPacket}</button>
-          </div>
+            <button class="btn" type="submit" disabled={busy}>{t.sendPacket}</button>
+          </form>
         </section>
       )}
     </section>

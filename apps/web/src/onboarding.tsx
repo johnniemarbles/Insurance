@@ -1,7 +1,8 @@
-// Partner onboarding dashboard for the Compliance officer (a tab on the Compliance page): invite a partner, see every partner's progress,
-// open a file to record the checks, decide the standing and move the agency agreement.
+// Partner onboarding for the Compliance officer, as a section of the Compliance page: a board of every partner's progress, invitations,
+// and a file per partner to record the checks, decide the standing and move the agency agreement.
 // The partner's own view is in onboarding-partner.tsx. Results and reasons are shown here only; the API never returns them to partners.
 import { useEffect, useMemo, useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
 import type { Locale } from './types.ts';
 import { ProgressBar, STAGE_LABEL, StepList, WAITING_ON, stagePercent, type Stage } from './onboarding-shared.tsx';
 
@@ -12,11 +13,13 @@ const OUTCOMES = ['good_standing', 'needs_review', 'not_in_good_standing'] as co
 const T = {
   en: {
     title: 'Partner onboarding', sub: 'Invite a partner, run the Equifax credit and Sterling background checks, decide good standing, then send the agency agreement. The partner sees only the outcome.',
-    invite: 'Invite a partner', partner: 'Partner', country: 'Country', inviteBtn: 'Invite', noPartners: 'Every partner is already in onboarding.',
-    cases: 'Partners in onboarding', none: 'Nobody is in onboarding yet.', name: 'Partner', stage: 'Stage', standing: 'Standing', recheck: 'Next check', open: 'Open',
-    back: 'All partners in onboarding', dash: '—',
-    tiles: { total: 'In onboarding', action: 'Need compliance action', partner: 'With the partner', active: 'Active', due: 'Checks due within 30 days', notGood: 'Not in good standing' },
-    filters: { all: 'All', action: 'Needs compliance', partner: 'With the partner', active: 'Active' },
+    invite: 'Invite a partner', inviteHead: 'Invite a partner to onboarding', partner: 'Partner', country: 'Country', inviteBtn: 'Send invitation', cancel: 'Cancel',
+    noPartners: 'Every partner is already in onboarding.', invitedOk: (n: number) => (n > 0 ? `Invited. An email was sent to ${n} ${n === 1 ? 'person' : 'people'} at the partner.` : 'Invited. No email was sent: nobody at this partner has a PII login yet. Ask the company administrator to add one, then tell them to open Compliance.'),
+    cases: 'Partners in onboarding', none: 'Nobody is in onboarding yet. Invite a partner to start.', name: 'Partner', stage: 'Progress', standing: 'Standing', recheck: 'Next check', open: 'Open',
+    back: 'All partners in onboarding', dash: '—', standingPending: 'Standing pending',
+    tiles: { total: 'In onboarding', action: 'Waiting on compliance', partner: 'Waiting on the partner', active: 'Active', due: 'Checks due in 30 days', notGood: 'Not in good standing' },
+    tileHint: { action: 'Record checks or decide', partner: 'Profile, consent or signature', due: 'Recheck soon or overdue' } as Record<string, string>,
+    filters: { all: 'All', action: 'Waiting on compliance', partner: 'Waiting on partner', active: 'Active' },
     filterNone: 'Nothing in this view.',
     nextHead: 'Next step', overdue: 'overdue', soon: 'due soon',
     next: {
@@ -36,7 +39,7 @@ const T = {
     kind: { credit: 'Credit (Equifax)', background: 'Background (Sterling)', licence: 'Licence' } as Record<string, string>,
     status: { requested: 'Requested', complete: 'Complete', failed: 'Failed' } as Record<string, string>,
     checkCol: 'Check', checkL: 'Check', statusL: 'Status',
-    recordHead: 'Record a check result', provider: 'Provider', score: 'Credit score', adverse: 'Background report', clear: 'Clear', adverseYes: 'Adverse finding',
+    provider: 'Provider', score: 'Credit score', adverse: 'Background report', clear: 'Clear', adverseYes: 'Adverse finding',
     record: 'Record check', suggested: 'Rule suggests', pending: 'Waiting for a check result', decisionLocked: 'The decision opens once every check is complete.',
     outcome: 'Decision', reason: 'Reason (kept in the file, never shown to the partner)', decide: 'Record decision',
     agTitle: 'Agreement title', agVersion: 'Version', agText: 'Agreement text (as issued by counsel)', agSend: 'Send agency agreement to the partner',
@@ -47,11 +50,13 @@ const T = {
   },
   'fr-CA': {
     title: 'Intégration des partenaires', sub: 'Invitez un partenaire, faites les vérifications de crédit Equifax et d’antécédents Sterling, décidez de la bonne réputation, puis envoyez l’entente d’agence. Le partenaire ne voit que le résultat.',
-    invite: 'Inviter un partenaire', partner: 'Partenaire', country: 'Pays', inviteBtn: 'Inviter', noPartners: 'Tous les partenaires sont déjà en intégration.',
-    cases: 'Partenaires en intégration', none: 'Personne n’est en intégration pour l’instant.', name: 'Partenaire', stage: 'Étape', standing: 'Réputation', recheck: 'Prochaine vérification', open: 'Ouvrir',
-    back: 'Tous les partenaires en intégration', dash: '—',
-    tiles: { total: 'En intégration', action: 'Action de conformité requise', partner: 'Chez le partenaire', active: 'Actifs', due: 'Vérifications dues dans 30 jours', notGood: 'Réputation non conforme' },
-    filters: { all: 'Tous', action: 'Action requise', partner: 'Chez le partenaire', active: 'Actifs' },
+    invite: 'Inviter un partenaire', inviteHead: 'Inviter un partenaire à l’intégration', partner: 'Partenaire', country: 'Pays', inviteBtn: 'Envoyer l’invitation', cancel: 'Annuler',
+    noPartners: 'Tous les partenaires sont déjà en intégration.', invitedOk: (n: number) => (n > 0 ? `Invité. Un courriel a été envoyé à ${n} personne${n === 1 ? '' : 's'} du partenaire.` : 'Invité. Aucun courriel envoyé : personne chez ce partenaire n’a encore de connexion PII. Demandez à l’administrateur de l’entreprise d’en ajouter une, puis dites-lui d’ouvrir Conformité.'),
+    cases: 'Partenaires en intégration', none: 'Personne n’est en intégration pour l’instant. Invitez un partenaire pour commencer.', name: 'Partenaire', stage: 'Progression', standing: 'Réputation', recheck: 'Prochaine vérification', open: 'Ouvrir',
+    back: 'Tous les partenaires en intégration', dash: '—', standingPending: 'Réputation en attente',
+    tiles: { total: 'En intégration', action: 'En attente de la conformité', partner: 'En attente du partenaire', active: 'Actifs', due: 'Vérifications dans 30 jours', notGood: 'Réputation non conforme' },
+    tileHint: { action: 'Enregistrer des vérifications ou décider', partner: 'Profil, consentement ou signature', due: 'Recontrôle bientôt ou en retard' } as Record<string, string>,
+    filters: { all: 'Tous', action: 'En attente de la conformité', partner: 'En attente du partenaire', active: 'Actifs' },
     filterNone: 'Rien dans cette vue.',
     nextHead: 'Prochaine étape', overdue: 'en retard', soon: 'bientôt due',
     next: {
@@ -71,15 +76,13 @@ const T = {
     kind: { credit: 'Crédit (Equifax)', background: 'Antécédents (Sterling)', licence: 'Permis' } as Record<string, string>,
     status: { requested: 'Demandée', complete: 'Terminée', failed: 'Échouée' } as Record<string, string>,
     checkCol: 'Vérification', checkL: 'Vérification', statusL: 'Statut',
-    recordHead: 'Enregistrer un résultat de vérification', provider: 'Fournisseur', score: 'Pointage de crédit', adverse: 'Rapport d’antécédents', clear: 'Sans constat', adverseYes: 'Constat défavorable',
+    provider: 'Fournisseur', score: 'Pointage de crédit', adverse: 'Rapport d’antécédents', clear: 'Sans constat', adverseYes: 'Constat défavorable',
     record: 'Enregistrer la vérification', suggested: 'La règle suggère', pending: 'En attente d’un résultat de vérification', decisionLocked: 'La décision s’ouvre quand toutes les vérifications sont terminées.',
     outcome: 'Décision', reason: 'Motif (conservé au dossier, jamais montré au partenaire)', decide: 'Enregistrer la décision',
     agTitle: 'Titre de l’entente', agVersion: 'Version', agText: 'Texte de l’entente (tel que publié par les conseillers juridiques)', agSend: 'Envoyer l’entente d’agence au partenaire',
     agResend: 'Renvoyer l’entente', agWaiting: 'En attente de la signature du partenaire. Le lien a été envoyé par courriel aux personnes du partenaire.', agSentOk: 'Entente envoyée.', agHint: 'Le partenaire signe par un lien privé avec un code envoyé à son courriel.',
     agSignedOn: 'Signée', agPdf: 'PDF scellé', activate: 'Activer le partenaire',
-    outcomeL: {
-      good_standing: 'Bonne réputation', needs_review: 'À examiner', not_in_good_standing: 'Réputation non conforme',
-    },
+    outcomeL: { good_standing: 'Bonne réputation', needs_review: 'À examiner', not_in_good_standing: 'Réputation non conforme' } as Record<string, string>,
     credit: (pass: number, review: number) => `Crédit de ${pass} ou plus : réussi. De ${review} à ${pass - 1} : à examiner. Sous ${review} : non conforme.`,
   },
 };
@@ -99,14 +102,28 @@ const dateOf = (s: string) => s.slice(0, 10);
 const dayMs = 86_400_000;
 type Filter = 'all' | 'action' | 'partner' | 'active';
 const matches = (f: Filter, stage: Stage) => (f === 'all' ? true : f === 'active' ? stage === 'active' : f === 'partner' ? WAITING_ON[stage] === 'partner' : WAITING_ON[stage] === 'officer');
+const countryName = (c: string) => (c === 'CA' ? 'Canada' : c);
 
-/** The Compliance officer's onboarding dashboard: totals, a progress board for every partner, and the file for one partner. */
-export function OnboardingDashboard({ call, locale }: { call: Call; locale: Locale }) {
+/** Page heading used by every compliance section: title and summary on the left, the section switch on the right. */
+export function SectionHead({ title, sub, right }: { title: string; sub: string; right?: ComponentChildren }) {
+  return (
+    <header class="obhead">
+      <div><h2>{title}</h2><p class="muted">{sub}</p></div>
+      {right && <div class="obhead-right">{right}</div>}
+    </header>
+  );
+}
+
+/** The Compliance officer's onboarding board: totals, invitations, a progress table for every partner, and the file for one partner. */
+export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale: Locale; tabs?: ComponentChildren }) {
   const t: Dict = T[locale === 'fr-CA' ? 'fr-CA' : 'en'];
+  const lc = locale === 'fr-CA' ? 'fr-CA' : 'en';
   const [cases, setCases] = useState<CaseRow[] | null>(null);
   const [partners, setPartners] = useState<{ id: string; name: string }[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [inviting, setInviting] = useState(false);
   const [partnerId, setPartnerId] = useState('');
   const [country, setCountry] = useState<'CA' | 'US'>('CA');
   const [filter, setFilter] = useState<Filter>('all');
@@ -126,12 +143,12 @@ export function OnboardingDashboard({ call, locale }: { call: Call; locale: Loca
   useEffect(() => { void load(); }, [call]);
 
   const invite = async () => {
-    setError('');
+    setError(''); setNotice('');
     try {
       const r = await call('POST', '/v1/onboarding/cases', { nodeId: partnerId, country });
-      setPartnerId('');
+      setPartnerId(''); setInviting(false);
+      setNotice(t.invitedOk(Number(r.emailedTo ?? 0)));
       await load();
-      setOpenId(r.id as string);
     } catch (e) { setError(errText(e)); }
   };
 
@@ -151,60 +168,94 @@ export function OnboardingDashboard({ call, locale }: { call: Call; locale: Loca
   if (openId) return <CaseFile call={call} t={t} locale={locale} id={openId} onBack={() => { setOpenId(null); void load(); }} />;
 
   const shown = (cases ?? []).filter((c) => matches(filter, c.stage));
-  const tile = (k: keyof Dict['tiles'], warn = false) => (
-    <div class={`hstat ${warn && tiles[k] > 0 ? 'warn' : ''}`}><b>{tiles[k]}</b><span>{t.tiles[k]}</span></div>
-  );
+  const tile = (k: keyof Dict['tiles'], tone?: 'warn' | 'ok') => {
+    const n = tiles[k as keyof typeof tiles];
+    return (
+      <div class={`obtile ${tone && n > 0 ? tone : ''}`}>
+        <b>{n}</b>
+        <span>{t.tiles[k]}</span>
+        {t.tileHint[k] && <small>{t.tileHint[k]}</small>}
+      </div>
+    );
+  };
 
   return (
-    <div class="home">
-      <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{t.title}</h2><span class="muted">{t.sub}</span></div></div>
+    <div class="home obwrap">
+      <SectionHead title={t.title} sub={t.sub} right={tabs} />
       {error && <div class="err" role="alert">{error}</div>}
+      {notice && <div class="banner" role="status">{notice}</div>}
 
-      <div class="hstats">
-        {tile('total')}{tile('action', true)}{tile('partner')}{tile('active')}{tile('due', true)}{tile('notGood', true)}
+      <div class="obtiles">
+        {tile('total')}{tile('action', 'warn')}{tile('partner')}{tile('active', 'ok')}{tile('due', 'warn')}{tile('notGood', 'warn')}
       </div>
 
-      <section class="hcard" style={{ marginBottom: '14px' }}>
-        <h3 style={{ margin: '0 0 8px' }}>{t.invite}</h3>
-        <div class="erow">
-          <label class="fl">{t.partner}
-            <select value={partnerId} onChange={(e) => setPartnerId((e.target as HTMLSelectElement).value)}>
-              <option value="">—</option>
-              {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
-          <label class="fl">{t.country}
-            <select value={country} onChange={(e) => setCountry((e.target as HTMLSelectElement).value as 'CA' | 'US')}>
-              <option value="CA">Canada</option><option value="US">US</option>
-            </select>
-          </label>
-          <button class="btn" disabled={!partnerId} onClick={invite}>{t.inviteBtn}</button>
-        </div>
-        {partners.length === 0 && cases && <p class="muted" style={{ margin: '6px 0 0' }}>{t.noPartners}</p>}
-      </section>
-
-      <section class="hcard">
-        <div class="erow" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0 }}>{t.cases}</h3>
+      <section class="obcard">
+        <div class="obtool">
           <div class="seg" role="tablist" aria-label={t.cases}>
             {(['all', 'action', 'partner', 'active'] as Filter[]).map((f) => (
               <button role="tab" aria-selected={filter === f} onClick={() => setFilter(f)}>{t.filters[f]}</button>
             ))}
           </div>
+          <span class="spacer" />
+          {!inviting && partners.length > 0 && <button class="btn" onClick={() => { setInviting(true); setNotice(''); }}>{t.invite}</button>}
+          {!inviting && partners.length === 0 && cases && cases.length > 0 && <span class="muted">{t.noPartners}</span>}
         </div>
+
+        {inviting && (
+          <div class="obinvite" role="group" aria-label={t.inviteHead}>
+            <b>{t.inviteHead}</b>
+            <label class="fl">{t.partner}
+              <select value={partnerId} onChange={(e) => setPartnerId((e.target as HTMLSelectElement).value)}>
+                <option value="">—</option>
+                {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <label class="fl">{t.country}
+              <select value={country} onChange={(e) => setCountry((e.target as HTMLSelectElement).value as 'CA' | 'US')}>
+                <option value="CA">Canada</option><option value="US">US</option>
+              </select>
+            </label>
+            <button class="btn" disabled={!partnerId} onClick={invite}>{t.inviteBtn}</button>
+            <button class="btn quiet" onClick={() => { setInviting(false); setPartnerId(''); }}>{t.cancel}</button>
+          </div>
+        )}
+
         {cases === null && <div class="msg">…</div>}
         {cases && cases.length === 0 && <div class="calm">{t.none}</div>}
         {cases && cases.length > 0 && shown.length === 0 && <div class="calm">{t.filterNone}</div>}
-        {shown.map((c) => (
-          <button class="hrow obrow" key={c.id} onClick={() => setOpenId(c.id)}>
-            <span class="rname">{c.partnerName}<small class="muted"> · {c.country === 'CA' ? 'Canada' : c.country}</small></span>
-            <ProgressBar stage={c.stage} locale={locale} />
-            <small class="muted">{Math.round(stagePercent(c.stage))}%</small>
-            <span class={`chip ${WAITING_ON[c.stage] === 'officer' ? 'warn' : c.stage === 'active' ? 'ok' : ''}`}>{STAGE_LABEL[c.stage][locale === 'fr-CA' ? 'fr-CA' : 'en']}</span>
-            <span class={`chip ${c.outcome === 'good_standing' ? 'ok' : c.outcome ? 'warn' : ''}`}>{c.outcome ? t.outcomeL[c.outcome] : t.dash}</span>
-            {c.recheck && <small class={c.recheck.status === 'overdue' ? 'due bad' : c.recheck.status === 'due_soon' ? 'due warn' : 'muted'}>{t.recheck}: {dateOf(c.recheck.dueOn)}{c.recheck.status === 'overdue' ? ` · ${t.overdue}` : c.recheck.status === 'due_soon' ? ` · ${t.soon}` : ''}</small>}
-          </button>
-        ))}
+        {shown.length > 0 && (
+          <div class="obtablewrap">
+            <table class="obtable">
+              <thead><tr><th>{t.name}</th><th>{t.stage}</th><th>{t.standing}</th><th>{t.recheck}</th></tr></thead>
+              <tbody>
+                {shown.map((c) => (
+                  <tr key={c.id} onClick={() => setOpenId(c.id)}>
+                    <td>
+                      <button class="oblink" onClick={(e) => { e.stopPropagation(); setOpenId(c.id); }}>{c.partnerName}</button>
+                      <small class="muted">{countryName(c.country)}</small>
+                    </td>
+                    <td>
+                      <div class="obstage">
+                        <ProgressBar stage={c.stage} locale={locale} />
+                        <span><b>{STAGE_LABEL[c.stage][lc]}</b> <small class="muted">{Math.round(stagePercent(c.stage))}%</small></span>
+                      </div>
+                    </td>
+                    <td>
+                      {c.outcome
+                        ? <span class={`chip ${c.outcome === 'good_standing' ? 'ok' : 'warn'}`}>{t.outcomeL[c.outcome]}</span>
+                        : <small class="muted">{t.standingPending}</small>}
+                    </td>
+                    <td>
+                      {c.recheck
+                        ? <span class={`chip ${c.recheck.status === 'overdue' ? 'warn' : c.recheck.status === 'due_soon' ? '' : 'ok'}`}>{dateOf(c.recheck.dueOn)}{c.recheck.status === 'overdue' ? ` · ${t.overdue}` : c.recheck.status === 'due_soon' ? ` · ${t.soon}` : ''}</span>
+                        : <small class="muted">{t.dash}</small>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );
@@ -246,7 +297,7 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
   const decide = () => run(() => call('POST', `/v1/onboarding/cases/${id}/decision`, decision));
   const nextStage = (s: string) => run(() => call('POST', `/v1/onboarding/cases/${id}/stage`, { to: s }));
 
-  if (!d) return <div class="home"><button class="btn quiet" onClick={onBack}>← {t.back}</button>{error && <div class="err" role="alert">{error}</div>}</div>;
+  if (!d) return <div class="home obwrap"><button class="btn quiet" onClick={onBack}>← {t.back}</button>{error && <div class="err" role="alert">{error}</div>}</div>;
 
   const suggestedLabel = d.suggested === 'pending' ? t.pending : t.outcomeL[d.suggested];
   const canDecide = d.stage === 'checks_complete';
@@ -255,52 +306,60 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
   const dueState = d.recheck?.status;
 
   return (
-    <div class="home">
-      <button class="btn quiet" onClick={onBack}>← {t.back}</button>
-      <div class="hwelcome" style={{ marginTop: '8px' }}>
-        <div>
-          <h2 style={{ margin: 0 }}>{d.partnerName}</h2>
-          <span class="muted">{d.country === 'CA' ? 'Canada' : d.country} · {STAGE_LABEL[d.stage][lc]}</span>
-        </div>
-        <span class="spacer" />
-        <span class={`chip ${d.outcome === 'good_standing' ? 'ok' : d.outcome ? 'warn' : ''}`}>{d.outcome ? t.outcomeL[d.outcome] : t.dash}</span>
-        {d.recheck && <span class={`chip ${dueState === 'overdue' ? 'warn' : ''}`}>{t.recheck}: {dateOf(d.recheck.dueOn)}{dueState === 'overdue' ? ` · ${t.overdue}` : dueState === 'due_soon' ? ` · ${t.soon}` : ''}</span>}
-      </div>
+    <div class="home obwrap">
+      <button class="btn quiet obback" onClick={onBack}>← {t.back}</button>
+      <SectionHead
+        title={d.partnerName}
+        sub={`${countryName(d.country)} · ${STAGE_LABEL[d.stage][lc]}`}
+        right={<>
+          <span class={`chip ${d.outcome === 'good_standing' ? 'ok' : d.outcome ? 'warn' : ''}`}>{d.outcome ? t.outcomeL[d.outcome] : t.standingPending}</span>
+          {d.recheck && <span class={`chip ${dueState === 'overdue' ? 'warn' : ''}`}>{t.recheck}: {dateOf(d.recheck.dueOn)}{dueState === 'overdue' ? ` · ${t.overdue}` : dueState === 'due_soon' ? ` · ${t.soon}` : ''}</span>}
+        </>}
+      />
       {error && <div class="err" role="alert">{error}</div>}
 
-      <section class="hcard" style={{ marginBottom: '14px' }}>
+      <section class="obcard">
         <StepList stage={d.stage} locale={locale} />
         <div class="obnext" role="status"><b>{t.nextHead}:</b> {t.next[nextKey]}</div>
       </section>
 
       <div class="obgrid">
-        <section class="hcard" style={{ gridColumn: '1 / -1' }}>
+        <section class="obcard">
           <h3>{t.sections.consents}</h3>
           {d.consents.length === 0 ? <p class="muted">{t.noConsent}</p> : (
-            <ul>{d.consents.map((c) => <li>{c.kind.replace(/_/g, ' ')}: {c.accepted ? '✓' : '✗'}</li>)}</ul>
+            <ul class="oblist">{d.consents.map((c) => <li>{c.kind.replace(/_/g, ' ')}<span class={c.accepted ? 'chip ok' : 'chip warn'}>{c.accepted ? 'Yes' : 'No'}</span></li>)}</ul>
           )}
         </section>
 
-        <section class="hcard" style={{ gridColumn: '1 / -1' }}>
+        <section class="obcard">
+          <h3>{t.sections.packets}</h3>
+          {d.carrierPackets.length === 0 ? <p class="muted">{t.noPackets}</p> : (
+            <ul class="oblist">{d.carrierPackets.map((p) => <li>{p.carrier}<span class="muted">{p.templateVersion} · {p.status}</span></li>)}</ul>
+          )}
+        </section>
+
+        <section class="obcard wide">
           <h3>{t.sections.checks}</h3>
           {d.checks.length === 0 ? <p class="muted">{t.noChecks}</p> : (
-            <table class="table">
-              <thead><tr><th>{t.checkCol}</th><th>{t.provider}</th><th>{t.statusL}</th><th>{t.score}</th><th>{t.adverse}</th></tr></thead>
-              <tbody>
-                {d.checks.map((c) => (
-                  <tr>
-                    <td>{t.kind[c.kind] ?? c.kind}</td>
-                    <td>{c.provider}</td>
-                    <td>{t.status[c.status] ?? c.status}</td>
-                    <td>{c.score ?? t.dash}</td>
-                    <td>{c.kind === 'background' && c.status === 'complete' ? (c.adverse ? t.adverseYes : t.clear) : t.dash}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div class="obtablewrap">
+              <table class="obtable">
+                <thead><tr><th>{t.checkCol}</th><th>{t.provider}</th><th>{t.statusL}</th><th>{t.score}</th><th>{t.adverse}</th></tr></thead>
+                <tbody>
+                  {d.checks.map((c) => (
+                    <tr>
+                      <td>{t.kind[c.kind] ?? c.kind}</td>
+                      <td>{c.provider}</td>
+                      <td>{t.status[c.status] ?? c.status}</td>
+                      <td>{c.score ?? t.dash}</td>
+                      <td>{c.kind === 'background' && c.status === 'complete' ? (c.adverse ? t.adverseYes : t.clear) : t.dash}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           {canRecord && (
-            <div class="cform" style={{ marginTop: '12px' }}>
+            <form class="obform" onSubmit={(e) => { e.preventDefault(); void recordCheck(); }}>
               <label class="fl">{t.checkL}
                 <select value={check.kind} onChange={(e) => setCheck({ ...check, kind: (e.target as HTMLSelectElement).value, provider: (e.target as HTMLSelectElement).value === 'credit' ? 'Equifax Canada' : 'Sterling Backcheck' })}>
                   <option value="credit">{t.kind.credit}</option><option value="background">{t.kind.background}</option>
@@ -322,70 +381,62 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
                   </select>
                 </label>
               )}
-              <button class="btn" disabled={busy} onClick={recordCheck}>{t.record}</button>
-            </div>
+              <button class="btn" type="submit" disabled={busy}>{t.record}</button>
+            </form>
           )}
         </section>
 
-        <section class="hcard" style={{ gridColumn: '1 / -1' }}>
+        <section class="obcard wide">
           <h3>{t.sections.decision}</h3>
           {canDecide ? (
             <>
-              <p>{t.suggested}: <strong>{suggestedLabel}</strong> <small class="muted">({t.credit(d.thresholds.creditPassMin, d.thresholds.creditReviewMin)})</small></p>
-              <div class="cform">
+              <p class="obhint">{t.suggested}: <strong>{suggestedLabel}</strong> · {t.credit(d.thresholds.creditPassMin, d.thresholds.creditReviewMin)}</p>
+              <form class="obform" onSubmit={(e) => { e.preventDefault(); if (decision.reason.trim()) void decide(); }}>
                 <label class="fl">{t.outcome}
                   <select value={decision.outcome} onChange={(e) => setDecision({ ...decision, outcome: (e.target as HTMLSelectElement).value })}>
                     {OUTCOMES.map((o) => <option value={o}>{t.outcomeL[o]}</option>)}
                   </select>
                 </label>
-                <label class="fl" style={{ gridColumn: 'span 2' }}>{t.reason}
+                <label class="fl obspan2">{t.reason}
                   <textarea rows={2} value={decision.reason} onInput={(e) => setDecision({ ...decision, reason: (e.target as HTMLTextAreaElement).value })} />
                 </label>
-                <button class="btn" disabled={busy || decision.reason.trim().length < 1} onClick={decide}>{t.decide}</button>
-              </div>
+                <button class="btn" type="submit" disabled={busy || decision.reason.trim().length < 1}>{t.decide}</button>
+              </form>
             </>
           ) : <p class="muted">{t.decisionLocked}</p>}
           {d.decisions.length > 0 && (
             <>
               <h4>{t.sections.decisions}</h4>
-              <ul>{d.decisions.map((x) => <li>{dateOf(x.decidedAt)}: {t.outcomeL[x.outcome]} · {x.reason}</li>)}</ul>
+              <ul class="oblist">{d.decisions.map((x) => <li>{dateOf(x.decidedAt)}<span>{t.outcomeL[x.outcome]} · {x.reason}</span></li>)}</ul>
             </>
           )}
         </section>
 
-        <section class="hcard" style={{ gridColumn: '1 / -1' }}>
+        <section class="obcard wide">
           <h3>{t.sections.agreement}</h3>
           {(d.stage === 'standing_decided' || d.stage === 'agency_agreement_sent') && d.outcome === 'good_standing' && (
             <>
               <p class="muted">{t.agHint}</p>
-              <div class="cform">
+              <form class="obform" onSubmit={(e) => { e.preventDefault(); void run(async () => { await call('POST', `/v1/onboarding/cases/${id}/agreement`, agr); setSentOk(true); }); }}>
                 <label class="fl">{t.agTitle}<input value={agr.title} onInput={(e) => setAgr({ ...agr, title: (e.target as HTMLInputElement).value })} /></label>
                 <label class="fl">{t.agVersion}<input value={agr.version} onInput={(e) => setAgr({ ...agr, version: (e.target as HTMLInputElement).value })} /></label>
-              </div>
-              <label class="fl" style={{ display: 'grid', gap: '4px', marginTop: '10px' }}>{t.agText}
-                <textarea rows={6} value={agr.body} onInput={(e) => setAgr({ ...agr, body: (e.target as HTMLTextAreaElement).value })} />
-              </label>
-              <button class="btn" style={{ marginTop: '10px' }} disabled={busy || agr.body.trim().length < 1 || agr.version.trim().length < 1 || agr.title.trim().length < 1}
-                onClick={() => run(async () => { await call('POST', `/v1/onboarding/cases/${id}/agreement`, agr); setSentOk(true); })}>
-                {d.stage === 'agency_agreement_sent' ? t.agResend : t.agSend}
-              </button>
+                <label class="fl obspan2">{t.agText}
+                  <textarea rows={6} value={agr.body} onInput={(e) => setAgr({ ...agr, body: (e.target as HTMLTextAreaElement).value })} />
+                </label>
+                <button class="btn" type="submit" disabled={busy || agr.body.trim().length < 1 || agr.version.trim().length < 1 || agr.title.trim().length < 1}>
+                  {d.stage === 'agency_agreement_sent' ? t.agResend : t.agSend}
+                </button>
+              </form>
               {sentOk && d.stage === 'standing_decided' && <p class="muted">{t.agSentOk}</p>}
             </>
           )}
           {d.stage === 'agency_agreement_sent' && <p class="muted">{t.agWaiting}</p>}
           <h4>{t.sections.signed}</h4>
           {signed.length === 0 ? <p class="muted">{t.noSigned}</p> : (
-            <ul>{signed.map((a) => <li>{a.title} · {a.version} · {t.agSignedOn} {dateOf(a.signedAt)} · <a href={`/v1/onboarding/agreements/${a.id}/pdf`}>{t.agPdf}</a></li>)}</ul>
+            <ul class="oblist">{signed.map((a) => <li>{a.title} · {a.version}<span>{t.agSignedOn} {dateOf(a.signedAt)} · <a href={`/v1/onboarding/agreements/${a.id}/pdf`}>{t.agPdf}</a></span></li>)}</ul>
           )}
           {d.stage === 'agency_agreement_signed' && (
             <button class="btn" disabled={busy} onClick={() => nextStage('active')}>{t.activate}</button>
-          )}
-        </section>
-
-        <section class="hcard" style={{ gridColumn: '1 / -1' }}>
-          <h3>{t.sections.packets}</h3>
-          {d.carrierPackets.length === 0 ? <p class="muted">{t.noPackets}</p> : (
-            <ul>{d.carrierPackets.map((p) => <li>{p.carrier} · {p.templateVersion} · {p.status}</li>)}</ul>
           )}
         </section>
       </div>
