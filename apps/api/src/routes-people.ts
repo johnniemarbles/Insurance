@@ -6,6 +6,7 @@ import { audit } from './audit.ts';
 import { hasAcceptedFirstLogin } from './routes-consent.ts';
 import { HttpError, conflict, forbidden, invalid, notFound } from './errors.ts';
 import { isDemoTenant } from './routes-demo.ts';
+import { rolesFor } from './place-roles.ts';
 import type { AppDeps } from './app.ts';
 
 const INVITE_DAYS = 7;
@@ -57,11 +58,14 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
     };
   });
 
+  /** People the caller can see, by name or email. Search first, so an existing person is found before anyone is invited again. */
   app.get('/v1/users', async (req) => {
     const { ctx } = await deps.authenticate(req);
+    const q = String((req.query as { q?: string }).q ?? '').trim().slice(0, 100).replace(/[\\%_]/g, '\\$&');
     return run(ctx, async (tx) => {
       const { rows } = await tx.query(
-        `SELECT id, email::text AS email, display_name AS "displayName", status::text AS status, home_node_id AS "homeNodeId" FROM app_users ORDER BY email`,
+        `SELECT id, email::text AS email, display_name AS "displayName", status::text AS status, home_node_id AS "homeNodeId" FROM app_users
+          WHERE $1 = '' OR email::text ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%' ORDER BY email LIMIT 25`, [q],
       );
       return { users: rows };
     });
@@ -210,11 +214,24 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
     if (role === 'admin' && !ctx.isTenantAdmin && node.type !== 'partner') throw forbidden('Only a company administrator can make someone an admin here');
   }
 
+  /** The roles a place offers, for the add-person screen. */
+  app.get('/v1/org/places/:nodeId/roles', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const nodeId = (req.params as { nodeId: string }).nodeId;
+    return run(ctx, async (tx) => {
+      const node = (await tx.query<{ type: string }>('SELECT type FROM org_nodes WHERE id = $1', [nodeId])).rows[0];
+      if (!node) throw notFound('Unknown organization node');
+      return { type: node.type, roles: rolesFor(node.type, ctx.isTenantAdmin) };
+    });
+  });
+
   app.post('/v1/org/members', { schema: { body: roleBody } }, async (req, reply) => {
     const { ctx } = await deps.authenticate(req);
     const b = req.body as { userId: string; nodeId: string; role: string };
     await run(ctx, async (tx) => {
       await mayManageRole(tx, ctx, b.nodeId, b.role);
+      const type = (await tx.query<{ type: string }>('SELECT type FROM org_nodes WHERE id = $1', [b.nodeId])).rows[0]!.type;
+      if (!rolesFor(type, ctx.isTenantAdmin).includes(b.role)) throw invalid(`This place does not take the ${b.role} role`);
       if (!(await tx.query('SELECT 1 FROM app_users WHERE id = $1', [b.userId])).rowCount) throw notFound('Unknown person');
       await tx.query('INSERT INTO user_node_roles (tenant_id, user_id, node_id, role) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [ctx.tenantId, b.userId, b.nodeId, b.role]);
       await audit(tx, ctx, 'role_added', 'user', b.userId, { nodeId: b.nodeId, role: b.role, email: await emailOf(tx, b.userId) }, b.nodeId);

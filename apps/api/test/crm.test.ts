@@ -1018,8 +1018,9 @@ test('organization: rename, switch off, roles, people and invitations are contro
   assert.ok(!((await call(P2U, 'GET', '/v1/org/members')).json.members as { email: string }[]).some((m) => m.email === P1U), 'a sibling sees no one of the other branch');
   const p1 = members.find((m) => m.email === P1U)!;
   assert.equal((await call(S1U, 'POST', '/v1/org/members', { userId: s1UserId, nodeId: S1, role: 'admin' })).status, 403, 'a member cannot promote themselves');
-  assert.equal((await call(ADMIN, 'POST', '/v1/org/members', { userId: p1.userId, nodeId: P1, role: 'manager' })).status, 204);
-  assert.equal((await call(ADMIN, 'DELETE', `/v1/org/members?userId=${p1.userId}&nodeId=${P1}&role=manager`)).status, 204);
+  // A manager belongs to a branch, not a broker (onboarding plan, section 5), so the add-and-remove check uses the branch.
+  assert.equal((await call(ADMIN, 'POST', '/v1/org/members', { userId: p1.userId, nodeId: X, role: 'manager' })).status, 204);
+  assert.equal((await call(ADMIN, 'DELETE', `/v1/org/members?userId=${p1.userId}&nodeId=${X}&role=manager`)).status, 204);
   const adm = members.find((m) => m.email === ADMIN && m.role === 'admin')!;
   assert.equal((await call(ADMIN, 'DELETE', `/v1/org/members?userId=${adm.userId}&nodeId=${adm.nodeId}&role=admin`)).status, 422, 'the last company admin stays');
 
