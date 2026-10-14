@@ -1,7 +1,7 @@
 // Organization model (PRD 6B): tenant > location > partner > sub-partner.
 // A tenant is one company in one country. Pure logic: no database access here.
 
-export const ORG_ROLES = ['admin', 'manager', 'trainer', 'partner', 'learner', 'compliance'] as const;
+export const ORG_ROLES = ['admin', 'manager', 'trainer', 'partner', 'learner', 'compliance', 'auditor'] as const;
 export type OrgRole = (typeof ORG_ROLES)[number];
 
 export type OrgNodeType = 'tenant' | 'location' | 'partner';
