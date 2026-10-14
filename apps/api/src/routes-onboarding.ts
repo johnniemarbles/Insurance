@@ -27,6 +27,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 interface CaseRow {
   id: string; nodeId: string; tenantId: string; country: string; stage: OnboardingStage;
   standing: StandingOutcome | null; lastCheckedAt: Date | null; partnerName: string;
+  loginCreatedAt?: Date | null; extensionInstalledAt?: Date | null;
+  inviteEmail?: string | null; inviteAccepted?: Date | null; inviteOpened?: Date | null; inviteSent?: Date | null; inviteReminders?: number; inviteError?: string | null;
 }
 
 const body = (req: FastifyRequest): Record<string, unknown> => (req.body ?? {}) as Record<string, unknown>;
@@ -42,7 +44,8 @@ function caseId(raw: string): string {
 async function loadCase(tx: Tx, id: string): Promise<CaseRow> {
   const r = (await tx.query<CaseRow>(
     `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
-            c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName"
+            c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName",
+            c.login_created_at AS "loginCreatedAt", c.extension_installed_at AS "extensionInstalledAt"
        FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id WHERE c.id = $1`, [id])).rows[0];
   if (!r) throw notFound('Unknown onboarding case');
   return r;
@@ -80,6 +83,14 @@ const outcomeView = (standing: StandingOutcome | null) => (standing
   ? { outcome: standing, label: STANDING_LABELS[standing].en, keepsAccess: keepsAccessWhile(standing), warning: standingWarning(standing) }
   : { outcome: null, label: 'Being checked', keepsAccess: true, warning: false });
 
+/** The latest invitation for a case, in words the officer can act on. */
+function inviteView(c: CaseRow) {
+  if (!c.inviteEmail) return null;
+  const status = c.inviteAccepted ? 'accepted' : c.inviteOpened ? 'opened'
+    : c.inviteSent ? ((c.inviteReminders ?? 0) >= 3 ? 'overdue' : 'sent') : c.inviteError ? 'not_sent' : 'created';
+  return { email: c.inviteEmail, status, reminders: c.inviteReminders ?? 0, error: c.inviteError ?? null };
+}
+
 function recheckView(lastCheckedAt: Date | null) {
   if (!lastCheckedAt) return null;
   const due = nextCheckDue(lastCheckedAt);
@@ -90,7 +101,8 @@ function recheckView(lastCheckedAt: Date | null) {
 async function partnerView(tx: Tx, where: string, params: unknown[]) {
   const c = (await tx.query<CaseRow>(
     `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
-            c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName"
+            c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName",
+            c.login_created_at AS "loginCreatedAt", c.extension_installed_at AS "extensionInstalledAt"
        FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id WHERE ${where} LIMIT 1`, params)).rows[0];
   if (!c) return null;
   const consents = (await tx.query<{ kind: string }>(
@@ -100,6 +112,7 @@ async function partnerView(tx: Tx, where: string, params: unknown[]) {
   return {
     id: c.id, partnerName: c.partnerName, country: c.country, stage: c.stage, ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
     consentsGiven: consents, carrierPackets: packets,
+    loginCreated: c.loginCreatedAt !== null, extensionInstalled: c.extensionInstalledAt !== null,
   };
 }
 
@@ -176,14 +189,21 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     return run(ctx, async (tx) => {
       const rows = (await tx.query<CaseRow>(
         `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
-                c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName"
+                c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName",
+                c.login_created_at AS "loginCreatedAt", c.extension_installed_at AS "extensionInstalledAt",
+                inv.email AS "inviteEmail", inv.accepted_at AS "inviteAccepted", inv.link_opened_at AS "inviteOpened",
+                inv.sent_at AS "inviteSent", inv.reminders_sent AS "inviteReminders", inv.delivery_error AS "inviteError"
            FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id
+           LEFT JOIN LATERAL (SELECT i.email::text AS email, i.accepted_at, i.link_opened_at, i.sent_at, i.reminders_sent, i.delivery_error
+                                FROM invitations i WHERE i.onboarding_case_id = c.id ORDER BY i.created_at DESC LIMIT 1) inv ON true
           WHERE app_is_compliance_at_or_above(c.tenant_id, c.node_id)
           ORDER BY c.created_at DESC`)).rows;
       return {
         cases: rows.map((c) => ({
           id: c.id, nodeId: c.nodeId, partnerName: c.partnerName, country: c.country, stage: c.stage,
           ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
+          loginCreated: c.loginCreatedAt != null, extensionInstalled: c.extensionInstalledAt != null,
+          invite: inviteView(c),
         })),
       };
     });
@@ -207,8 +227,13 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
         `SELECT id, carrier, template_version AS "templateVersion", status, effective_date AS "effectiveDate", created_at AS "createdAt"
            FROM carrier_packets WHERE node_id = $1 ORDER BY created_at DESC`, [c.nodeId])).rows;
       await audit(tx, ctx, 'onboarding.viewed', 'onboarding_case', id, {});
+      const latest = (await tx.query<CaseRow>(
+        `SELECT i.email::text AS "inviteEmail", i.accepted_at AS "inviteAccepted", i.link_opened_at AS "inviteOpened", i.sent_at AS "inviteSent",
+                i.reminders_sent AS "inviteReminders", i.delivery_error AS "inviteError"
+           FROM invitations i WHERE i.onboarding_case_id = $1 ORDER BY i.created_at DESC LIMIT 1`, [id])).rows[0];
       return {
-        id, partnerName: c.partnerName, country: c.country, stage: c.stage, ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
+        id, nodeId: c.nodeId, partnerName: c.partnerName, country: c.country, stage: c.stage, ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
+        loginCreated: c.loginCreatedAt != null, extensionInstalled: c.extensionInstalledAt != null, invite: latest ? inviteView({ ...c, ...latest }) : null,
         suggested: suggestedStanding(await outcomesOf(tx, id)), thresholds: CANADA_THRESHOLDS,
         consents, checks, decisions, carrierPackets: packets,
       };

@@ -5,3 +5,6 @@ node_modules
 *.log
 dist
 apps/api/public/app
+
+apps/extension/dist
+apps/extension/pack

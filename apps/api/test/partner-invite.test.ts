@@ -171,3 +171,66 @@ test('reminders are not sent to a link that has been opened', async () => {
   await sweepPartnerInviteReminders(deps);
   assert.ok(!sent.slice(before).some((m) => m.to === 'owner@agency-o.test'));
 });
+
+test('the zip copy: not offered until it is packed; once packed, signed-in people can download it, nobody else can', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { createHash } = await import('node:crypto');
+  const dir = mkdtempSync(join(tmpdir(), 'pii-pack-'));
+  const prev = process.env.EXTENSION_PACK_DIR;
+  try {
+    process.env.EXTENSION_PACK_DIR = dir;
+    assert.deepEqual(JSON.parse((await call(app, 'owner@agency-b.test', 'GET', '/v1/extension/info')).body), { available: false });
+    const zip = Buffer.from('PK-fake-zip-bytes');
+    writeFileSync(join(dir, 'pii-extension-1.4.5.zip'), zip);
+    writeFileSync(join(dir, 'pii-extension.json'), JSON.stringify({ version: '1.4.5', extensionId: 'egdeindkmifjmbdfgkmbhgpddopkbpbe', file: 'pii-extension-1.4.5.zip', sha256: createHash('sha256').update(zip).digest('hex'), size: zip.length, builtAt: '2026-10-14T00:00:00Z' }));
+    const info = JSON.parse((await call(app, 'owner@agency-b.test', 'GET', '/v1/extension/info')).body);
+    assert.equal(info.available, true);
+    assert.equal(info.extensionId, 'egdeindkmifjmbdfgkmbhgpddopkbpbe');
+    const dl = await call(app, 'owner@agency-b.test', 'GET', '/v1/extension/download');
+    assert.equal(dl.statusCode, 200);
+    assert.match(String(dl.headers['content-disposition']), /attachment; filename="pii-extension-1\.4\.5\.zip"/);
+    assert.equal(dl.rawPayload.toString(), 'PK-fake-zip-bytes');
+    const anon = await app.inject({ method: 'GET', url: '/v1/extension/download' });
+    assert.equal(anon.statusCode, 401, 'the zip is not public');
+  } finally {
+    if (prev === undefined) delete process.env.EXTENSION_PACK_DIR; else process.env.EXTENSION_PACK_DIR = prev;
+  }
+});
+
+test('the install page asks a signed-out person to sign in, and shows the download to a signed-in one', async () => {
+  const out = await app.inject({ method: 'GET', url: '/install?lang=en' });
+  assert.equal(out.statusCode, 401);
+  assert.match(out.body, /\/login\?lang=en/);
+  const page = await app.inject({ method: 'GET', url: '/install?lang=fr-CA', headers: { 'x-dev-user-email': 'owner@agency-b.test' } });
+  assert.equal(page.statusCode, 200);
+  assert.match(page.body, /Installer l’extension Gmail/);
+  assert.match(page.body, /installée et connectée/, 'the page says the extension has connected (this person checked in earlier)');
+  assert.match(page.headers['x-robots-tag'] as string, /noindex/);
+});
+
+test("the partner's own view says whether the login and the extension are in place", async () => {
+  const mine = JSON.parse((await call(app, 'owner@agency-b.test', 'GET', '/v1/onboarding/mine')).body).onboarding;
+  assert.equal(mine.loginCreated, true);
+  assert.equal(mine.extensionInstalled, true, 'the check-in earlier recorded the install');
+  const notYet = JSON.parse((await call(app, 'owner@agency-a.test', 'GET', '/v1/onboarding/mine')).body);
+  assert.equal(notYet.onboarding ?? null, null, 'a partner who has not signed in has no view yet');
+});
+
+test("the officer's board shows each invitation's status, and an unanswered one becomes overdue after three reminders", async () => {
+  const list = JSON.parse((await call(app, OFFICER, 'GET', '/v1/onboarding/cases')).body).cases;
+  const a = list.find((c: any) => c.id === CASE_A);
+  assert.equal(a.invite.status, 'sent');
+  assert.equal(a.loginCreated, false);
+  const b = list.find((c: any) => c.id === CASE_B);
+  assert.equal(b.invite.status, 'accepted');
+  assert.equal(b.loginCreated, true);
+  assert.equal(b.extensionInstalled, true);
+  const overdue = list.find((c: any) => c.invite?.email === 'owner@agency-c.test');
+  assert.equal(overdue.invite.status, 'overdue');
+  assert.equal(overdue.invite.reminders, 3);
+  const detail = JSON.parse((await call(app, OFFICER, 'GET', `/v1/onboarding/cases/${CASE_A}`)).body);
+  assert.equal(detail.invite.email, 'owner@agency-a.test');
+  assert.equal(detail.loginCreated, false);
+});

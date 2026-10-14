@@ -2,12 +2,11 @@ FROM node:22-slim AS web
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/web ./apps/web
-COPY apps/extension/package.json ./apps/extension/package.json
-# The demo inbox bundles the extension's own sidebar code.
-COPY apps/extension/src ./apps/extension/src
+# The demo inbox bundles the extension's own sidebar code; the zip copy is packed here for the install page.
+COPY apps/extension ./apps/extension
 COPY apps/api/package.json ./apps/api/package.json
 COPY packages ./packages
-RUN npm ci --workspaces --include-workspace-root && npm run build --workspace @pii/web
+RUN npm ci --workspaces --include-workspace-root && npm run build --workspace @pii/web && npm run pack --workspace @pii/extension
 
 FROM node:22-slim AS runtime
 WORKDIR /app
@@ -19,6 +18,7 @@ COPY apps/web/package.json ./apps/web/package.json
 COPY apps/extension/package.json ./apps/extension/package.json
 RUN npm ci --omit=dev --workspaces --include-workspace-root
 COPY --from=web /app/apps/api/public/app ./apps/api/public/app
+COPY --from=web /app/apps/extension/pack ./apps/extension/pack
 USER node
 EXPOSE 3000
 # Node 22 strips TypeScript types natively: there is no build step for the server.

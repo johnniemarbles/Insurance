@@ -33,12 +33,26 @@ const rawTransport: Transport = async (method, path, body, region) => {
 // can be a different person from the one signed in to PII. Until the two match, nothing is shown or sent.
 let gmailAccount = '';
 const wrong = (pii: string) => ({ status: 409, json: { error: { code: 'wrong_account', message: `This Gmail is ${gmailAccount}, but PII is signed in as ${pii}.` }, piiEmail: pii, gmailEmail: gmailAccount } });
+// Tell PII this copy is installed and signed in (at most every 12 hours per country). The server records the first install on the partner's case.
+const checkedIn = new Map<string, number>();
+const checkInOnce = (region?: string) => {
+  const key = region ?? '';
+  if (Date.now() - (checkedIn.get(key) ?? 0) < 12 * 3600_000) return;
+  checkedIn.set(key, Date.now());
+  void rawTransport('POST', '/v1/extension/check-in', { extensionId: chrome.runtime.id, version: chrome.runtime.getManifest().version }, region).then((r) => {
+    if (r.status !== 204 && r.status !== 200) checkedIn.delete(key); // try again next time if the server refused it
+  });
+};
 const whoCache = new Map<string, { at: number; email: Promise<string | null> }>();
 const piiEmailFor = (region?: string): Promise<string | null> => {
   const key = region ?? '';
   const hit = whoCache.get(key);
   if (hit && Date.now() - hit.at < 15_000) return hit.email;
-  const email = rawTransport('GET', '/v1/me', undefined, region).then((r) => (r.status === 200 && typeof r.json?.user?.email === 'string' ? (r.json.user.email as string).toLowerCase() : null));
+  const email = rawTransport('GET', '/v1/me', undefined, region).then((r) => {
+    const who = r.status === 200 && typeof r.json?.user?.email === 'string' ? (r.json.user.email as string).toLowerCase() : null;
+    if (who) checkInOnce(region);
+    return who;
+  });
   whoCache.set(key, { at: Date.now(), email });
   return email;
 };
