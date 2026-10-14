@@ -14,7 +14,7 @@ const T = {
   en: {
     title: 'Partner onboarding', sub: 'Invite a partner, run the Equifax credit and Sterling background checks, decide good standing, then send the agency agreement. The partner sees only the outcome.',
     invite: 'Invite a partner', inviteHead: 'Invite a partner to onboarding', partner: 'Partner', country: 'Country', inviteBtn: 'Send invitation', cancel: 'Cancel',
-    noPartners: 'Every partner is already in onboarding.', invitedOk: (n: number) => (n > 0 ? `Invited. An email was sent to ${n} ${n === 1 ? 'person' : 'people'} at the partner.` : 'Invited. No email was sent: nobody at this partner has a PII login yet. Ask the company administrator to add one, then tell them to open Compliance.'),
+    noPartners: 'Every partner is already in onboarding.', invitedOk: (r: { mailConfigured?: boolean; recipients?: number; emailedTo?: number }) => !r.mailConfigured ? 'Invited. No email was sent: email is not set up on this server yet. Tell the partner directly, and ask an administrator to configure email.' : (r.recipients ?? 0) === 0 ? 'Invited. No email was sent: nobody at this partner has a PII login yet. Ask the company administrator to add one, then tell them to open Compliance.' : (r.emailedTo ?? 0) === 0 ? 'Invited. The email could not be sent to the partner’s login. Tell the partner directly, and ask an administrator to check the mail status.' : `Invited. An email was sent to ${r.emailedTo} ${r.emailedTo === 1 ? 'person' : 'people'} at the partner.`,
     cases: 'Partners in onboarding', none: 'Nobody is in onboarding yet. Invite a partner to start.', name: 'Partner', stage: 'Progress', standing: 'Standing', recheck: 'Next check', open: 'Open',
     back: 'All partners in onboarding', dash: '—', standingPending: 'Standing pending',
     tiles: { total: 'In onboarding', action: 'Waiting on compliance', partner: 'Waiting on the partner', active: 'Active', due: 'Checks due in 30 days', notGood: 'Not in good standing' },
@@ -51,7 +51,7 @@ const T = {
   'fr-CA': {
     title: 'Intégration des partenaires', sub: 'Invitez un partenaire, faites les vérifications de crédit Equifax et d’antécédents Sterling, décidez de la bonne réputation, puis envoyez l’entente d’agence. Le partenaire ne voit que le résultat.',
     invite: 'Inviter un partenaire', inviteHead: 'Inviter un partenaire à l’intégration', partner: 'Partenaire', country: 'Pays', inviteBtn: 'Envoyer l’invitation', cancel: 'Annuler',
-    noPartners: 'Tous les partenaires sont déjà en intégration.', invitedOk: (n: number) => (n > 0 ? `Invité. Un courriel a été envoyé à ${n} personne${n === 1 ? '' : 's'} du partenaire.` : 'Invité. Aucun courriel envoyé : personne chez ce partenaire n’a encore de connexion PII. Demandez à l’administrateur de l’entreprise d’en ajouter une, puis dites-lui d’ouvrir Conformité.'),
+    noPartners: 'Tous les partenaires sont déjà en intégration.', invitedOk: (r: { mailConfigured?: boolean; recipients?: number; emailedTo?: number }) => !r.mailConfigured ? 'Invité. Aucun courriel envoyé : le courriel n’est pas configuré sur ce serveur. Prévenez le partenaire directement et demandez à un administrateur de configurer le courriel.' : (r.recipients ?? 0) === 0 ? 'Invité. Aucun courriel envoyé : personne chez ce partenaire n’a encore de connexion PII. Demandez à l’administrateur de l’entreprise d’en ajouter une, puis dites-lui d’ouvrir Conformité.' : (r.emailedTo ?? 0) === 0 ? 'Invité. Le courriel n’a pas pu être envoyé à la connexion du partenaire. Prévenez le partenaire directement et demandez à un administrateur de vérifier l’état du courriel.' : `Invité. Un courriel a été envoyé à ${r.emailedTo} personne${r.emailedTo === 1 ? '' : 's'} du partenaire.`,
     cases: 'Partenaires en intégration', none: 'Personne n’est en intégration pour l’instant. Invitez un partenaire pour commencer.', name: 'Partenaire', stage: 'Progression', standing: 'Réputation', recheck: 'Prochaine vérification', open: 'Ouvrir',
     back: 'Tous les partenaires en intégration', dash: '—', standingPending: 'Réputation en attente',
     tiles: { total: 'En intégration', action: 'En attente de la conformité', partner: 'En attente du partenaire', active: 'Actifs', due: 'Vérifications dans 30 jours', notGood: 'Réputation non conforme' },
@@ -147,7 +147,7 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
     try {
       const r = await call('POST', '/v1/onboarding/cases', { nodeId: partnerId, country });
       setPartnerId(''); setInviting(false);
-      setNotice(t.invitedOk(Number(r.emailedTo ?? 0)));
+      setNotice(t.invitedOk(r));
       await load();
     } catch (e) { setError(errText(e)); }
   };
