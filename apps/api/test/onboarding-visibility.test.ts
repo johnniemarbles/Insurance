@@ -114,3 +114,11 @@ test('a partner member does not see the onboarding list or the file', async () =
   assert.equal((await call(AG, 'GET', '/v1/onboarding/cases')).json.cases.length, 0);
   assert.equal((await call(AG, 'GET', `/v1/onboarding/cases/${CASE}`)).status, 403);
 });
+
+test('the account says whether it is a branch manager of a case, so the Compliance page can show the progress board', async () => {
+  const tor = await call(MGR_TOR, 'GET', '/v1/onboarding/mine');
+  assert.equal(tor.json.branchManager, true);
+  assert.equal(tor.json.officer, false);
+  assert.equal((await call(ON_OFF, 'GET', '/v1/onboarding/mine')).json.branchManager, false, 'a compliance officer is not a branch manager');
+  assert.equal((await call(AG, 'GET', '/v1/onboarding/mine')).json.branchManager, false, 'a partner member is not a branch manager');
+});

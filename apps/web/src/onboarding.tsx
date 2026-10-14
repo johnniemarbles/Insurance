@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { Locale } from './types.ts';
-import { ProgressBar, STAGE_LABEL, StepList, WAITING_ON, stagePercent, type Stage } from './onboarding-shared.tsx';
+import { OB, ProgressBar, STAGE_LABEL, StepList, WAITING_ON, stagePercent, type Stage } from './onboarding-shared.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 
@@ -112,6 +112,41 @@ export function SectionHead({ title, sub, right }: { title: string; sub: string;
       <div><h2>{title}</h2><p class="muted">{sub}</p></div>
       {right && <div class="obhead-right">{right}</div>}
     </header>
+  );
+}
+
+const MP = {
+  en: { title: 'Partner onboarding progress', sub: 'The steps each partner in your branch has reached. Checks and decisions are kept by compliance.', none: 'No partner in your branch is in onboarding yet.', name: 'Partner' },
+  'fr-CA': { title: 'Progression de l’intégration des partenaires', sub: 'Les étapes atteintes par chaque partenaire de votre succursale. Les vérifications et décisions sont gérées par la conformité.', none: 'Aucun partenaire de votre succursale n’est en intégration pour l’instant.', name: 'Partenaire' },
+} as const;
+
+/** A branch manager's view of partner onboarding: each partner's steps and their status. The API sends nothing else to a manager. */
+export function ManagerProgressBoard({ call, locale }: { call: Call; locale: Locale }) {
+  const [rows, setRows] = useState<{ id: string; partnerName: string; steps?: { step: Stage; status: 'done' | 'current' | 'pending' }[] }[] | null>(null);
+  const lc = locale === 'fr-CA' ? 'fr-CA' : 'en';
+  const m = MP[lc];
+  const x = OB[lc];
+  useEffect(() => { void call('GET', '/v1/onboarding/cases').then((r) => setRows(r.cases ?? []), () => setRows([])); }, [call]);
+  const shown = (rows ?? []).filter((r) => Array.isArray(r.steps));
+  return (
+    <section class="obmanager" aria-label={m.title}>
+      <SectionHead title={m.title} sub={m.sub} />
+      {rows === null && <div class="msg">…</div>}
+      {rows !== null && shown.length === 0 && <div class="calm">{m.none}</div>}
+      {shown.map((r) => (
+        <div class="obmanager-row" key={r.id}>
+          <b>{r.partnerName}</b>
+          <ol class="obtrack" aria-label={`${m.name}: ${r.partnerName}`}>
+            {r.steps!.map((s, k) => (
+              <li key={s.step} class={s.status} aria-current={s.status === 'current' ? 'step' : undefined}>
+                <span class="obdot" aria-hidden="true">{s.status === 'done' ? '✓' : k + 1}</span>
+                <span class="oblabel"><b>{STAGE_LABEL[s.step][lc]}</b><small>{s.status === 'done' ? x.done : s.status === 'current' ? x.now : x.todo}</small></span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ))}
+    </section>
   );
 }
 
