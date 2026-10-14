@@ -68,6 +68,19 @@ export const ONBOARDING_STAGES = [
 ] as const;
 export type OnboardingStage = (typeof ONBOARDING_STAGES)[number];
 
+export type StepStatus = 'done' | 'current' | 'pending';
+/**
+ * Every onboarding step in order, with whether it is done, current or still to do. This is all a Branch manager sees of a broker's
+ * onboarding: the step name and its status. The last step is done once the case is active.
+ */
+export function progressSteps(stage: OnboardingStage): { step: OnboardingStage; status: StepStatus }[] {
+  const at = ONBOARDING_STAGES.indexOf(stage);
+  return ONBOARDING_STAGES.map((step, i) => {
+    const status: StepStatus = i < at || (stage === 'active' && i === at) ? 'done' : i === at ? 'current' : 'pending';
+    return { step, status };
+  });
+}
+
 /** Stages move forward one at a time. Returns the reason a move is refused, or null when it is allowed. */
 export function stageMoveBlock(from: OnboardingStage, to: OnboardingStage, standing: StandingOutcome | 'pending'): string | null {
   const i = ONBOARDING_STAGES.indexOf(from); const j = ONBOARDING_STAGES.indexOf(to);

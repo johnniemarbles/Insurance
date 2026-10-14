@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
 import {
   CANADA_THRESHOLDS, STANDING_LABELS, STANDING_OUTCOMES, carrierPacketBlocks, keepsAccessWhile, standingWarning, nextCheckDue, recheckStatus, stageMoveBlock,
-  suggestedStanding, type OnboardingStage, type RequestContext, type StandingOutcome,
+  progressSteps, suggestedStanding, type OnboardingStage, type RequestContext, type StandingOutcome,
 } from '@pii/domain';
 import { audit } from './audit.ts';
 import { escapeHtml } from './merge-render.ts';
@@ -29,6 +29,8 @@ interface CaseRow {
   standing: StandingOutcome | null; lastCheckedAt: Date | null; partnerName: string;
   loginCreatedAt?: Date | null; extensionInstalledAt?: Date | null;
   inviteEmail?: string | null; inviteAccepted?: Date | null; inviteOpened?: Date | null; inviteSent?: Date | null; inviteReminders?: number; inviteError?: string | null;
+  /** The caller is the Compliance officer for this partner (full file), not only a Branch manager (progress). */
+  full?: boolean;
 }
 
 const body = (req: FastifyRequest): Record<string, unknown> => (req.body ?? {}) as Record<string, unknown>;
@@ -57,6 +59,13 @@ async function isOfficer(tx: Tx, tenantId: string, nodeId: string): Promise<bool
 }
 async function requireOfficer(tx: Tx, c: CaseRow): Promise<void> {
   if (!(await isOfficer(tx, c.tenantId, c.nodeId))) throw forbidden('Only the Compliance officer for this region can do this');
+}
+
+/** A Branch manager at or above the partner's node. It may start the partner's onboarding and sees its progress only. */
+const BRANCH_MANAGER_SQL = `EXISTS (SELECT 1 FROM user_node_roles r JOIN org_reach o ON o.ancestor_id = r.node_id
+                                    WHERE r.user_id = app_user_id() AND r.role::text = 'manager' AND o.descendant_id = %NODE%)`;
+async function isBranchManagerAbove(tx: Tx, nodeId: string): Promise<boolean> {
+  return (await tx.query<{ ok: boolean }>(`SELECT ${BRANCH_MANAGER_SQL.replace('%NODE%', '$1')} AS ok`, [nodeId])).rows[0]?.ok === true;
 }
 
 /** The signed-in person is a member of the partner itself (not an officer looking in). */
@@ -95,6 +104,11 @@ function recheckView(lastCheckedAt: Date | null) {
   if (!lastCheckedAt) return null;
   const due = nextCheckDue(lastCheckedAt);
   return { lastCheckedAt: lastCheckedAt.toISOString(), dueOn: due.toISOString().slice(0, 10), status: recheckStatus(lastCheckedAt, new Date()) };
+}
+
+/** A Branch manager's view of a case: the partner's name and each step's status. Nothing about checks, scores, the standing or consents. */
+function progressView(c: { id: string; partnerName: string; stage: OnboardingStage }) {
+  return { id: c.id, partnerName: c.partnerName, steps: progressSteps(c.stage) };
 }
 
 /** The partner's view of one onboarding case, as the partner may see it. Never checks, scores or reasons. */
@@ -140,8 +154,8 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
       const n = (await tx.query<{ tenantId: string; type: string; name: string }>(
         'SELECT tenant_id AS "tenantId", type, name FROM org_nodes WHERE id = $1', [nodeId])).rows[0];
       if (!n || n.type !== 'partner') throw notFound('Unknown partner');
-      const allowed = (await isOfficer(tx, n.tenantId, nodeId)) || (await isAdminAbove(tx, ctx, nodeId));
-      if (!allowed) throw forbidden('Only the Compliance officer for this region, or an administrator of this partner, can invite it');
+      const allowed = (await isOfficer(tx, n.tenantId, nodeId)) || (await isAdminAbove(tx, ctx, nodeId)) || (await isBranchManagerAbove(tx, nodeId));
+      if (!allowed) throw forbidden('Only the Compliance officer for this region, an administrator of this partner, or a manager of its branch, can start it');
       const existing = (await tx.query<{ id: string }>('SELECT id FROM onboarding_cases WHERE node_id = $1', [nodeId])).rows[0];
       if (existing && adminEmail === null) throw conflict('This partner is already in onboarding');
       let id = existing?.id;
@@ -192,19 +206,22 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
                 c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName",
                 c.login_created_at AS "loginCreatedAt", c.extension_installed_at AS "extensionInstalledAt",
                 inv.email AS "inviteEmail", inv.accepted_at AS "inviteAccepted", inv.link_opened_at AS "inviteOpened",
-                inv.sent_at AS "inviteSent", inv.reminders_sent AS "inviteReminders", inv.delivery_error AS "inviteError"
+                inv.sent_at AS "inviteSent", inv.reminders_sent AS "inviteReminders", inv.delivery_error AS "inviteError",
+                app_is_compliance_at_or_above(c.tenant_id, c.node_id) AS "full"
            FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id
            LEFT JOIN LATERAL (SELECT i.email::text AS email, i.accepted_at, i.link_opened_at, i.sent_at, i.reminders_sent, i.delivery_error
                                 FROM invitations i WHERE i.onboarding_case_id = c.id ORDER BY i.created_at DESC LIMIT 1) inv ON true
-          WHERE app_is_compliance_at_or_above(c.tenant_id, c.node_id)
+          WHERE app_is_compliance_at_or_above(c.tenant_id, c.node_id) OR ${BRANCH_MANAGER_SQL.replace('%NODE%', 'c.node_id')}
           ORDER BY c.created_at DESC`)).rows;
       return {
-        cases: rows.map((c) => ({
-          id: c.id, nodeId: c.nodeId, partnerName: c.partnerName, country: c.country, stage: c.stage,
-          ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
-          loginCreated: c.loginCreatedAt != null, extensionInstalled: c.extensionInstalledAt != null,
-          invite: inviteView(c),
-        })),
+        cases: rows.map((c) => (c.full
+          ? {
+            id: c.id, nodeId: c.nodeId, partnerName: c.partnerName, country: c.country, stage: c.stage,
+            ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
+            loginCreated: c.loginCreatedAt != null, extensionInstalled: c.extensionInstalledAt != null,
+            invite: inviteView(c),
+          }
+          : progressView(c))),
       };
     });
   });
@@ -215,7 +232,10 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     const id = caseId((req.params as { id: string }).id);
     return run(ctx, async (tx) => {
       const c = await loadCase(tx, id);
-      await requireOfficer(tx, c);
+      if (!(await isOfficer(tx, c.tenantId, c.nodeId))) {
+        if (await isBranchManagerAbove(tx, c.nodeId)) return progressView(c);
+        throw forbidden('Only the Compliance officer for this region can do this');
+      }
       const consents = (await tx.query(
         `SELECT kind, wording_version AS "wordingVersion", accepted, created_at AS "createdAt" FROM onboarding_consents WHERE case_id = $1 ORDER BY created_at`, [id])).rows;
       const checks = (await tx.query(
