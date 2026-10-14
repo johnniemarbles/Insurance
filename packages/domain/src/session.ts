@@ -53,9 +53,10 @@ export function buildRequestContext(input: SessionInput): RequestContext {
     nodeIds: unique([input.homeNodeId, ...roles.map((r) => r.nodeId)]),
     adminNodeIds: unique(roles.filter((r) => r.role === 'admin').map((r) => r.nodeId)),
     isTenantAdmin: roles.some((r) => r.role === 'admin' && r.nodeId === input.tenantRootNodeId),
-    // Any assigned role may write; finer rules (who may edit what) are enforced by the API.
-    canWrite: roles.length > 0,
-    canUseCrm: roles.length > 0, // everyone is a partner: learners and trainers use the CRM as well as the LMS
+    // Any assigned role except read-only auditor may write; finer rules (who may edit what) are enforced by the API.
+    canWrite: roles.some((r) => r.role !== 'auditor'),
+    // Everyone with a role can read the CRM; an auditor reads it but cannot write (see canWrite).
+    canUseCrm: roles.length > 0,
     roles,
   };
 }
