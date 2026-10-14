@@ -10,6 +10,8 @@ import {
 } from '@pii/domain';
 import { audit } from './audit.ts';
 import { escapeHtml } from './merge-render.ts';
+import { createPartnerInvitation, sendPartnerInvitation } from './partner-invite.ts';
+import { isAdminAbove } from './routes-people.ts';
 import { conflict, forbidden, invalid, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 
@@ -25,6 +27,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 interface CaseRow {
   id: string; nodeId: string; tenantId: string; country: string; stage: OnboardingStage;
   standing: StandingOutcome | null; lastCheckedAt: Date | null; partnerName: string;
+  loginCreatedAt?: Date | null; extensionInstalledAt?: Date | null;
+  inviteEmail?: string | null; inviteAccepted?: Date | null; inviteOpened?: Date | null; inviteSent?: Date | null; inviteReminders?: number; inviteError?: string | null;
 }
 
 const body = (req: FastifyRequest): Record<string, unknown> => (req.body ?? {}) as Record<string, unknown>;
@@ -40,7 +44,8 @@ function caseId(raw: string): string {
 async function loadCase(tx: Tx, id: string): Promise<CaseRow> {
   const r = (await tx.query<CaseRow>(
     `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
-            c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName"
+            c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName",
+            c.login_created_at AS "loginCreatedAt", c.extension_installed_at AS "extensionInstalledAt"
        FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id WHERE c.id = $1`, [id])).rows[0];
   if (!r) throw notFound('Unknown onboarding case');
   return r;
@@ -78,6 +83,14 @@ const outcomeView = (standing: StandingOutcome | null) => (standing
   ? { outcome: standing, label: STANDING_LABELS[standing].en, keepsAccess: keepsAccessWhile(standing), warning: standingWarning(standing) }
   : { outcome: null, label: 'Being checked', keepsAccess: true, warning: false });
 
+/** The latest invitation for a case, in words the officer can act on. */
+function inviteView(c: CaseRow) {
+  if (!c.inviteEmail) return null;
+  const status = c.inviteAccepted ? 'accepted' : c.inviteOpened ? 'opened'
+    : c.inviteSent ? ((c.inviteReminders ?? 0) >= 3 ? 'overdue' : 'sent') : c.inviteError ? 'not_sent' : 'created';
+  return { email: c.inviteEmail, status, reminders: c.inviteReminders ?? 0, error: c.inviteError ?? null };
+}
+
 function recheckView(lastCheckedAt: Date | null) {
   if (!lastCheckedAt) return null;
   const due = nextCheckDue(lastCheckedAt);
@@ -88,7 +101,8 @@ function recheckView(lastCheckedAt: Date | null) {
 async function partnerView(tx: Tx, where: string, params: unknown[]) {
   const c = (await tx.query<CaseRow>(
     `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
-            c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName"
+            c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName",
+            c.login_created_at AS "loginCreatedAt", c.extension_installed_at AS "extensionInstalledAt"
        FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id WHERE ${where} LIMIT 1`, params)).rows[0];
   if (!c) return null;
   const consents = (await tx.query<{ kind: string }>(
@@ -98,6 +112,7 @@ async function partnerView(tx: Tx, where: string, params: unknown[]) {
   return {
     id: c.id, partnerName: c.partnerName, country: c.country, stage: c.stage, ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
     consentsGiven: consents, carrierPackets: packets,
+    loginCreated: c.loginCreatedAt !== null, extensionInstalled: c.extensionInstalledAt !== null,
   };
 }
 
@@ -106,41 +121,66 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
 
   // ---- Compliance officer ------------------------------------------------------------------------------------------
 
-  /** Invite a partner into onboarding. Creates the case at the invited stage. */
+  /**
+   * Invite a partner into onboarding. With `adminEmail`, the partner's administrator gets one email with a link to create
+   * a PII login and the extension install step. Asking again for the same partner sends a fresh link (the older one stops).
+   * Without `adminEmail`, the email goes to people who already have a login on that partner (the older behaviour).
+   * Allowed for the Compliance officer of the region and for an administrator of the partner.
+   */
   app.post('/v1/onboarding/cases', async (req, reply) => {
     const { ctx } = await deps.authenticate(req);
     const b = body(req);
     const nodeId = caseId(str(b.nodeId, 'nodeId', 60));
     const country = b.country === 'US' ? 'US' : 'CA';
+    const locale: 'en' | 'fr-CA' = b.locale === 'fr-CA' ? 'fr-CA' : 'en';
+    const adminEmail = b.adminEmail === undefined || b.adminEmail === null || b.adminEmail === ''
+      ? null : str(b.adminEmail, 'adminEmail', 320).trim().toLowerCase();
+    if (adminEmail !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) throw invalid('Enter a valid email address for the partner administrator');
     const out = await run(ctx, async (tx) => {
       const n = (await tx.query<{ tenantId: string; type: string; name: string }>(
         'SELECT tenant_id AS "tenantId", type, name FROM org_nodes WHERE id = $1', [nodeId])).rows[0];
       if (!n || n.type !== 'partner') throw notFound('Unknown partner');
-      if (!(await isOfficer(tx, n.tenantId, nodeId))) throw forbidden('Only the Compliance officer for this region can invite a partner');
-      const dup = (await tx.query('SELECT 1 FROM onboarding_cases WHERE node_id = $1', [nodeId])).rowCount;
-      if (dup) throw conflict('This partner is already in onboarding');
-      const id = (await tx.query<{ id: string }>(
-        `INSERT INTO onboarding_cases (tenant_id, node_id, country) VALUES ($1, $2, $3) RETURNING id`, [n.tenantId, nodeId, country])).rows[0]!.id;
-      await audit(tx, ctx, 'onboarding.invited', 'onboarding_case', id, { partner: n.name, country });
-      return { id, stage: 'invited' as const, tenantId: n.tenantId };
+      const allowed = (await isOfficer(tx, n.tenantId, nodeId)) || (await isAdminAbove(tx, ctx, nodeId));
+      if (!allowed) throw forbidden('Only the Compliance officer for this region, or an administrator of this partner, can invite it');
+      const existing = (await tx.query<{ id: string }>('SELECT id FROM onboarding_cases WHERE node_id = $1', [nodeId])).rows[0];
+      if (existing && adminEmail === null) throw conflict('This partner is already in onboarding');
+      let id = existing?.id;
+      if (!id) {
+        id = (await tx.query<{ id: string }>(
+          `INSERT INTO onboarding_cases (tenant_id, node_id, country) VALUES ($1, $2, $3) RETURNING id`, [n.tenantId, nodeId, country])).rows[0]!.id;
+        await audit(tx, ctx, 'onboarding.invited', 'onboarding_case', id, { partner: n.name, country });
+      }
+      const invitation = adminEmail === null ? null : {
+        ...(await createPartnerInvitation(tx, ctx, { caseId: id, nodeId, email: adminEmail, locale })),
+        email: adminEmail, locale, tenantId: n.tenantId,
+      };
+      return { id, stage: 'invited' as const, tenantId: n.tenantId, invitation, partnerName: n.name };
     });
-    // Tell the partner's people by email, with a link to PII. Nobody is emailed if the partner has no login yet.
-    const { tenantId, ...view } = out;
-    let emailedTo = 0;
+    const { tenantId, invitation, partnerName: _name, ...view } = out;
+    if (invitation) {
+      const sent = await sendPartnerInvitation(deps, ctx, invitation);
+      reply.code(201);
+      return { ...view, invitation: { id: invitation.id, email: invitation.email, status: sent.status, error: sent.error ?? null, mailConfigured: Boolean(deps.mailer) } };
+    }
+    // Legacy path: tell the people who already have a login on this partner.
+    let recipients = 0; let emailedTo = 0;
+    const to = (await deps.authPool.query<{ email: string }>(
+      `SELECT DISTINCT u.email::text AS email FROM app_users u JOIN user_node_roles r ON r.user_id = u.id
+        WHERE r.node_id = $1 AND u.status::text <> 'disabled'`, [nodeId])).rows.map((r) => r.email);
+    recipients = to.length;
     if (deps.mailer) {
-      const to = (await deps.authPool.query<{ email: string }>(
-        `SELECT DISTINCT u.email::text AS email FROM app_users u JOIN user_node_roles r ON r.user_id = u.id
-          WHERE r.node_id = $1 AND u.status::text <> 'disabled'`, [nodeId])).rows.map((r) => r.email);
       const firm = (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [tenantId])).rows[0]?.name ?? 'PII';
-      const url = deps.config.appOrigin;
+      const url = `${deps.config.appOrigin}/app`;
       const text = `${firm} has started your partner onboarding.\n\nSign in to PII and open Compliance. There you can complete your business profile, give consent to the credit and background checks, and sign your agency agreement once it is sent.\n\n${url}`;
       const html = `<p>${escapeHtml(firm)} has started your partner onboarding.</p><p>Sign in to PII and open <b>Compliance</b>. There you can complete your business profile, give consent to the credit and background checks, and sign your agency agreement once it is sent.</p><p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`;
       for (const email of to) {
-        try { await deps.mailer.send({ to: email, subject: `Partner onboarding with ${firm}`, text, html }); emailedTo += 1; } catch { /* the officer can tell the partner */ }
+        try { await deps.mailer.send({ to: email, subject: `Partner onboarding with ${firm}`, text, html }); emailedTo += 1; } catch (e) {
+          req.log.warn({ err: (e as Error).message }, 'onboarding invite email refused');
+        }
       }
     }
     reply.code(201);
-    return { ...view, emailedTo };
+    return { ...view, mailConfigured: Boolean(deps.mailer), recipients, emailedTo };
   });
 
   /** The cases this officer can see (their region, or all for a tenant admin). */
@@ -149,14 +189,21 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     return run(ctx, async (tx) => {
       const rows = (await tx.query<CaseRow>(
         `SELECT c.id, c.node_id AS "nodeId", c.tenant_id AS "tenantId", c.country, c.stage, c.standing,
-                c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName"
+                c.last_checked_at AS "lastCheckedAt", COALESCE(NULLIF(p.legal_name, ''), n.name) AS "partnerName",
+                c.login_created_at AS "loginCreatedAt", c.extension_installed_at AS "extensionInstalledAt",
+                inv.email AS "inviteEmail", inv.accepted_at AS "inviteAccepted", inv.link_opened_at AS "inviteOpened",
+                inv.sent_at AS "inviteSent", inv.reminders_sent AS "inviteReminders", inv.delivery_error AS "inviteError"
            FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id
+           LEFT JOIN LATERAL (SELECT i.email::text AS email, i.accepted_at, i.link_opened_at, i.sent_at, i.reminders_sent, i.delivery_error
+                                FROM invitations i WHERE i.onboarding_case_id = c.id ORDER BY i.created_at DESC LIMIT 1) inv ON true
           WHERE app_is_compliance_at_or_above(c.tenant_id, c.node_id)
           ORDER BY c.created_at DESC`)).rows;
       return {
         cases: rows.map((c) => ({
           id: c.id, nodeId: c.nodeId, partnerName: c.partnerName, country: c.country, stage: c.stage,
           ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
+          loginCreated: c.loginCreatedAt != null, extensionInstalled: c.extensionInstalledAt != null,
+          invite: inviteView(c),
         })),
       };
     });
@@ -180,8 +227,13 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
         `SELECT id, carrier, template_version AS "templateVersion", status, effective_date AS "effectiveDate", created_at AS "createdAt"
            FROM carrier_packets WHERE node_id = $1 ORDER BY created_at DESC`, [c.nodeId])).rows;
       await audit(tx, ctx, 'onboarding.viewed', 'onboarding_case', id, {});
+      const latest = (await tx.query<CaseRow>(
+        `SELECT i.email::text AS "inviteEmail", i.accepted_at AS "inviteAccepted", i.link_opened_at AS "inviteOpened", i.sent_at AS "inviteSent",
+                i.reminders_sent AS "inviteReminders", i.delivery_error AS "inviteError"
+           FROM invitations i WHERE i.onboarding_case_id = $1 ORDER BY i.created_at DESC LIMIT 1`, [id])).rows[0];
       return {
-        id, partnerName: c.partnerName, country: c.country, stage: c.stage, ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
+        id, nodeId: c.nodeId, partnerName: c.partnerName, country: c.country, stage: c.stage, ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
+        loginCreated: c.loginCreatedAt != null, extensionInstalled: c.extensionInstalledAt != null, invite: latest ? inviteView({ ...c, ...latest }) : null,
         suggested: suggestedStanding(await outcomesOf(tx, id)), thresholds: CANADA_THRESHOLDS,
         consents, checks, decisions, carrierPackets: packets,
       };

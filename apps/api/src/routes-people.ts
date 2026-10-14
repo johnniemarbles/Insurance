@@ -11,7 +11,7 @@ import type { AppDeps } from './app.ts';
 const INVITE_DAYS = 7;
 
 /** Admin on the node itself, or on any node that reaches it (location -> partner -> sub-partner). */
-async function isAdminAbove(tx: Tx, ctx: RequestContext, nodeId: string): Promise<boolean> {
+export async function isAdminAbove(tx: Tx, ctx: RequestContext, nodeId: string): Promise<boolean> {
   if (ctx.isTenantAdmin) return true;
   if (ctx.adminNodeIds.includes(nodeId)) return true;
   if (ctx.adminNodeIds.length === 0) return false;

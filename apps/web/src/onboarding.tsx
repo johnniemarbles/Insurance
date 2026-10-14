@@ -13,7 +13,7 @@ const OUTCOMES = ['good_standing', 'needs_review', 'not_in_good_standing'] as co
 const T = {
   en: {
     title: 'Partner onboarding', sub: 'Invite a partner, run the Equifax credit and Sterling background checks, decide good standing, then send the agency agreement. The partner sees only the outcome.',
-    invite: 'Invite a partner', inviteHead: 'Invite a partner to onboarding', partner: 'Partner', country: 'Country', inviteBtn: 'Send invitation', cancel: 'Cancel',
+    invite: 'Invite a partner', inviteHead: 'Invite a partner to onboarding', partner: 'Partner', country: 'Country', inviteBtn: 'Send invitation', invLabel: { created: 'Invite created', sent: 'Invite sent', opened: 'Link opened', accepted: 'Login created', overdue: 'Invite overdue: no reply after 72 hours', not_sent: 'Email not sent' } as Record<string, string>, extOn: 'Extension installed', extOff: 'Extension not installed yet', resendHead: 'Send a new invitation', resendBtn: 'Send new invitation', resendNote: 'The earlier link stops working. The partner gets one email with the login link and the install step.', adminEmail: 'Email of the partner’s administrator', adminHint: 'They get one email to create their PII login and install the Gmail extension.', invitedSent: (e: string) => `Invited. The invitation was emailed to ${e}. The link works once and expires in 7 days.`, invitedNotSent: (e: string, why: string) => `Invited, but the email to ${e} was not sent: ${why}. Fix the cause and invite again.`, cancel: 'Cancel',
     noPartners: 'Every partner is already in onboarding.', invitedOk: (n: number) => (n > 0 ? `Invited. An email was sent to ${n} ${n === 1 ? 'person' : 'people'} at the partner.` : 'Invited. No email was sent: nobody at this partner has a PII login yet. Ask the company administrator to add one, then tell them to open Compliance.'),
     cases: 'Partners in onboarding', none: 'Nobody is in onboarding yet. Invite a partner to start.', name: 'Partner', stage: 'Progress', standing: 'Standing', recheck: 'Next check', open: 'Open',
     back: 'All partners in onboarding', dash: '—', standingPending: 'Standing pending',
@@ -50,7 +50,7 @@ const T = {
   },
   'fr-CA': {
     title: 'Intégration des partenaires', sub: 'Invitez un partenaire, faites les vérifications de crédit Equifax et d’antécédents Sterling, décidez de la bonne réputation, puis envoyez l’entente d’agence. Le partenaire ne voit que le résultat.',
-    invite: 'Inviter un partenaire', inviteHead: 'Inviter un partenaire à l’intégration', partner: 'Partenaire', country: 'Pays', inviteBtn: 'Envoyer l’invitation', cancel: 'Annuler',
+    invite: 'Inviter un partenaire', inviteHead: 'Inviter un partenaire à l’intégration', partner: 'Partenaire', country: 'Pays', inviteBtn: 'Envoyer l’invitation', invLabel: { created: 'Invitation créée', sent: 'Invitation envoyée', opened: 'Lien ouvert', accepted: 'Connexion créée', overdue: 'Invitation en retard : aucune réponse après 72 heures', not_sent: 'Courriel non envoyé' } as Record<string, string>, extOn: 'Extension installée', extOff: 'Extension pas encore installée', resendHead: 'Envoyer une nouvelle invitation', resendBtn: 'Envoyer une nouvelle invitation', resendNote: 'L’ancien lien ne fonctionne plus. Le partenaire reçoit un seul courriel avec le lien de connexion et l’étape d’installation.', adminEmail: 'Courriel de l’administrateur du partenaire', adminHint: 'Il reçoit un seul courriel pour créer sa connexion PII et installer l’extension Gmail.', invitedSent: (e: string) => `Invité. L’invitation a été envoyée par courriel à ${e}. Le lien ne fonctionne qu’une fois et expire dans 7 jours.`, invitedNotSent: (e: string, why: string) => `Invité, mais le courriel à ${e} n’a pas été envoyé : ${why}. Corrigez la cause et invitez à nouveau.`, cancel: 'Annuler',
     noPartners: 'Tous les partenaires sont déjà en intégration.', invitedOk: (n: number) => (n > 0 ? `Invité. Un courriel a été envoyé à ${n} personne${n === 1 ? '' : 's'} du partenaire.` : 'Invité. Aucun courriel envoyé : personne chez ce partenaire n’a encore de connexion PII. Demandez à l’administrateur de l’entreprise d’en ajouter une, puis dites-lui d’ouvrir Conformité.'),
     cases: 'Partenaires en intégration', none: 'Personne n’est en intégration pour l’instant. Invitez un partenaire pour commencer.', name: 'Partenaire', stage: 'Progression', standing: 'Réputation', recheck: 'Prochaine vérification', open: 'Ouvrir',
     back: 'Tous les partenaires en intégration', dash: '—', standingPending: 'Réputation en attente',
@@ -88,7 +88,8 @@ const T = {
 };
 
 type Dict = (typeof T)['en'];
-export interface CaseRow { id: string; nodeId: string; partnerName: string; country: string; stage: Stage; outcome: string | null; label: string; keepsAccess: boolean; recheck: { dueOn: string; status: string } | null }
+export interface InviteInfo { email: string; status: 'created' | 'sent' | 'opened' | 'accepted' | 'overdue' | 'not_sent'; reminders: number; error: string | null }
+export interface CaseRow { id: string; nodeId: string; partnerName: string; country: string; stage: Stage; outcome: string | null; label: string; keepsAccess: boolean; recheck: { dueOn: string; status: string } | null; loginCreated?: boolean; extensionInstalled?: boolean; invite?: InviteInfo | null }
 interface Detail extends CaseRow {
   suggested: string; thresholds: { creditPassMin: number; creditReviewMin: number };
   consents: { kind: string; accepted: boolean; createdAt: string }[];
@@ -126,6 +127,7 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
   const [inviting, setInviting] = useState(false);
   const [partnerId, setPartnerId] = useState('');
   const [country, setCountry] = useState<'CA' | 'US'>('CA');
+  const [adminEmail, setAdminEmail] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
 
   const load = async () => {
@@ -145,9 +147,12 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
   const invite = async () => {
     setError(''); setNotice('');
     try {
-      const r = await call('POST', '/v1/onboarding/cases', { nodeId: partnerId, country });
-      setPartnerId(''); setInviting(false);
-      setNotice(t.invitedOk(Number(r.emailedTo ?? 0)));
+      const r = await call('POST', '/v1/onboarding/cases', { nodeId: partnerId, country, adminEmail: adminEmail.trim() });
+      setPartnerId(''); setAdminEmail(''); setInviting(false);
+      const inv = r.invitation;
+      setNotice(inv
+        ? (inv.status === 'sent' ? t.invitedSent(inv.email) : t.invitedNotSent(inv.email, inv.error ?? 'the mail service did not accept it'))
+        : t.invitedOk(Number(r.emailedTo ?? 0)));
       await load();
     } catch (e) { setError(errText(e)); }
   };
@@ -215,8 +220,12 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
                 <option value="CA">Canada</option><option value="US">US</option>
               </select>
             </label>
-            <button class="btn" disabled={!partnerId} onClick={invite}>{t.inviteBtn}</button>
-            <button class="btn quiet" onClick={() => { setInviting(false); setPartnerId(''); }}>{t.cancel}</button>
+            <label class="fl">{t.adminEmail}
+              <input type="email" value={adminEmail} onInput={(e) => setAdminEmail((e.target as HTMLInputElement).value)} placeholder="name@agency.ca" />
+              <small class="muted">{t.adminHint}</small>
+            </label>
+            <button class="btn" disabled={!partnerId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail.trim())} onClick={invite}>{t.inviteBtn}</button>
+            <button class="btn quiet" onClick={() => { setInviting(false); setPartnerId(''); setAdminEmail(''); }}>{t.cancel}</button>
           </div>
         )}
 
@@ -233,6 +242,8 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
                     <td>
                       <button class="oblink" onClick={(e) => { e.stopPropagation(); setOpenId(c.id); }}>{c.partnerName}</button>
                       <small class="muted">{countryName(c.country)}</small>
+                      {c.invite && <div><small class={c.invite.status === 'overdue' || c.invite.status === 'not_sent' ? 'warn' : 'muted'}>{t.invLabel[c.invite.status]}</small></div>}
+                      {c.loginCreated && <div><small class="muted">{c.extensionInstalled ? t.extOn : t.extOff}</small></div>}
                     </td>
                     <td>
                       <div class="obstage">
@@ -257,6 +268,34 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/** Send the partner's administrator a fresh invitation (the earlier link stops working). Shown until the partner has a login. */
+function ResendInvite({ call, t, nodeId, country, defaultEmail, onSent }: { call: Call; t: Dict; nodeId: string; country: string; defaultEmail: string; onSent: () => void }) {
+  const [email, setEmail] = useState(defaultEmail);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const send = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await call('POST', '/v1/onboarding/cases', { nodeId, country, adminEmail: email.trim() });
+      const inv = r.invitation;
+      setMsg(inv?.status === 'sent' ? { ok: true, text: t.invitedSent(inv.email) } : { ok: false, text: t.invitedNotSent(inv?.email ?? email.trim(), inv?.error ?? 'the mail service did not accept it') });
+      onSent();
+    } catch (e) { setMsg({ ok: false, text: errText(e) }); } finally { setBusy(false); }
+  };
+  return (
+    <div class="obinvite" role="group" aria-label={t.resendHead}>
+      <b>{t.resendHead}</b>
+      <label class="fl">{t.adminEmail}
+        <input type="email" value={email} onInput={(e) => setEmail((e.target as HTMLInputElement).value)} placeholder="name@agency.ca" />
+      </label>
+      <button class="btn" disabled={busy || !valid} onClick={send}>{t.resendBtn}</button>
+      <small class="muted">{t.resendNote}</small>
+      {msg && <div class={msg.ok ? 'banner' : 'err'} role="status">{msg.text}</div>}
     </div>
   );
 }
@@ -321,6 +360,11 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
       <section class="obcard">
         <StepList stage={d.stage} locale={locale} />
         <div class="obnext" role="status"><b>{t.nextHead}:</b> {t.next[nextKey]}</div>
+        {d.invite && <p class="muted obnote">{t.invLabel[d.invite.status]} · {d.invite.email}{d.invite.reminders > 0 ? ` · ${d.invite.reminders}/3` : ''}{d.invite.error ? ` · ${d.invite.error}` : ''}</p>}
+        {d.loginCreated && <p class="muted obnote">{d.extensionInstalled ? t.extOn : t.extOff}</p>}
+        {!d.loginCreated && (
+          <ResendInvite call={call} t={t} nodeId={d.nodeId} country={d.country} defaultEmail={d.invite?.email ?? ''} onSent={() => void load()} />
+        )}
       </section>
 
       <div class="obgrid">

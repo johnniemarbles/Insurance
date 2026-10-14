@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "check:freeze": "node check-freeze.mjs"
+    "check:freeze": "node check-freeze.mjs",
+    "pack": "node pack.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.300",

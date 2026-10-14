@@ -16,6 +16,7 @@ const P = {
     consentHead: 'Consent to checks', consentIntro: 'PII runs a credit check (Equifax Canada) and a background check (Sterling Backcheck) to decide your standing. You can choose whether to share carrier reporting.',
     cCredit: 'I consent to a credit check', cBackground: 'I consent to a background check', cCarrier: 'I agree that carriers may receive my appointment and standing information',
     giveConsent: 'Give consent',
+    installHead: 'Install the Gmail extension', installBody: 'Your login works. Now install the PII extension so PII sits beside your Gmail conversations. The install page has the download and four short steps.', installCta: 'Open the install page', installed: 'The Gmail extension is installed.',
     next_invited: 'Submit your business profile on this page to start.',
     next_form_submitted: 'Give your consent to the checks below.',
     next_consents_recorded: 'Thanks. Your checks are being arranged. Nothing more is needed from you right now.',
@@ -37,6 +38,7 @@ const P = {
     consentHead: 'Consentement aux vérifications', consentIntro: 'PII fait une vérification de crédit (Equifax Canada) et une vérification d’antécédents (Sterling Backcheck) pour décider de votre réputation. Vous choisissez si vous partagez les renseignements aux assureurs.',
     cCredit: 'Je consens à une vérification de crédit', cBackground: 'Je consens à une vérification d’antécédents', cCarrier: 'J’accepte que les assureurs reçoivent mes renseignements de nomination et de réputation',
     giveConsent: 'Donner mon consentement',
+    installHead: 'Installer l’extension Gmail', installBody: 'Votre connexion fonctionne. Installez maintenant l’extension PII pour afficher PII à côté de vos conversations Gmail. La page d’installation contient le téléchargement et quatre étapes courtes.', installCta: 'Ouvrir la page d’installation', installed: 'L’extension Gmail est installée.',
     next_invited: 'Soumettez votre profil d’entreprise sur cette page pour commencer.',
     next_form_submitted: 'Donnez votre consentement aux vérifications ci-dessous.',
     next_consents_recorded: 'Merci. Vos vérifications sont en préparation. Rien d’autre n’est requis de votre part pour l’instant.',
@@ -52,7 +54,7 @@ const P = {
 };
 
 interface View {
-  id: string; partnerName: string; country: string; stage: string; outcome: string | null; label: string; keepsAccess: boolean; warning: boolean;
+  id: string; partnerName: string; country: string; stage: string; outcome: string | null; label: string; keepsAccess: boolean; warning: boolean; loginCreated: boolean; extensionInstalled: boolean;
   recheck: { dueOn: string; status: string } | null; consentsGiven: string[];
   carrierPackets: { id: string; carrier: string; status: string; effectiveDate: string | null }[];
 }
@@ -105,6 +107,14 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
         {keepText && <div class={`banner ${view.warning ? 'warn' : ''}`} role="status">{keepText}</div>}
         {view.recheck && <p class="muted obnote">{t.nextCheck}: {view.recheck.dueOn.slice(0, 10)}</p>}
       </section>
+
+      {view.loginCreated && (
+        <section class="obcard">
+          <h3>{view.extensionInstalled ? t.installed : t.installHead}</h3>
+          {!view.extensionInstalled && <p class="muted">{t.installBody}</p>}
+          {!view.extensionInstalled && <a class="btn" href={`/install?lang=${lc}`} target="_blank" rel="noopener">{t.installCta}</a>}
+        </section>
+      )}
 
       {stage === 'invited' && (
         <section class="obcard">
