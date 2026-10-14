@@ -10,6 +10,8 @@ import {
 } from '@pii/domain';
 import { audit } from './audit.ts';
 import { escapeHtml } from './merge-render.ts';
+import { createPartnerInvitation, sendPartnerInvitation } from './partner-invite.ts';
+import { isAdminAbove } from './routes-people.ts';
 import { conflict, forbidden, invalid, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 
@@ -106,41 +108,66 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
 
   // ---- Compliance officer ------------------------------------------------------------------------------------------
 
-  /** Invite a partner into onboarding. Creates the case at the invited stage. */
+  /**
+   * Invite a partner into onboarding. With `adminEmail`, the partner's administrator gets one email with a link to create
+   * a PII login and the extension install step. Asking again for the same partner sends a fresh link (the older one stops).
+   * Without `adminEmail`, the email goes to people who already have a login on that partner (the older behaviour).
+   * Allowed for the Compliance officer of the region and for an administrator of the partner.
+   */
   app.post('/v1/onboarding/cases', async (req, reply) => {
     const { ctx } = await deps.authenticate(req);
     const b = body(req);
     const nodeId = caseId(str(b.nodeId, 'nodeId', 60));
     const country = b.country === 'US' ? 'US' : 'CA';
+    const locale: 'en' | 'fr-CA' = b.locale === 'fr-CA' ? 'fr-CA' : 'en';
+    const adminEmail = b.adminEmail === undefined || b.adminEmail === null || b.adminEmail === ''
+      ? null : str(b.adminEmail, 'adminEmail', 320).trim().toLowerCase();
+    if (adminEmail !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) throw invalid('Enter a valid email address for the partner administrator');
     const out = await run(ctx, async (tx) => {
       const n = (await tx.query<{ tenantId: string; type: string; name: string }>(
         'SELECT tenant_id AS "tenantId", type, name FROM org_nodes WHERE id = $1', [nodeId])).rows[0];
       if (!n || n.type !== 'partner') throw notFound('Unknown partner');
-      if (!(await isOfficer(tx, n.tenantId, nodeId))) throw forbidden('Only the Compliance officer for this region can invite a partner');
-      const dup = (await tx.query('SELECT 1 FROM onboarding_cases WHERE node_id = $1', [nodeId])).rowCount;
-      if (dup) throw conflict('This partner is already in onboarding');
-      const id = (await tx.query<{ id: string }>(
-        `INSERT INTO onboarding_cases (tenant_id, node_id, country) VALUES ($1, $2, $3) RETURNING id`, [n.tenantId, nodeId, country])).rows[0]!.id;
-      await audit(tx, ctx, 'onboarding.invited', 'onboarding_case', id, { partner: n.name, country });
-      return { id, stage: 'invited' as const, tenantId: n.tenantId };
+      const allowed = (await isOfficer(tx, n.tenantId, nodeId)) || (await isAdminAbove(tx, ctx, nodeId));
+      if (!allowed) throw forbidden('Only the Compliance officer for this region, or an administrator of this partner, can invite it');
+      const existing = (await tx.query<{ id: string }>('SELECT id FROM onboarding_cases WHERE node_id = $1', [nodeId])).rows[0];
+      if (existing && adminEmail === null) throw conflict('This partner is already in onboarding');
+      let id = existing?.id;
+      if (!id) {
+        id = (await tx.query<{ id: string }>(
+          `INSERT INTO onboarding_cases (tenant_id, node_id, country) VALUES ($1, $2, $3) RETURNING id`, [n.tenantId, nodeId, country])).rows[0]!.id;
+        await audit(tx, ctx, 'onboarding.invited', 'onboarding_case', id, { partner: n.name, country });
+      }
+      const invitation = adminEmail === null ? null : {
+        ...(await createPartnerInvitation(tx, ctx, { caseId: id, nodeId, email: adminEmail, locale })),
+        email: adminEmail, locale, tenantId: n.tenantId,
+      };
+      return { id, stage: 'invited' as const, tenantId: n.tenantId, invitation, partnerName: n.name };
     });
-    // Tell the partner's people by email, with a link to PII. Nobody is emailed if the partner has no login yet.
-    const { tenantId, ...view } = out;
-    let emailedTo = 0;
+    const { tenantId, invitation, partnerName: _name, ...view } = out;
+    if (invitation) {
+      const sent = await sendPartnerInvitation(deps, ctx, invitation);
+      reply.code(201);
+      return { ...view, invitation: { id: invitation.id, email: invitation.email, status: sent.status, error: sent.error ?? null, mailConfigured: Boolean(deps.mailer) } };
+    }
+    // Legacy path: tell the people who already have a login on this partner.
+    let recipients = 0; let emailedTo = 0;
+    const to = (await deps.authPool.query<{ email: string }>(
+      `SELECT DISTINCT u.email::text AS email FROM app_users u JOIN user_node_roles r ON r.user_id = u.id
+        WHERE r.node_id = $1 AND u.status::text <> 'disabled'`, [nodeId])).rows.map((r) => r.email);
+    recipients = to.length;
     if (deps.mailer) {
-      const to = (await deps.authPool.query<{ email: string }>(
-        `SELECT DISTINCT u.email::text AS email FROM app_users u JOIN user_node_roles r ON r.user_id = u.id
-          WHERE r.node_id = $1 AND u.status::text <> 'disabled'`, [nodeId])).rows.map((r) => r.email);
       const firm = (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [tenantId])).rows[0]?.name ?? 'PII';
-      const url = deps.config.appOrigin;
+      const url = `${deps.config.appOrigin}/app`;
       const text = `${firm} has started your partner onboarding.\n\nSign in to PII and open Compliance. There you can complete your business profile, give consent to the credit and background checks, and sign your agency agreement once it is sent.\n\n${url}`;
       const html = `<p>${escapeHtml(firm)} has started your partner onboarding.</p><p>Sign in to PII and open <b>Compliance</b>. There you can complete your business profile, give consent to the credit and background checks, and sign your agency agreement once it is sent.</p><p><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p>`;
       for (const email of to) {
-        try { await deps.mailer.send({ to: email, subject: `Partner onboarding with ${firm}`, text, html }); emailedTo += 1; } catch { /* the officer can tell the partner */ }
+        try { await deps.mailer.send({ to: email, subject: `Partner onboarding with ${firm}`, text, html }); emailedTo += 1; } catch (e) {
+          req.log.warn({ err: (e as Error).message }, 'onboarding invite email refused');
+        }
       }
     }
     reply.code(201);
-    return { ...view, emailedTo };
+    return { ...view, mailConfigured: Boolean(deps.mailer), recipients, emailedTo };
   });
 
   /** The cases this officer can see (their region, or all for a tenant admin). */

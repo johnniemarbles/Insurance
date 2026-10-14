@@ -8,6 +8,7 @@ import { sweepOnboardingRechecks } from './onboarding-recheck.ts';
 import { sweepAssignments, sweepLearnerReminders } from './routes-forecast.ts';
 import { sweepSnapshots } from './snapshots.ts';
 import { sweepEsign } from './routes-esign.ts';
+import { sweepPartnerInviteReminders } from './partner-invite.ts';
 import { archiveSigned } from './vault.ts';
 import { sweepComplianceAlerts } from './compliance-alerts.ts';
 import { emitEventNow } from './webhooks.ts';
@@ -88,6 +89,7 @@ async function runSweeps(deps: AppDeps): Promise<void> {
   await sweepStale(deps);
   await sweepDigests(deps);
   await sweepStaleInvitations(deps);
+  await sweepPartnerInviteReminders(deps);
   await sweepRenewals(deps);
   await withDigest(deps, async (d) => {
     await sweepCompliance(d);
