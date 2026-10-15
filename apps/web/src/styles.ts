@@ -506,7 +506,7 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .asst-send{border:0;border-radius:999px;background:var(--pri);color:#fff;font:inherit;font-size:13px;font-weight:600;padding:9px 18px;cursor:pointer}
 .asst-send:disabled{opacity:.5;cursor:default}
 /* Indigo pass: settings and other plain list pages sit on the same white card */
-.layout2{background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow-soft);padding:20px 24px}
-@media(max-width:600px){.layout2{padding:16px}}
+.settings .sgrid{background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow-soft);padding:20px 24px}
+@media(max-width:600px){.settings .sgrid{padding:16px}}
 .pg-frame .bar{margin-bottom:12px}
 `;
