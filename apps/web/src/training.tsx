@@ -56,11 +56,11 @@ export function TrainingView({ call, t, locale, canAuthor, isHeadOffice = false,
   const [view, setView] = useState<View>({ k: 'list' });
   const label: Record<string, string> = { learning: locale === 'fr-CA' ? 'Mon apprentissage' : 'My learning', courses: k.courses, my: k.my, team: k.team, officer: k.officer };
   return (
-    <div class="train">
+    <div class={tab === 'courses' ? 'train' : 'train pg'}>
       {(view.k === 'list' || tab !== 'courses') && <div class="tpad" style={{ paddingBottom: 0 }}><div class="seg" role="tablist">{tabs.map((x) => <button role="tab" aria-selected={tab === x} onClick={() => { setTab(x); setView({ k: 'list' }); }}>{label[x]}</button>)}</div></div>}
       {tab === 'learning' && <MyLearning call={call} locale={locale} canAuthor={canAuthor} onOpen={(id) => { setTab('courses'); setView({ k: 'course', id }); }} />}
       {tab === 'my' && <MyCe call={call} locale={locale} />}
-      {tab === 'team' && <div class="pg"><TrainingDashboard call={call} locale={locale} /><PeopleCe call={call} locale={locale} officer={false} /></div>}
+      {tab === 'team' && <><TrainingDashboard call={call} locale={locale} /><PeopleCe call={call} locale={locale} officer={false} /></>}
       {tab === 'officer' && <PeopleCe call={call} locale={locale} officer={true} />}
       {tab === 'courses' && view.k === 'list' && <CourseList call={call} t={t} locale={locale} canAuthor={canAuthor} onOpen={(id) => setView({ k: 'course', id })} />}
       {tab === 'courses' && view.k === 'course' && <CoursePage key={view.id} id={view.id} call={call} t={t} locale={locale} onOpenCourse={(nid) => setView({ k: 'course', id: nid })} onBack={() => setView({ k: 'list' })} onLesson={(id) => setView({ k: 'lesson', courseId: (view as { id: string }).id, id })} />}

@@ -129,6 +129,8 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
   };
   const label: Record<PageId, string> = { inbox: locale === 'fr-CA' ? 'Boîte de démo' : 'Demo inbox', home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
+  // Home, Compliance and Training bring their own page width; every other page is framed the same way.
+  const framed = page !== 'home' && page !== 'compliance' && !(page === 'training' && LMS);
   return (
     <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
       {demoUserId && <DemoBar call={call} locale={locale} meId={demoUserId} />}
@@ -139,7 +141,9 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
           {supportEmail && <a class="tabs-fb" style={{ marginLeft: 0 }} href={`mailto:${supportEmail}?subject=PII%20feedback`}>{t.sendFeedback}</a>}
         </div>
       )}
+      {/* framed: list pages share the page width and gutter (Phase 2) */}
       <Boundary key={`${page}:${routeId ?? ''}:${nonce}`} msg={t.crashed} retry={t.retry}>
+      <div class={framed ? 'pg-frame' : 'pg-raw'}>
       {page === 'home' ? <HomePage call={call} t={t} locale={locale} go={go} name={meName} isAdmin={isAdmin} currency={host.region === 'us' ? 'USD' : 'CAD'} compose={compose} meEmail={meEmail} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'renewals' ? <RenewalsPage call={call} locale={locale} go={go} />
@@ -150,6 +154,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
         : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} onLocale={onLocale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} compose={compose} /> : <div class="msg">{t.loading}</div>)
         : !prefs ? <div class="msg">{t.loading}</div>
         : <PipelineView key={`${page}:${routeId ?? ''}`} call={call} t={t} locale={locale} meEmail={meEmail} compose={compose} initialPid={routeId} prefs={prefs} openMerges={page === 'merges'} onStartTipsOff={() => void (settings as SettingsApi).set('ui.startTips', 'user', false)} />}
+      </div>
       </Boundary>
     </div>
   );
