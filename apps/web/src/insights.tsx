@@ -76,8 +76,8 @@ export function WeeklyLine({ weekly, t }: { weekly: Report['weekly']; t: Strings
     <figure class="viz" aria-label={t.vizWeekly}>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={weekly.map((w) => `${w.week}: ${w.created}`).join(', ')}>
         <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="#e5e7eb" />
-        <polyline fill="none" stroke="#1d4ed8" stroke-width="2.5" points={pts.map((p) => p.join(',')).join(' ')} />
-        {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="3.5" fill="#1d4ed8"><title>{`${weekly[i]!.week}: ${weekly[i]!.created}`}</title></circle>)}
+        <polyline fill="none" stroke="#6355F6" stroke-width="2.5" points={pts.map((p) => p.join(',')).join(' ')} />
+        {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="3.5" fill="#6355F6"><title>{`${weekly[i]!.week}: ${weekly[i]!.created}`}</title></circle>)}
         <text x={P} y={H - 6} font-size="11" fill="#6b7280">{weekly[0]?.week}</text>
         <text x={W - P} y={H - 6} font-size="11" text-anchor="end" fill="#6b7280">{weekly[weekly.length - 1]?.week}</text>
         <text x={W - P} y="14" font-size="11" text-anchor="end" fill="#6b7280">{t.vizMax(max)}</text>

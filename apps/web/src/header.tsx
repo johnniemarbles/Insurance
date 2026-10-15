@@ -4,7 +4,7 @@ import { X, type N } from './notifications.tsx';
 import type { HostOptions, Locale } from './types.ts';
 
 export const HEADER_CSS = `
-:host{all:initial;--pri:#0347F2;--navy:#0A1F5C;--ink:#1B2447;--mute:#5A6486;--accent:#800028;--line:#E3E9FB;--tint:#F4F7FF;--pri-soft:#EEF3FF;--bg:#fff}
+:host{all:initial;--pri:#6355F6;--navy:#191C32;--ink:#1E2238;--mute:#6B7280;--accent:#800028;--line:#EEF1F6;--tint:#F9FAFB;--pri-soft:#EEEBFF;--bg:#fff}
 *{box-sizing:border-box}
 .h{display:flex;align-items:center;gap:4px;font:14px/1.4 "Google Sans",Roboto,system-ui,sans-serif;color:var(--ink)}
 .ib{position:relative;width:40px;height:40px;border-radius:50%;border:0;background:none;display:grid;place-items:center;cursor:pointer;color:var(--navy)}
@@ -12,17 +12,17 @@ export const HEADER_CSS = `
 .ib:focus-visible{outline:2px solid var(--pri);outline-offset:1px}
 .mark{width:28px;height:28px;border-radius:8px;display:block}
 .dot{position:absolute;top:3px;right:2px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--accent);color:#fff;font-size:11px;font-weight:600;display:grid;place-items:center;border:2px solid #fff;box-sizing:content-box}
-.pop{position:fixed;z-index:2147483000;width:380px;max-width:calc(100vw - 16px);max-height:min(560px,calc(100vh - 80px));display:flex;flex-direction:column;background:#fff;border-radius:14px;box-shadow:0 2px 6px rgba(10,31,92,.1),0 14px 40px rgba(10,31,92,.22);border:1px solid var(--line);overflow:hidden;animation:in .14s ease-out}
+.pop{position:fixed;z-index:2147483000;width:380px;max-width:calc(100vw - 16px);max-height:min(560px,calc(100vh - 80px));display:flex;flex-direction:column;background:#fff;border-radius:14px;box-shadow:0 2px 6px rgba(16,24,40,.1),0 14px 40px rgba(16,24,40,.22);border:1px solid var(--line);overflow:hidden;animation:in .14s ease-out}
 @keyframes in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.pop{animation:none}}
 .ph{display:flex;align-items:center;gap:8px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
 .ph b{font-size:16px;color:var(--navy);flex:1}
 .lk{border:0;background:none;color:var(--pri);font:inherit;font-size:13px;cursor:pointer;padding:4px 6px;border-radius:6px}
-.lk:hover:not(:disabled){background:var(--pri-soft)}.lk:disabled{color:#98A1BD;cursor:default}
+.lk:hover:not(:disabled){background:var(--pri-soft)}.lk:disabled{color:#9CA3AF;cursor:default}
 .list{overflow:auto;flex:1}
 .it{display:flex;gap:10px;width:100%;text-align:left;border:0;background:#fff;padding:11px 16px;cursor:pointer;font:inherit;color:var(--ink);border-bottom:1px solid var(--line)}
 .it:hover{background:var(--tint)}
-.it.un{background:var(--pri-soft)}.it.un:hover{background:#E3ECFF}
+.it.un{background:var(--pri-soft)}.it.un:hover{background:#EEEBFF}
 .av{flex:none;width:32px;height:32px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-size:13px;font-weight:600}
 .av.sys{background:var(--accent)}
 .tx{flex:1;min-width:0}.tx span{display:block;font-size:13.5px;overflow-wrap:anywhere}.tx small{color:var(--mute);font-size:12px}
@@ -114,7 +114,7 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
         <div class="pop menu" role="menu" style={{ right: `${pos.current.right}px`, top: `${pos.current.top}px` }}>
           {showCountries && <>
             <div class="mh">{t.country}</div>
-            {regions.map((r) => <button class="mi" role="menuitemradio" aria-checked={r.id === cur} onClick={() => { setOpen(''); if (r.id === cur) return; if (seen[r.id]) host.switchRegion?.(r.id); else host.onSignIn(r.id); }}><span style={{ fontWeight: r.id === cur ? 700 : 400 }}>{r.label}</span>{r.id !== cur && !seen[r.id] ? <small style={{ background: '#98A1BD' }}>{t.signIn}</small> : null}</button>)}
+            {regions.map((r) => <button class="mi" role="menuitemradio" aria-checked={r.id === cur} onClick={() => { setOpen(''); if (r.id === cur) return; if (seen[r.id]) host.switchRegion?.(r.id); else host.onSignIn(r.id); }}><span style={{ fontWeight: r.id === cur ? 700 : 400 }}>{r.label}</span>{r.id !== cur && !seen[r.id] ? <small style={{ background: '#9CA3AF' }}>{t.signIn}</small> : null}</button>)}
             <div style={{ borderTop: '1px solid var(--line)', margin: '6px 0' }} />
           </>}
           <div class="mh">PII · Punjab Insurance</div>

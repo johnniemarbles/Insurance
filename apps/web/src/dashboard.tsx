@@ -77,7 +77,7 @@ export function DashboardPanel({ call, locale, currency, slim }: { call: Call; l
       </div>
       <div class="dgrid">
         <section class="hcard"><div class="hsec-h"><h3>{x.byStage}</h3></div>
-          {d.stages.every((s) => s.count === 0) ? <p class="muted">{x.none}</p> : <Bars rows={d.stages.map((s) => ({ label: s.name, v: s.value, sub: `${s.count} ${x.rec}` }))} fmt={m} color="#2563eb" />}
+          {d.stages.every((s) => s.count === 0) ? <p class="muted">{x.none}</p> : <Bars rows={d.stages.map((s) => ({ label: s.name, v: s.value, sub: `${s.count} ${x.rec}` }))} fmt={m} color="#6355F6" />}
         </section>
         <section class="hcard"><div class="hsec-h"><h3>{x.trend}</h3></div>
           <Bars rows={d.months.map((r) => ({ label: monthLabel(r.month), v: r.wonValue, sub: `${r.won} ${x.won.toLowerCase()}` }))} fmt={m} color="#16a34a" />
