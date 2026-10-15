@@ -113,8 +113,8 @@ export async function signInWithGoogle(
     let accepted = false;
     if (opts.inviteToken) {
       const inv = (
-        await client.query<{ id: string; tenant_id: string; node_id: string; role: string; email: string; locale: string; invited_by: string | null; onboarding_case_id: string | null }>(
-          `SELECT id, tenant_id, node_id, role::text AS role, email::text AS email, locale::text AS locale, invited_by, onboarding_case_id FROM invitations
+        await client.query<{ id: string; tenant_id: string; node_id: string; role: string; email: string; locale: string; invited_by: string | null; onboarding_case_id: string | null; audit_engagement_id: string | null }>(
+          `SELECT id, tenant_id, node_id, role::text AS role, email::text AS email, locale::text AS locale, invited_by, onboarding_case_id, audit_engagement_id FROM invitations
             WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > now() FOR UPDATE`,
           [hash(opts.inviteToken)],
         )
@@ -142,7 +142,12 @@ export async function signInWithGoogle(
           )
         ).rows[0]!.id;
       }
-      await client.query(`INSERT INTO user_node_roles (tenant_id, user_id, node_id, role) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`, [inv.tenant_id, uid, inv.node_id, inv.role]);
+      // An external auditor (annual-review plan, section C) gets a login and no role: its access is the engagement alone.
+      if (inv.audit_engagement_id) {
+        await client.query(`UPDATE audit_engagements SET auditor_user_id = $2 WHERE id = $1 AND auditor_user_id IS NULL`, [inv.audit_engagement_id, uid]);
+      } else {
+        await client.query(`INSERT INTO user_node_roles (tenant_id, user_id, node_id, role) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`, [inv.tenant_id, uid, inv.node_id, inv.role]);
+      }
       await client.query('UPDATE invitations SET accepted_at = now() WHERE id = $1', [inv.id]);
       // A partner invitation from onboarding: the partner now has a login.
       if (inv.onboarding_case_id) await client.query('UPDATE onboarding_cases SET login_created_at = coalesce(login_created_at, now()) WHERE id = $1', [inv.onboarding_case_id]);
