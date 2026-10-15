@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { canChangeStructure, linkKindFor, type OrgNodeType, type RequestContext } from '@pii/domain';
+import { canAddBroker, canChangeStructure, linkKindFor, type OrgNodeType, type RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { audit } from './audit.ts';
 import { forbidden, invalid, notFound } from './errors.ts';
@@ -15,6 +15,16 @@ async function isAdminOnPartnerChain(tx: Tx, ctx: RequestContext, nodeId: string
   const { rows } = await tx.query<{ ok: boolean }>(
     `SELECT EXISTS (SELECT 1 FROM org_partner_closure WHERE descendant_id = $1 AND ancestor_id = ANY($2::uuid[])) AS ok`,
     [nodeId, ctx.adminNodeIds],
+  );
+  return rows[0]?.ok === true;
+}
+
+/** The signed-in person is a Branch manager of this location (a manager role held on the location itself). */
+async function isBranchManagerOf(tx: Tx, locationId: string): Promise<boolean> {
+  const { rows } = await tx.query<{ ok: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM user_node_roles r JOIN org_nodes a ON a.id = r.node_id AND a.type = 'location'
+                     WHERE r.user_id = app_user_id() AND r.role::text = 'manager' AND r.node_id = $1) AS ok`,
+    [locationId],
   );
   return rows[0]?.ok === true;
 }
@@ -73,7 +83,8 @@ export function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): void {
         const kind = linkKindFor(parentType, 'partner');
         if (!kind) throw invalid('A partner can only be created under a location or another partner');
         const adminOnChain = parentType === 'partner' ? await isAdminOnPartnerChain(tx, ctx, parentId) : false;
-        if (!canChangeStructure(ctx, kind, adminOnChain)) throw forbidden();
+        const managerOfBranch = parentType === 'location' ? await isBranchManagerOf(tx, parentId) : false;
+        if (!canAddBroker(ctx, parentType, adminOnChain, managerOfBranch)) throw forbidden();
         // No RETURNING: a brand-new, not-yet-linked node is invisible to a partner admin until the link exists.
         const id = randomUUID();
         await tx.query(`INSERT INTO org_nodes (id, tenant_id, type, name) VALUES ($1, $2, 'partner', $3)`, [id, ctx.tenantId, name.trim()]);
