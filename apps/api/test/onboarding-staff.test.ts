@@ -134,3 +134,30 @@ test('a branch manager removes an assignment on its own branch; the staff member
   assert.equal(r.status, 204, r.raw);
   assert.ok([403, 404].includes((await call(STF, 'GET', `/v1/onboarding/cases/${CASE}`)).status));
 });
+
+// The Compliance page board (plan v7, section 6): a branch manager assigns and removes staff from the list itself, so the list
+// carries the assigned staff and the staff of its branch who can still be assigned. Names only.
+const listRow = async (email: string, caseId: string) =>
+  ((await call(email, 'GET', '/v1/onboarding/cases')).json.cases as any[]).find((c) => c.id === caseId);
+
+test('the branch manager list shows who is assigned and who of its branch can still be assigned', async () => {
+  assert.equal((await call(MGR, 'POST', `/v1/onboarding/cases/${CASE}/staff`, { userId: ids[STF] })).status, 201);
+  let row = await listRow(MGR, CASE);
+  assert.deepEqual(row.staff.map((s: { userId: string }) => s.userId), [ids[STF]]);
+  assert.ok(!row.candidates.some((s: { userId: string }) => s.userId === ids[STF]), 'an assigned staff member is not offered again');
+  assert.ok(!row.candidates.some((s: { userId: string }) => s.userId === ids[STF2]), 'staff of another branch are not offered');
+  assert.ok(!row.candidates.some((s: { userId: string }) => s.userId === ids[TRAINER]), 'a trainer is not offered');
+  assert.equal((await call(MGR, 'DELETE', `/v1/onboarding/cases/${CASE}/staff/${ids[STF]}`)).status, 204);
+  row = await listRow(MGR, CASE);
+  assert.deepEqual(row.staff, []);
+  assert.ok(row.candidates.some((s: { userId: string }) => s.userId === ids[STF]), 'once removed, the staff member can be offered again');
+});
+
+test('the staff member list row carries only the analytics: no assigned list and no candidates', async () => {
+  assert.equal((await call(MGR, 'POST', `/v1/onboarding/cases/${CASE}/staff`, { userId: ids[STF] })).status, 201);
+  const row = await listRow(STF, CASE);
+  assert.ok(row, 'assigned staff see the broker');
+  assert.equal('staff' in row, false);
+  assert.equal('candidates' in row, false);
+  assert.ok(Array.isArray(row.steps) && Array.isArray(row.checks));
+});

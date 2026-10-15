@@ -126,39 +126,91 @@ export function SectionHead({ title, sub, right }: { title: string; sub: string;
   );
 }
 
-const MP = {
-  en: { title: 'Partner onboarding progress', sub: 'The steps each partner in your branch has reached. Checks and decisions are kept by compliance.', none: 'No partner in your branch is in onboarding yet.', name: 'Partner' },
-  'fr-CA': { title: 'Progression de l’intégration des partenaires', sub: 'Les étapes atteintes par chaque partenaire de votre succursale. Les vérifications et décisions sont gérées par la conformité.', none: 'Aucun partenaire de votre succursale n’est en intégration pour l’instant.', name: 'Partenaire' },
+type MPStrings = { title: string; sub: string; none: string; name: string; staffHead: string; staffNone: string; assign: string; pickStaff: string; remove: string; checksHead: string; complete: string; outstanding: string; recheckDue: string; staffNote: string; credit: string; background: string };
+const MP: Record<'en' | 'fr-CA', MPStrings> = {
+  en: { title: 'Partner onboarding progress', sub: 'The steps each partner in your branch has reached. Checks and decisions are kept by compliance.', none: 'No partner in your branch is in onboarding yet.', name: 'Partner', staffHead: 'Staff on this partner', staffNone: 'No staff assigned yet.', assign: 'Assign', pickStaff: 'Choose a staff member', remove: 'Remove', checksHead: 'Checks', complete: 'Complete', outstanding: 'Outstanding', recheckDue: 'Next check due', staffNote: 'Staff follow up with the partner and collect documents. Screening and decisions stay with compliance.', credit: 'Credit check', background: 'Background check' },
+  'fr-CA': { title: 'Progression de l’intégration des partenaires', sub: 'Les étapes atteintes par chaque partenaire de votre succursale. Les vérifications et décisions sont gérées par la conformité.', none: 'Aucun partenaire de votre succursale n’est en intégration pour l’instant.', name: 'Partenaire', staffHead: 'Personnel assigné à ce partenaire', staffNone: 'Aucun membre du personnel assigné pour l’instant.', assign: 'Assigner', pickStaff: 'Choisir un membre du personnel', remove: 'Retirer', checksHead: 'Vérifications', complete: 'Complète', outstanding: 'En attente', recheckDue: 'Prochaine vérification', staffNote: 'Le personnel fait le suivi auprès du partenaire et recueille les documents. La vérification et les décisions restent à la conformité.', credit: 'Vérification de crédit', background: 'Vérification d’antécédents' },
 } as const;
 
-/** A branch manager's view of partner onboarding: each partner's steps and their status. The API sends nothing else to a manager. */
+type BoardStaff = { userId: string; name: string };
+type BoardRow = {
+  id: string; partnerName: string;
+  steps?: { step: Stage; status: 'done' | 'current' | 'pending' }[];
+  // Branch manager rows: who is assigned and who can still be assigned. Staff rows carry the checks and the due date instead.
+  staff?: BoardStaff[]; candidates?: BoardStaff[];
+  checks?: { kind: string; complete: boolean }[]; recheck?: { dueOn: string } | null;
+};
+
+/**
+ * Partner onboarding for branch management and for assigned staff (plan v7, sections 6 and 7). A branch manager sees each partner's
+ * steps and assigns or removes staff. Staff see the same steps with the checks complete or outstanding and the next due date:
+ * never a score, a provider, the screening answers or the standing.
+ */
 export function ManagerProgressBoard({ call, locale }: { call: Call; locale: Locale }) {
-  const [rows, setRows] = useState<{ id: string; partnerName: string; steps?: { step: Stage; status: 'done' | 'current' | 'pending' }[] }[] | null>(null);
+  const [rows, setRows] = useState<BoardRow[] | null>(null);
+  const [err, setErr] = useState('');
   const lc = locale === 'fr-CA' ? 'fr-CA' : 'en';
   const m = MP[lc];
   const x = OB[lc];
-  // Progress only (plan v7): a branch manager does not start or decide brokers.
-  useEffect(() => { void call('GET', '/v1/onboarding/cases').then((r) => setRows(r.cases ?? []), () => setRows([])); }, [call]);
+  const load = () => call('GET', '/v1/onboarding/cases').then((r) => setRows(r.cases ?? []), () => setRows([]));
+  useEffect(() => { void load(); }, [call]);
+  const act = async (fn: () => Promise<unknown>) => { setErr(''); try { await fn(); await load(); } catch (e) { setErr(errText(e)); } };
   const shown = (rows ?? []).filter((r) => Array.isArray(r.steps));
   return (
     <section class="obmanager" aria-label={m.title}>
       <SectionHead title={m.title} sub={m.sub} />
+      {err && <div class="err" role="alert">{err}</div>}
       {rows === null && <div class="msg">…</div>}
       {rows !== null && shown.length === 0 && <div class="calm">{m.none}</div>}
-      {shown.map((r) => (
-        <div class="obmanager-row" key={r.id}>
-          <b>{r.partnerName}</b>
-          <ol class="obtrack" aria-label={`${m.name}: ${r.partnerName}`}>
-            {r.steps!.map((s, k) => (
-              <li key={s.step} class={s.status} aria-current={s.status === 'current' ? 'step' : undefined}>
-                <span class="obdot" aria-hidden="true">{s.status === 'done' ? '✓' : k + 1}</span>
-                <span class="oblabel"><b>{STAGE_LABEL[s.step][lc]}</b><small>{s.status === 'done' ? x.done : s.status === 'current' ? x.now : x.todo}</small></span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      ))}
+      {shown.map((r) => <BoardCard key={r.id} r={r} m={m} x={x} lc={lc} act={act} call={call} />)}
     </section>
+  );
+}
+
+function BoardCard({ r, m, x, lc, act, call }: { r: BoardRow; m: MPStrings; x: { done: string; now: string; todo: string }; lc: 'en' | 'fr-CA'; act: (fn: () => Promise<unknown>) => Promise<void>; call: Call }) {
+  const [pick, setPick] = useState('');
+  return (
+    <div class="obmanager-row" key={r.id}>
+      <b>{r.partnerName}</b>
+      <ol class="obtrack" aria-label={`${m.name}: ${r.partnerName}`}>
+        {r.steps!.map((s, k) => (
+          <li key={s.step} class={s.status} aria-current={s.status === 'current' ? 'step' : undefined}>
+            <span class="obdot" aria-hidden="true">{s.status === 'done' ? '✓' : k + 1}</span>
+            <span class="oblabel"><b>{STAGE_LABEL[s.step][lc]}</b><small>{s.status === 'done' ? x.done : s.status === 'current' ? x.now : x.todo}</small></span>
+          </li>
+        ))}
+      </ol>
+      {r.checks && (
+        <div class="obstaffview">
+          <b>{m.checksHead}</b>
+          <ul>{r.checks.map((c, k) => <li key={k}>{c.kind === 'credit' ? m.credit : c.kind === 'background' ? m.background : c.kind} · {c.complete ? m.complete : m.outstanding}</li>)}</ul>
+          {r.recheck && <small class="muted">{m.recheckDue}: {r.recheck.dueOn}</small>}
+          <p class="muted">{m.staffNote}</p>
+        </div>
+      )}
+      {r.candidates && (
+        <div class="obstaffview">
+          <b>{m.staffHead}</b>
+          {(r.staff ?? []).length === 0 && <p class="muted">{m.staffNone}</p>}
+          <ul>
+            {(r.staff ?? []).map((s) => (
+              <li key={s.userId}>{s.name} <button class="link" onClick={() => void act(() => call('DELETE', `/v1/onboarding/cases/${r.id}/staff/${s.userId}`))}>{m.remove}</button></li>
+            ))}
+          </ul>
+          {r.candidates.length > 0 && (
+            <form class="obform" onSubmit={(e) => { e.preventDefault(); if (pick) void act(() => call('POST', `/v1/onboarding/cases/${r.id}/staff`, { userId: pick })).then(() => setPick('')); }}>
+              <label class="fl">{m.pickStaff}
+                <select value={pick} onChange={(e) => setPick((e.target as HTMLSelectElement).value)}>
+                  <option value="">{m.pickStaff}</option>
+                  {r.candidates.map((c) => <option key={c.userId} value={c.userId}>{c.name}</option>)}
+                </select>
+              </label>
+              <button class="primary" disabled={!pick}>{m.assign}</button>
+            </form>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

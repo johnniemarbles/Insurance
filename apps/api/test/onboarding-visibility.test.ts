@@ -69,7 +69,11 @@ test('the branch manager sees progress only: step names and status, never checks
   assert.equal(list.status, 200);
   const row = list.json.cases.find((c: any) => c.id === CASE);
   assert.ok(row, 'the case is in the manager\'s list');
-  assert.deepEqual(Object.keys(row).sort(), PROGRESS_KEYS);
+  // Progress, plus who is assigned and who of the branch can be assigned (names only; plan v7, section 6).
+  assert.deepEqual(Object.keys(row).sort(), [...PROGRESS_KEYS, 'candidates', 'staff'].sort());
+  for (const hidden of ['"checks"', '"standing"', '"suggested"', '"score"', '"consents"', '"decisions"', '"outcome"', '"thresholds"']) {
+    assert.ok(!list.raw.includes(hidden), `manager list must not contain ${hidden}`);
+  }
   assert.equal(row.steps[0].step, 'invited');
   assert.equal(row.steps[0].status, 'current');
   assert.equal(row.steps[1].status, 'pending');

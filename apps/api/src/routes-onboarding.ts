@@ -212,6 +212,17 @@ async function staffView(tx: Tx, c: CaseRow) {
   };
 }
 
+/** The staff of the broker's branch who are not yet assigned to it: names only (the same rule as the assign route). */
+async function staffCandidates(tx: Tx, c: CaseRow): Promise<{ userId: string; name: string }[]> {
+  return (await tx.query<{ userId: string; name: string }>(
+    `SELECT DISTINCT r.user_id AS "userId", u.display_name AS name
+       FROM user_node_roles r JOIN org_nodes a ON a.id = r.node_id AND a.type = 'location'
+            JOIN org_reach o ON o.ancestor_id = r.node_id JOIN app_users u ON u.id = r.user_id
+      WHERE r.role::text = 'staff' AND o.descendant_id = $1
+        AND NOT EXISTS (SELECT 1 FROM onboarding_staff s WHERE s.case_id = $2 AND s.user_id = r.user_id)
+      ORDER BY name`, [c.nodeId, c.id])).rows;
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -548,7 +559,11 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
             invite: inviteView(c),
           };
         }
-        return c.assigned ? staffView(tx, c) : progressView(c);
+        if (c.assigned) return staffView(tx, c);
+        const view = progressView(c);
+        // A branch manager sees who is on the broker and who of its branch can still be assigned (names only).
+        if (await managesBranchAbove(tx, ctx.userId, c.nodeId)) return { ...view, staff: await assignedStaff(tx, c.id), candidates: await staffCandidates(tx, c) };
+        return view;
       }));
       return { cases };
     });

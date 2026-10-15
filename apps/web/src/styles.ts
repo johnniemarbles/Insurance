@@ -336,6 +336,11 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .obpanel .fl input,.obpanel .fl select{max-width:360px}
 .obnew{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 .obnew>button{margin-top:4px}
+.obmanager-row{margin:0 0 22px}
+.obstaffview{margin:12px 0 0}
+.obstaffview ul{list-style:none;margin:6px 0;padding:0;display:grid;gap:4px}
+.obstaffview .obform{display:flex;gap:10px;align-items:flex-end;margin-top:10px;flex-wrap:wrap}
+.obstaffview .obform button{width:auto}
 .obnote{margin:10px 0 0}
 .obtablewrap{overflow-x:auto}
 .obtable{width:100%;border-collapse:collapse;font-size:14px}
