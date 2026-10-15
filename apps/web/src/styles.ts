@@ -441,4 +441,13 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .dl-ob span{font-size:12px;color:var(--mute)}
 .dl-bar2{height:6px;border-radius:999px;background:var(--tint2);margin-top:8px;overflow:hidden}
 .dl-bar2 i{display:block;height:100%;background:var(--pri)}
+/* Phase 2: list pages share the page width and gutter. Children keep their vertical spacing, lose their own side padding. */
+.pg-frame{box-sizing:border-box;width:100%;max-width:var(--pg-max);margin:0 auto;padding:24px var(--pg-gut) 0;display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+.pg-frame>*{flex:1;min-height:0;width:100%;max-width:none;box-sizing:border-box;padding-left:0;padding-right:0}
+.pg-raw{display:contents}
+@media(max-width:600px){.pg-frame{padding:16px 16px 0}}
+.pg-frame select,.pg-frame input:not([type=checkbox]):not([type=radio]),.pg-frame textarea{box-sizing:border-box;min-height:var(--ctl-h);height:var(--ctl-h);padding:0 12px;border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;font-size:14px}
+.pg-frame textarea{height:auto;min-height:96px;padding:10px 12px}
+.pg-frame .rstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--pg-gap)}
+.pg-frame .rstat{width:100%;min-height:88px;box-sizing:border-box}
 `;
