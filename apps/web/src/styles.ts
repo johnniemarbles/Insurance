@@ -450,4 +450,16 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .obalerts ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .obalerts li{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--ink);background:var(--bg)}
 .obpartner.pg{flex-shrink:0;overflow:visible}
+/* Visual style (planned-absences reference): soft lit cards, rounded tiles, pill controls, glossy bars, a pill on today. */
+:host{--soft:0 1px 2px rgba(16,24,40,.04),0 10px 28px rgba(16,24,40,.07);--tile:#f4f6fa;--tile-line:#e6eaf2}
+.pg .hcard,.pg .obcard,.pg .vpanel,.pg .obtile{border-color:#eef1f6;box-shadow:var(--soft)}
+.pg .btn,.pg select,.pg .sel{border-radius:999px}
+.pg .btn{box-shadow:0 1px 2px rgba(16,24,40,.06)}
+.dl-cell{border-radius:10px;background:var(--tile);border:1px solid var(--tile-line);box-shadow:inset 0 1px 2px rgba(16,24,40,.04)}
+.dl-cell.we{background:repeating-linear-gradient(135deg,#e9edf5 0 6px,#f6f8fc 6px 12px)}
+.dl-who{border-radius:16px;background:#fff;border:1px solid var(--tile-line);box-shadow:var(--soft)}
+.dl-bar{border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0)),var(--warn2);box-shadow:0 8px 18px rgba(16,24,40,.14)}
+.dl-bar.exp{background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0)),var(--warn)}
+.dl-day.today b{display:table;margin:2px auto 0;background:var(--pri);color:#fff;border-radius:999px;padding:0 8px;line-height:22px;font-size:13px}
+.dl-day.today{color:var(--pri)}
 `;
