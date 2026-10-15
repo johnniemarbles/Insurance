@@ -24,6 +24,9 @@ export const PROFILE_FIELDS: Record<Country, readonly ProfileField[]> = {
   CA: [
     { key: 'province', label: { en: 'Province or territory', 'fr-CA': 'Province ou territoire' }, maxLength: 40, options: ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'] },
     { key: 'gst_hst', label: { en: 'GST/HST registration number', 'fr-CA': 'Numéro d’inscription TPS/TVH' }, maxLength: 40 },
+    // BC supervision (optional for now). Counsel confirms the 24-month rule before go-live; nothing is required yet.
+    { key: 'bc_supervisor_name', label: { en: 'BC supervising licensee name (optional, BC agents under 24 months)', 'fr-CA': 'Nom du titulaire de licence superviseur en C.-B. (facultatif, agents de moins de 24 mois)' }, maxLength: 60 },
+    { key: 'bc_supervisor_licence', label: { en: 'BC supervising licensee licence number (optional)', 'fr-CA': 'Numéro de licence du titulaire superviseur en C.-B. (facultatif)' }, maxLength: 20 },
   ],
   US: [
     { key: 'state', label: { en: 'Home state', 'fr-CA': 'État d’origine' }, maxLength: 2 },
