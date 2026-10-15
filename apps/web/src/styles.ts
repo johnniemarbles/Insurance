@@ -447,4 +447,9 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .pg-frame .settings,.pg-frame .smain{max-width:none}
 .pg-frame .bar,.pg-frame .fbar,.pg-frame .wrap,.pg-frame .stages,.pg-frame .meta{padding-left:0;padding-right:0}
 @media(max-width:600px){.pg-frame .meta{flex-wrap:wrap}.pg-frame select{max-width:100%;min-width:0}}
+.obalerts{display:flex;flex-direction:column;gap:12px}
+.obalerts>.obtiles{margin-top:4px}
+.obalerts h4{margin:12px 0 0;font-size:14px;color:var(--navy)}
+.obalerts ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.obalerts li{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--ink);background:var(--bg)}
 `;
