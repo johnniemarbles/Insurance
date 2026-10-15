@@ -7,6 +7,7 @@ import { hasAcceptedFirstLogin } from './routes-consent.ts';
 import { HttpError, conflict, forbidden, invalid, notFound } from './errors.ts';
 import { isDemoTenant } from './routes-demo.ts';
 import { rolesFor } from './place-roles.ts';
+import { countrySwitchFor } from './country-switch.ts';
 import type { AppDeps } from './app.ts';
 
 const INVITE_DAYS = 7;
@@ -70,6 +71,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
   app.get('/v1/me', async (req) => {
     const { ctx, user } = await deps.authenticate(req);
     const consented = await run(ctx, (tx) => hasAcceptedFirstLogin(tx, ctx));
+    const headOffice = await run(ctx, async (tx) => (await tx.query<{ h: boolean }>('SELECT app_is_head_office() AS h')).rows[0]!.h);
     return {
       needsConsent: !consented,
       user: { id: user.userId, email: user.email, displayName: user.displayName, locale: user.locale },
@@ -83,7 +85,9 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
       isTenantAdmin: ctx.isTenantAdmin,
       demo: await isDemoTenant(deps, user.tenantId),
       roles: ctx.roles,
-      isHeadOffice: (await run(ctx, async (tx) => (await tx.query<{ h: boolean }>('SELECT app_is_head_office() AS h')).rows[0]!.h)),
+      isHeadOffice: headOffice,
+      // Only the head office switches between countries (the global overview is a head-office screen).
+      countrySwitch: headOffice ? countrySwitchFor(deps.config.region, deps.config.otherRegionUrl) : null,
       country: deps.config.region === 'us' ? 'US' : 'CA',
       canAdminister: ctx.isTenantAdmin || ctx.adminNodeIds.length > 0,
     };

@@ -20,7 +20,7 @@ import { NotificationsPage } from './notifications.tsx';
 import { RenewalsPage } from './renewals.tsx';
 import { CompliancePage } from './compliance.tsx';
 
-import { setHeadOffice } from './ho.ts';
+import { setHeadOffice, setCountrySwitch } from './ho.ts';
 import { tabArrows } from './a11y.ts';
 import { DuplicatesDialog } from './duplicates.tsx';
 import { DemoBar } from './demo.tsx';
@@ -88,6 +88,7 @@ export function App({ host }: { host: HostOptions }) {
   if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
   setHeadOffice(Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice));
+  setCountrySwitch((me as unknown as { countrySwitch?: { toCountry: 'CA' | 'US'; url: string } | null }).countrySwitch ?? null);
   return <Shell isHeadOffice={Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice)} isAdmin={!(me as unknown as { isHeadOffice?: boolean }).isHeadOffice && (((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => r.role === 'admin') || Boolean((me as unknown as { isTenantAdmin?: boolean }).isTenantAdmin))} call={call} t={t} locale={locale} onLocale={(l: Locale) => { setLocale(l); void call('PUT', '/v1/me/locale', { locale: l }).catch(() => undefined); }} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} meName={me.user.displayName ?? ''} demoUserId={(me as unknown as { demo?: boolean }).demo ? me.user.id : undefined} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
 }
 

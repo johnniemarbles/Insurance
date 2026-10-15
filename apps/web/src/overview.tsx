@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
 import { NeedsYou, ExpiryBars, Trend, type Need } from './hoinsights.tsx';
 import { money } from './theme.ts';
+import { countrySwitch } from './ho.ts';
 import type { Locale } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -38,6 +39,15 @@ const T = {
 };
 
 /** What a company or branch administrator sees first: the work in their own part of the organization, as numbers and small charts. */
+/** Head office only: a link to the other country's app (each country is its own app and database). */
+function CountrySwitchLink({ locale }: { locale: Locale }) {
+  const s = countrySwitch();
+  if (!s) return null;
+  const fr = locale === 'fr-CA';
+  const label = fr ? (s.toCountry === 'US' ? 'Passer aux États-Unis' : 'Passer au Canada') : (s.toCountry === 'US' ? 'Switch to USA' : 'Switch to Canada');
+  return <a class="btn ghost" href={s.url} rel="noopener">{label}</a>;
+}
+
 export function OverviewPanel({ call, locale, go, currency }: { call: Call; locale: Locale; go: (page: string, id?: string) => void; currency: string }) {
   const x = T[locale];
   const [d, setD] = useState<Overview | null>(null);
@@ -61,6 +71,7 @@ export function OverviewPanel({ call, locale, go, currency }: { call: Call; loca
   const pct = p.winRate == null ? x.none : `${Math.round(p.winRate * 100)}%`;
   return (
     <div class="ovw">
+      <CountrySwitchLink locale={locale} />
       <NeedsYou needs={needs} locale={locale} openAll={all} setOpenAll={setAll} />
       <div class="hstats">
         <div class="hstat"><b>{money(p.openValue, currency, locale)}</b><span>{x.pipe}</span><small>{x.recs(p.openCount)}</small><Trend now={p.openCount} before={pv?.openCount} since={d.prev?.day} locale={locale} /></div>
