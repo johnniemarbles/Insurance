@@ -4,7 +4,7 @@ import { X, type N } from './notifications.tsx';
 import type { HostOptions, Locale } from './types.ts';
 
 export const HEADER_CSS = `
-:host{all:initial;--pri:#6355F6;--navy:#191C32;--ink:#1E2238;--mute:#6B7280;--accent:#800028;--line:#EEF1F6;--tint:#F9FAFB;--pri-soft:#EEEBFF;--bg:#fff}
+:host{all:initial;--pri:#6355F6;--navy:#191C32;--ink:#1E2238;--mute:#6B7280;--accent:#EB5757;--line:#EEF1F6;--tint:#F9FAFB;--pri-soft:#EEEBFF;--bg:#fff}
 *{box-sizing:border-box}
 .h{display:flex;align-items:center;gap:4px;font:14px/1.4 "Google Sans",Roboto,system-ui,sans-serif;color:var(--ink)}
 .ib{position:relative;width:40px;height:40px;border-radius:50%;border:0;background:none;display:grid;place-items:center;cursor:pointer;color:var(--navy)}

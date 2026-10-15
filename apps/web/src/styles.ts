@@ -1,5 +1,5 @@
 export const CSS = `
-:host{all:initial;--pri:#6355F6;--pri-h:#5246E0;--navy:#191C32;--ink:#1E2238;--mute:#6B7280;--faint:#9CA3AF;--accent:#800028;--accent-soft:#FBE9EF;--bg:#fff;--tint:#F9FAFB;--tint2:#F3F1FF;--line:#EEF1F6;--line2:#E5E7EB;--pri-soft:#EEEBFF;--pri-soft2:#E0DBFF;--pri-line:#C7C2FB;--ok:#0E8F5B;--ok-soft:#E6F6EF;--warn:#B7791F;--warn-soft:#FDF3DD;--err:#C81E3A;--err-soft:#FDE8EC;--r:10px;--r-sm:7px;--sh:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.08)}
+:host{all:initial;--pri:#6355F6;--pri-h:#5246E0;--navy:#191C32;--ink:#1E2238;--mute:#6B7280;--faint:#9CA3AF;--accent:#EB5757;--accent-soft:#FDE8E8;--bg:#fff;--tint:#F9FAFB;--tint2:#F3F1FF;--line:#EEF1F6;--line2:#E5E7EB;--pri-soft:#EEEBFF;--pri-soft2:#E0DBFF;--pri-line:#C7C2FB;--ok:#0E8F5B;--ok-soft:#E6F6EF;--warn:#B7791F;--warn-soft:#FDF3DD;--err:#C81E3A;--err-soft:#FDE8EC;--r:10px;--r-sm:7px;--sh:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.08)}
 *{box-sizing:border-box}
 .pii:focus{outline:none}
 .pii{--warn:#b45309;--warn2:#d97706;--okc:#0f7b4a;--gray:#98a1bd;font:14px/1.45 "Google Sans",Roboto,system-ui,sans-serif;color:var(--ink);background:var(--bg);min-height:100%;display:flex;flex-direction:column}
