@@ -111,3 +111,19 @@ export function carrierPacketBlocks(p: {
   if (!p.lastChecked || recheckStatus(p.lastChecked, p.now) === 'overdue') b.push('check_overdue');
   return b;
 }
+
+/**
+ * Onboarding requirements a Compliance Manager can switch on or off for the company. All are on by default. A switch-off is
+ * recorded with a reason. screeningBeforeDecision is enforced now; the others are enforced as their steps are built.
+ */
+export const REQUIREMENT_KEYS = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'] as const;
+export type RequirementKey = (typeof REQUIREMENT_KEYS)[number];
+export const REQUIREMENT_COLUMN: Record<RequirementKey, string> = {
+  screeningBeforeDecision: 'screening_before_decision',
+  ownershipRequired: 'ownership_required',
+  pendingApproval: 'pending_approval',
+  presidentExceptions: 'president_exceptions',
+};
+export const REQUIREMENT_DEFAULTS: Record<RequirementKey, boolean> = {
+  screeningBeforeDecision: true, ownershipRequired: true, pendingApproval: true, presidentExceptions: true,
+};
