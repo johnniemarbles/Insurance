@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
 import { OUTCOME_LABEL, StepList, STAGE_LABEL, type Stage } from './onboarding-shared.tsx';
+import { SelfReportForm } from './self-report.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 
@@ -107,6 +108,8 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
         {keepText && <div class={`banner ${view.warning ? 'warn' : ''}`} role="status">{keepText}</div>}
         {view.recheck && <p class="muted obnote">{t.nextCheck}: {view.recheck.dueOn.slice(0, 10)}</p>}
       </section>
+
+      <SelfReportForm call={call} locale={locale} caseId={view.id} />
 
       {view.loginCreated && (
         <section class="obcard">
