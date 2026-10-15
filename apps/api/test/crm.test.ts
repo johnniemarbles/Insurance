@@ -815,6 +815,13 @@ test('AI assist: off until an admin enables it, stays inside what you can see, a
   assert.equal(risk.status, 200);
   const mine = risk.json.risks.find((x: { id: string }) => x.id === box);
   assert.ok(mine && mine.reasons.includes('stalled') && mine.reasons.includes('no_next_step'));
+  // Free-form assistant: sends only the question, and stops when the company switches AI off.
+  const ask = await call2(P1U, 'POST', '/v1/ai/ask', { question: 'What is an E&O policy?' });
+  assert.equal(ask.status, 200);
+  assert.match(seen.at(-1)!, /<question>\nWhat is an E&O policy\?\n<\/question>/);
+  assert.doesNotMatch(seen.at(-1)!, /AiBox/, 'no record data is sent to the model');
+  assert.equal((await call2(ADMIN, 'PUT', '/v1/ai/settings', { enabled: false })).status, 200);
+  assert.equal((await call2(P1U, 'POST', '/v1/ai/ask', { question: 'hello' })).status, 403, 'off when the company turns it off');
   await app2.close();
   void saved;
 });

@@ -498,4 +498,11 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .asst-off{margin:0;font-size:12px;color:var(--faint)}
 .ktile,.rstat,.rstats .rstat,.dl-glass{border-radius:20px}
 .ktile{border-color:#EEF1F6;box-shadow:var(--shadow-soft)}
+.asst-answer{margin:0;font-size:14px;line-height:1.5;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px 14px;white-space:pre-wrap}
+.asst-ask{display:grid;gap:6px}
+.asst-label{font-size:12px;color:var(--mute)}
+.asst-row{display:flex;gap:8px}
+.asst-row input{flex:1;min-width:0;border:1px solid #E5E7EB;border-radius:999px;padding:9px 16px;font:inherit;font-size:14px;background:#fff}
+.asst-send{border:0;border-radius:999px;background:var(--pri);color:#fff;font:inherit;font-size:13px;font-weight:600;padding:9px 18px;cursor:pointer}
+.asst-send:disabled{opacity:.5;cursor:default}
 `;
