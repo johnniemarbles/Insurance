@@ -91,6 +91,8 @@ export function OrgTab({ call, locale, isTenantAdmin }: { call: Call; locale: Lo
   // The buttons a person sees on a place. The server still checks each action.
   const canAddPerson = (n: Node) => n.type === 'location' && (isTenantAdmin || roles.some((r) => r.role === 'manager' && within(n.id, r.nodeId, parentOf)));
   const canAddBroker = (n: Node) => n.type === 'location' && roles.some((r) => r.role === 'compliance' && within(n.id, r.nodeId, parentOf));
+  // Rename and switch off: the company administrator, and a broker's own administrator (the server checks the same).
+  const canEdit = (n: Node) => (n.type === 'tenant' ? isTenantAdmin : isTenantAdmin || (n.type === 'partner' && roles.some((r) => r.role === 'admin' && within(n.id, r.nodeId, parentOf))));
 
   const renameForm = (n: Node) => (
     <div class="erow"><input aria-label={x.rename} value={text} onInput={(e) => setText((e.target as HTMLInputElement).value)} /><button class="primary" disabled={!text.trim()} onClick={() => void act(() => call('PATCH', `/v1/org/nodes/${n.id}`, { name: text.trim() }))}>{x.save}</button><button class="link" onClick={() => setOpen(null)}>{x.cancel}</button></div>
@@ -106,10 +108,10 @@ export function OrgTab({ call, locale, isTenantAdmin }: { call: Call; locale: Lo
         <div class="erow wrap2">
           <strong>{n.name}</strong> <span class="chip">{label}</span>{!n.isActive && <span class="chip warn">{x.offChip}</span>}
           <span class="spacer" />
-          <button class="link" onClick={() => go('rename')}>{x.rename}</button>
+          {canEdit(n) && <button class="link" onClick={() => go('rename')}>{x.rename}</button>}
           {canAddPerson(n) && <button class="link" onClick={() => go('person')}>{x.addPerson}</button>}
           {canAddBroker(n) && <button class="link" onClick={() => go('broker')}>{x.addBroker}</button>}
-          {n.type !== 'tenant' && <button class="link" onClick={() => void act(() => call('PATCH', `/v1/org/nodes/${n.id}`, { isActive: !n.isActive }))}>{n.isActive ? x.off : x.on}</button>}
+          {n.type !== 'tenant' && canEdit(n) && <button class="link" onClick={() => void act(() => call('PATCH', `/v1/org/nodes/${n.id}`, { isActive: !n.isActive }))}>{n.isActive ? x.off : x.on}</button>}
         </div>
         {panelOpen && open.mode === 'rename' && renameForm(n)}
         {panelOpen && open.mode === 'person' && <AddPersonPanel call={call} x={x} locale={locale} node={n} onDone={() => { setOpen(null); void load(); }} onCancel={() => setOpen(null)} />}
@@ -183,7 +185,7 @@ function AddPersonPanel({ call, x, locale, node, onDone, onCancel }: { call: Cal
   const copy = () => { void navigator.clipboard?.writeText(link); };
 
   return (
-    <div class="obinvite" role="group" aria-label={x.addPerson}>
+    <div class="obinvite obpanel" role="group" aria-label={x.addPerson}>
       <b>{x.addPerson} · {node.name}</b>
       {err && <div class="err" role="alert">{err}</div>}
       <label class="fl">{x.searchPeople}
@@ -265,7 +267,7 @@ function AddBrokerPanel({ call, x, node, onDone, onCancel }: { call: Call; x: St
   };
 
   return (
-    <div class="obinvite" role="group" aria-label={x.addBroker}>
+    <div class="obinvite obpanel" role="group" aria-label={x.addBroker}>
       <b>{x.addBroker} · {node.name}</b>
       {err && <div class="err" role="alert">{err}</div>}
       <label class="fl">{x.searchBrokers}
@@ -278,7 +280,7 @@ function AddBrokerPanel({ call, x, node, onDone, onCancel }: { call: Call; x: St
         </div>
       ))}
       {q.trim().length >= 2 && found.length === 0 && !note && (
-        <div>
+        <div class="obnew">
           <p class="muted">{x.newBroker}</p>
           <label class="fl">{x.brokerName}<input value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} /></label>
           <label class="fl">{x.type}

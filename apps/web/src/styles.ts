@@ -332,6 +332,10 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .obinvite{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;border:1px dashed var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
 .obinvite>b{width:100%}
 .obinvite .fl{display:grid;gap:4px}
+.obpanel{flex-direction:column;align-items:stretch}
+.obpanel .fl input,.obpanel .fl select{max-width:360px}
+.obnew{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.obnew>button{margin-top:4px}
 .obnote{margin:10px 0 0}
 .obtablewrap{overflow-x:auto}
 .obtable{width:100%;border-collapse:collapse;font-size:14px}

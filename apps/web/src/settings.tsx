@@ -129,10 +129,11 @@ function LayoutEditor({ layout, onChange, disabled, x }: { layout: NavLayout; on
 
 export function SettingsPage({ api, call, locale, onLocale, initialTab, isManager, pipelines, compose }: { compose?: ComposeApi; api: SettingsApi; call: Call; locale: Locale; onLocale: (l: Locale) => void; initialTab?: string; isManager: boolean; pipelines: { id: string; name: string }[] }) {
   const x = X[locale];
-  const [who, setWho] = useState<{ canAdminister: boolean; isTenantAdmin: boolean; isCompliance: boolean } | null>(null);
-  useEffect(() => { call('GET', '/v1/me').then((m) => setWho({ canAdminister: Boolean(m.canAdminister), isTenantAdmin: Boolean(m.isTenantAdmin), isCompliance: Array.isArray(m.roles) && m.roles.some((r: { role: string }) => r.role === 'compliance') }), () => undefined); }, [call]);
+  // The Structure page is for administrators, branch managers (branch admins) and Compliance Managers: each sees the same tree with the buttons their scope allows.
+  const [who, setWho] = useState<{ canAdminister: boolean; canSeeOrg: boolean; isTenantAdmin: boolean; isCompliance: boolean } | null>(null);
+  useEffect(() => { call('GET', '/v1/me').then((m) => { const roles: { role: string }[] = Array.isArray(m.roles) ? m.roles : []; const isCompliance = roles.some((r) => r.role === 'compliance'); const isManager = roles.some((r) => r.role === 'manager'); setWho({ canAdminister: Boolean(m.canAdminister), canSeeOrg: Boolean(m.canAdminister) || isCompliance || isManager, isTenantAdmin: Boolean(m.isTenantAdmin), isCompliance }); }, () => undefined); }, [call]);
   const showTeam = api.canSet.tenant || api.canSet.node.length > 0;
-  const tabs = (['me', 'leftPanel', 'notifications', 'email', ...(showTeam ? ['team'] : []), ...(who?.canAdminister || who?.isCompliance ? ['organization'] : []), 'privacy'] as SettingTab[]);
+  const tabs = (['me', 'leftPanel', 'notifications', 'email', ...(showTeam ? ['team'] : []), ...(who?.canSeeOrg ? ['organization'] : []), 'privacy'] as SettingTab[]);
   const [tab, setTab] = useState<SettingTab>(() => (tabs.includes(initialTab as SettingTab) ? (initialTab as SettingTab) : 'me'));
   const [q, setQ] = useState('');
   const [toast, setToast] = useState<{ text: string; undo?: () => Promise<void> } | null>(null);
@@ -213,7 +214,7 @@ export function SettingsPage({ api, call, locale, onLocale, initialTab, isManage
           )}
           {tab === 'organization' && (
             <>
-              {who?.canAdminister && <PeopleHub call={call} locale={locale} isTenantAdmin={Boolean(who?.isTenantAdmin)} compose={compose} />}
+              {who?.canSeeOrg && <PeopleHub call={call} locale={locale} isTenantAdmin={Boolean(who?.isTenantAdmin)} compose={compose} />}
               {(who?.isTenantAdmin || who?.isCompliance) && <h3 style={{ marginTop: '24px' }}>{locale === 'fr-CA' ? 'Signatures, conservation et certificats' : 'Signatures, retention and certificates'}</h3>}
               {(who?.isTenantAdmin || who?.isCompliance) && <VendorPanel call={call} locale={locale} />}
               {(who?.isTenantAdmin || who?.isCompliance) && <RetentionPolicies call={call} locale={locale} />}
