@@ -452,4 +452,5 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .obalerts h4{margin:12px 0 0;font-size:14px;color:var(--navy)}
 .obalerts ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .obalerts li{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--ink);background:var(--bg)}
+.obpartner.pg{flex-shrink:0;overflow:visible}
 `;

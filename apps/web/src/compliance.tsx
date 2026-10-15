@@ -113,7 +113,7 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call:
     </div>
   ) : undefined;
   if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
-  const own = officer === false ? <div class="obwrap"><PartnerOnboarding call={call} locale={locale} embedded /></div> : null;
+  const own = officer === false ? <PartnerOnboarding call={call} locale={locale} embedded /> : null;
   const lead = officer === true ? <DeadlinesPanel call={call} locale={locale} /> : undefined;
   const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} extra={panels} tabs={tabs} lead={lead} />;
   const board = (manager || staff) && officer === false ? <div class="obwrap"><ManagerProgressBoard call={call} locale={locale} /></div> : null;
