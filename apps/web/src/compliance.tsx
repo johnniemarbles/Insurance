@@ -10,6 +10,7 @@ import { ManagerProgressBoard, OnboardingDashboard, SectionHead } from './onboar
 import { PartnerOnboarding } from './onboarding-partner.tsx';
 import { DeadlinesPanel } from './deadlines.tsx';
 import { CountrySwitchLink } from './overview.tsx';
+import { AssistantPanel } from './assistant-panel.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Step { id: string; done: boolean; hint?: string }
@@ -114,7 +115,7 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call:
   ) : undefined;
   if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
   const own = officer === false ? <PartnerOnboarding call={call} locale={locale} embedded /> : null;
-  const lead = officer === true ? <DeadlinesPanel call={call} locale={locale} /> : undefined;
+  const lead = officer === true ? <><AssistantPanel call={call} locale={locale} /><DeadlinesPanel call={call} locale={locale} /></> : undefined;
   const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} switchable={officer === true} openFile={setOpen} host={host} extra={panels} tabs={tabs} lead={lead} />;
   const board = (manager || staff) && officer === false ? <div class="obwrap"><ManagerProgressBoard call={call} locale={locale} /></div> : null;
   return <>{own}{board}{body}</>;
