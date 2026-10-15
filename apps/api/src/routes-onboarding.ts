@@ -854,7 +854,14 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
         `SELECT EXISTS (SELECT 1 FROM onboarding_cases c WHERE ${BRANCH_MANAGER_SQL.replace('%NODE%', 'c.node_id')}) AS ok`)).rows[0]?.ok === true;
       const staff = (await tx.query<{ ok: boolean }>(
         'SELECT EXISTS (SELECT 1 FROM onboarding_staff WHERE user_id = app_user_id()) AS ok')).rows[0]?.ok === true;
-      return { officer, branchManager, staff, onboarding };
+      // The broker's own licence and E&O dates (plan v6, section 9). Only people at the partner see them: the query is scoped to their own nodes.
+      const expiries = onboarding ? (await tx.query(
+        `SELECT i.id, i.kind, i.label, i.expires_on::text AS "expiresOn",
+                CASE WHEN i.expires_on < current_date THEN 'expired' WHEN i.expires_on <= current_date + 30 THEN 'expiring' ELSE 'valid' END AS status
+           FROM compliance_items i
+          WHERE i.expires_on IS NOT NULL AND i.node_id IN (SELECT node_id FROM user_node_roles WHERE user_id = app_user_id())
+          ORDER BY i.expires_on, i.label`)).rows : [];
+      return { officer, branchManager, staff, onboarding: onboarding ? { ...onboarding, expiries } : null };
     });
   });
 
