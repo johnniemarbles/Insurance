@@ -4,6 +4,7 @@ import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
 import { OUTCOME_LABEL, StepList, STAGE_LABEL, type Stage } from './onboarding-shared.tsx';
 import { SelfReportForm } from './self-report.tsx';
+import { SubBrokerForm } from './sub-broker.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 
@@ -112,6 +113,7 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
       </section>
 
       <SelfReportForm call={call} locale={locale} caseId={view.id} />
+      {stage === 'active' && <SubBrokerForm call={call} locale={locale} caseId={view.id} />}
 
       {view.loginCreated && (
         <section class="obcard">

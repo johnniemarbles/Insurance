@@ -94,7 +94,7 @@ test('the partner completes the form and consents; the officer runs the checks a
   assert.equal(view.json.checks, undefined);
   const mine = await call(AG, 'GET', '/v1/onboarding/mine');
   assert.equal(mine.json.onboarding.partnerName, 'Agency One Inc');
-  assert.ok(!mine.raw.includes('640'), 'the partner\'s own view has no score');
+  assert.ok(!mine.raw.includes('"score"'), 'the partner\'s own view has no score');
   assert.equal((await call(BC_OFF, 'GET', '/v1/onboarding/mine')).json.onboarding, null, 'an officer is not a partner in onboarding');
   assert.equal((await call(BC_OFF, 'GET', '/v1/onboarding/mine')).json.officer, true);
   assert.equal(mine.json.officer, false, 'a partner is not an officer');
@@ -138,7 +138,8 @@ test('an expired licence freezes the carrier packet; the freeze is recorded; ren
     `SELECT count(*)::int AS n FROM audit_log WHERE action = 'onboarding.packet_frozen' AND entity_id = $1`, [id]));
   assert.ok(recorded.rows[0].n >= 1, 'the frozen submission is recorded');
   await owner((o) => o.query(`UPDATE compliance_items SET expires_on = DATE '2999-01-01' WHERE node_id = $1 AND kind = 'licence'`, [AGN]));
-  assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${id}/carrier-packets`, { carrier: 'iA Financial Group', templateVersion: 'F11-92A' })).status, 201, 'renewed: the packet is allowed');
+const renewed = await call(AG, 'POST', `/v1/onboarding/cases/${id}/carrier-packets`, { carrier: 'iA Financial Group', templateVersion: 'F11-92A' });
+  assert.equal(renewed.status, 201, `renewed: the packet is allowed: ${renewed.raw}`);
 });
 
 test('a partner not in good standing keeps no access, and cannot get an agency agreement or a carrier packet', async () => {

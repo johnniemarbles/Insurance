@@ -2,6 +2,7 @@
 // and a file per partner to record the checks, decide the standing and move the agency agreement.
 // The partner's own view is in onboarding-partner.tsx. Results and reasons are shown here only; the API never returns them to partners.
 import { SelfReportQueue } from './self-report.tsx';
+import { SubBrokerQueue } from './sub-broker.tsx';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { Locale } from './types.ts';
@@ -344,6 +345,8 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
       <RequirementsPanel call={call} t={t} locale={locale} />
 
       <SelfReportQueue call={call} locale={locale} />
+
+      <SubBrokerQueue call={call} locale={locale} />
 
       <section class="obcard">
         <div class="obtool">
