@@ -318,11 +318,8 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .obgrid .wide{grid-column:1/-1}
 .obback{justify-self:start;padding-left:0}
 .obtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
-.obtile{border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--bg);display:grid;gap:2px;align-content:start}
-.obtile b{font-size:26px;line-height:1.1}
 .obtile span{font-size:13px;color:var(--ink);font-weight:600}
 .obtile small{font-size:12px;color:var(--mute)}
-.obtile.warn{border-color:#e7b07a;background:#fff8f1}.obtile.warn b{color:#b45309}
 .obtile.ok{border-color:#9fd8b3}.obtile.ok b{color:#0a7d3b}
 .obtool{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 .obinvite{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;border:1px dashed var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
