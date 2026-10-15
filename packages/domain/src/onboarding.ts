@@ -96,15 +96,18 @@ export function stageMoveBlock(from: OnboardingStage, to: OnboardingStage, stand
   return null;
 }
 
-export const CARRIER_PACKET_BLOCKS = ['agency_agreement_not_signed', 'not_active', 'standing_not_good', 'check_overdue'] as const;
+export const CARRIER_PACKET_BLOCKS = ['agency_agreement_not_signed', 'not_active', 'standing_not_good', 'check_overdue', 'licence_or_eo_expired'] as const;
 export type CarrierPacketBlock = (typeof CARRIER_PACKET_BLOCKS)[number];
 
 /** Gate for stage 2: a carrier packet can be sent only after the PII agency agreement, with a current good-standing decision. */
 export function carrierPacketBlocks(p: {
   agencyAgreementSigned: boolean; stage: OnboardingStage; standing: StandingOutcome | 'pending';
   lastChecked: Date | null; now: Date;
+  /** A licence or E&O policy has expired: submissions are frozen until it is renewed (plan v6, section 2). */
+  frozenForExpiry?: boolean;
 }): CarrierPacketBlock[] {
   const b: CarrierPacketBlock[] = [];
+  if (p.frozenForExpiry) b.push('licence_or_eo_expired');
   if (!p.agencyAgreementSigned) b.push('agency_agreement_not_signed');
   if (p.stage !== 'active') b.push('not_active');
   if (p.standing !== 'good_standing') b.push('standing_not_good');

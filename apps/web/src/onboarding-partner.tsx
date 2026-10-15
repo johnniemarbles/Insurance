@@ -9,6 +9,7 @@ type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, 
 
 const P = {
   en: {
+    frozen: 'Your licence or E&O policy has expired, so carrier submissions are on hold. Renew it to continue.',
     title: 'Your partner onboarding', none: 'There is no onboarding for your partner account.',
     progress: 'Your progress', outcome: 'Standing', nextCheck: 'Next check due', next: 'What happens next', pending: 'Being checked',
     keepGood: 'You are in good standing.', keepReview: 'Your file is being reviewed. Your access continues while it is open.',
@@ -31,6 +32,7 @@ const P = {
     packetStatus: { draft: 'Draft', sent: 'Sent', signed: 'Signed', carrier_approved: 'Approved by carrier', declined: 'Declined' } as Record<string, string>,
   },
   'fr-CA': {
+    frozen: 'Votre permis ou votre police E&O a expiré : les soumissions aux assureurs sont suspendues. Renouvelez-la pour continuer.',
     title: 'Votre intégration de partenaire', none: 'Il n’y a pas d’intégration pour votre compte de partenaire.',
     progress: 'Votre progression', outcome: 'Réputation', nextCheck: 'Prochaine vérification', next: 'Ce qui suit', pending: 'En cours de vérification',
     keepGood: 'Vous êtes en bonne réputation.', keepReview: 'Votre dossier est en cours d’examen. Votre accès se poursuit pendant l’examen.',
@@ -79,7 +81,7 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true); setError('');
-    try { await fn(); await load(); } catch (e) { setError(errText(e)); } finally { setBusy(false); }
+    try { await fn(); await load(); } catch (e) { setError(errText(e).includes('licence_or_eo_expired') ? t.frozen : errText(e)); } finally { setBusy(false); }
   };
 
   if (view === undefined) return embedded ? null : <section class="obwrap">{error && <div class="err" role="alert">{error}</div>}</section>;

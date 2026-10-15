@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
 import {
-  CANADA_THRESHOLDS, STANDING_LABELS, STANDING_OUTCOMES, carrierPacketBlocks, keepsAccessWhile, standingWarning, nextCheckDue, recheckStatus, stageMoveBlock,
+  CANADA_THRESHOLDS, STANDING_LABELS, STANDING_OUTCOMES, carrierPacketBlocks, coverageFrozen, keepsAccessWhile, standingWarning, nextCheckDue, recheckStatus, stageMoveBlock,
   progressSteps, suggestedStanding, REQUIREMENT_COLUMN, REQUIREMENT_DEFAULTS, REQUIREMENT_KEYS, type RequirementKey,
   BROKER_TYPES, canAddBroker, ownershipProblems, type BrokerType, type OwnershipProblem,
   type OnboardingStage, type RequestContext, type StandingOutcome,
@@ -803,20 +803,31 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     const b = body(req);
     const carrier = str(b.carrier, 'carrier', 120);
     const templateVersion = str(b.templateVersion, 'templateVersion', 60);
-    const out = await run(ctx, async (tx) => {
+    const out = await run(ctx, async (tx): Promise<{ blocked: string[] } | { id: string; status: 'draft' }> => {
       const c = await loadCase(tx, id);
       await requirePartnerUser(tx, c);
+      // A licence or E&O policy that has expired freezes submissions (plan v6, section 2). The freeze is recorded, and it
+      // lifts on renewal: the same counts the clearance list reads.
+      const cov = (await tx.query<{ licences: number; validLicences: number; eoPolicies: number; validEo: number }>(
+        `SELECT (SELECT count(*)::int FROM compliance_items i WHERE i.node_id = $1 AND i.kind = 'licence') AS licences,
+                (SELECT count(*)::int FROM compliance_items i WHERE i.node_id = $1 AND i.kind = 'licence' AND (i.expires_on IS NULL OR i.expires_on >= current_date)) AS "validLicences",
+                (SELECT count(*)::int FROM compliance_items i WHERE i.node_id = $1 AND i.kind = 'eo') AS "eoPolicies",
+                (SELECT count(*)::int FROM compliance_items i WHERE i.node_id = $1 AND i.kind = 'eo' AND (i.expires_on IS NULL OR i.expires_on >= current_date)) AS "validEo"`,
+        [c.nodeId])).rows[0]!;
       const blocks = carrierPacketBlocks({
         agencyAgreementSigned: ['agency_agreement_signed', 'active'].includes(c.stage), stage: c.stage, standing: c.standing ?? 'pending',
-        lastChecked: c.lastCheckedAt, now: new Date(),
+        lastChecked: c.lastCheckedAt, now: new Date(), frozenForExpiry: coverageFrozen(cov),
       });
-      if (blocks.length) throw conflict(`Carrier packet not yet allowed: ${blocks.join(', ')}`);
+      if (blocks.includes('licence_or_eo_expired')) await audit(tx, ctx, 'onboarding.packet_frozen', 'onboarding_case', id, { blocks });
+      // Returned, not thrown, so the freeze record above is kept.
+      if (blocks.length) return { blocked: blocks };
       const packetId = (await tx.query<{ id: string }>(
         `INSERT INTO carrier_packets (tenant_id, node_id, carrier, template_version) VALUES ($1,$2,$3,$4) RETURNING id`,
         [c.tenantId, c.nodeId, carrier, templateVersion])).rows[0]!.id;
       await audit(tx, ctx, 'onboarding.carrier_packet_created', 'carrier_packet', packetId, { carrier });
       return { id: packetId, status: 'draft' as const };
     });
+    if ('blocked' in out) throw conflict(`Carrier packet not yet allowed: ${out.blocked.join(', ')}`);
     reply.code(201);
     return out;
   });

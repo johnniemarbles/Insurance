@@ -124,3 +124,10 @@ test('with nobody at 25% or more, the steps taken must be recorded', () => {
   assert.ok(ownershipProblems('corporate', owners, false).includes('steps_missing'));
   assert.ok(!ownershipProblems('corporate', owners, true).includes('steps_missing'));
 });
+
+test('an expired licence or E&O freezes carrier submissions, and the freeze is named', () => {
+  const now = new Date('2026-10-15T12:00:00Z');
+  const clear = { agencyAgreementSigned: true, stage: 'active' as const, standing: 'good_standing' as const, lastChecked: new Date('2026-09-01T00:00:00Z'), now };
+  assert.deepEqual(carrierPacketBlocks({ ...clear, frozenForExpiry: false }), []);
+  assert.deepEqual(carrierPacketBlocks({ ...clear, frozenForExpiry: true }), ['licence_or_eo_expired']);
+});

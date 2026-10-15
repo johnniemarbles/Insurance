@@ -126,6 +126,21 @@ test('the partner completes the form and consents; the officer runs the checks a
   assert.equal((await call(AG, 'GET', `/v1/onboarding/partners/${AGN}`)).json.carrierPackets.length, 1);
 });
 
+test('an expired licence freezes the carrier packet; the freeze is recorded; renewal lifts it', async () => {
+  const id = await caseOfBroker(db.ownerUrl, AGN);
+  await owner((o) => o.query(
+    `INSERT INTO compliance_items (tenant_id, node_id, kind, label, expires_on) VALUES ($1, $2, 'licence', 'Life and health', DATE '2000-01-01')`,
+    [co.tenantId, AGN]));
+  const blocked = await call(AG, 'POST', `/v1/onboarding/cases/${id}/carrier-packets`, { carrier: 'iA Financial Group', templateVersion: 'F11-92A' });
+  assert.equal(blocked.status, 409, blocked.raw);
+  assert.match(blocked.raw, /licence_or_eo_expired/);
+  const recorded = await owner((o) => o.query(
+    `SELECT count(*)::int AS n FROM audit_log WHERE action = 'onboarding.packet_frozen' AND entity_id = $1`, [id]));
+  assert.ok(recorded.rows[0].n >= 1, 'the frozen submission is recorded');
+  await owner((o) => o.query(`UPDATE compliance_items SET expires_on = DATE '2999-01-01' WHERE node_id = $1 AND kind = 'licence'`, [AGN]));
+  assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${id}/carrier-packets`, { carrier: 'iA Financial Group', templateVersion: 'F11-92A' })).status, 201, 'renewed: the packet is allowed');
+});
+
 test('a partner not in good standing keeps no access, and cannot get an agency agreement or a carrier packet', async () => {
   assert.ok(await caseOfBroker(db.ownerUrl, OTN), 'the file was started when the broker was added');
   const id = (await call(ON_OFF, 'GET', '/v1/onboarding/cases')).json.cases.find((c: { partnerName: string }) => c.partnerName === 'Agency Two Inc').id;

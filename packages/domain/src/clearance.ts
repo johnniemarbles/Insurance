@@ -33,3 +33,11 @@ export function clearanceReasons(i: ClearanceInput): ClearanceReason[] {
   if (i.cePriorShort) r.push('ce_prior_term_short');
   return r;
 }
+
+/**
+ * Frozen by expiry: a licence or an E&O policy is on file but none is still in force. A partner with nothing on file yet is
+ * not frozen by this rule; it is simply not cleared (clearanceReasons). Used to stop carrier submissions (plan v6, section 2).
+ */
+export function coverageFrozen(i: { licences: number; validLicences: number; eoPolicies: number; validEo: number }): boolean {
+  return (i.licences > 0 && i.validLicences === 0) || (i.eoPolicies > 0 && i.validEo === 0);
+}
