@@ -179,6 +179,33 @@ async function requirementsOf(tx: Tx, tenantId: string): Promise<Record<Requirem
 export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
 
+  // ---- President and CEO exception (company administrator) ---------------------------------------------------------
+
+  /**
+   * The President and CEO approves a red-flag exception on this file, with a reason. Only the company administrator can do this.
+   * The approval is kept on the file and cannot be changed afterwards.
+   */
+  app.post('/v1/onboarding/cases/:id/exception-approval', async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const id = caseId((req.params as { id: string }).id);
+    const reason = str(body(req).reason, 'reason', 500);
+    if (reason.length < 10) throw invalid('Give a reason of at least 10 characters: the approval is kept with it');
+    const out = await run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      if (!(await tx.query<{ ok: boolean }>('SELECT app_is_tenant_admin() AS ok')).rows[0]?.ok) {
+        throw forbidden('Only the President and CEO (the company administrator) can approve an exception');
+      }
+      const name = (await tx.query<{ name: string }>('SELECT display_name AS name FROM app_users WHERE id = $1', [ctx.userId])).rows[0]?.name ?? 'President and CEO';
+      const row = (await tx.query<{ id: string }>(
+        `INSERT INTO onboarding_exceptions (tenant_id, case_id, node_id, reason, approved_by, approver_name) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [c.tenantId, id, c.nodeId, reason, ctx.userId, name])).rows[0]!;
+      await audit(tx, ctx, 'onboarding.exception_approved', 'onboarding_case', id, { exception: row.id });
+      return { id: row.id };
+    });
+    reply.code(201);
+    return out;
+  });
+
   // ---- Broker type and ownership (Compliance officer) --------------------------------------------------------------
 
   /** Record whether the broker is an individual or a corporation. Officer only, until the case is Active. */
@@ -447,6 +474,10 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
              FROM onboarding_screenings WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1`, [id])).rows[0] ?? null,
         consents, checks, decisions, carrierPackets: packets,
         ownership: await ownershipOf(tx, id),
+        exceptions: (await tx.query(
+          `SELECT reason, approver_name AS "approverName", created_at AS "approvedAt" FROM onboarding_exceptions WHERE case_id = $1 ORDER BY created_at`, [id])).rows,
+        canApproveException: (await tx.query<{ ok: boolean }>('SELECT app_is_tenant_admin() AS ok')).rows[0]?.ok === true,
+        awaitingApproval: c.stage === 'checks_complete' && (await requirementsOf(tx, c.tenantId)).pendingApproval,
       };
     });
   });
@@ -534,6 +565,10 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     return run(ctx, async (tx) => {
       const c = await loadCase(tx, id);
       await requireOfficer(tx, c);
+      const pendingRule = (await requirementsOf(tx, c.tenantId)).pendingApproval;
+      if (pendingRule && !(await tx.query<{ ok: boolean }>('SELECT app_is_compliance_role() AS ok')).rows[0]?.ok) {
+        throw forbidden('While pending compliance approval applies, only a Compliance Manager records the decision');
+      }
       if (c.stage !== 'checks_complete') throw conflict('The decision waits until both checks are complete');
       // The screening questions are part of the file: no decision until they are recorded.
       const requirements = await requirementsOf(tx, c.tenantId);
@@ -544,6 +579,15 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
       if (requirements.screeningBeforeDecision) {
         const screened = (await tx.query<{ ok: boolean }>('SELECT EXISTS (SELECT 1 FROM onboarding_screenings WHERE case_id = $1) AS ok', [id])).rows[0]?.ok === true;
         if (!screened) throw conflict('Record the screening questions before the decision');
+      }
+      // A red flag, judgment, insolvency or adverse background report can be decided as good standing only with the President and CEO's approval.
+      if (requirements.presidentExceptions && outcome === 'good_standing') {
+        const o = await outcomesOf(tx, id);
+        const flagged = o.insolvencyOrJudgment === true || o.redFlag === true || o.backgroundAdverse === true;
+        if (flagged) {
+          const approved = (await tx.query<{ ok: boolean }>('SELECT EXISTS (SELECT 1 FROM onboarding_exceptions WHERE case_id = $1) AS ok', [id])).rows[0]?.ok === true;
+          if (!approved) throw conflict('This file has a red flag. The President and CEO must approve the exception before it can be decided as good standing');
+        }
       }
       const suggested = suggestedStanding(await outcomesOf(tx, id));
       if (suggested === 'pending') throw conflict('A check result is still missing');

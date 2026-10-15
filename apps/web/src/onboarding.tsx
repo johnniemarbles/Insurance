@@ -44,6 +44,7 @@ const T = {
     outcome: 'Decision', reason: 'Reason (kept in the file, never shown to the partner)', decide: 'Record decision',
     screen: { head: 'Screening questions', hint: 'Answer yes or no for each question. Any yes sends the file to review, whatever the credit score. Only the compliance officer sees the answers.', insolv: 'Any undischarged bankruptcy, consumer proposal, creditor arrangement or unsatisfied judgment?', debt: 'Any current debt to an insurer, agency or financial institution?', licence: 'Any licence refusal, suspension or conditions?', term: 'Any termination for cause or market-conduct allegations?', sponsor: 'Any sponsorship change in the last 5 years?', complaints: 'Any complaints or disciplinary history (CISRO or APEXA)?', record: 'Record screening', recorded: 'Recorded', none: 'Not recorded yet.', firstHead: 'Record the screening questions first. The decision waits for them.', yes: 'Yes', no: 'No', redFlag: 'Red flag', insolvency: 'Insolvency or judgment' },
     reqs: { head: 'Onboarding requirements', hint: 'Compliance Managers can switch each requirement on or off for the company. Every change needs a reason and is kept on record.', only: 'Only a Compliance Manager can change these.', on: 'On', off: 'Off', change: 'Change', reason: 'Reason (kept with the change)', save: 'Save change', cancel: 'Cancel', history: 'Changes on record', none: 'No changes yet.', pending: 'Not yet enforced: stored now, enforced when its step is built.', items: { screeningBeforeDecision: 'Screening questions before a decision', ownershipRequired: 'Ownership tiers for a corporate broker', pendingApproval: 'Pending Compliance Approval before a broker is decided', presidentExceptions: 'President and CEO approval for red-flag exceptions' } as Record<string, string>, shortReason: 'Give a reason of at least 10 characters.' },
+    exc: { head: 'President and CEO exception', why: 'This file has a red flag, a judgment, an insolvency or an adverse background report. It can be decided as good standing only with the President and CEO’s approval.', reason: 'Reason for the exception (kept on the file)', approve: 'Approve exception', waiting: 'Waiting for the President and CEO’s approval.', none: 'No exception approved yet.', approved: 'Approved by', pendingChip: 'Pending compliance approval', pendingNote: 'Only a Compliance Manager records the decision while this applies.' },
     own: { head: 'Broker type and ownership', type: 'Broker type', individual: 'Individual', corporate: 'Corporation', saveType: 'Save type', typeNone: 'Not recorded yet.', owners: 'Directors and owners', name: 'Name', director: 'Director', share: 'Share %', identified: 'Identified', pep: 'PEP and HIO checked', guarantee: 'Guarantee signed', remove: 'Remove', add: 'Add person', none: 'No one added yet.', complete: 'The ownership file is complete.', stepsHead: 'Steps taken (nobody holds 25% or more)', stepsHint: 'Describe how the holders were established. At least 10 characters.', stepsSave: 'Save steps', ownerRequired: 'Needed before the decision while the requirement is on.', missing: { type_missing: 'Record the broker type', directors_missing: 'Add at least one director', identity_missing: 'Identify each director and each holder of 25% or more', guarantee_missing: 'Signed guarantee for each holder of 10% or more', pep_hio_missing: 'PEP and HIO checked for each person', steps_missing: 'Record the steps taken' } as Record<string, string>, locked: 'Only the Compliance Manager can change the ownership file.' },
     agTitle: 'Agreement title', agVersion: 'Version', agText: 'Agreement text (as issued by counsel)', agSend: 'Send agency agreement to the partner',
     agResend: 'Send the agreement again', agWaiting: 'Waiting for the partner to sign. The link was emailed to the partner’s people.', agSentOk: 'Agreement sent.', agHint: 'The partner signs through a private link with a code sent to their email.',
@@ -84,6 +85,7 @@ const T = {
     outcome: 'Décision', reason: 'Motif (conservé au dossier, jamais montré au partenaire)', decide: 'Enregistrer la décision',
     screen: { head: 'Questions de filtrage', hint: 'Répondez oui ou non à chaque question. Un oui envoie le dossier en examen, quel que soit le pointage de crédit. Seul l’agent de conformité voit les réponses.', insolv: 'Faillite non libérée, proposition de consommateur, entente avec les créanciers ou jugement non acquitté?', debt: 'Dette actuelle envers un assureur, un organisme ou une institution financière?', licence: 'Refus, suspension ou conditions de permis?', term: 'Résiliation pour motif ou allégations de conduite sur le marché?', sponsor: 'Changement de parrainage au cours des 5 dernières années?', complaints: 'Plaintes ou antécédents disciplinaires (CISRO ou APEXA)?', record: 'Enregistrer le filtrage', recorded: 'Enregistré', none: 'Pas encore enregistré.', firstHead: 'Enregistrez d’abord les questions de filtrage. La décision attend ces réponses.', yes: 'Oui', no: 'Non', redFlag: 'Signal d’alerte', insolvency: 'Insolvabilité ou jugement' },
     reqs: { head: 'Exigences d’intégration', hint: 'Les gestionnaires de conformité peuvent activer ou désactiver chaque exigence pour l’entreprise. Chaque changement exige un motif et est conservé au dossier.', only: 'Seul un gestionnaire de conformité peut modifier ces exigences.', on: 'Activé', off: 'Désactivé', change: 'Modifier', reason: 'Motif (conservé avec le changement)', save: 'Enregistrer le changement', cancel: 'Annuler', history: 'Changements consignés', none: 'Aucun changement pour l’instant.', pending: 'Pas encore appliquée : enregistrée maintenant, appliquée quand son étape sera construite.', items: { screeningBeforeDecision: 'Questions de filtrage avant une décision', ownershipRequired: 'Paliers de propriété pour un courtier constitué en société', pendingApproval: 'Approbation de conformité en attente avant la décision sur un courtier', presidentExceptions: 'Approbation du président et chef de la direction pour les exceptions à signal d’alerte' } as Record<string, string>, shortReason: 'Donnez un motif d’au moins 10 caractères.' },
+    exc: { head: 'Exception du président et chef de la direction', why: 'Ce dossier comporte un signal d’alerte, un jugement, une insolvabilité ou un rapport défavorable. Il ne peut être décidé comme bonne réputation qu’avec l’approbation du président et chef de la direction.', reason: 'Motif de l’exception (conservé au dossier)', approve: 'Approuver l’exception', waiting: 'En attente de l’approbation du président et chef de la direction.', none: 'Aucune exception approuvée pour l’instant.', approved: 'Approuvée par', pendingChip: 'Approbation de conformité en attente', pendingNote: 'Seul un gestionnaire de conformité enregistre la décision tant que ceci s’applique.' },
     own: { head: 'Type de courtier et propriété', type: 'Type de courtier', individual: 'Particulier', corporate: 'Société', saveType: 'Enregistrer le type', typeNone: 'Pas encore enregistré.', owners: 'Administrateurs et propriétaires', name: 'Nom', director: 'Administrateur', share: 'Part %', identified: 'Identifié', pep: 'PPE et OIR vérifiés', guarantee: 'Garantie signée', remove: 'Retirer', add: 'Ajouter une personne', none: 'Personne ajoutée pour l’instant.', complete: 'Le dossier de propriété est complet.', stepsHead: 'Démarches effectuées (personne ne détient 25 % ou plus)', stepsHint: 'Décrivez comment les détenteurs ont été établis. Au moins 10 caractères.', stepsSave: 'Enregistrer les démarches', ownerRequired: 'Requis avant la décision tant que l’exigence est active.', missing: { type_missing: 'Indiquer le type de courtier', directors_missing: 'Ajouter au moins un administrateur', identity_missing: 'Identifier chaque administrateur et chaque détenteur de 25 % ou plus', guarantee_missing: 'Garantie signée pour chaque détenteur de 10 % ou plus', pep_hio_missing: 'PPE et OIR vérifiés pour chaque personne', steps_missing: 'Consigner les démarches effectuées' } as Record<string, string>, locked: 'Seul le gestionnaire de conformité peut modifier le dossier de propriété.' },
     agTitle: 'Titre de l’entente', agVersion: 'Version', agText: 'Texte de l’entente (tel que publié par les conseillers juridiques)', agSend: 'Envoyer l’entente d’agence au partenaire',
     agResend: 'Renvoyer l’entente', agWaiting: 'En attente de la signature du partenaire. Le lien a été envoyé par courriel aux personnes du partenaire.', agSentOk: 'Entente envoyée.', agHint: 'Le partenaire signe par un lien privé avec un code envoyé à son courriel.',
@@ -103,6 +105,9 @@ interface Detail extends CaseRow {
   decisions: { suggested: string; outcome: string; reason: string; decidedAt: string }[];
   carrierPackets: { id: string; carrier: string; templateVersion: string; status: string; createdAt: string }[];
   screening?: { insolvencyOrJudgment: boolean; redFlag: boolean; recordedAt: string } | null;
+  exceptions?: { reason: string; approverName: string; approvedAt: string }[];
+  canApproveException?: boolean;
+  awaitingApproval?: boolean;
   ownership?: { type: 'individual' | 'corporate' | null; owners: { id: string; fullName: string; isDirector: boolean; sharePercent: number; identified: boolean; pepHioDetermined: boolean; guaranteeSigned: boolean }[]; steps: string | null; problems: string[] };
 }
 
@@ -225,7 +230,7 @@ export function RequirementsPanel({ call, t, locale: _locale, onChange }: { call
 }
 const REQ_KEYS = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'] as const;
 /** Requirements the server enforces today. The rest are stored and will be enforced when their step is built. */
-const REQ_ENFORCED: string[] = ['screeningBeforeDecision', 'ownershipRequired'];
+const REQ_ENFORCED: string[] = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'];
 
 /** The Compliance officer's onboarding board: totals, invitations, a progress table for every partner, and the file for one partner. */
 export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale: Locale; tabs?: ComponentChildren }) {
@@ -487,6 +492,30 @@ function OwnershipCard({ call, t, id, own, run }: { call: Call; t: Dict; id: str
   );
 }
 
+/** A red flag can be decided as good standing only with the President and CEO's approval, recorded here. */
+function ExceptionCard({ call, t, id, d, run }: { call: Call; t: Dict; id: string; d: Detail; run: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const [reason, setReason] = useState('');
+  const flagged = d.screening?.insolvencyOrJudgment === true || d.screening?.redFlag === true
+    || d.checks.some((c) => c.kind === 'background' && c.status === 'complete' && c.adverse === true);
+  if (!flagged) return null;
+  const approved = d.exceptions ?? [];
+  return (
+    <section class="obcard wide">
+      <h3>{t.exc.head}</h3>
+      <p class="muted">{t.exc.why}</p>
+      {approved.length === 0 ? <p class="muted">{t.exc.none}</p> : (
+        <ul class="oblist">{approved.map((x) => <li>{t.exc.approved} {x.approverName} · {dateOf(x.approvedAt)}<span class="muted">{x.reason}</span></li>)}</ul>
+      )}
+      {approved.length === 0 && (d.canApproveException ? (
+        <form class="obform" onSubmit={(e) => { e.preventDefault(); if (reason.trim().length >= 10) void run(() => call('POST', `/v1/onboarding/cases/${id}/exception-approval`, { reason: reason.trim() })); }}>
+          <label class="fl obspan2">{t.exc.reason}<textarea rows={2} value={reason} onInput={(e) => setReason((e.target as HTMLTextAreaElement).value)} /></label>
+          <button class="btn" type="submit" disabled={reason.trim().length < 10}>{t.exc.approve}</button>
+        </form>
+      ) : <p class="muted">{t.exc.waiting}</p>)}
+    </section>
+  );
+}
+
 function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale: Locale; id: string; onBack: () => void }) {
   const [d, setD] = useState<Detail | null>(null);
   const [error, setError] = useState('');
@@ -554,6 +583,7 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
         sub={`${countryName(d.country)} · ${STAGE_LABEL[d.stage][lc]}`}
         right={<>
           <span class={`chip ${d.outcome === 'good_standing' ? 'ok' : d.outcome ? 'warn' : ''}`}>{d.outcome ? t.outcomeL[d.outcome] : t.standingPending}</span>
+          {d.awaitingApproval && <span class="chip warn" title={t.exc.pendingNote}>{t.exc.pendingChip}</span>}
           {d.recheck && <span class={`chip ${dueState === 'overdue' ? 'warn' : ''}`}>{t.recheck}: {dateOf(d.recheck.dueOn)}{dueState === 'overdue' ? ` · ${t.overdue}` : dueState === 'due_soon' ? ` · ${t.soon}` : ''}</span>}
         </>}
       />
@@ -632,6 +662,7 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
           )}
         </section>
 
+        <ExceptionCard call={call} t={t} id={id} d={d} run={run} />
         {d.ownership && <OwnershipCard call={call} t={t} id={id} own={d.ownership} run={run} />}
         <section class="obcard wide">
           <h3>{t.screen.head}</h3>
