@@ -353,6 +353,9 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
       const c = await loadCase(tx, id);
       await requireOfficer(tx, c);
       if (c.stage !== 'checks_complete') throw conflict('The decision waits until both checks are complete');
+      // The screening questions are part of the file: no decision until they are recorded.
+      const screened = (await tx.query<{ ok: boolean }>('SELECT EXISTS (SELECT 1 FROM onboarding_screenings WHERE case_id = $1) AS ok', [id])).rows[0]?.ok === true;
+      if (!screened) throw conflict('Record the screening questions before the decision');
       const suggested = suggestedStanding(await outcomesOf(tx, id));
       if (suggested === 'pending') throw conflict('A check result is still missing');
       await tx.query(

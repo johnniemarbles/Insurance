@@ -50,6 +50,13 @@ before(async () => {
 });
 after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });
 
+test('the decision waits for the screening questions: it is refused until they are recorded', async () => {
+  const early = await call(OFF, 'POST', `/v1/onboarding/cases/${CASE}/decision`, { outcome: 'good_standing', reason: 'Clean file' });
+  assert.equal(early.status, 409, early.raw);
+  assert.match(early.json.error.message, /screening/i);
+  assert.equal((await call(OFF, 'GET', `/v1/onboarding/cases/${CASE}`)).json.stage, 'checks_complete');
+});
+
 test('the officer records the screening answers; a bankruptcy, judgment or red-flag yes is needed to change the suggestion', async () => {
   const rec = await call(OFF, 'POST', `/v1/onboarding/cases/${CASE}/screening`, CLEAN);
   assert.equal(rec.status, 201, rec.raw);
