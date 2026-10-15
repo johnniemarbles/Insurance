@@ -391,7 +391,8 @@ function AddPerson({ x, locale, places, members, isTenantAdmin, compose, call, e
             </button>
           ))}
         </div>
-        {nodeId && choice?.node.type !== 'tenant' && (newPartner === null
+        {/* A broker under a branch is added with Add broker (it starts the file). Only a sub-broker is created here. */}
+        {nodeId && choice?.node.type === 'partner' && (newPartner === null
           ? <button class="link" onClick={() => setNewPartner('')}>＋ {x.notListed} ({choice?.node.name})</button>
           : <div class="erow"><input placeholder={x.partnerName} value={newPartner} onInput={(e) => setNewPartner((e.target as HTMLInputElement).value)} aria-label={x.partnerName} /><button class="btn" disabled={!newPartner.trim()} onClick={() => void createPartner()}>{x.create}</button><button class="link" onClick={() => setNewPartner(null)}>{x.cancel}</button></div>)}
       </div>
