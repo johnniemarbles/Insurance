@@ -127,3 +127,41 @@ export const REQUIREMENT_COLUMN: Record<RequirementKey, string> = {
 export const REQUIREMENT_DEFAULTS: Record<RequirementKey, boolean> = {
   screeningBeforeDecision: true, ownershipRequired: true, pendingApproval: true, presidentExceptions: true,
 };
+
+/** Broker type, set by the Compliance officer before the decision. */
+export const BROKER_TYPES = ['individual', 'corporate'] as const;
+export type BrokerType = (typeof BROKER_TYPES)[number];
+
+export interface OwnerRecord {
+  isDirector: boolean;
+  /** Share of the corporate broker, 0 to 100. */
+  sharePercent: number;
+  /** Identity verified. Required for directors and holders of 25% or more. */
+  identified: boolean;
+  /** PEP and HIO determination recorded for this person. */
+  pepHioDetermined: boolean;
+  /** Personal guarantee signed. Required for holders of 10% or more. */
+  guaranteeSigned: boolean;
+}
+
+export const OWNERSHIP_GUARANTEE_MIN = 10;
+export const OWNERSHIP_IDENTITY_MIN = 25;
+export const OWNERSHIP_PROBLEMS = ['type_missing', 'directors_missing', 'identity_missing', 'guarantee_missing', 'pep_hio_missing', 'steps_missing'] as const;
+export type OwnershipProblem = (typeof OWNERSHIP_PROBLEMS)[number];
+
+/**
+ * What is still missing from a broker's ownership file (onboarding plan, section 7). An individual broker needs no tiers.
+ * A corporate broker needs a director, identity for directors and holders of 25% or more, a guarantee from holders of 10% or
+ * more, a PEP and HIO determination for everyone, and the recorded steps when nobody holds 25% or more.
+ */
+export function ownershipProblems(type: BrokerType | null, owners: OwnerRecord[], stepsRecorded: boolean): OwnershipProblem[] {
+  if (type === null) return ['type_missing'];
+  if (type === 'individual') return [];
+  const out = new Set<OwnershipProblem>();
+  if (!owners.some((o) => o.isDirector)) out.add('directors_missing');
+  if (owners.some((o) => (o.isDirector || o.sharePercent >= OWNERSHIP_IDENTITY_MIN) && !o.identified)) out.add('identity_missing');
+  if (owners.some((o) => o.sharePercent >= OWNERSHIP_GUARANTEE_MIN && !o.guaranteeSigned)) out.add('guarantee_missing');
+  if (owners.some((o) => !o.pepHioDetermined)) out.add('pep_hio_missing');
+  if (!owners.some((o) => o.sharePercent >= OWNERSHIP_IDENTITY_MIN) && !stepsRecorded) out.add('steps_missing');
+  return [...out];
+}

@@ -44,6 +44,9 @@ const T = {
     outcome: 'Decision', reason: 'Reason (kept in the file, never shown to the partner)', decide: 'Record decision',
     screen: { head: 'Screening questions', hint: 'Answer yes or no for each question. Any yes sends the file to review, whatever the credit score. Only the compliance officer sees the answers.', insolv: 'Any undischarged bankruptcy, consumer proposal, creditor arrangement or unsatisfied judgment?', debt: 'Any current debt to an insurer, agency or financial institution?', licence: 'Any licence refusal, suspension or conditions?', term: 'Any termination for cause or market-conduct allegations?', sponsor: 'Any sponsorship change in the last 5 years?', complaints: 'Any complaints or disciplinary history (CISRO or APEXA)?', record: 'Record screening', recorded: 'Recorded', none: 'Not recorded yet.', firstHead: 'Record the screening questions first. The decision waits for them.', yes: 'Yes', no: 'No', redFlag: 'Red flag', insolvency: 'Insolvency or judgment' },
     reqs: { head: 'Onboarding requirements', hint: 'Compliance Managers can switch each requirement on or off for the company. Every change needs a reason and is kept on record.', only: 'Only a Compliance Manager can change these.', on: 'On', off: 'Off', change: 'Change', reason: 'Reason (kept with the change)', save: 'Save change', cancel: 'Cancel', history: 'Changes on record', none: 'No changes yet.', pending: 'Not yet enforced: stored now, enforced when its step is built.', items: { screeningBeforeDecision: 'Screening questions before a decision', ownershipRequired: 'Ownership tiers for a corporate broker', pendingApproval: 'Pending Compliance Approval before a broker is decided', presidentExceptions: 'President and CEO approval for red-flag exceptions' } as Record<string, string>, shortReason: 'Give a reason of at least 10 characters.' },
+    wiz: { head: 'Add a broker', step: (n: number, of: number) => `Step ${n} of ${of}`, who: 'Who is the broker?', existing: 'An existing broker', fresh: 'A new broker', search: 'Search brokers', pick: 'Choose a broker', newName: 'Broker name', branch: 'Branch', noBranch: 'No branches yet. Ask a company administrator to add one.', typeHead: 'Type and country', type: 'Broker type', typeHint: 'Individual or corporation. A corporation needs its directors and owners identified before the decision.', country: 'Country', adminHead: 'Administrator and send', adminEmail: 'Email of the partner’s administrator', summary: 'Check before sending', summaryWho: 'Broker', summaryType: 'Type', summaryCountry: 'Country', summaryAdmin: 'Administrator', next: 'Next', back: 'Back', send: 'Send invitation', cancel: 'Cancel', newNeedsAdmin: 'Only a company administrator can add a new broker. Choose an existing broker instead.', needName: 'Enter the broker’s name.', needBranch: 'Choose the branch first.' },
+    exc: { head: 'President and CEO exception', why: 'This file has a red flag, a judgment, an insolvency or an adverse background report. It can be decided as good standing only with the President and CEO’s approval.', reason: 'Reason for the exception (kept on the file)', approve: 'Approve exception', waiting: 'Waiting for the President and CEO’s approval.', none: 'No exception approved yet.', approved: 'Approved by', pendingChip: 'Pending compliance approval', pendingNote: 'Only a Compliance Manager records the decision while this applies.' },
+    own: { head: 'Broker type and ownership', type: 'Broker type', individual: 'Individual', corporate: 'Corporation', saveType: 'Save type', typeNone: 'Not recorded yet.', owners: 'Directors and owners', name: 'Name', director: 'Director', share: 'Share %', identified: 'Identified', pep: 'PEP and HIO checked', guarantee: 'Guarantee signed', remove: 'Remove', add: 'Add person', none: 'No one added yet.', complete: 'The ownership file is complete.', stepsHead: 'Steps taken (nobody holds 25% or more)', stepsHint: 'Describe how the holders were established. At least 10 characters.', stepsSave: 'Save steps', ownerRequired: 'Needed before the decision while the requirement is on.', missing: { type_missing: 'Record the broker type', directors_missing: 'Add at least one director', identity_missing: 'Identify each director and each holder of 25% or more', guarantee_missing: 'Signed guarantee for each holder of 10% or more', pep_hio_missing: 'PEP and HIO checked for each person', steps_missing: 'Record the steps taken' } as Record<string, string>, locked: 'Only the Compliance Manager can change the ownership file.' },
     agTitle: 'Agreement title', agVersion: 'Version', agText: 'Agreement text (as issued by counsel)', agSend: 'Send agency agreement to the partner',
     agResend: 'Send the agreement again', agWaiting: 'Waiting for the partner to sign. The link was emailed to the partner’s people.', agSentOk: 'Agreement sent.', agHint: 'The partner signs through a private link with a code sent to their email.',
     agSignedOn: 'Signed', agPdf: 'Sealed PDF', activate: 'Activate partner',
@@ -83,6 +86,9 @@ const T = {
     outcome: 'Décision', reason: 'Motif (conservé au dossier, jamais montré au partenaire)', decide: 'Enregistrer la décision',
     screen: { head: 'Questions de filtrage', hint: 'Répondez oui ou non à chaque question. Un oui envoie le dossier en examen, quel que soit le pointage de crédit. Seul l’agent de conformité voit les réponses.', insolv: 'Faillite non libérée, proposition de consommateur, entente avec les créanciers ou jugement non acquitté?', debt: 'Dette actuelle envers un assureur, un organisme ou une institution financière?', licence: 'Refus, suspension ou conditions de permis?', term: 'Résiliation pour motif ou allégations de conduite sur le marché?', sponsor: 'Changement de parrainage au cours des 5 dernières années?', complaints: 'Plaintes ou antécédents disciplinaires (CISRO ou APEXA)?', record: 'Enregistrer le filtrage', recorded: 'Enregistré', none: 'Pas encore enregistré.', firstHead: 'Enregistrez d’abord les questions de filtrage. La décision attend ces réponses.', yes: 'Oui', no: 'Non', redFlag: 'Signal d’alerte', insolvency: 'Insolvabilité ou jugement' },
     reqs: { head: 'Exigences d’intégration', hint: 'Les gestionnaires de conformité peuvent activer ou désactiver chaque exigence pour l’entreprise. Chaque changement exige un motif et est conservé au dossier.', only: 'Seul un gestionnaire de conformité peut modifier ces exigences.', on: 'Activé', off: 'Désactivé', change: 'Modifier', reason: 'Motif (conservé avec le changement)', save: 'Enregistrer le changement', cancel: 'Annuler', history: 'Changements consignés', none: 'Aucun changement pour l’instant.', pending: 'Pas encore appliquée : enregistrée maintenant, appliquée quand son étape sera construite.', items: { screeningBeforeDecision: 'Questions de filtrage avant une décision', ownershipRequired: 'Paliers de propriété pour un courtier constitué en société', pendingApproval: 'Approbation de conformité en attente avant la décision sur un courtier', presidentExceptions: 'Approbation du président et chef de la direction pour les exceptions à signal d’alerte' } as Record<string, string>, shortReason: 'Donnez un motif d’au moins 10 caractères.' },
+    wiz: { head: 'Ajouter un courtier', step: (n: number, of: number) => `Étape ${n} de ${of}`, who: 'Qui est le courtier?', existing: 'Un courtier existant', fresh: 'Un nouveau courtier', search: 'Rechercher un courtier', pick: 'Choisir un courtier', newName: 'Nom du courtier', branch: 'Succursale', noBranch: 'Aucune succursale pour l’instant. Demandez à un administrateur de l’entreprise d’en ajouter une.', typeHead: 'Type et pays', type: 'Type de courtier', typeHint: 'Particulier ou société. Une société doit avoir ses administrateurs et propriétaires identifiés avant la décision.', country: 'Pays', adminHead: 'Administrateur et envoi', adminEmail: 'Courriel de l’administrateur du partenaire', summary: 'Vérifier avant l’envoi', summaryWho: 'Courtier', summaryType: 'Type', summaryCountry: 'Pays', summaryAdmin: 'Administrateur', next: 'Suivant', back: 'Retour', send: 'Envoyer l’invitation', cancel: 'Annuler', newNeedsAdmin: 'Seul un administrateur de l’entreprise peut ajouter un nouveau courtier. Choisissez un courtier existant.', needName: 'Saisissez le nom du courtier.', needBranch: 'Choisissez d’abord la succursale.' },
+    exc: { head: 'Exception du président et chef de la direction', why: 'Ce dossier comporte un signal d’alerte, un jugement, une insolvabilité ou un rapport défavorable. Il ne peut être décidé comme bonne réputation qu’avec l’approbation du président et chef de la direction.', reason: 'Motif de l’exception (conservé au dossier)', approve: 'Approuver l’exception', waiting: 'En attente de l’approbation du président et chef de la direction.', none: 'Aucune exception approuvée pour l’instant.', approved: 'Approuvée par', pendingChip: 'Approbation de conformité en attente', pendingNote: 'Seul un gestionnaire de conformité enregistre la décision tant que ceci s’applique.' },
+    own: { head: 'Type de courtier et propriété', type: 'Type de courtier', individual: 'Particulier', corporate: 'Société', saveType: 'Enregistrer le type', typeNone: 'Pas encore enregistré.', owners: 'Administrateurs et propriétaires', name: 'Nom', director: 'Administrateur', share: 'Part %', identified: 'Identifié', pep: 'PPE et OIR vérifiés', guarantee: 'Garantie signée', remove: 'Retirer', add: 'Ajouter une personne', none: 'Personne ajoutée pour l’instant.', complete: 'Le dossier de propriété est complet.', stepsHead: 'Démarches effectuées (personne ne détient 25 % ou plus)', stepsHint: 'Décrivez comment les détenteurs ont été établis. Au moins 10 caractères.', stepsSave: 'Enregistrer les démarches', ownerRequired: 'Requis avant la décision tant que l’exigence est active.', missing: { type_missing: 'Indiquer le type de courtier', directors_missing: 'Ajouter au moins un administrateur', identity_missing: 'Identifier chaque administrateur et chaque détenteur de 25 % ou plus', guarantee_missing: 'Garantie signée pour chaque détenteur de 10 % ou plus', pep_hio_missing: 'PPE et OIR vérifiés pour chaque personne', steps_missing: 'Consigner les démarches effectuées' } as Record<string, string>, locked: 'Seul le gestionnaire de conformité peut modifier le dossier de propriété.' },
     agTitle: 'Titre de l’entente', agVersion: 'Version', agText: 'Texte de l’entente (tel que publié par les conseillers juridiques)', agSend: 'Envoyer l’entente d’agence au partenaire',
     agResend: 'Renvoyer l’entente', agWaiting: 'En attente de la signature du partenaire. Le lien a été envoyé par courriel aux personnes du partenaire.', agSentOk: 'Entente envoyée.', agHint: 'Le partenaire signe par un lien privé avec un code envoyé à son courriel.',
     agSignedOn: 'Signée', agPdf: 'PDF scellé', activate: 'Activer le partenaire',
@@ -101,6 +107,10 @@ interface Detail extends CaseRow {
   decisions: { suggested: string; outcome: string; reason: string; decidedAt: string }[];
   carrierPackets: { id: string; carrier: string; templateVersion: string; status: string; createdAt: string }[];
   screening?: { insolvencyOrJudgment: boolean; redFlag: boolean; recordedAt: string } | null;
+  exceptions?: { reason: string; approverName: string; approvedAt: string }[];
+  canApproveException?: boolean;
+  awaitingApproval?: boolean;
+  ownership?: { type: 'individual' | 'corporate' | null; owners: { id: string; fullName: string; isDirector: boolean; sharePercent: number; identified: boolean; pepHioDetermined: boolean; guaranteeSigned: boolean }[]; steps: string | null; problems: string[] };
 }
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -152,6 +162,134 @@ export function ManagerProgressBoard({ call, locale }: { call: Call; locale: Loc
         </div>
       ))}
     </section>
+  );
+}
+
+/** Add a broker in three steps: who, the type and country, then the administrator's email and a check before the invitation goes out. */
+function AddBrokerWizard({ call, t, partners, onSent, onCancel }: { call: Call; t: Dict; partners: { id: string; name: string }[]; onSent: (notice: string) => void; onCancel: () => void }) {
+  const [step, setStep] = useState(1);
+  const [mode, setMode] = useState<'existing' | 'fresh'>('existing');
+  const [query, setQuery] = useState('');
+  const [newName, setNewName] = useState('');
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+  const [branchId, setBranchId] = useState('');
+  const [partnerId, setPartnerId] = useState('');
+  const [type, setType] = useState<'individual' | 'corporate'>('corporate');
+  const [country, setCountry] = useState<'CA' | 'US'>('CA');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void (async () => {
+      try { const r = await call('GET', '/v1/org/nodes'); setBranches((r.nodes ?? []).filter((n: { type: string; isActive?: boolean }) => n.type === 'location' && n.isActive !== false)); } catch { setBranches([]); }
+    })();
+  }, []);
+  const shown = partners.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail.trim());
+  const partnerName = mode === 'existing' ? (partners.find((p) => p.id === partnerId)?.name ?? '') : newName.trim();
+  const next = () => {
+    setError('');
+    if (step === 1) {
+      if (mode === 'existing' && !partnerId) return setError(t.wiz.pick);
+      if (mode === 'fresh' && newName.trim().length < 2) return setError(t.wiz.needName);
+      if (mode === 'fresh' && !branchId) return setError(t.wiz.needBranch);
+    }
+    setStep(step + 1);
+  };
+  const send = async () => {
+    setBusy(true); setError('');
+    try {
+      let nodeId = partnerId;
+      if (mode === 'fresh') {
+        const made = await call('POST', '/v1/org/partners', { name: newName.trim(), parentId: branchId });
+        nodeId = made.id;
+      }
+      const r = await call('POST', '/v1/onboarding/cases', { nodeId, country, adminEmail: adminEmail.trim() });
+      await call('POST', `/v1/onboarding/cases/${r.id}/type`, { type });
+      const inv = r.invitation;
+      onSent(inv ? (inv.status === 'sent' ? t.invitedSent(inv.email) : t.invitedNotSent(inv.email, inv.error ?? 'the mail service did not accept it')) : t.invitedOk(Number(r.emailedTo ?? 0)));
+    } catch (e) {
+      const msg = errText(e);
+      setError(mode === 'fresh' && /forbidden|Not allowed|structure/i.test(msg) ? t.wiz.newNeedsAdmin : msg);
+    } finally { setBusy(false); }
+  };
+  return (
+    <div class="obinvite" role="group" aria-label={t.wiz.head}>
+      <b>{t.wiz.head}</b>
+      <p class="muted">{t.wiz.step(step, 3)}</p>
+      {error && <div class="err" role="alert">{error}</div>}
+      {step === 1 && (
+        <>
+          <h4>{t.wiz.who}</h4>
+          <div class="seg" role="tablist" aria-label={t.wiz.who}>
+            <button role="tab" aria-selected={mode === 'existing'} onClick={() => setMode('existing')}>{t.wiz.existing}</button>
+            <button role="tab" aria-selected={mode === 'fresh'} onClick={() => setMode('fresh')}>{t.wiz.fresh}</button>
+          </div>
+          {mode === 'existing' ? (
+            <>
+              <label class="fl">{t.wiz.search}<input value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} /></label>
+              <label class="fl">{t.wiz.pick}
+                <select value={partnerId} onChange={(e) => setPartnerId((e.target as HTMLSelectElement).value)}>
+                  <option value="">—</option>
+                  {shown.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </label>
+            </>
+          ) : (
+            <>
+              <label class="fl">{t.wiz.newName}<input value={newName} onInput={(e) => setNewName((e.target as HTMLInputElement).value)} /></label>
+              <label class="fl">{t.wiz.branch}
+                {branches.length === 0 ? <small class="muted">{t.wiz.noBranch}</small> : (
+                  <select value={branchId} onChange={(e) => setBranchId((e.target as HTMLSelectElement).value)}>
+                    <option value="">—</option>
+                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                )}
+              </label>
+            </>
+          )}
+        </>
+      )}
+      {step === 2 && (
+        <>
+          <h4>{t.wiz.typeHead}</h4>
+          <label class="fl">{t.wiz.type}
+            <select value={type} onChange={(e) => setType((e.target as HTMLSelectElement).value as 'individual' | 'corporate')}>
+              <option value="individual">{t.own.individual}</option><option value="corporate">{t.own.corporate}</option>
+            </select>
+          </label>
+          <p class="muted">{t.wiz.typeHint}</p>
+          <label class="fl">{t.wiz.country}
+            <select value={country} onChange={(e) => setCountry((e.target as HTMLSelectElement).value as 'CA' | 'US')}>
+              <option value="CA">Canada</option><option value="US">US</option>
+            </select>
+          </label>
+        </>
+      )}
+      {step === 3 && (
+        <>
+          <h4>{t.wiz.adminHead}</h4>
+          <label class="fl">{t.wiz.adminEmail}
+            <input type="email" value={adminEmail} onInput={(e) => setAdminEmail((e.target as HTMLInputElement).value)} placeholder="name@agency.ca" />
+            <small class="muted">{t.adminHint}</small>
+          </label>
+          <div class="obnext"><b>{t.wiz.summary}</b>
+            <ul class="oblist">
+              <li>{t.wiz.summaryWho}<span>{partnerName || '—'}</span></li>
+              <li>{t.wiz.summaryType}<span>{type === 'individual' ? t.own.individual : t.own.corporate}</span></li>
+              <li>{t.wiz.summaryCountry}<span>{country === 'CA' ? 'Canada' : 'US'}</span></li>
+              <li>{t.wiz.summaryAdmin}<span>{adminEmail.trim() || '—'}</span></li>
+            </ul>
+          </div>
+        </>
+      )}
+      <div class="row">
+        {step > 1 && <button class="btn quiet" onClick={() => setStep(step - 1)} disabled={busy}>{t.wiz.back}</button>}
+        {step < 3 && <button class="btn" onClick={next}>{t.wiz.next}</button>}
+        {step === 3 && <button class="btn" disabled={busy || !emailOk} onClick={() => void send()}>{t.wiz.send}</button>}
+        <button class="btn quiet" onClick={onCancel} disabled={busy}>{t.wiz.cancel}</button>
+      </div>
+    </div>
   );
 }
 
@@ -222,7 +360,7 @@ export function RequirementsPanel({ call, t, locale: _locale, onChange }: { call
 }
 const REQ_KEYS = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'] as const;
 /** Requirements the server enforces today. The rest are stored and will be enforced when their step is built. */
-const REQ_ENFORCED: string[] = ['screeningBeforeDecision'];
+const REQ_ENFORCED: string[] = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'];
 
 /** The Compliance officer's onboarding board: totals, invitations, a progress table for every partner, and the file for one partner. */
 export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale: Locale; tabs?: ComponentChildren }) {
@@ -234,9 +372,6 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [inviting, setInviting] = useState(false);
-  const [partnerId, setPartnerId] = useState('');
-  const [country, setCountry] = useState<'CA' | 'US'>('CA');
-  const [adminEmail, setAdminEmail] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
 
   const load = async () => {
@@ -253,18 +388,6 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
   };
   useEffect(() => { void load(); }, [call]);
 
-  const invite = async () => {
-    setError(''); setNotice('');
-    try {
-      const r = await call('POST', '/v1/onboarding/cases', { nodeId: partnerId, country, adminEmail: adminEmail.trim() });
-      setPartnerId(''); setAdminEmail(''); setInviting(false);
-      const inv = r.invitation;
-      setNotice(inv
-        ? (inv.status === 'sent' ? t.invitedSent(inv.email) : t.invitedNotSent(inv.email, inv.error ?? 'the mail service did not accept it'))
-        : t.invitedOk(Number(r.emailedTo ?? 0)));
-      await load();
-    } catch (e) { setError(errText(e)); }
-  };
 
   const tiles = useMemo(() => {
     const all = cases ?? [];
@@ -318,26 +441,9 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
         </div>
 
         {inviting && (
-          <div class="obinvite" role="group" aria-label={t.inviteHead}>
-            <b>{t.inviteHead}</b>
-            <label class="fl">{t.partner}
-              <select value={partnerId} onChange={(e) => setPartnerId((e.target as HTMLSelectElement).value)}>
-                <option value="">—</option>
-                {partners.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </label>
-            <label class="fl">{t.country}
-              <select value={country} onChange={(e) => setCountry((e.target as HTMLSelectElement).value as 'CA' | 'US')}>
-                <option value="CA">Canada</option><option value="US">US</option>
-              </select>
-            </label>
-            <label class="fl">{t.adminEmail}
-              <input type="email" value={adminEmail} onInput={(e) => setAdminEmail((e.target as HTMLInputElement).value)} placeholder="name@agency.ca" />
-              <small class="muted">{t.adminHint}</small>
-            </label>
-            <button class="btn" disabled={!partnerId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail.trim())} onClick={invite}>{t.inviteBtn}</button>
-            <button class="btn quiet" onClick={() => { setInviting(false); setPartnerId(''); setAdminEmail(''); }}>{t.cancel}</button>
-          </div>
+          <AddBrokerWizard call={call} t={t} partners={partners}
+            onSent={(n) => { setNotice(n); setInviting(false); void load(); }}
+            onCancel={() => setInviting(false)} />
         )}
 
         {cases === null && <div class="msg">…</div>}
@@ -411,6 +517,103 @@ function ResendInvite({ call, t, nodeId, country, defaultEmail, onSent }: { call
   );
 }
 
+/** Broker type and ownership: the type, each director and owner with their checks, and the steps when nobody holds 25% or more. Officer only. */
+function OwnershipCard({ call, t, id, own, run }: { call: Call; t: Dict; id: string; own: NonNullable<Detail['ownership']>; run: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const [type, setType] = useState<string>(own.type ?? 'corporate');
+  const [person, setPerson] = useState({ fullName: '', isDirector: false, sharePercent: '0' });
+  const [steps, setSteps] = useState(own.steps ?? '');
+  const flags = (o: NonNullable<Detail['ownership']>['owners'][number]) => ({
+    fullName: o.fullName, isDirector: o.isDirector, sharePercent: o.sharePercent, identified: o.identified, pepHioDetermined: o.pepHioDetermined, guaranteeSigned: o.guaranteeSigned,
+  });
+  const toggle = (o: NonNullable<Detail['ownership']>['owners'][number], k: 'identified' | 'pepHioDetermined' | 'guaranteeSigned') =>
+    run(() => call('PUT', `/v1/onboarding/cases/${id}/owners/${o.id}`, { ...flags(o), [k]: !o[k] }));
+  return (
+    <section class="obcard wide">
+      <h3>{t.own.head}</h3>
+      <p class="muted">{t.own.ownerRequired}</p>
+      <form class="obform" onSubmit={(e) => { e.preventDefault(); void run(() => call('POST', `/v1/onboarding/cases/${id}/type`, { type })); }}>
+        <label class="fl">{t.own.type}
+          <select value={type} onChange={(e) => setType((e.target as HTMLSelectElement).value)}>
+            <option value="individual">{t.own.individual}</option><option value="corporate">{t.own.corporate}</option>
+          </select>
+        </label>
+        <button class="btn" type="submit">{t.own.saveType}</button>
+      </form>
+      {own.type === null && <p class="muted">{t.own.typeNone}</p>}
+      {own.type === 'corporate' && (
+        <>
+          <h4>{t.own.owners}</h4>
+          {own.owners.length === 0 ? <p class="muted">{t.own.none}</p> : (
+            <div class="obtablewrap">
+              <table class="obtable">
+                <thead><tr><th>{t.own.name}</th><th>{t.own.director}</th><th>{t.own.share}</th><th>{t.own.identified}</th><th>{t.own.pep}</th><th>{t.own.guarantee}</th><th /></tr></thead>
+                <tbody>
+                  {own.owners.map((o) => (
+                    <tr>
+                      <td>{o.fullName}</td>
+                      <td>{o.isDirector ? '✓' : ''}</td>
+                      <td>{o.sharePercent}%</td>
+                      <td><button class="btn quiet" onClick={() => toggle(o, 'identified')}>{o.identified ? '✓' : '—'}</button></td>
+                      <td><button class="btn quiet" onClick={() => toggle(o, 'pepHioDetermined')}>{o.pepHioDetermined ? '✓' : '—'}</button></td>
+                      <td><button class="btn quiet" onClick={() => toggle(o, 'guaranteeSigned')}>{o.guaranteeSigned ? '✓' : '—'}</button></td>
+                      <td><button class="btn quiet" onClick={() => run(() => call('DELETE', `/v1/onboarding/cases/${id}/owners/${o.id}`))}>{t.own.remove}</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <form class="obform" onSubmit={(e) => { e.preventDefault(); if (person.fullName.trim()) void run(() => call('POST', `/v1/onboarding/cases/${id}/owners`, { fullName: person.fullName.trim(), isDirector: person.isDirector, sharePercent: Number(person.sharePercent), identified: false, pepHioDetermined: false, guaranteeSigned: false })).then(() => setPerson({ fullName: '', isDirector: false, sharePercent: '0' })); }}>
+            <label class="fl">{t.own.name}<input value={person.fullName} onInput={(e) => setPerson({ ...person, fullName: (e.target as HTMLInputElement).value })} /></label>
+            <label class="fl">{t.own.director}
+              <select value={person.isDirector ? 'yes' : 'no'} onChange={(e) => setPerson({ ...person, isDirector: (e.target as HTMLSelectElement).value === 'yes' })}>
+                <option value="no">{t.screen.no}</option><option value="yes">{t.screen.yes}</option>
+              </select>
+            </label>
+            <label class="fl">{t.own.share}<input type="number" min={0} max={100} value={person.sharePercent} onInput={(e) => setPerson({ ...person, sharePercent: (e.target as HTMLInputElement).value })} /></label>
+            <button class="btn" type="submit">{t.own.add}</button>
+          </form>
+          {own.problems.includes('steps_missing') && (
+            <form class="obform" onSubmit={(e) => { e.preventDefault(); void run(() => call('PUT', `/v1/onboarding/cases/${id}/ownership-steps`, { steps })); }}>
+              <label class="fl obspan2">{t.own.stepsHead}<textarea rows={2} value={steps} onInput={(e) => setSteps((e.target as HTMLTextAreaElement).value)} /></label>
+              <p class="muted obspan2">{t.own.stepsHint}</p>
+              <button class="btn" type="submit">{t.own.stepsSave}</button>
+            </form>
+          )}
+        </>
+      )}
+      {own.problems.length === 0 ? <p class="muted">{t.own.complete}</p> : (
+        <ul class="oblist">{own.problems.map((p) => <li>{t.own.missing[p] ?? p}</li>)}</ul>
+      )}
+      <p class="muted">{t.own.locked}</p>
+    </section>
+  );
+}
+
+/** A red flag can be decided as good standing only with the President and CEO's approval, recorded here. */
+function ExceptionCard({ call, t, id, d, run }: { call: Call; t: Dict; id: string; d: Detail; run: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const [reason, setReason] = useState('');
+  const flagged = d.screening?.insolvencyOrJudgment === true || d.screening?.redFlag === true
+    || d.checks.some((c) => c.kind === 'background' && c.status === 'complete' && c.adverse === true);
+  if (!flagged) return null;
+  const approved = d.exceptions ?? [];
+  return (
+    <section class="obcard wide">
+      <h3>{t.exc.head}</h3>
+      <p class="muted">{t.exc.why}</p>
+      {approved.length === 0 ? <p class="muted">{t.exc.none}</p> : (
+        <ul class="oblist">{approved.map((x) => <li>{t.exc.approved} {x.approverName} · {dateOf(x.approvedAt)}<span class="muted">{x.reason}</span></li>)}</ul>
+      )}
+      {approved.length === 0 && (d.canApproveException ? (
+        <form class="obform" onSubmit={(e) => { e.preventDefault(); if (reason.trim().length >= 10) void run(() => call('POST', `/v1/onboarding/cases/${id}/exception-approval`, { reason: reason.trim() })); }}>
+          <label class="fl obspan2">{t.exc.reason}<textarea rows={2} value={reason} onInput={(e) => setReason((e.target as HTMLTextAreaElement).value)} /></label>
+          <button class="btn" type="submit" disabled={reason.trim().length < 10}>{t.exc.approve}</button>
+        </form>
+      ) : <p class="muted">{t.exc.waiting}</p>)}
+    </section>
+  );
+}
+
 function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale: Locale; id: string; onBack: () => void }) {
   const [d, setD] = useState<Detail | null>(null);
   const [error, setError] = useState('');
@@ -478,6 +681,7 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
         sub={`${countryName(d.country)} · ${STAGE_LABEL[d.stage][lc]}`}
         right={<>
           <span class={`chip ${d.outcome === 'good_standing' ? 'ok' : d.outcome ? 'warn' : ''}`}>{d.outcome ? t.outcomeL[d.outcome] : t.standingPending}</span>
+          {d.awaitingApproval && <span class="chip warn" title={t.exc.pendingNote}>{t.exc.pendingChip}</span>}
           {d.recheck && <span class={`chip ${dueState === 'overdue' ? 'warn' : ''}`}>{t.recheck}: {dateOf(d.recheck.dueOn)}{dueState === 'overdue' ? ` · ${t.overdue}` : dueState === 'due_soon' ? ` · ${t.soon}` : ''}</span>}
         </>}
       />
@@ -556,6 +760,8 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
           )}
         </section>
 
+        <ExceptionCard call={call} t={t} id={id} d={d} run={run} />
+        {d.ownership && <OwnershipCard call={call} t={t} id={id} own={d.ownership} run={run} />}
         <section class="obcard wide">
           <h3>{t.screen.head}</h3>
           {d.screening ? (

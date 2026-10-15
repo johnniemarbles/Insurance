@@ -49,6 +49,7 @@ before(async () => {
   assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${CASE}/consents`, CONSENTS)).status, 201);
   assert.equal((await call(OFF, 'POST', `/v1/onboarding/cases/${CASE}/checks`, { kind: 'credit', provider: 'Equifax Canada', status: 'complete', score: 700 })).status, 201);
   assert.equal((await call(OFF, 'POST', `/v1/onboarding/cases/${CASE}/checks`, { kind: 'background', provider: 'Sterling Backcheck', status: 'complete', adverse: false })).status, 201);
+  assert.equal((await call(OFF, 'POST', `/v1/onboarding/cases/${CASE}/type`, { type: 'individual' })).status, 200);
 });
 after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });
 

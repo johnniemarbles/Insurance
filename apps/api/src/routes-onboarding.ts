@@ -7,6 +7,7 @@ import { withRequestTx, type Tx } from '@pii/db';
 import {
   CANADA_THRESHOLDS, STANDING_LABELS, STANDING_OUTCOMES, carrierPacketBlocks, keepsAccessWhile, standingWarning, nextCheckDue, recheckStatus, stageMoveBlock,
   progressSteps, suggestedStanding, REQUIREMENT_COLUMN, REQUIREMENT_DEFAULTS, REQUIREMENT_KEYS, type RequirementKey,
+  BROKER_TYPES, ownershipProblems, type BrokerType, type OwnershipProblem,
   type OnboardingStage, type RequestContext, type StandingOutcome,
 } from '@pii/domain';
 import { audit } from './audit.ts';
@@ -137,6 +138,34 @@ async function partnerView(tx: Tx, where: string, params: unknown[]) {
   };
 }
 
+/** The broker type, owners and recorded steps for a case, with what the ownership rule says is still missing. Officer view only. */
+async function ownershipOf(tx: Tx, caseId: string) {
+  const c = (await tx.query<{ brokerType: BrokerType | null; ownershipSteps: string | null }>(
+    `SELECT broker_type AS "brokerType", ownership_steps AS "ownershipSteps" FROM onboarding_cases WHERE id = $1`, [caseId])).rows[0];
+  const owners = (await tx.query(
+    `SELECT id, full_name AS "fullName", is_director AS "isDirector", share_percent::float8 AS "sharePercent", identified,
+            pep_hio_determined AS "pepHioDetermined", guarantee_signed AS "guaranteeSigned"
+       FROM onboarding_owners WHERE case_id = $1 ORDER BY share_percent DESC, created_at`, [caseId])).rows as Array<{
+    id: string; fullName: string; isDirector: boolean; sharePercent: number; identified: boolean; pepHioDetermined: boolean; guaranteeSigned: boolean;
+  }>;
+  const type = c?.brokerType ?? null;
+  const problems: OwnershipProblem[] = ownershipProblems(type, owners, Boolean(c?.ownershipSteps));
+  return { type, owners, steps: c?.ownershipSteps ?? null, problems };
+}
+
+/** Owner details from the request: a name, director status, share, and the checks recorded for that person. */
+function ownerInput(b: Record<string, unknown>) {
+  const share = b.sharePercent;
+  if (typeof share !== 'number' || !Number.isFinite(share) || share < 0 || share > 100) throw invalid('sharePercent must be a number from 0 to 100');
+  for (const k of ['isDirector', 'identified', 'pepHioDetermined', 'guaranteeSigned'] as const) {
+    if (typeof b[k] !== 'boolean') throw invalid(`${k} must be yes or no (true or false)`);
+  }
+  return {
+    fullName: str(b.fullName, 'fullName', 200), isDirector: b.isDirector as boolean, sharePercent: share,
+    identified: b.identified as boolean, pepHioDetermined: b.pepHioDetermined as boolean, guaranteeSigned: b.guaranteeSigned as boolean,
+  };
+}
+
 /** The company's onboarding requirements (defaults when none has been changed). */
 async function requirementsOf(tx: Tx, tenantId: string): Promise<Record<RequirementKey, boolean>> {
   const row = (await tx.query<Record<string, boolean>>(
@@ -149,6 +178,122 @@ async function requirementsOf(tx: Tx, tenantId: string): Promise<Record<Requirem
 
 export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
+
+  // ---- President and CEO exception (company administrator) ---------------------------------------------------------
+
+  /**
+   * The President and CEO approves a red-flag exception on this file, with a reason. Only the company administrator can do this.
+   * The approval is kept on the file and cannot be changed afterwards.
+   */
+  app.post('/v1/onboarding/cases/:id/exception-approval', async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const id = caseId((req.params as { id: string }).id);
+    const reason = str(body(req).reason, 'reason', 500);
+    if (reason.length < 10) throw invalid('Give a reason of at least 10 characters: the approval is kept with it');
+    const out = await run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      if (!(await tx.query<{ ok: boolean }>('SELECT app_is_tenant_admin() AS ok')).rows[0]?.ok) {
+        throw forbidden('Only the President and CEO (the company administrator) can approve an exception');
+      }
+      const name = (await tx.query<{ name: string }>('SELECT display_name AS name FROM app_users WHERE id = $1', [ctx.userId])).rows[0]?.name ?? 'President and CEO';
+      const row = (await tx.query<{ id: string }>(
+        `INSERT INTO onboarding_exceptions (tenant_id, case_id, node_id, reason, approved_by, approver_name) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [c.tenantId, id, c.nodeId, reason, ctx.userId, name])).rows[0]!;
+      await audit(tx, ctx, 'onboarding.exception_approved', 'onboarding_case', id, { exception: row.id });
+      return { id: row.id };
+    });
+    reply.code(201);
+    return out;
+  });
+
+  // ---- Broker type and ownership (Compliance officer) --------------------------------------------------------------
+
+  /** Record whether the broker is an individual or a corporation. Officer only, until the case is Active. */
+  app.post('/v1/onboarding/cases/:id/type', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const id = caseId((req.params as { id: string }).id);
+    const type = body(req).type;
+    if (!BROKER_TYPES.includes(type as never)) throw invalid('type must be individual or corporate');
+    return run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      await requireOfficer(tx, c);
+      if (c.stage === 'active') throw conflict('The broker is already Active');
+      await tx.query('UPDATE onboarding_cases SET broker_type = $2, updated_at = now() WHERE id = $1', [id, type]);
+      await audit(tx, ctx, 'onboarding.type_recorded', 'onboarding_case', id, { type });
+      return { type };
+    });
+  });
+
+  /** Add a director or owner to a corporate broker's file. Officer only. */
+  app.post('/v1/onboarding/cases/:id/owners', async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const id = caseId((req.params as { id: string }).id);
+    const o = ownerInput(body(req));
+    const out = await run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      await requireOfficer(tx, c);
+      const row = (await tx.query<{ id: string }>(
+        `INSERT INTO onboarding_owners (tenant_id, case_id, node_id, full_name, is_director, share_percent, identified, pep_hio_determined, guarantee_signed)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+        [c.tenantId, id, c.nodeId, o.fullName, o.isDirector, o.sharePercent, o.identified, o.pepHioDetermined, o.guaranteeSigned])).rows[0]!;
+      await audit(tx, ctx, 'onboarding.owner_added', 'onboarding_case', id, { owner: row.id });
+      return { id: row.id };
+    });
+    reply.code(201);
+    return out;
+  });
+
+  /** Change a director or owner's details or checks. Officer only. */
+  app.put('/v1/onboarding/cases/:id/owners/:ownerId', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id: rawId, ownerId } = req.params as { id: string; ownerId: string };
+    const id = caseId(rawId);
+    if (!UUID.test(ownerId)) throw notFound('Unknown owner');
+    const o = ownerInput(body(req));
+    return run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      await requireOfficer(tx, c);
+      const n = (await tx.query(
+        `UPDATE onboarding_owners SET full_name = $3, is_director = $4, share_percent = $5, identified = $6, pep_hio_determined = $7,
+                guarantee_signed = $8, updated_at = now() WHERE id = $1 AND case_id = $2`,
+        [ownerId, id, o.fullName, o.isDirector, o.sharePercent, o.identified, o.pepHioDetermined, o.guaranteeSigned])).rowCount;
+      if (!n) throw notFound('Unknown owner');
+      await audit(tx, ctx, 'onboarding.owner_changed', 'onboarding_case', id, { owner: ownerId });
+      return { ok: true };
+    });
+  });
+
+  /** Remove a director or owner from the file. Officer only. */
+  app.delete('/v1/onboarding/cases/:id/owners/:ownerId', async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const { id: rawId, ownerId } = req.params as { id: string; ownerId: string };
+    const id = caseId(rawId);
+    if (!UUID.test(ownerId)) throw notFound('Unknown owner');
+    await run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      await requireOfficer(tx, c);
+      const n = (await tx.query('DELETE FROM onboarding_owners WHERE id = $1 AND case_id = $2', [ownerId, id])).rowCount;
+      if (!n) throw notFound('Unknown owner');
+      await audit(tx, ctx, 'onboarding.owner_removed', 'onboarding_case', id, { owner: ownerId });
+    });
+    reply.code(204);
+    return null;
+  });
+
+  /** The steps taken to reach a conclusion when nobody holds 25% or more. At least 10 characters. Officer only. */
+  app.put('/v1/onboarding/cases/:id/ownership-steps', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const id = caseId((req.params as { id: string }).id);
+    const steps = str(body(req).steps, 'steps', 1000);
+    if (steps.length < 10) throw invalid('Describe the steps taken, at least 10 characters');
+    return run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      await requireOfficer(tx, c);
+      await tx.query('UPDATE onboarding_cases SET ownership_steps = $2, updated_at = now() WHERE id = $1', [id, steps]);
+      await audit(tx, ctx, 'onboarding.ownership_steps_recorded', 'onboarding_case', id, {});
+      return { ok: true };
+    });
+  });
 
   // ---- Onboarding requirements (Compliance Manager switches) -------------------------------------------------------
 
@@ -328,6 +473,11 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
           `SELECT insolvency_or_judgment AS "insolvencyOrJudgment", red_flag AS "redFlag", answers, created_at AS "recordedAt"
              FROM onboarding_screenings WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1`, [id])).rows[0] ?? null,
         consents, checks, decisions, carrierPackets: packets,
+        ownership: await ownershipOf(tx, id),
+        exceptions: (await tx.query(
+          `SELECT reason, approver_name AS "approverName", created_at AS "approvedAt" FROM onboarding_exceptions WHERE case_id = $1 ORDER BY created_at`, [id])).rows,
+        canApproveException: (await tx.query<{ ok: boolean }>('SELECT app_is_tenant_admin() AS ok')).rows[0]?.ok === true,
+        awaitingApproval: c.stage === 'checks_complete' && (await requirementsOf(tx, c.tenantId)).pendingApproval,
       };
     });
   });
@@ -415,11 +565,29 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     return run(ctx, async (tx) => {
       const c = await loadCase(tx, id);
       await requireOfficer(tx, c);
+      const pendingRule = (await requirementsOf(tx, c.tenantId)).pendingApproval;
+      if (pendingRule && !(await tx.query<{ ok: boolean }>('SELECT app_is_compliance_role() AS ok')).rows[0]?.ok) {
+        throw forbidden('While pending compliance approval applies, only a Compliance Manager records the decision');
+      }
       if (c.stage !== 'checks_complete') throw conflict('The decision waits until both checks are complete');
       // The screening questions are part of the file: no decision until they are recorded.
-      if ((await requirementsOf(tx, c.tenantId)).screeningBeforeDecision) {
+      const requirements = await requirementsOf(tx, c.tenantId);
+      if (requirements.ownershipRequired) {
+        const problems = (await ownershipOf(tx, id)).problems;
+        if (problems.length) throw conflict(`Complete the ownership file before the decision: ${problems.join(', ')}`);
+      }
+      if (requirements.screeningBeforeDecision) {
         const screened = (await tx.query<{ ok: boolean }>('SELECT EXISTS (SELECT 1 FROM onboarding_screenings WHERE case_id = $1) AS ok', [id])).rows[0]?.ok === true;
         if (!screened) throw conflict('Record the screening questions before the decision');
+      }
+      // A red flag, judgment, insolvency or adverse background report can be decided as good standing only with the President and CEO's approval.
+      if (requirements.presidentExceptions && outcome === 'good_standing') {
+        const o = await outcomesOf(tx, id);
+        const flagged = o.insolvencyOrJudgment === true || o.redFlag === true || o.backgroundAdverse === true;
+        if (flagged) {
+          const approved = (await tx.query<{ ok: boolean }>('SELECT EXISTS (SELECT 1 FROM onboarding_exceptions WHERE case_id = $1) AS ok', [id])).rows[0]?.ok === true;
+          if (!approved) throw conflict('This file has a red flag. The President and CEO must approve the exception before it can be decided as good standing');
+        }
       }
       const suggested = suggestedStanding(await outcomesOf(tx, id));
       if (suggested === 'pending') throw conflict('A check result is still missing');
