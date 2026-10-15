@@ -13,7 +13,7 @@ interface Theme { a: string; b: string; icon: Icon; cat: Cat }
 
 const T: Record<string, Theme> = {
   'client-money': { a: '#059669', b: '#0d9488', icon: 'money', cat: 'compliance' },
-  'privacy-basics': { a: '#1d4ed8', b: '#0ea5e9', icon: 'shield', cat: 'privacy' },
+  'privacy-basics': { a: '#6355F6', b: '#0ea5e9', icon: 'shield', cat: 'privacy' },
   'phishing-cyber': { a: '#4f46e5', b: '#7c3aed', icon: 'mail', cat: 'privacy' },
   'eo-basics': { a: '#be123c', b: '#f97316', icon: 'clock', cat: 'compliance' },
   'using-pii-video': { a: '#0f172a', b: '#334155', icon: 'play', cat: 'pii' },
@@ -23,10 +23,10 @@ const T: Record<string, Theme> = {
   'records-documentation': { a: '#475569', b: '#64748b', icon: 'doc', cat: 'compliance' },
   'vulnerable-clients': { a: '#0f766e', b: '#22c55e', icon: 'person', cat: 'service' },
   'aml-fraud': { a: '#9f1239', b: '#e11d48', icon: 'search', cat: 'compliance' },
-  'claims-handling': { a: '#1e40af', b: '#6366f1', icon: 'shield', cat: 'service' },
-  'communications-consent': { a: '#0e7490', b: '#2563eb', icon: 'mail', cat: 'privacy' },
+  'claims-handling': { a: '#5246E0', b: '#6366f1', icon: 'shield', cat: 'service' },
+  'communications-consent': { a: '#0e7490', b: '#6355F6', icon: 'mail', cat: 'privacy' },
 };
-const SPARE: [string, string][] = [['#2563eb', '#7c3aed'], ['#0d9488', '#16a34a'], ['#ea580c', '#db2777'], ['#4338ca', '#0ea5e9'], ['#a21caf', '#6366f1']];
+const SPARE: [string, string][] = [['#6355F6', '#7c3aed'], ['#0d9488', '#16a34a'], ['#ea580c', '#db2777'], ['#4338ca', '#0ea5e9'], ['#a21caf', '#6366f1']];
 const hash = (s: string) => [...s].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
 export const themeOf = (c: CatalogCourse): Theme => (c.starterKey && T[c.starterKey]) || { a: SPARE[hash(c.title) % SPARE.length]![0], b: SPARE[hash(c.title) % SPARE.length]![1], icon: 'book', cat: 'other' };
 export const minutesOf = (c: CatalogCourse) => Math.max(1, Math.round((c.words ?? 0) / 150 + (c.videos ?? 0) * 3 + (c.questions ?? 0) * 0.5));

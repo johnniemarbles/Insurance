@@ -33,7 +33,7 @@ const TEXT = {
 const LOGIN_CSS = `
 .lg{min-height:100vh;display:grid;grid-template-columns:1.05fr 1fr;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#0f172a;background:#fff}
 .lg *{box-sizing:border-box}
-.lg-hero{position:relative;overflow:hidden;color:#fff;padding:48px 56px;display:flex;flex-direction:column;justify-content:space-between;background:radial-gradient(1200px 600px at 10% -10%,#4f6bff 0%,transparent 60%),radial-gradient(900px 600px at 110% 110%,#7c3aed 0%,transparent 55%),linear-gradient(160deg,#0b1b4d,#16286e)}
+.lg-hero{position:relative;overflow:hidden;color:#fff;padding:48px 56px;display:flex;flex-direction:column;justify-content:space-between;background:radial-gradient(1200px 600px at 10% -10%,#4f6bff 0%,transparent 60%),radial-gradient(900px 600px at 110% 110%,#7c3aed 0%,transparent 55%),linear-gradient(160deg,#191C32,#16286e)}
 .lg-hero:after{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.12) 1px,transparent 1px);background-size:22px 22px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.5),transparent 70%);pointer-events:none}
 .lg-brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:18px;position:relative;z-index:1}
 .lg-brand img{width:44px;height:44px;border-radius:12px;background:#fff;padding:3px}
@@ -54,13 +54,13 @@ const LOGIN_CSS = `
 .lg-card h1{font-size:28px;margin:0 0 8px;letter-spacing:-.02em}
 .lg-card p{margin:0 0 22px;color:#475569;line-height:1.5}
 .lg-g{width:100%;display:flex;align-items:center;justify-content:center;gap:12px;background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:13px 16px;font:inherit;font-size:16px;font-weight:600;color:#0f172a;cursor:pointer;transition:box-shadow .15s,transform .05s,border-color .15s}
-.lg-g:hover{box-shadow:0 6px 18px -6px rgba(37,99,235,.35);border-color:#93a8f4}
+.lg-g:hover{box-shadow:0 6px 18px -6px rgba(99,85,246,.35);border-color:#93a8f4}
 .lg-g:active{transform:translateY(1px)}
 .lg-g:focus-visible,.lg-lang:focus-visible,.lg a:focus-visible{outline:3px solid #93a8f4;outline-offset:2px}
 .lg-g svg{width:20px;height:20px}
 .lg-fine{margin-top:16px;font-size:13px;color:#64748b;line-height:1.5}
 .lg-res{margin-top:22px;padding-top:18px;border-top:1px solid #eef2f7;font-size:14px;color:#334155;display:grid;gap:8px}
-.lg-res a{color:#1d4ed8;text-decoration:none;font-weight:600}.lg-res a:hover{text-decoration:underline}
+.lg-res a{color:#6355F6;text-decoration:none;font-weight:600}.lg-res a:hover{text-decoration:underline}
 .lg-links{display:flex;gap:18px;justify-content:center;font-size:13px}
 .lg-links a{color:#64748b;text-decoration:none}.lg-links a:hover{color:#0f172a;text-decoration:underline}
 @media(max-width:860px){.lg{grid-template-columns:1fr}.lg-hero{padding:28px 24px 32px}.lg-pitch h2{font-size:26px}.lg-pitch ul,.lg-foot-l{display:none}.lg-main{padding:20px 16px 28px}.lg-card{padding:28px 22px}}
