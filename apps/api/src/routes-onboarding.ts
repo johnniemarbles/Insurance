@@ -6,7 +6,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
 import {
   CANADA_THRESHOLDS, STANDING_LABELS, STANDING_OUTCOMES, carrierPacketBlocks, keepsAccessWhile, standingWarning, nextCheckDue, recheckStatus, stageMoveBlock,
-  progressSteps, suggestedStanding, type OnboardingStage, type RequestContext, type StandingOutcome,
+  progressSteps, suggestedStanding, REQUIREMENT_COLUMN, REQUIREMENT_DEFAULTS, REQUIREMENT_KEYS, type RequirementKey,
+  type OnboardingStage, type RequestContext, type StandingOutcome,
 } from '@pii/domain';
 import { audit } from './audit.ts';
 import { escapeHtml } from './merge-render.ts';
@@ -136,8 +137,70 @@ async function partnerView(tx: Tx, where: string, params: unknown[]) {
   };
 }
 
+/** The company's onboarding requirements (defaults when none has been changed). */
+async function requirementsOf(tx: Tx, tenantId: string): Promise<Record<RequirementKey, boolean>> {
+  const row = (await tx.query<Record<string, boolean>>(
+    `SELECT screening_before_decision, ownership_required, pending_approval, president_exceptions
+       FROM onboarding_requirements WHERE tenant_id = $1`, [tenantId])).rows[0];
+  const out = { ...REQUIREMENT_DEFAULTS };
+  if (row) for (const k of REQUIREMENT_KEYS) out[k] = row[REQUIREMENT_COLUMN[k]] === true;
+  return out;
+}
+
 export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
+
+  // ---- Onboarding requirements (Compliance Manager switches) -------------------------------------------------------
+
+  /** The company's requirements, who may change them, and the history of changes (newest first). Visible to everyone in the company. */
+  app.get('/v1/onboarding/requirements', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    return run(ctx, async (tx) => {
+      const requirements = await requirementsOf(tx, ctx.tenantId);
+      const canChange = (await tx.query<{ ok: boolean }>('SELECT app_is_compliance_role() AS ok')).rows[0]?.ok === true;
+      const history = (await tx.query<{ requirement: string; from: boolean; to: boolean; reason: string; changedBy: string; at: Date }>(
+        `SELECT c.requirement, c.from_value AS "from", c.to_value AS "to", c.reason, u.display_name AS "changedBy", c.created_at AS at
+           FROM onboarding_requirement_changes c JOIN app_users u ON u.id = c.changed_by
+          ORDER BY c.created_at DESC LIMIT 50`)).rows;
+      const keyOf = (col: string) => REQUIREMENT_KEYS.find((k) => REQUIREMENT_COLUMN[k] === col) ?? col;
+      return {
+        requirements, canChange,
+        history: history.map((h) => ({ requirement: keyOf(h.requirement), from: h.from, to: h.to, reason: h.reason, changedBy: h.changedBy, at: h.at.toISOString() })),
+      };
+    });
+  });
+
+  /**
+   * Switch one requirement on or off. Compliance Managers only. The reason (at least 10 characters) is kept with the change.
+   * A change that leaves the value as it was is accepted and recorded as nothing.
+   */
+  app.put('/v1/onboarding/requirements', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const b = body(req);
+    if (!REQUIREMENT_KEYS.includes(b.requirement as never)) throw invalid('requirement must be one of: ' + REQUIREMENT_KEYS.join(', '));
+    if (typeof b.value !== 'boolean') throw invalid('value must be on (true) or off (false)');
+    const reason = str(b.reason, 'reason', 500);
+    if (reason.length < 10) throw invalid('Give a reason of at least 10 characters: the change is kept with it');
+    const key = b.requirement as RequirementKey;
+    const col = REQUIREMENT_COLUMN[key];
+    return run(ctx, async (tx) => {
+      if (!(await tx.query<{ ok: boolean }>('SELECT app_is_compliance_role() AS ok')).rows[0]?.ok) {
+        throw forbidden('Only a Compliance Manager can change onboarding requirements');
+      }
+      const before = (await requirementsOf(tx, ctx.tenantId))[key];
+      if (before !== b.value) {
+        await tx.query(
+          `INSERT INTO onboarding_requirements (tenant_id, ${col}, updated_by) VALUES ($1, $2, $3)
+           ON CONFLICT (tenant_id) DO UPDATE SET ${col} = $2, updated_by = $3, updated_at = now()`,
+          [ctx.tenantId, b.value, ctx.userId]);
+        await tx.query(
+          `INSERT INTO onboarding_requirement_changes (tenant_id, requirement, from_value, to_value, reason, changed_by) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [ctx.tenantId, col, before, b.value, reason, ctx.userId]);
+        await audit(tx, ctx, 'onboarding.requirement_changed', 'tenant', ctx.tenantId, { requirement: key, from: before, to: b.value, reason });
+      }
+      return { requirements: await requirementsOf(tx, ctx.tenantId) };
+    });
+  });
 
   // ---- Compliance officer ------------------------------------------------------------------------------------------
 
@@ -353,6 +416,11 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
       const c = await loadCase(tx, id);
       await requireOfficer(tx, c);
       if (c.stage !== 'checks_complete') throw conflict('The decision waits until both checks are complete');
+      // The screening questions are part of the file: no decision until they are recorded.
+      if ((await requirementsOf(tx, c.tenantId)).screeningBeforeDecision) {
+        const screened = (await tx.query<{ ok: boolean }>('SELECT EXISTS (SELECT 1 FROM onboarding_screenings WHERE case_id = $1) AS ok', [id])).rows[0]?.ok === true;
+        if (!screened) throw conflict('Record the screening questions before the decision');
+      }
       const suggested = suggestedStanding(await outcomesOf(tx, id));
       if (suggested === 'pending') throw conflict('A check result is still missing');
       await tx.query(

@@ -42,6 +42,8 @@ const T = {
     provider: 'Provider', score: 'Credit score', adverse: 'Background report', clear: 'Clear', adverseYes: 'Adverse finding',
     record: 'Record check', suggested: 'Rule suggests', pending: 'Waiting for a check result', decisionLocked: 'The decision opens once every check is complete.',
     outcome: 'Decision', reason: 'Reason (kept in the file, never shown to the partner)', decide: 'Record decision',
+    screen: { head: 'Screening questions', hint: 'Answer yes or no for each question. Any yes sends the file to review, whatever the credit score. Only the compliance officer sees the answers.', insolv: 'Any undischarged bankruptcy, consumer proposal, creditor arrangement or unsatisfied judgment?', debt: 'Any current debt to an insurer, agency or financial institution?', licence: 'Any licence refusal, suspension or conditions?', term: 'Any termination for cause or market-conduct allegations?', sponsor: 'Any sponsorship change in the last 5 years?', complaints: 'Any complaints or disciplinary history (CISRO or APEXA)?', record: 'Record screening', recorded: 'Recorded', none: 'Not recorded yet.', firstHead: 'Record the screening questions first. The decision waits for them.', yes: 'Yes', no: 'No', redFlag: 'Red flag', insolvency: 'Insolvency or judgment' },
+    reqs: { head: 'Onboarding requirements', hint: 'Compliance Managers can switch each requirement on or off for the company. Every change needs a reason and is kept on record.', only: 'Only a Compliance Manager can change these.', on: 'On', off: 'Off', change: 'Change', reason: 'Reason (kept with the change)', save: 'Save change', cancel: 'Cancel', history: 'Changes on record', none: 'No changes yet.', pending: 'Not yet enforced: stored now, enforced when its step is built.', items: { screeningBeforeDecision: 'Screening questions before a decision', ownershipRequired: 'Ownership tiers for a corporate broker', pendingApproval: 'Pending Compliance Approval before a broker is decided', presidentExceptions: 'President and CEO approval for red-flag exceptions' } as Record<string, string>, shortReason: 'Give a reason of at least 10 characters.' },
     agTitle: 'Agreement title', agVersion: 'Version', agText: 'Agreement text (as issued by counsel)', agSend: 'Send agency agreement to the partner',
     agResend: 'Send the agreement again', agWaiting: 'Waiting for the partner to sign. The link was emailed to the partner’s people.', agSentOk: 'Agreement sent.', agHint: 'The partner signs through a private link with a code sent to their email.',
     agSignedOn: 'Signed', agPdf: 'Sealed PDF', activate: 'Activate partner',
@@ -79,6 +81,8 @@ const T = {
     provider: 'Fournisseur', score: 'Pointage de crédit', adverse: 'Rapport d’antécédents', clear: 'Sans constat', adverseYes: 'Constat défavorable',
     record: 'Enregistrer la vérification', suggested: 'La règle suggère', pending: 'En attente d’un résultat de vérification', decisionLocked: 'La décision s’ouvre quand toutes les vérifications sont terminées.',
     outcome: 'Décision', reason: 'Motif (conservé au dossier, jamais montré au partenaire)', decide: 'Enregistrer la décision',
+    screen: { head: 'Questions de filtrage', hint: 'Répondez oui ou non à chaque question. Un oui envoie le dossier en examen, quel que soit le pointage de crédit. Seul l’agent de conformité voit les réponses.', insolv: 'Faillite non libérée, proposition de consommateur, entente avec les créanciers ou jugement non acquitté?', debt: 'Dette actuelle envers un assureur, un organisme ou une institution financière?', licence: 'Refus, suspension ou conditions de permis?', term: 'Résiliation pour motif ou allégations de conduite sur le marché?', sponsor: 'Changement de parrainage au cours des 5 dernières années?', complaints: 'Plaintes ou antécédents disciplinaires (CISRO ou APEXA)?', record: 'Enregistrer le filtrage', recorded: 'Enregistré', none: 'Pas encore enregistré.', firstHead: 'Enregistrez d’abord les questions de filtrage. La décision attend ces réponses.', yes: 'Oui', no: 'Non', redFlag: 'Signal d’alerte', insolvency: 'Insolvabilité ou jugement' },
+    reqs: { head: 'Exigences d’intégration', hint: 'Les gestionnaires de conformité peuvent activer ou désactiver chaque exigence pour l’entreprise. Chaque changement exige un motif et est conservé au dossier.', only: 'Seul un gestionnaire de conformité peut modifier ces exigences.', on: 'Activé', off: 'Désactivé', change: 'Modifier', reason: 'Motif (conservé avec le changement)', save: 'Enregistrer le changement', cancel: 'Annuler', history: 'Changements consignés', none: 'Aucun changement pour l’instant.', pending: 'Pas encore appliquée : enregistrée maintenant, appliquée quand son étape sera construite.', items: { screeningBeforeDecision: 'Questions de filtrage avant une décision', ownershipRequired: 'Paliers de propriété pour un courtier constitué en société', pendingApproval: 'Approbation de conformité en attente avant la décision sur un courtier', presidentExceptions: 'Approbation du président et chef de la direction pour les exceptions à signal d’alerte' } as Record<string, string>, shortReason: 'Donnez un motif d’au moins 10 caractères.' },
     agTitle: 'Titre de l’entente', agVersion: 'Version', agText: 'Texte de l’entente (tel que publié par les conseillers juridiques)', agSend: 'Envoyer l’entente d’agence au partenaire',
     agResend: 'Renvoyer l’entente', agWaiting: 'En attente de la signature du partenaire. Le lien a été envoyé par courriel aux personnes du partenaire.', agSentOk: 'Entente envoyée.', agHint: 'Le partenaire signe par un lien privé avec un code envoyé à son courriel.',
     agSignedOn: 'Signée', agPdf: 'PDF scellé', activate: 'Activer le partenaire',
@@ -96,6 +100,7 @@ interface Detail extends CaseRow {
   checks: { id: string; kind: string; provider: string; status: string; score: number | null; adverse: boolean | null; requestedAt: string }[];
   decisions: { suggested: string; outcome: string; reason: string; decidedAt: string }[];
   carrierPackets: { id: string; carrier: string; templateVersion: string; status: string; createdAt: string }[];
+  screening?: { insolvencyOrJudgment: boolean; redFlag: boolean; recordedAt: string } | null;
 }
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -149,6 +154,75 @@ export function ManagerProgressBoard({ call, locale }: { call: Call; locale: Loc
     </section>
   );
 }
+
+/** The company's onboarding requirements. A Compliance Manager switches each on or off, with a reason; the history is shown to everyone. */
+export interface Requirements {
+  requirements: Record<string, boolean>;
+  canChange: boolean;
+  history: { requirement: string; from: boolean; to: boolean; reason: string; changedBy: string; at: string }[];
+}
+export function RequirementsPanel({ call, t, locale: _locale, onChange }: { call: Call; t: Dict; locale: Locale; onChange?: (r: Requirements) => void }) {
+  const [data, setData] = useState<Requirements | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    try { const r = (await call('GET', '/v1/onboarding/requirements')) as Requirements; setData(r); onChange?.(r); } catch (e) { setError(errText(e)); }
+  };
+  useEffect(() => { void load(); }, []);
+  const save = async (key: string, value: boolean) => {
+    if (reason.trim().length < 10) { setError(t.reqs.shortReason); return; }
+    setBusy(true); setError('');
+    try {
+      await call('PUT', '/v1/onboarding/requirements', { requirement: key, value, reason: reason.trim() });
+      setOpen(null); setReason(''); await load();
+    } catch (e) { setError(errText(e)); } finally { setBusy(false); }
+  };
+  if (!data) return error ? <div class="err" role="alert">{error}</div> : null;
+  return (
+    <section class="obcard">
+      <h3>{t.reqs.head}</h3>
+      <p class="muted">{t.reqs.hint}</p>
+      {!data.canChange && <p class="muted">{t.reqs.only}</p>}
+      {error && <div class="err" role="alert">{error}</div>}
+      <ul class="oblist">
+        {REQ_KEYS.map((k) => {
+          const on = data.requirements[k] !== false;
+          return (
+            <li key={k}>
+              <span>{t.reqs.items[k]}{!REQ_ENFORCED.includes(k) && <small class="muted"> · {t.reqs.pending}</small>}</span>
+              <span class="row">
+                <span class={on ? 'chip ok' : 'chip warn'}>{on ? t.reqs.on : t.reqs.off}</span>
+                {data.canChange && open !== k && <button class="btn quiet" onClick={() => { setOpen(k); setReason(''); setError(''); }}>{t.reqs.change}</button>}
+              </span>
+              {data.canChange && open === k && (
+                <form class="obform obspan2" onSubmit={(e) => { e.preventDefault(); void save(k, !on); }}>
+                  <label class="fl obspan2">{t.reqs.reason}
+                    <textarea rows={2} value={reason} onInput={(e) => setReason((e.target as HTMLTextAreaElement).value)} />
+                  </label>
+                  <button class="btn" type="submit" disabled={busy}>{t.reqs.save}: {on ? t.reqs.off : t.reqs.on}</button>
+                  <button class="btn quiet" type="button" onClick={() => setOpen(null)}>{t.reqs.cancel}</button>
+                </form>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <h4>{t.reqs.history}</h4>
+      {data.history.length === 0 ? <p class="muted">{t.reqs.none}</p> : (
+        <ul class="oblist">
+          {data.history.map((h) => (
+            <li>{dateOf(h.at)} · {t.reqs.items[h.requirement]}: {h.to ? t.reqs.on : t.reqs.off}<span class="muted">{h.changedBy} · {h.reason}</span></li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+const REQ_KEYS = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'] as const;
+/** Requirements the server enforces today. The rest are stored and will be enforced when their step is built. */
+const REQ_ENFORCED: string[] = ['screeningBeforeDecision'];
 
 /** The Compliance officer's onboarding board: totals, invitations, a progress table for every partner, and the file for one partner. */
 export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale: Locale; tabs?: ComponentChildren }) {
@@ -228,6 +302,8 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
       <div class="obtiles">
         {tile('total')}{tile('action', 'warn')}{tile('partner')}{tile('active', 'ok')}{tile('due', 'warn')}{tile('notGood', 'warn')}
       </div>
+
+      <RequirementsPanel call={call} t={t} locale={locale} />
 
       <section class="obcard">
         <div class="obtool">
@@ -341,6 +417,8 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
   const [busy, setBusy] = useState(false);
   const [check, setCheck] = useState({ kind: 'credit', provider: 'Equifax Canada', status: 'complete', score: '', adverse: 'false' });
   const [decision, setDecision] = useState({ outcome: 'good_standing', reason: '' });
+  const [scr, setScr] = useState({ insolv: 'no', debt: 'no', licence: 'no', term: 'no', sponsor: 'no', complaints: 'no' });
+  const [screenRequired, setScreenRequired] = useState(true);
   const [agr, setAgr] = useState({ title: 'PII agency agreement', version: '', body: '' });
   const [signed, setSigned] = useState<{ id: string; title: string; version: string; signedAt: string }[]>([]);
   const [sentOk, setSentOk] = useState(false);
@@ -350,6 +428,11 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
     try { setD((await call('GET', `/v1/onboarding/cases/${id}`)) as Detail); setError(''); } catch (e) { setError(errText(e)); }
   };
   useEffect(() => { void load(); }, [id]);
+  useEffect(() => {
+    void (async () => {
+      try { const r = (await call('GET', '/v1/onboarding/requirements')) as Requirements; setScreenRequired(r.requirements.screeningBeforeDecision !== false); } catch { setScreenRequired(true); }
+    })();
+  }, [id]);
   useEffect(() => {
     void (async () => {
       try { setSigned((await call('GET', `/v1/onboarding/cases/${id}/agreements`)).agreements ?? []); } catch { setSigned([]); }
@@ -368,6 +451,14 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
     return call('POST', `/v1/onboarding/cases/${id}/checks`, body);
   });
 
+  const recordScreening = () => run(() => {
+    const flag = scr.debt === 'yes' || scr.licence === 'yes' || scr.term === 'yes' || scr.sponsor === 'yes' || scr.complaints === 'yes';
+    return call('POST', `/v1/onboarding/cases/${id}/screening`, {
+      insolvencyOrJudgment: scr.insolv === 'yes',
+      redFlag: flag,
+      answers: { insolvencyOrJudgment: scr.insolv, debtToInsurer: scr.debt, licenceRefusedOrConditions: scr.licence, terminationForCause: scr.term, sponsorshipChanges5y: scr.sponsor, complaintsOrDiscipline: scr.complaints },
+    });
+  });
   const decide = () => run(() => call('POST', `/v1/onboarding/cases/${id}/decision`, decision));
   const nextStage = (s: string) => run(() => call('POST', `/v1/onboarding/cases/${id}/stage`, { to: s }));
 
@@ -466,8 +557,55 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
         </section>
 
         <section class="obcard wide">
+          <h3>{t.screen.head}</h3>
+          {d.screening ? (
+            <ul class="oblist">
+              <li>{t.screen.insolvency}<span class={d.screening.insolvencyOrJudgment ? 'chip warn' : 'chip ok'}>{d.screening.insolvencyOrJudgment ? t.screen.yes : t.screen.no}</span></li>
+              <li>{t.screen.redFlag}<span class={d.screening.redFlag ? 'chip warn' : 'chip ok'}>{d.screening.redFlag ? t.screen.yes : t.screen.no}</span></li>
+              <li>{t.screen.recorded}<span class="muted">{dateOf(d.screening.recordedAt)}</span></li>
+            </ul>
+          ) : <p class="muted">{t.screen.none}</p>}
+          {canRecord && (
+            <form class="obform" onSubmit={(e) => { e.preventDefault(); void recordScreening(); }}>
+              <p class="muted obspan2">{t.screen.hint}</p>
+                <label class="fl obspan2">{t.screen.insolv}
+                  <select value={scr.insolv} onChange={(e) => setScr({ ...scr, insolv: (e.target as HTMLSelectElement).value })}>
+                    <option value="no">{t.screen.no}</option><option value="yes">{t.screen.yes}</option>
+                  </select>
+                </label>
+                <label class="fl obspan2">{t.screen.debt}
+                  <select value={scr.debt} onChange={(e) => setScr({ ...scr, debt: (e.target as HTMLSelectElement).value })}>
+                    <option value="no">{t.screen.no}</option><option value="yes">{t.screen.yes}</option>
+                  </select>
+                </label>
+                <label class="fl obspan2">{t.screen.licence}
+                  <select value={scr.licence} onChange={(e) => setScr({ ...scr, licence: (e.target as HTMLSelectElement).value })}>
+                    <option value="no">{t.screen.no}</option><option value="yes">{t.screen.yes}</option>
+                  </select>
+                </label>
+                <label class="fl obspan2">{t.screen.term}
+                  <select value={scr.term} onChange={(e) => setScr({ ...scr, term: (e.target as HTMLSelectElement).value })}>
+                    <option value="no">{t.screen.no}</option><option value="yes">{t.screen.yes}</option>
+                  </select>
+                </label>
+                <label class="fl obspan2">{t.screen.sponsor}
+                  <select value={scr.sponsor} onChange={(e) => setScr({ ...scr, sponsor: (e.target as HTMLSelectElement).value })}>
+                    <option value="no">{t.screen.no}</option><option value="yes">{t.screen.yes}</option>
+                  </select>
+                </label>
+                <label class="fl obspan2">{t.screen.complaints}
+                  <select value={scr.complaints} onChange={(e) => setScr({ ...scr, complaints: (e.target as HTMLSelectElement).value })}>
+                    <option value="no">{t.screen.no}</option><option value="yes">{t.screen.yes}</option>
+                  </select>
+                </label>
+              <button class="btn" type="submit" disabled={busy}>{t.screen.record}</button>
+            </form>
+          )}
+        </section>
+
+        <section class="obcard wide">
           <h3>{t.sections.decision}</h3>
-          {canDecide ? (
+          {canDecide && screenRequired && !d.screening ? <p class="muted">{t.screen.firstHead}</p> : canDecide ? (
             <>
               <p class="obhint">{t.suggested}: <strong>{suggestedLabel}</strong> · {t.credit(d.thresholds.creditPassMin, d.thresholds.creditReviewMin)}</p>
               <form class="obform" onSubmit={(e) => { e.preventDefault(); if (decision.reason.trim()) void decide(); }}>
