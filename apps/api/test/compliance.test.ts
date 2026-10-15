@@ -171,3 +171,13 @@ test('head office administrators create companies for their country; nobody else
   await call('w@maple.test', 'POST', '/v1/consent/first-login');
   assert.equal((await call('w@maple.test', 'GET', '/v1/compliance/partners')).json.partners.length, 0);
 });
+
+test('BC supervising licensee is optional: it can be saved, is not required, and unknown fields are still refused', async () => {
+  assert.equal((await call(AG, 'PUT', `/v1/compliance/partners/${AGN}/profile`, { entityType: 'corporation', legalName: 'Agency One Inc', businessNumber: '123456789', fields: { province: 'BC', bc_supervisor_name: 'Jane Supervisor', bc_supervisor_licence: 'BC-4411' } })).status, 204);
+  const saved = (await call(AG, 'GET', `/v1/compliance/partners/${AGN}`)).json;
+  assert.equal(saved.profile.fields.bc_supervisor_name, 'Jane Supervisor');
+  assert.equal(saved.profile.fields.bc_supervisor_licence, 'BC-4411');
+  assert.equal(saved.checklist.steps.find((s: { id: string }) => s.id === 'profile').done, true, 'profile step does not need the supervisor');
+  assert.equal((await call(AG, 'PUT', `/v1/compliance/partners/${AGN}/profile`, { entityType: 'corporation', legalName: 'Agency One Inc', businessNumber: '123456789', fields: { province: 'ON' } })).status, 204, 'the fields can be left empty');
+  assert.equal((await call(AG, 'PUT', `/v1/compliance/partners/${AGN}/profile`, { entityType: 'corporation', legalName: 'Agency One Inc', businessNumber: '123456789', fields: { bc_supervisor_dob: '1980-01-01' } })).status, 422, 'unknown fields are still refused');
+});
