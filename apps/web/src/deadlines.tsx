@@ -14,8 +14,8 @@ const DAY_MS = 86400000;
 const STAGES = Object.keys(STAGE_LABEL) as (keyof typeof STAGE_LABEL)[];
 
 const T = {
-  en: { title: 'Renewals and deadlines', sub: 'Two weeks from Monday', partner: 'Partner', noDates: 'No licence or E&O dates fall in the next two weeks.', expired: 'Expired', expires: 'Expires', licence: 'Licence', eo: 'E&O', upTitle: 'Coming up', upSub: 'Licence and E&O, by date', upNone: 'Nothing expires in the next 30 days.', obTitle: 'In onboarding', obSub: 'Partners not yet active', obNone: 'No partners in onboarding.', err: 'Could not load deadlines.' },
-  'fr-CA': { title: 'Échéances et renouvellements', sub: 'Deux semaines à partir du lundi', partner: 'Partenaire', noDates: 'Aucune date de permis ou d’E&O dans les deux prochaines semaines.', expired: 'Expiré', expires: 'Expire', licence: 'Permis', eo: 'E&O', upTitle: 'À venir', upSub: 'Permis et E&O, par date', upNone: 'Rien n’expire dans les 30 prochains jours.', obTitle: 'En intégration', obSub: 'Partenaires pas encore actifs', obNone: 'Aucun partenaire en intégration.', err: 'Impossible de charger les échéances.' },
+  en: { title: 'Renewals and deadlines', sub: 'Two weeks from Monday', partner: 'Partner', noDates: 'No licence or E&O dates fall in the next two weeks.', expired: 'Expired', expires: 'Expires', licence: 'Licence', eo: 'E&O', upTitle: 'Coming up', upSub: 'Licence and E&O, by date', upNone: 'Nothing expires in the next 30 days.', obTitle: 'In onboarding', obSub: 'Partners not yet active', obNone: 'No partners in onboarding.', err: 'Could not load deadlines.', days: 'days', steps: 'steps done' },
+  'fr-CA': { title: 'Échéances et renouvellements', sub: 'Deux semaines à partir du lundi', partner: 'Partenaire', noDates: 'Aucune date de permis ou d’E&O dans les deux prochaines semaines.', expired: 'Expiré', expires: 'Expire', licence: 'Permis', eo: 'E&O', upTitle: 'À venir', upSub: 'Permis et E&O, par date', upNone: 'Rien n’expire dans les 30 prochains jours.', obTitle: 'En intégration', obSub: 'Partenaires pas encore actifs', obNone: 'Aucun partenaire en intégration.', err: 'Impossible de charger les échéances.', days: 'j', steps: 'étapes faites' },
 } as const;
 
 // Calendar dates are kept as YYYY-MM-DD strings and compared in UTC, so the local time zone cannot shift a day.
@@ -48,6 +48,8 @@ export function DeadlinesPanel({ call, locale }: { call: Call; locale: Locale })
   const dateText = (k: string) => new Intl.DateTimeFormat(locale === 'fr-CA' ? 'fr-CA' : 'en-CA', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(utc(k)));
   const weekday = (d: Date) => new Intl.DateTimeFormat(locale === 'fr-CA' ? 'fr-CA' : 'en-CA', { weekday: 'short' }).format(d);
   const kindText = (k: Expiry['kind']) => (k === 'eo' ? t.eo : t.licence);
+  const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  const daysTo = (k: string) => Math.round((utc(k) - utc(keyOf(now))) / DAY_MS);
 
   // One row per expiry that falls inside the two weeks, or that has already run out. Its bar runs from today to the date.
   const rows = (expiries ?? []).flatMap((e) => {
@@ -60,7 +62,7 @@ export function DeadlinesPanel({ call, locale }: { call: Call; locale: Locale })
   const inOnboarding = cases.filter((c) => c.stage !== 'active');
 
   return (
-    <section class="dl" aria-label={t.title}>
+    <section class="dl dl-glass" aria-label={t.title}>
       {err && <p class="err" role="alert">{err}</p>}
       <section class="hcard">
         <div class="dl-h">
@@ -76,7 +78,7 @@ export function DeadlinesPanel({ call, locale }: { call: Call; locale: Locale })
               </div>
               {rows.map(({ e, start, end, expired }) => (
                 <div class="dl-row">
-                  <div class="dl-who" style={{ gridColumn: 1, gridRow: 1 }}><b>{e.partnerName}</b><span>{kindText(e.kind)} · {e.label}</span></div>
+                  <div class="dl-who" style={{ gridColumn: 1, gridRow: 1 }}><div class="dl-av" aria-hidden="true">{initials(e.partnerName)}</div><div class="dl-wt"><b>{e.partnerName}</b><span>{kindText(e.kind)} · {e.label}</span><em class={`dl-chip${expired ? ' exp' : ''}`}>{expired ? t.expired : t.expires}</em></div></div>
                   {days.map((_, i) => <div class={`dl-cell${i % 7 >= 5 ? ' we' : ''}`} style={{ gridColumn: i + 2, gridRow: 1 }} aria-hidden="true" />)}
                   <div class={`dl-bar${expired ? ' exp' : ''}`} style={{ gridColumn: `${start + 2} / ${end + 3}`, gridRow: 1 }}>
                     {expired ? `${t.expired} ${dateText(e.expiresOn)}` : `${t.expires} ${dateText(e.expiresOn)}`}
@@ -95,8 +97,8 @@ export function DeadlinesPanel({ call, locale }: { call: Call; locale: Locale })
             <ul class="dl-up">
               {upcoming.map((e) => (
                 <li class={e.status === 'expired' ? 'hot' : ''}>
-                  <b>{e.partnerName}</b>
-                  <span>{kindText(e.kind)} · {e.label} · {e.status === 'expired' ? t.expired : t.expires} {dateText(e.expiresOn)}</span>
+                  <div class="dl-wt"><b>{e.partnerName}</b><span>{kindText(e.kind)} · {e.label} · {e.status === 'expired' ? t.expired : t.expires} {dateText(e.expiresOn)}</span></div>
+                  <em class="dl-pill">{daysTo(e.expiresOn) < 0 ? t.expired : `${daysTo(e.expiresOn)} ${t.days}`}</em>
                 </li>
               ))}
             </ul>
@@ -112,8 +114,10 @@ export function DeadlinesPanel({ call, locale }: { call: Call; locale: Locale })
                 const pct = Math.max(0, Math.round((idx / (STAGES.length - 1)) * 100));
                 return (
                   <div>
+                    <div class="dl-av" aria-hidden="true">{initials(c.partnerName)}</div>
                     <b>{c.partnerName}</b>
                     <span>{STAGE_LABEL[c.stage as keyof typeof STAGE_LABEL]?.[locale === 'fr-CA' ? 'fr-CA' : 'en'] ?? c.stage}</span>
+                    <small>{Math.max(0, idx)}/{STAGES.length - 1} {t.steps}</small>
                     <div class="dl-bar2" aria-hidden="true"><i style={{ width: `${pct}%` }} /></div>
                   </div>
                 );
