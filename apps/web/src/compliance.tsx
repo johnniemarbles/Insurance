@@ -115,7 +115,7 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call:
   if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
   const own = officer === false ? <PartnerOnboarding call={call} locale={locale} embedded /> : null;
   const lead = officer === true ? <DeadlinesPanel call={call} locale={locale} /> : undefined;
-  const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} extra={panels} tabs={tabs} lead={lead} />;
+  const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} switchable={officer === true} openFile={setOpen} host={host} extra={panels} tabs={tabs} lead={lead} />;
   const board = (manager || staff) && officer === false ? <div class="obwrap"><ManagerProgressBoard call={call} locale={locale} /></div> : null;
   return <>{own}{board}{body}</>;
 }
@@ -225,7 +225,7 @@ function FilesAtRisk({ call, locale }: { call: Call; locale: Locale; go: (page: 
   );
 }
 
-function ListView({ call, locale, ho, openFile, host, extra, tabs, lead }: { call: Call; locale: Locale; ho: boolean; openFile: (id: string) => void; host?: HostOptions; extra?: ComponentChildren; tabs?: ComponentChildren; lead?: ComponentChildren }) {
+function ListView({ call, locale, ho, openFile, host, extra, tabs, lead, switchable }: { call: Call; locale: Locale; ho: boolean; switchable?: boolean; openFile: (id: string) => void; host?: HostOptions; extra?: ComponentChildren; tabs?: ComponentChildren; lead?: ComponentChildren }) {
   const x = X[locale];
   const base = ho ? '/v1/ho' : '/v1/compliance';
   const [rows, setRows] = useState<any[] | null>(null);
@@ -288,7 +288,7 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs, lead }: { cal
   const waiting = rows.filter((r) => r.status === 'submitted').length;
   return (
     <div class="home pg">
-      <SectionHead title={ho ? x.headTitle : x.title} sub={ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub} right={ho ? <>{ho && <CountrySwitchLink locale={locale} />}{tabs}</> : tabs} />
+      <SectionHead title={ho ? x.headTitle : x.title} sub={ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub} right={ho ? <>{switchable && <CountrySwitchLink locale={locale} />}{tabs}</> : tabs} />
       {lead}
       {scopeBar}
       {strip}
