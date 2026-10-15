@@ -19,6 +19,7 @@ const T = {
     cases: 'Partners in onboarding', none: 'Nobody is in onboarding yet. Invite a partner to start.', name: 'Partner', stage: 'Progress', standing: 'Standing', recheck: 'Next check', open: 'Open',
     back: 'All partners in onboarding', dash: '—', standingPending: 'Standing pending',
     tiles: { total: 'In onboarding', action: 'Waiting on compliance', partner: 'Waiting on the partner', active: 'Active', due: 'Checks due in 30 days', notGood: 'Not in good standing' },
+    alerts: { head: 'Alerts', sub: 'Items that need a decision or a renewal. Only what you can see.', selfOpen: 'Self-reports open', selfOverdue: 'Self-reports overdue', frozen: 'Partners frozen (licence or E&O expired)', expiring: 'Licence or E&O expiring in 30 days', rechecksOverdue: 'Rechecks overdue', none: 'Nothing needs action right now.', overdueHead: 'Overdue self-reports', expiryHead: 'Expiries', expired: 'Expired', soon: 'Expiring', due: 'Due', partner: 'Partner', kind: { licence: 'Licence', eo: 'E&O' } },
     tileHint: { action: 'Record checks or decide', partner: 'Profile, consent or signature', due: 'Recheck soon or overdue' } as Record<string, string>,
     filters: { all: 'All', action: 'Waiting on compliance', partner: 'Waiting on partner', active: 'Active' },
     filterNone: 'Nothing in this view.',
@@ -59,6 +60,7 @@ const T = {
     cases: 'Partenaires en intégration', none: 'Personne n’est en intégration pour l’instant. Invitez un partenaire pour commencer.', name: 'Partenaire', stage: 'Progression', standing: 'Réputation', recheck: 'Prochaine vérification', open: 'Ouvrir',
     back: 'Tous les partenaires en intégration', dash: '—', standingPending: 'Réputation en attente',
     tiles: { total: 'En intégration', action: 'En attente de la conformité', partner: 'En attente du partenaire', active: 'Actifs', due: 'Vérifications dans 30 jours', notGood: 'Réputation non conforme' },
+    alerts: { head: 'Alertes', sub: 'Dossiers qui exigent une décision ou un renouvellement. Seulement ce que vous pouvez voir.', selfOpen: 'Auto-déclarations ouvertes', selfOverdue: 'Auto-déclarations en retard', frozen: 'Partenaires gelés (licence ou E&O expiré)', expiring: 'Licence ou E&O expirant dans 30 jours', rechecksOverdue: 'Vérifications en retard', none: 'Rien ne demande d’action pour l’instant.', overdueHead: 'Auto-déclarations en retard', expiryHead: 'Échéances', expired: 'Expiré', soon: 'Expire bientôt', due: 'Échéance', partner: 'Partenaire', kind: { licence: 'Licence', eo: 'E&O' } },
     tileHint: { action: 'Enregistrer des vérifications ou décider', partner: 'Profil, consentement ou signature', due: 'Recontrôle bientôt ou en retard' } as Record<string, string>,
     filters: { all: 'Tous', action: 'En attente de la conformité', partner: 'En attente du partenaire', active: 'Actifs' },
     filterNone: 'Rien dans cette vue.',
@@ -286,6 +288,43 @@ const REQ_KEYS = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApprov
 const REQ_ENFORCED: string[] = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'];
 
 /** The Compliance officer's queue and decision view: totals, a progress table for every broker, and the file for one broker. Brokers are added from the Structure page (Add broker). */
+/** Compliance alerts (plan v6, section 9): what needs a decision or a renewal, read through the viewer's own visibility. */
+function AlertsPanel({ call, t }: { call: Call; t: Dict }) {
+  const [d, setD] = useState<any>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    call('GET', '/v1/onboarding/dashboard').then((r) => setD(r)).catch((e) => setError(errText(e)));
+  }, [call]);
+  if (error) return <div class="err" role="alert">{error}</div>;
+  if (!d) return null;
+  const a = t.alerts;
+  const tile = (n: number, label: string, tone?: 'warn') => (
+    <div class={`obtile ${tone && n > 0 ? tone : ''}`}><b>{n}</b><span>{label}</span></div>
+  );
+  const quiet = d.selfReports.open + d.expiry.expired + d.expiry.expiringSoon + d.rechecks.overdue === 0;
+  return (
+    <section class="obalerts">
+      <SectionHead title={a.head} sub={a.sub} />
+      <div class="obtiles">
+        {tile(d.selfReports.open, a.selfOpen)}{tile(d.selfReports.overdue, a.selfOverdue, 'warn')}{tile(d.frozen, a.frozen, 'warn')}{tile(d.expiry.expiringSoon, a.expiring, 'warn')}{tile(d.rechecks.overdue, a.rechecksOverdue, 'warn')}
+      </div>
+      {quiet ? <p class="obhint">{a.none}</p> : null}
+      {d.overdueReports.length > 0 && (
+        <>
+          <h4>{a.overdueHead}</h4>
+          <ul>{d.overdueReports.map((r: any) => <li key={r.id}>{r.partnerName} · {r.kind} · {a.due} {r.dueOn}</li>)}</ul>
+        </>
+      )}
+      {d.expiries.length > 0 && (
+        <>
+          <h4>{a.expiryHead}</h4>
+          <ul>{d.expiries.map((e: any) => <li key={e.id}>{e.partnerName} · {a.kind[e.kind as 'licence' | 'eo']} · {e.label} · {e.status === 'expired' ? a.expired : a.soon} {e.expiresOn}</li>)}</ul>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale: Locale; tabs?: ComponentChildren }) {
   const t: Dict = T[locale === 'fr-CA' ? 'fr-CA' : 'en'];
   const lc = locale === 'fr-CA' ? 'fr-CA' : 'en';
@@ -341,6 +380,8 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
       <div class="obtiles">
         {tile('total')}{tile('action', 'warn')}{tile('partner')}{tile('active', 'ok')}{tile('due', 'warn')}{tile('notGood', 'warn')}
       </div>
+
+      <AlertsPanel call={call} t={t} />
 
       <RequirementsPanel call={call} t={t} locale={locale} />
 

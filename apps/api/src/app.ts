@@ -38,6 +38,7 @@ import { registerOnboardingRoutes } from './routes-onboarding.ts';
 import { registerExtensionRoutes } from './routes-extension.ts';
 import { registerOnboardingSignRoutes } from './routes-onboarding-sign.ts';
 import { registerOnboardingSelfReportRoutes } from './routes-onboarding-self-report.ts';
+import { registerOnboardingDashboardRoutes } from './routes-onboarding-dashboard.ts';
 import { registerSubBrokerRoutes } from './routes-sub-brokers.ts';
 import { registerCeRoutes } from './routes-ce.ts';
 import { registerFirstWeekRoutes } from './routes-firstweek.ts';
@@ -176,6 +177,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerExtensionRoutes(app, deps);
   registerOnboardingSignRoutes(app, deps);
   registerOnboardingSelfReportRoutes(app, deps);
+  registerOnboardingDashboardRoutes(app, deps);
   registerSubBrokerRoutes(app, deps);
   registerCeRoutes(app, deps);
   registerFirstWeekRoutes(app, deps);
