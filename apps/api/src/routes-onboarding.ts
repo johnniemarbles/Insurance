@@ -473,7 +473,9 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
       const officer = (await tx.query<{ ok: boolean }>(
         `SELECT app_is_tenant_admin() OR EXISTS (SELECT 1 FROM user_node_roles WHERE user_id = app_user_id() AND role::text = 'compliance') AS ok`)).rows[0]?.ok === true;
       const onboarding = await partnerView(tx, `c.node_id IN (SELECT node_id FROM user_node_roles WHERE user_id = app_user_id())`, []);
-      return { officer, onboarding };
+      const branchManager = (await tx.query<{ ok: boolean }>(
+        `SELECT EXISTS (SELECT 1 FROM onboarding_cases c WHERE ${BRANCH_MANAGER_SQL.replace('%NODE%', 'c.node_id')}) AS ok`)).rows[0]?.ok === true;
+      return { officer, branchManager, onboarding };
     });
   });
 }

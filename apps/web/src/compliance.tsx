@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ErrorBar } from './errorbar.tsx';
 import type { HostOptions, Locale } from './types.ts';
 import { ExpiryBars, Funnel, needsOf, NeedsYou, titles, Trend, Widgets, type Insights, type NeedTab } from './hoinsights.tsx';
-import { OnboardingDashboard, SectionHead } from './onboarding.tsx';
+import { ManagerProgressBoard, OnboardingDashboard, SectionHead } from './onboarding.tsx';
 import { PartnerOnboarding } from './onboarding-partner.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -95,7 +95,9 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call:
   // Null while the account's role is loading. Compliance officers get the onboarding dashboard as a second section; partners see their own onboarding at the top.
   const [officer, setOfficer] = useState<boolean | null>(null);
   const [section, setSection] = useState<'files' | 'onboarding'>('files');
-  useEffect(() => { void call('GET', '/v1/onboarding/mine').then((r) => setOfficer(r.officer === true), () => setOfficer(false)); }, [call]);
+  // A branch manager sees its partners' onboarding progress (steps and status only) above the list.
+  const [manager, setManager] = useState(false);
+  useEffect(() => { void call('GET', '/v1/onboarding/mine').then((r) => { setOfficer(r.officer === true); setManager(r.branchManager === true); }, () => setOfficer(false)); }, [call]);
   const s = SEC[locale === 'fr-CA' ? 'fr-CA' : 'en'];
   // The panels live inside the scrolling page so they share its padding; head office gets the two company settings too.
   const panels = <>{!isHeadOffice && <><Overview call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}<VaultPanel call={call} locale={locale} /></>;
@@ -109,7 +111,8 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call:
   if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
   const own = officer === false ? <div class="obwrap"><PartnerOnboarding call={call} locale={locale} embedded /></div> : null;
   const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} extra={panels} tabs={tabs} />;
-  return <>{own}{body}</>;
+  const board = manager && officer === false ? <div class="obwrap"><ManagerProgressBoard call={call} locale={locale} /></div> : null;
+  return <>{own}{board}{body}</>;
 }
 
 const OV = {
