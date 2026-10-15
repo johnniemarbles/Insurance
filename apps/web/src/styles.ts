@@ -450,4 +450,8 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .pg-frame textarea{height:auto;min-height:96px;padding:10px 12px}
 .pg-frame .rstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--pg-gap)}
 .pg-frame .rstat{width:100%;min-height:88px;box-sizing:border-box}
+.pg-frame .msg{text-align:left;padding:20px;margin:0;border:1px solid var(--line);border-radius:var(--card-r);background:var(--bg);color:var(--mute)}
+.pg-frame .settings,.pg-frame .smain{max-width:none}
+.pg-frame .bar,.pg-frame .fbar,.pg-frame .wrap,.pg-frame .stages,.pg-frame .meta{padding-left:0;padding-right:0}
+@media(max-width:600px){.pg-frame .meta{flex-wrap:wrap}.pg-frame select{max-width:100%;min-width:0}}
 `;
