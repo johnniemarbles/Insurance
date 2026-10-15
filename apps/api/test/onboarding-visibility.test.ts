@@ -11,6 +11,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture, caseOfBroker } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let co: { tenantId: string; rootNodeId: string };
 type M = 'GET' | 'POST' | 'PUT';
@@ -42,8 +43,8 @@ before(async () => {
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   ONT = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
   BCN = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Vancouver' })).json.id;
-  AGN = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Agency One', parentId: ONT })).json.id;
-  VANP = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Agency Van', parentId: BCN })).json.id;
+  AGN = await addBrokerFixture(call, db.ownerUrl, ONT, 'Agency One');
+  VANP = await addBrokerFixture(call, db.ownerUrl, BCN, 'Agency Van');
   await seedUser(co.tenantId, ON_OFF, ONT, 'compliance');
   await seedUser(co.tenantId, MGR_TOR, ONT, 'manager');
   await seedUser(co.tenantId, MGR_VAN, BCN, 'manager');
@@ -56,10 +57,11 @@ after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end(
 test('a branch manager cannot start a broker onboarding, in its own branch or another; the Compliance Manager does', async () => {
   assert.equal((await call(MGR_TOR, 'POST', '/v1/onboarding/cases', { nodeId: AGN, country: 'CA' })).status, 403, 'not in its own branch');
   assert.ok([403, 404].includes((await call(MGR_VAN, 'POST', '/v1/onboarding/cases', { nodeId: AGN, country: 'CA' })).status), 'not in another branch');
-  const mine = await call(ON_OFF, 'POST', '/v1/onboarding/cases', { nodeId: AGN, country: 'CA' });
-  assert.equal(mine.status, 201, mine.raw);
+  // The Compliance Manager's own file: it was started when the broker was added.
+  CASE = await caseOfBroker(db.ownerUrl, AGN);
+  const mine = await call(ON_OFF, 'GET', `/v1/onboarding/cases/${CASE}`);
+  assert.equal(mine.status, 200, mine.raw);
   assert.equal(mine.json.stage, 'invited');
-  CASE = mine.json.id;
 });
 
 test('the branch manager sees progress only: step names and status, never checks, scores or the standing', async () => {

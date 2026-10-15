@@ -9,6 +9,7 @@ import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import { sweepPartnerInviteReminders } from '../src/partner-invite.ts';
 import type { Mail, Mailer } from '../src/mailer.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb; let pools: Db[] = []; let base: AppDeps; let app: FastifyInstance; let refusingApp: FastifyInstance; let noMailApp: FastifyInstance;
 const sent: Mail[] = [];
@@ -17,6 +18,10 @@ let NODE_A = '', NODE_B = '', NODE_C = '', NODE_R = '', NODE_N = '', CASE_A = ''
 let ownerNode = '';
 
 async function owner<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> { const c = new pg.Client({ connectionString: db.ownerUrl }); await c.connect(); try { return await fn(c); } finally { await c.end(); } }
+const fixtureCall = async (email: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown) => {
+  const r = await app.inject({ method, url, headers: { 'x-dev-user-email': email }, ...(body ? { payload: body as object } : {}) });
+  return { status: r.statusCode, json: r.body ? JSON.parse(r.body) : null, raw: r.body };
+};
 const tokenIn = (m: Mail) => /accept\?token=([A-Za-z0-9_-]+)/.exec(m.text)![1]!;
 const call = (a: FastifyInstance, email: string, method: 'GET' | 'POST', url: string, payload?: unknown) =>
   a.inject({ method, url, headers: { 'x-dev-user-email': email }, ...(payload ? { payload: payload as object } : {}) });
@@ -34,7 +39,7 @@ before(async () => {
   await app.inject({ method: 'POST', url: '/v1/consent/first-login', headers: { 'x-dev-user-email': 'admin@invite.test' } });
   const loc = (await app.inject({ method: 'POST', url: '/v1/org/locations', headers: { 'x-dev-user-email': 'admin@invite.test' }, payload: { name: 'Toronto' } })).json() as any;
   ownerNode = loc.id;
-  const mk = async (name: string) => (await app.inject({ method: 'POST', url: '/v1/org/partners', headers: { 'x-dev-user-email': 'admin@invite.test' }, payload: { name, parentId: loc.id } })).json().id as string;
+  const mk = (name: string) => addBrokerFixture(fixtureCall, db.ownerUrl, loc.id, name);
   NODE_A = await mk('Agency A'); NODE_B = await mk('Agency B'); NODE_C = await mk('Agency C'); NODE_R = await mk('Agency R'); NODE_N = await mk('Agency N');
   await owner(async (o) => {
     const ins = async (email: string) => (await o.query(`INSERT INTO app_users (tenant_id,email,home_node_id,status) VALUES ($1,$2,$3,'active') RETURNING id`, [co.tenantId, email, loc.id])).rows[0].id;
@@ -68,9 +73,12 @@ test('the Compliance officer invites an agency admin: one email with a login lin
   assert.deepEqual({ linked: row.onboarding_case_id, role: row.role, method: row.delivery_method, sent: row.sent }, { linked: CASE_A, role: 'partner', method: 'resend', sent: true });
 });
 
-test('an administrator of the partner can also invite, and asking again replaces the link', async () => {
+test('an administrator of the partner cannot invite (only the Compliance Manager starts a file); asking again replaces the link', async () => {
   const first = sent.at(-1)!;
-  const res = await call(app, PADMIN, 'POST', '/v1/onboarding/cases', { nodeId: NODE_A, adminEmail: 'owner@agency-a.test' });
+  const refused = await call(app, PADMIN, 'POST', '/v1/onboarding/cases', { nodeId: NODE_A, adminEmail: 'owner@agency-a.test' });
+  assert.equal(refused.statusCode, 403, refused.body);
+  assert.equal(sent.at(-1), first, 'nothing was sent for the refused request');
+  const res = await call(app, OFFICER, 'POST', '/v1/onboarding/cases', { nodeId: NODE_A, adminEmail: 'owner@agency-a.test' });
   assert.equal(res.statusCode, 201, res.body);
   assert.equal(JSON.parse(res.body).id, CASE_A, 'the same case is reused, not a second one');
   const second = sent.at(-1)!;
@@ -161,7 +169,7 @@ test('reminders go out at 24, 48 and 72 hours, each with a new link, and then st
 });
 
 test('reminders are not sent to a link that has been opened', async () => {
-  const node = (await call(app, 'admin@invite.test', 'POST', '/v1/org/partners', { name: 'Agency O', parentId: ownerNode })).json().id as string;
+  const node = await addBrokerFixture(fixtureCall, db.ownerUrl, ownerNode, 'Agency O');
   const res = await call(app, OFFICER, 'POST', '/v1/onboarding/cases', { nodeId: node, adminEmail: 'owner@agency-o.test' });
   assert.equal(res.statusCode, 201, res.body);
   const invId = JSON.parse(res.body).invitation.id;

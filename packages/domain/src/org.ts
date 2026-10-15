@@ -70,13 +70,18 @@ export function canGrantRole(
 }
 
 /**
- * Who may add a broker (a partner) under a parent.
- * - Tenant admins: anywhere (until slice 3 limits it to Compliance Managers).
- * - A partner administrator on the parent partner's chain: sub-brokers beneath that partner.
- * - Branch managers: no. Starting a broker is the Compliance Manager's job (plan v7, section 5).
+ * Who may add a broker (a partner) under a parent (plan v7, sections 2 and 5).
+ * - A top-level broker sits under a branch and is added by the Compliance Manager of that branch, and only that
+ *   (never the company administrator, never a branch manager). The new broker and its file are created together.
+ * - A sub-broker sits under a partner. Tenant admins and partner administrators on the parent's chain keep this for now;
+ *   the sub-broker slice (depth 3) changes it to the partner administrator of an Active broker.
  */
-export function canAddBroker(actor: { isTenantAdmin: boolean }, parent: OrgNodeType, isAdminOnParentChain: boolean): boolean {
-  if (actor.isTenantAdmin) return true;
-  if (parent === 'partner') return isAdminOnParentChain;
+export function canAddBroker(
+  actor: { isTenantAdmin: boolean; isComplianceForBranch: boolean },
+  parent: OrgNodeType,
+  isAdminOnParentChain: boolean,
+): boolean {
+  if (parent === 'location') return actor.isComplianceForBranch;
+  if (parent === 'partner') return actor.isTenantAdmin || isAdminOnParentChain;
   return false;
 }

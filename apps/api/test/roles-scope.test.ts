@@ -9,6 +9,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
 async function call(email: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown) {
@@ -38,7 +39,7 @@ before(async () => {
     await o.query(`INSERT INTO user_node_roles (tenant_id,user_id,node_id,role) VALUES ($1,$2,$3,'staff')`, [co.tenantId, TOR_STAFF_USER, TOR]);
   });
   for (const e of [OFF, MGR, MGR2]) await call(e, 'POST', '/v1/consent/first-login');
-  BROKER = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Toronto Broker', parentId: TOR })).json.id;
+  BROKER = await addBrokerFixture(call, db.ownerUrl, TOR, 'Toronto Broker');
 });
 after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });
 
@@ -101,8 +102,7 @@ test('a branch manager cannot start a broker file', async () => {
 });
 
 test('a branch manager cannot record a broker type', async () => {
-  const started = await call(ADMIN, 'POST', '/v1/onboarding/cases', { nodeId: BROKER, country: 'CA' });
-  assert.equal(started.status, 201, started.raw);
-  const r = await call(MGR, 'POST', `/v1/onboarding/cases/${started.json.id}/type`, { type: 'individual' });
+  const caseOf = (await owner((o) => o.query('SELECT id FROM onboarding_cases WHERE node_id = $1', [BROKER]))).rows[0].id;
+  const r = await call(MGR, 'POST', `/v1/onboarding/cases/${caseOf}/type`, { type: 'individual' });
   assert.equal(r.status, 403, r.raw);
 });

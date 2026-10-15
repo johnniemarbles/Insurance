@@ -7,6 +7,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
 let co: { tenantId: string; rootNodeId: string }; let other: { tenantId: string; rootNodeId: string };
@@ -35,8 +36,8 @@ before(async () => {
   other = await bootstrapTenant(db.ownerUrl, { name: 'Birch Insurance', countryCode: 'CA', adminEmail: OTHER });
   await call(ADMIN, 'POST', '/v1/consent/first-login'); await call(OTHER, 'POST', '/v1/consent/first-login');
   BR = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
-  NA = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Partner A', parentId: BR })).json.id;
-  NB = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Partner B', parentId: BR })).json.id;
+  NA = await addBrokerFixture(call, db.ownerUrl, BR, 'Partner A');
+  NB = await addBrokerFixture(call, db.ownerUrl, BR, 'Partner B');
   await seedUser(co.tenantId, MGR, BR, 'manager');
   await seedUser(co.tenantId, PA, NA, 'partner');
   await seedUser(co.tenantId, PB, NB, 'partner');

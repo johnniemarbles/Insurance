@@ -7,6 +7,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let deps: AppDeps;
 let co: { tenantId: string; rootNodeId: string }; let ho: { tenantId: string; rootNodeId: string };
@@ -38,7 +39,7 @@ before(async () => {
   co = await bootstrapTenant(db.ownerUrl, { name: 'Sunset Insurance', countryCode: 'US', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   const loc = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Los Angeles' })).json.id;
-  HOME = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Lee Agency', parentId: loc })).json.id;
+  HOME = await addBrokerFixture(call, db.ownerUrl, loc, 'Lee Agency');
   await seedUser(co.tenantId, L1, HOME, 'learner', 'Lee Learner');
 });
 after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });

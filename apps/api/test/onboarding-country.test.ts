@@ -8,6 +8,7 @@ import { loadConfig, localKeyProvider } from '@pii/platform';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture, officerFor } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
 async function call(email: string, method: 'GET' | 'POST', url: string, body?: unknown) {
@@ -25,8 +26,8 @@ before(async () => {
   await bootstrapTenant(db.ownerUrl, { name: 'Country Test USA', countryCode: 'US', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   BRANCH = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Chicago' })).json.id;
-  BROKER_A = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Chicago Broker One', parentId: BRANCH })).json.id;
-  BROKER_B = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Chicago Broker Two', parentId: BRANCH })).json.id;
+  BROKER_A = await addBrokerFixture(call, db.ownerUrl, BRANCH, 'Chicago Broker One');
+  BROKER_B = await addBrokerFixture(call, db.ownerUrl, BRANCH, 'Chicago Broker Two');
 });
 after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });
 
@@ -36,14 +37,14 @@ async function countryOf(nodeId: string): Promise<string | undefined> {
   return (list.json.cases as Array<{ nodeId: string; country: string }>).find((c) => c.nodeId === nodeId)?.country;
 }
 
-test('a broker added in a US company is a US broker, with no country sent', async () => {
-  const r = await call(ADMIN, 'POST', '/v1/onboarding/cases', { nodeId: BROKER_A });
-  assert.equal(r.status, 201, r.raw);
+test('a broker added in a US company is a US broker, and its file is a US file', async () => {
   assert.equal(await countryOf(BROKER_A), 'US');
+  assert.equal(await countryOf(BROKER_B), 'US');
 });
 
 test('a country sent by an old or stale form is ignored: the company decides', async () => {
-  const r = await call(ADMIN, 'POST', '/v1/onboarding/cases', { nodeId: BROKER_B, country: 'CA' });
+  const officer = await officerFor(call, db.ownerUrl, BRANCH);
+  const r = await call(officer, 'POST', '/v1/onboarding/brokers', { name: 'Chicago Broker Three', parentId: BRANCH, type: 'individual', adminEmail: 'stale@brokers.test', country: 'CA' });
   assert.equal(r.status, 201, r.raw);
-  assert.equal(await countryOf(BROKER_B), 'US');
+  assert.equal(await countryOf(r.json.nodeId), 'US');
 });

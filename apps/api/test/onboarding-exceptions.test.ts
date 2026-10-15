@@ -11,6 +11,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture, caseOfBroker } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
 async function call(email: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown) {
@@ -28,7 +29,7 @@ const REASON = 'Counsel review of the licence history, agreed for this file';
 async function readyCase(agEmail: string, agencyId: string, name: string): Promise<string> {
   assert.equal((await call(agEmail, 'PUT', `/v1/compliance/partners/${agencyId}/profile`, { entityType: 'corporation', legalName: name, businessNumber: '123456789', fields: { province: 'ON' } })).status, 204);
   await owner((o) => o.query('UPDATE compliance_profiles SET submitted_at = now() WHERE node_id = $1', [agencyId]));
-  const id = (await call(OFF, 'POST', '/v1/onboarding/cases', { nodeId: agencyId, country: 'CA' })).json.id;
+  const id = (await caseOfBroker(db.ownerUrl, agencyId));
   assert.equal((await call(agEmail, 'POST', `/v1/onboarding/cases/${id}/form`)).status, 201);
   assert.equal((await call(agEmail, 'POST', `/v1/onboarding/cases/${id}/consents`, CONSENTS)).status, 201);
   assert.equal((await call(OFF, 'POST', `/v1/onboarding/cases/${id}/checks`, { kind: 'credit', provider: 'Equifax Canada', status: 'complete', score: 710 })).status, 201);
@@ -45,8 +46,8 @@ before(async () => {
   const co = await bootstrapTenant(db.ownerUrl, { name: 'Exceptions Insurance', countryCode: 'CA', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   ONT = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
-  AGN = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Exc Agency', parentId: ONT })).json.id;
-  AGN2 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Exc Agency Two', parentId: ONT })).json.id;
+  AGN = await addBrokerFixture(call, db.ownerUrl, ONT, 'Exc Agency');
+  AGN2 = await addBrokerFixture(call, db.ownerUrl, ONT, 'Exc Agency Two');
   await owner(async (o) => {
     for (const [email, home, role] of [[OFF, ONT, 'compliance'], [AG, AGN, 'admin'], [AG2, AGN2, 'admin']] as const) {
       const u = (await o.query(`INSERT INTO app_users (tenant_id,email,display_name,home_node_id,status) VALUES ($1,$2,$3,$4,'active') RETURNING id`, [co.tenantId, email, email.split('@')[0], home])).rows[0].id;

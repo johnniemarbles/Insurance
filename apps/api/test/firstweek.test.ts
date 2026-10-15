@@ -8,6 +8,7 @@ import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import { sweepComplianceAlerts } from '../src/compliance-alerts.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let deps: AppDeps;
 let co: { tenantId: string; rootNodeId: string }; let ho: { tenantId: string; rootNodeId: string };
@@ -39,7 +40,7 @@ before(async () => {
   co = await bootstrapTenant(db.ownerUrl, { name: 'Maple Insurance', countryCode: 'CA', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   LOC = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
-  NODE = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'New Partner Agency', parentId: LOC })).json.id;
+  NODE = await addBrokerFixture(call, db.ownerUrl, LOC, 'New Partner Agency');
   await seedUser(co.tenantId, PART, NODE, 'partner', 'Pat Partner');
   await seedUser(co.tenantId, FR, NODE, 'learner', 'Fran Learner');
   await owner((o) => o.query(`UPDATE app_users SET locale = 'fr-CA' WHERE email = $1`, [FR]));
@@ -91,7 +92,7 @@ test('partner guide: needs sign-in, then shows in the person\'s language, and is
 });
 
 test('first week: administrators hear once when a partner is past day 7 with steps open, and not before', async () => {
-  const count = () => owner(async (o) => Number((await o.query(`SELECT count(*) n FROM notifications WHERE kind = 'first_week_late' AND tenant_id = $1`, [co.tenantId])).rows[0].n));
+  const count = () => owner(async (o) => Number((await o.query(`SELECT count(*) n FROM notifications n JOIN app_users u ON u.id = n.user_id WHERE n.kind = 'first_week_late' AND n.tenant_id = $1 AND u.email NOT LIKE '%@fixtures.test'`, [co.tenantId])).rows[0].n));
   await sweepComplianceAlerts(deps);
   assert.equal(await count(), 0, 'a partner on day 1 is not late');
   await owner((o) => o.query(`UPDATE org_nodes SET created_at = now() - interval '10 days' WHERE id = $1`, [NODE]));

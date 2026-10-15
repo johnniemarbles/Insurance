@@ -72,8 +72,10 @@ export function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): void {
         const parentType = await nodeType(tx, parentId);
         const kind = linkKindFor(parentType, 'partner');
         if (!kind) throw invalid('A partner can only be created under a location or another partner');
+        // A broker under a branch is added with Add broker, which creates its file in the same step (plan v7, section 5).
+        if (parentType === 'location') throw forbidden('Brokers under a branch are added with Add broker, which starts their file at once');
         const adminOnChain = parentType === 'partner' ? await isAdminOnPartnerChain(tx, ctx, parentId) : false;
-        if (!canAddBroker(ctx, parentType, adminOnChain)) throw forbidden();
+        if (!canAddBroker({ isTenantAdmin: ctx.isTenantAdmin, isComplianceForBranch: false }, parentType, adminOnChain)) throw forbidden();
         // No RETURNING: a brand-new, not-yet-linked node is invisible to a partner admin until the link exists.
         const id = randomUUID();
         await tx.query(`INSERT INTO org_nodes (id, tenant_id, type, name) VALUES ($1, $2, 'partner', $3)`, [id, ctx.tenantId, name.trim()]);

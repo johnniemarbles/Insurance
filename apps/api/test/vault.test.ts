@@ -9,6 +9,7 @@ import { buildApp } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import type { Vault } from '../src/vault.ts';
 import { createHash } from 'node:crypto';
+import { addBrokerFixture } from './support/broker.ts';
 const store = new Map<string, Buffer>();
 let failNext = false;
 const memVault: Vault = { bucket: 'test-bucket', region: 'ca-central-1', lockMode: 'GOVERNANCE',
@@ -44,8 +45,8 @@ before(async () => {
   await bootstrapTenant(db.ownerUrl, { name: 'Birch Insurance', countryCode: 'CA', adminEmail: OTHER });
   await call(ADMIN, 'POST', '/v1/consent/first-login'); await call(OTHER, 'POST', '/v1/consent/first-login');
   const BR = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
-  const NA = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Partner A', parentId: BR })).json.id;
-  const NB = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Partner B', parentId: BR })).json.id;
+  const NA = await addBrokerFixture(call, db.ownerUrl, BR, 'Partner A');
+  const NB = await addBrokerFixture(call, db.ownerUrl, BR, 'Partner B');
   await seedUser(co.tenantId, PA, NA, 'partner'); await seedUser(co.tenantId, PB, NB, 'partner');
   const pipe = (await call(ADMIN, 'POST', '/v1/pipelines', { name: 'Life', sharedDown: true, stages: [{ name: 'New' }, { name: 'Bound' }] })).json.id;
   box = (await call(PA, 'POST', '/v1/boxes', { pipelineId: pipe, name: 'Advice client' })).json.id;

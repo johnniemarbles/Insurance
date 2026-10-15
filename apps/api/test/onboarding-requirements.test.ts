@@ -10,6 +10,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture, caseOfBroker } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
 async function call(email: string, method: 'GET' | 'POST' | 'PUT', url: string, body?: unknown) {
@@ -32,7 +33,7 @@ before(async () => {
   const co = await bootstrapTenant(db.ownerUrl, { name: 'Requirements Insurance', countryCode: 'CA', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   ONT = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
-  AGN = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Req Agency', parentId: ONT })).json.id;
+  AGN = await addBrokerFixture(call, db.ownerUrl, ONT, 'Req Agency');
   await owner(async (o) => {
     for (const [email, home, role] of [[OFF, ONT, 'compliance'], [MGR, ONT, 'manager'], [AG, AGN, 'admin']] as const) {
       const u = (await o.query(`INSERT INTO app_users (tenant_id,email,display_name,home_node_id,status) VALUES ($1,$2,$3,$4,'active') RETURNING id`, [co.tenantId, email, email.split('@')[0], home])).rows[0].id;
@@ -44,7 +45,7 @@ before(async () => {
   await call(MGR, 'POST', '/v1/consent/first-login');
   assert.equal((await call(AG, 'PUT', `/v1/compliance/partners/${AGN}/profile`, PROFILE)).status, 204);
   await owner((o) => o.query('UPDATE compliance_profiles SET submitted_at = now() WHERE node_id = $1', [AGN]));
-  CASE = (await call(OFF, 'POST', '/v1/onboarding/cases', { nodeId: AGN, country: 'CA' })).json.id;
+  CASE = (await caseOfBroker(db.ownerUrl, AGN));
   assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${CASE}/form`)).status, 201);
   assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${CASE}/consents`, CONSENTS)).status, 201);
   assert.equal((await call(OFF, 'POST', `/v1/onboarding/cases/${CASE}/checks`, { kind: 'credit', provider: 'Equifax Canada', status: 'complete', score: 700 })).status, 201);

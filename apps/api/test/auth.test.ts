@@ -1,3 +1,4 @@
+import pg from 'pg';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import type { FastifyInstance } from 'fastify';
@@ -115,7 +116,16 @@ test('admin invites a partner; invitation is accepted through Google sign-in, on
   adminSession = boss.session!;
   const post = (url: string, body: object) => raw('POST', url, { ...as(adminSession), origin: ORIGIN }, body);
   const loc = JSON.parse((await post('/v1/org/locations', { name: 'Montréal' })).body).id;
-  const partner = JSON.parse((await post('/v1/org/partners', { name: 'Tremblay Assurances', parentId: loc })).body).id;
+  // A broker is added by its branch's Compliance Manager (see broker-add.test.ts). This test is about invitations and sign-in,
+  // so the broker node is set up directly here.
+  const partner = (await (async () => {
+    const c = new pg.Client({ connectionString: db.ownerUrl }); await c.connect();
+    try {
+      const n = (await c.query(`INSERT INTO org_nodes (id, tenant_id, type, name) VALUES (gen_random_uuid(), $1, 'partner', 'Tremblay Assurances') RETURNING id`, [tenant.tenantId])).rows[0];
+      await c.query(`INSERT INTO org_links (tenant_id, parent_id, child_id, kind, created_by) VALUES ($1, $2, $3, 'location_link', NULL)`, [tenant.tenantId, loc, n.id]);
+      return { id: n.id };
+    } finally { await c.end(); }
+  })()).id;
   const inv = JSON.parse((await post('/v1/invitations', { email: 'Marie@Tremblay.test', nodeId: partner, role: 'admin', locale: 'fr-CA' })).body);
   invite = new URL(inv.acceptUrl).searchParams.get('token')!;
 

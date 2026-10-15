@@ -7,6 +7,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig } from '@pii/platform';
 import { buildApp } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb;
 let app: FastifyInstance;
@@ -75,11 +76,8 @@ test('tenant admin builds locations and partners', async () => {
   X = r.json.id;
   r = await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Vancouver' });
   Y = r.json.id;
-  r = await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Partner One', parentId: X });
-  assert.equal(r.status, 201);
-  assert.equal(r.json.kind, 'location_link');
-  P1 = r.json.id;
-  P2 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Partner Two', parentId: X })).json.id;
+  P1 = await addBrokerFixture(call, db.ownerUrl, X, 'Partner One');
+  P2 = await addBrokerFixture(call, db.ownerUrl, X, 'Partner Two');
   await seedUser('p1@pii.test', P1, 'admin');
   await seedUser('p2@pii.test', P2, 'admin');
 });
@@ -159,8 +157,9 @@ test('invitations: scoped to the branch you administer', async () => {
   assert.equal((await call('p1@pii.test', 'POST', '/v1/invitations', { email: 'a@b.co', nodeId: P2 })).status, 404);
   assert.equal((await call('p1@pii.test', 'POST', '/v1/invitations', { email: 'a@b.co', nodeId: tenant.rootNodeId, role: 'admin' })).status, 403);
   assert.equal((await call('p1@pii.test', 'POST', '/v1/invitations', { email: 'not-an-email', nodeId: l2 })).status, 400);
-  assert.equal((await call('p2@pii.test', 'GET', '/v1/invitations')).json.invitations.length, 0);
-  const mine = (await call('p1@pii.test', 'GET', '/v1/invitations')).json.invitations;
+  const notFixture = (rows: any[]) => rows.filter((i) => !i.email.endsWith('@fixtures.test'));
+  assert.equal(notFixture((await call('p2@pii.test', 'GET', '/v1/invitations')).json.invitations).length, 0);
+  const mine = notFixture((await call('p1@pii.test', 'GET', '/v1/invitations')).json.invitations);
   assert.equal(mine.length, 1);
   assert.equal(mine[0].email, 'new.hire@example.com');
   assert.ok(!('token' in mine[0]) && !('token_hash' in mine[0]));
@@ -176,7 +175,7 @@ test('audit log: tenant admin only, and structure changes are recorded', async (
 test('users list is branch-scoped', async () => {
   const p2 = (await call('p2@pii.test', 'GET', '/v1/users')).json.users.map((u: any) => u.email);
   assert.deepEqual(p2, ['p2@pii.test']);
-  const all = (await call(ADMIN, 'GET', '/v1/users')).json.users.length;
+  const all = (await call(ADMIN, 'GET', '/v1/users')).json.users.filter((u: any) => !u.email.endsWith('@fixtures.test')).length;
   assert.equal(all, 3);
 });
 

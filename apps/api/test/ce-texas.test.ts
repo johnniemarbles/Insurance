@@ -7,6 +7,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let deps: AppDeps;
 let co: { tenantId: string; rootNodeId: string };
@@ -29,7 +30,7 @@ before(async () => {
   co = await bootstrapTenant(db.ownerUrl, { name: 'Lone Star Insurance', countryCode: 'US', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   const loc = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Austin' })).json.id;
-  const home = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Sam Agency', parentId: loc })).json.id;
+  const home = await addBrokerFixture(call, db.ownerUrl, loc, 'Sam Agency');
   await owner(async (o) => {
     const u = (await o.query(`INSERT INTO app_users (tenant_id,email,display_name,home_node_id,status) VALUES ($1,$2,'Sam Learner',$3,'active') RETURNING id`, [co.tenantId, L1, home])).rows[0].id;
     await o.query(`INSERT INTO user_node_roles (tenant_id,user_id,node_id,role) VALUES ($1,$2,$3,'learner')`, [co.tenantId, u, home]);

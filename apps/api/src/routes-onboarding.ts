@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 // Partner (broker) onboarding. Two panels share these routes:
 //  - the Compliance officer (per region, or a tenant admin) runs the flow: invite, record the checks, decide the standing, move the agreement;
 //  - the partner completes its own steps (form, consents, carrier packets) and sees its own status, with the outcome only, never the checks.
@@ -7,13 +8,13 @@ import { withRequestTx, type Tx } from '@pii/db';
 import {
   CANADA_THRESHOLDS, STANDING_LABELS, STANDING_OUTCOMES, carrierPacketBlocks, keepsAccessWhile, standingWarning, nextCheckDue, recheckStatus, stageMoveBlock,
   progressSteps, suggestedStanding, REQUIREMENT_COLUMN, REQUIREMENT_DEFAULTS, REQUIREMENT_KEYS, type RequirementKey,
-  BROKER_TYPES, ownershipProblems, type BrokerType, type OwnershipProblem,
+  BROKER_TYPES, canAddBroker, ownershipProblems, type BrokerType, type OwnershipProblem,
   type OnboardingStage, type RequestContext, type StandingOutcome,
 } from '@pii/domain';
 import { audit } from './audit.ts';
 import { escapeHtml } from './merge-render.ts';
 import { createPartnerInvitation, sendPartnerInvitation } from './partner-invite.ts';
-import { isAdminAbove, managesBranchAbove } from './routes-people.ts';
+import { managesBranchAbove } from './routes-people.ts';
 import { conflict, forbidden, invalid, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 
@@ -58,6 +59,15 @@ async function loadCase(tx: Tx, id: string): Promise<CaseRow> {
 /** The Compliance officer for this partner's region, or a tenant admin. */
 async function isOfficer(tx: Tx, tenantId: string, nodeId: string): Promise<boolean> {
   return (await tx.query<{ ok: boolean }>('SELECT app_is_compliance_at_or_above($1, $2) AS ok', [tenantId, nodeId])).rows[0]?.ok === true;
+}
+/**
+ * A Compliance Manager role held at this node or above. Unlike isOfficer, a company administrator does not count:
+ * starting a broker and adding one are the Compliance Manager's alone (plan v7, decisions 1, 5 and 6).
+ */
+async function holdsComplianceAbove(tx: Tx, nodeId: string): Promise<boolean> {
+  return (await tx.query<{ ok: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM user_node_roles r JOIN org_reach o ON o.ancestor_id = r.node_id
+                     WHERE r.user_id = app_user_id() AND r.role::text = 'compliance' AND o.descendant_id = $1) AS ok`, [nodeId])).rows[0]?.ok === true;
 }
 async function requireOfficer(tx: Tx, c: CaseRow): Promise<void> {
   if (!(await isOfficer(tx, c.tenantId, c.nodeId))) throw forbidden('Only the Compliance officer for this region can do this');
@@ -397,9 +407,8 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
         `SELECT n.tenant_id AS "tenantId", n.type, n.name, t.country_code::text AS country
            FROM org_nodes n JOIN tenants t ON t.id = n.tenant_id WHERE n.id = $1`, [nodeId])).rows[0];
       if (!n || n.type !== 'partner') throw notFound('Unknown partner');
-      // Plan v7: starting a broker is the Compliance Manager's job. Branch managers see progress only.
-      const allowed = (await isOfficer(tx, n.tenantId, nodeId)) || (await isAdminAbove(tx, ctx, nodeId));
-      if (!allowed) throw forbidden('Only the Compliance Manager for this branch, or an administrator of this partner, can start it');
+      // Plan v7: only the Compliance Manager starts a partner's file. Branch managers and the company administrator do not.
+      if (!(await holdsComplianceAbove(tx, nodeId))) throw forbidden('Only the Compliance Manager for this branch can start this file');
       const existing = (await tx.query<{ id: string }>('SELECT id FROM onboarding_cases WHERE node_id = $1', [nodeId])).rows[0];
       if (existing && adminEmail === null) throw conflict('This partner is already in onboarding');
       let id = existing?.id;
@@ -439,6 +448,77 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     }
     reply.code(201);
     return { ...view, mailConfigured: Boolean(deps.mailer), recipients, emailedTo };
+  });
+
+  /**
+   * Add a broker under a branch (plan v7, section 5). One action creates the broker and its file together, and invites its
+   * administrator straight away. Only the Compliance Manager of that branch may add one. The name is required and is never
+   * an email. A broker with the same name (case-insensitive) that this officer can see is refused, so it is found and started instead.
+   */
+  app.post('/v1/onboarding/brokers', async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const b = body(req);
+    const name = str(b.name, 'name', 200).trim();
+    if (!name) throw invalid('Enter the broker\'s business name');
+    if (name.includes('@')) throw invalid('Enter the broker\'s business name, not an email address');
+    const parentId = caseId(str(b.parentId, 'parentId', 60));
+    if (!BROKER_TYPES.includes(b.type as never)) throw invalid('type must be individual or corporate');
+    const type = b.type as BrokerType;
+    const adminEmail = str(b.adminEmail, 'adminEmail', 320).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) throw invalid('Enter a valid email address for the broker administrator');
+    const locale: 'en' | 'fr-CA' = b.locale === 'fr-CA' ? 'fr-CA' : 'en';
+    const out = await run(ctx, async (tx) => {
+      const branch = (await tx.query<{ tenantId: string; type: string; country: string }>(
+        `SELECT n.tenant_id AS "tenantId", n.type, t.country_code::text AS country
+           FROM org_nodes n JOIN tenants t ON t.id = n.tenant_id WHERE n.id = $1`, [parentId])).rows[0];
+      if (!branch || branch.type !== 'location') throw notFound('Unknown branch');
+      const complianceHere = await holdsComplianceAbove(tx, parentId);
+      if (!canAddBroker({ isTenantAdmin: ctx.isTenantAdmin, isComplianceForBranch: complianceHere }, 'location', false)) {
+        throw forbidden('Only the Compliance Manager for this branch adds brokers');
+      }
+      const dup = (await tx.query<{ id: string }>(
+        `SELECT id FROM org_nodes WHERE type = 'partner' AND lower(name) = lower($1) LIMIT 1`, [name])).rows[0];
+      if (dup) throw conflict('A broker with this name is already in the company. Search for it and start its file instead.');
+      const nodeId = randomUUID();
+      await tx.query(`INSERT INTO org_nodes (id, tenant_id, type, name) VALUES ($1, $2, 'partner', $3)`, [nodeId, branch.tenantId, name]);
+      await tx.query(
+        `INSERT INTO org_links (tenant_id, parent_id, child_id, kind, created_by) VALUES ($1, $2, $3, 'location_link', $4)`,
+        [branch.tenantId, parentId, nodeId, ctx.userId]);
+      await audit(tx, ctx, 'node_created', 'org_node', nodeId, { type: 'partner', name, parentId, kind: 'location_link' }, nodeId);
+      const caseRow = (await tx.query<{ id: string }>(
+        `INSERT INTO onboarding_cases (tenant_id, node_id, country, broker_type) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [branch.tenantId, nodeId, branch.country, type])).rows[0]!;
+      await audit(tx, ctx, 'onboarding.invited', 'onboarding_case', caseRow.id, { partner: name, country: branch.country, type });
+      const inv = await createPartnerInvitation(tx, ctx, { caseId: caseRow.id, nodeId, email: adminEmail, locale });
+      return {
+        id: caseRow.id, nodeId, stage: 'invited' as const, partnerName: name, tenantId: branch.tenantId,
+        invitation: { ...inv, email: adminEmail, locale, tenantId: branch.tenantId },
+      };
+    });
+    const { tenantId: _t, invitation, partnerName: _n, ...view } = out;
+    const sent = await sendPartnerInvitation(deps, ctx, invitation);
+    reply.code(201);
+    return { ...view, invitation: { id: invitation.id, email: invitation.email, status: sent.status, error: sent.error ?? null, mailConfigured: Boolean(deps.mailer) } };
+  });
+
+  /** Search brokers the caller can see, by name or administrator email, for the duplicate check before Add broker. */
+  app.get('/v1/onboarding/brokers/search', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const q = String((req.query as { q?: unknown }).q ?? '').trim();
+    if (q.length < 2) return { brokers: [] };
+    return run(ctx, async (tx) => {
+      const { rows } = await tx.query(
+        `SELECT n.id, n.name, c.id AS "caseId", c.stage,
+                (SELECT l.parent_id FROM org_links l WHERE l.child_id = n.id AND l.kind = 'location_link' LIMIT 1) AS "branchId"
+           FROM org_nodes n
+           LEFT JOIN onboarding_cases c ON c.node_id = n.id
+          WHERE n.type = 'partner'
+            AND (n.name ILIKE '%' || $1 || '%'
+                 OR EXISTS (SELECT 1 FROM user_node_roles r JOIN app_users u ON u.id = r.user_id
+                             WHERE r.node_id = n.id AND r.role::text = 'admin' AND u.email::text ILIKE '%' || $1 || '%'))
+          ORDER BY n.name LIMIT 10`, [q]);
+      return { brokers: rows };
+    });
   });
 
   /** The cases this officer can see (their region, or all for a tenant admin). */

@@ -8,6 +8,7 @@ import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import { sweepOnboardingRechecks } from '../src/onboarding-recheck.ts';
+import { addBrokerFixture, caseOfBroker } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let co: { tenantId: string; rootNodeId: string }; let deps: AppDeps;
 type M = 'GET' | 'POST' | 'PUT';
@@ -38,8 +39,8 @@ before(async () => {
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   ONT = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
   BCN = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Vancouver' })).json.id;
-  AGN = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Agency One', parentId: ONT })).json.id;
-  OTN = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Agency Two', parentId: ONT })).json.id;
+  AGN = await addBrokerFixture(call, db.ownerUrl, ONT, 'Agency One');
+  OTN = await addBrokerFixture(call, db.ownerUrl, ONT, 'Agency Two');
   await seedUser(co.tenantId, ON_OFF, ONT, 'compliance');
   await seedUser(co.tenantId, BC_OFF, BCN, 'compliance');
   await seedUser(co.tenantId, AG, AGN, 'admin');
@@ -54,18 +55,20 @@ after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end(
 const consentsAll = { consents: [{ kind: 'credit_check', accepted: true }, { kind: 'background_check', accepted: true }, { kind: 'carrier_reporting', accepted: false }] };
 
 test('an officer invites a partner; only the officer for that region sees the case', async () => {
-  const inv = await call(ON_OFF, 'POST', '/v1/onboarding/cases', { nodeId: AGN, country: 'CA' });
-  assert.equal(inv.status, 201);
-  assert.equal(inv.json.stage, 'invited');
+  // The file starts when the broker is added (see broker-add.test.ts), so the officer finds it invited.
+  const caseAgn = await caseOfBroker(db.ownerUrl, AGN);
+  const seen = await call(ON_OFF, 'GET', `/v1/onboarding/cases/${caseAgn}`);
+  assert.equal(seen.status, 200, seen.raw);
+  assert.equal(seen.json.stage, 'invited');
   assert.equal((await call(ON_OFF, 'POST', '/v1/onboarding/cases', { nodeId: AGN })).status, 409, 'a partner is invited once');
   assert.equal((await call(AG, 'POST', '/v1/onboarding/cases', { nodeId: OTN })).status, 404, 'a partner cannot invite, and cannot see the other partner');
   assert.equal((await call(BC_OFF, 'GET', '/v1/onboarding/cases')).json.cases.length, 0, 'the BC officer does not see Ontario cases');
-  assert.equal((await call(BC_OFF, 'GET', `/v1/onboarding/cases/${inv.json.id}`)).status, 404);
-  assert.equal((await call(ON_OFF, 'GET', '/v1/onboarding/cases')).json.cases.length, 1);
+  assert.equal((await call(BC_OFF, 'GET', `/v1/onboarding/cases/${caseAgn}`)).status, 404);
+  assert.equal((await call(ON_OFF, 'GET', '/v1/onboarding/cases')).json.cases.length, 2, 'both Ontario partners, each started when added');
 });
 
 test('the partner completes the form and consents; the officer runs the checks and decides; the partner sees the outcome only', async () => {
-  const id = (await call(ON_OFF, 'GET', '/v1/onboarding/cases')).json.cases[0].id;
+  const id = await caseOfBroker(db.ownerUrl, AGN);
   assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${id}/form`)).status, 201);
   assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${id}/consents`, { consents: [{ kind: 'credit_check', accepted: false }, { kind: 'background_check', accepted: true }] })).status, 422, 'credit consent is required');
   assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${id}/consents`, consentsAll)).status, 201);
@@ -124,7 +127,7 @@ test('the partner completes the form and consents; the officer runs the checks a
 });
 
 test('a partner not in good standing keeps no access, and cannot get an agency agreement or a carrier packet', async () => {
-  assert.equal((await call(ON_OFF, 'POST', '/v1/onboarding/cases', { nodeId: OTN })).status, 201);
+  assert.ok(await caseOfBroker(db.ownerUrl, OTN), 'the file was started when the broker was added');
   const id = (await call(ON_OFF, 'GET', '/v1/onboarding/cases')).json.cases.find((c: { partnerName: string }) => c.partnerName === 'Agency Two Inc').id;
   assert.equal((await call(OTHER, 'POST', `/v1/onboarding/cases/${id}/form`)).status, 201);
   assert.equal((await call(OTHER, 'POST', `/v1/onboarding/cases/${id}/consents`, consentsAll)).status, 201);

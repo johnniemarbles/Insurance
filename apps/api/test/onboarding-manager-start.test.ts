@@ -9,6 +9,7 @@ import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture, caseOfBroker } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
 async function call(email: string, method: 'GET' | 'POST' | 'PUT', url: string, body?: unknown) {
@@ -34,8 +35,8 @@ before(async () => {
     }
   });
   for (const e of [OFF, MGR]) await call(e, 'POST', '/v1/consent/first-login');
-  BROKER = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Toronto Broker Progress', parentId: TOR })).json.id;
-  CASE = (await call(ADMIN, 'POST', '/v1/onboarding/cases', { nodeId: BROKER })).json.id;
+  BROKER = await addBrokerFixture(call, db.ownerUrl, TOR, 'Toronto Broker Progress');
+  CASE = (await caseOfBroker(db.ownerUrl, BROKER));
   assert.ok(CASE);
 });
 after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });

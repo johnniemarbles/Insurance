@@ -8,6 +8,7 @@ import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import { sweepCompliance } from '../src/routes-compliance.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let deps: AppDeps;
 let co: { tenantId: string; rootNodeId: string }; let ho: { tenantId: string; rootNodeId: string };
@@ -38,8 +39,8 @@ before(async () => {
   ho = await bootstrapTenant(db.ownerUrl, { name: 'Head Office CA', countryCode: 'CA', adminEmail: HOADMIN, headOffice: true });
   await call(ADMIN, 'POST', '/v1/consent/first-login'); await call(HOADMIN, 'POST', '/v1/consent/first-login');
   const loc = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
-  AGN = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Agency One', parentId: loc })).json.id;
-  OTN = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Agency Two', parentId: loc })).json.id;
+  AGN = await addBrokerFixture(call, db.ownerUrl, loc, 'Agency One');
+  OTN = await addBrokerFixture(call, db.ownerUrl, loc, 'Agency Two');
   PRN = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Producer', parentId: AGN })).json.id;
   await seedUser(co.tenantId, AG, AGN, 'admin'); await seedUser(co.tenantId, PR, PRN, 'partner'); await seedUser(co.tenantId, OTHER, OTN, 'admin');
   await seedUser(ho.tenantId, HO, ho.rootNodeId, 'compliance');

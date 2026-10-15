@@ -7,6 +7,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let deps: AppDeps;
 let co: { tenantId: string; rootNodeId: string }; let ho: { tenantId: string; rootNodeId: string };
@@ -42,7 +43,7 @@ before(async () => {
   ho = await bootstrapTenant(db.ownerUrl, { name: 'Head Office CA', countryCode: 'CA', adminEmail: HOADMIN, headOffice: true });
   await call(ADMIN, 'POST', '/v1/consent/first-login'); await call(HOADMIN, 'POST', '/v1/consent/first-login');
   const loc = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
-  AGN = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Agency One', parentId: loc })).json.id;
+  AGN = await addBrokerFixture(call, db.ownerUrl, loc, 'Agency One');
   P1 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Lee Broker', parentId: AGN })).json.id;
   P2 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Sam Broker', parentId: AGN })).json.id;
   await seedUser(co.tenantId, MGR, AGN, 'manager');

@@ -8,6 +8,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
 async function call(email: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown) {
@@ -28,8 +29,8 @@ before(async () => {
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   TOR = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
   VAN = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Vancouver' })).json.id;
-  BROKER = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Broker One', parentId: TOR })).json.id;
-  VANP = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Broker Van', parentId: VAN })).json.id;
+  BROKER = await addBrokerFixture(call, db.ownerUrl, TOR, 'Broker One');
+  VANP = await addBrokerFixture(call, db.ownerUrl, VAN, 'Broker Van');
   await owner(async (o) => {
     for (const [email, home, role] of [[TOR_MGR, TOR, 'manager'], [VAN_MGR, VAN, 'manager'], ['jordan.lee@ps.test', BROKER, 'partner']] as const) {
       const u = (await o.query(`INSERT INTO app_users (tenant_id,email,display_name,home_node_id,status) VALUES ($1,$2,$3,$4,'active') RETURNING id`, [co.tenantId, email, email.split('@')[0], home])).rows[0].id;

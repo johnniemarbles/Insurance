@@ -8,6 +8,7 @@ import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import { sweepLearnerReminders } from '../src/routes-forecast.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let deps: AppDeps;
 let co: { tenantId: string; rootNodeId: string };
@@ -29,7 +30,7 @@ before(async () => {
   co = await bootstrapTenant(db.ownerUrl, { name: 'Maple Insurance', countryCode: 'CA', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   const loc = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
-  const ag = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Agency One', parentId: loc })).json.id;
+  const ag = await addBrokerFixture(call, db.ownerUrl, loc, 'Agency One');
   P1 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Lee Broker', parentId: ag })).json.id;
   P2 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Sam Broker', parentId: ag })).json.id;
   for (const [email, home, name] of [[L1, P1, 'Lee Learner'], [L2, P2, 'Sam Learner']] as const) {

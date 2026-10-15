@@ -9,6 +9,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture } from './support/broker.ts';
 
 let db: TestDb;
 let app: FastifyInstance;
@@ -47,8 +48,8 @@ before(async () => {
   await call(ADMIN, 'POST', '/v1/consent/first-login');
   X = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Toronto' })).json.id;
   Y = (await call(ADMIN, 'POST', '/v1/org/locations', { name: 'Vancouver' })).json.id;
-  P1 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Partner One', parentId: X })).json.id;
-  P2 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Partner Two', parentId: X })).json.id;
+  P1 = await addBrokerFixture(call, db.ownerUrl, X, 'Partner One');
+  P2 = await addBrokerFixture(call, db.ownerUrl, X, 'Partner Two');
   await call(ADMIN, 'POST', '/v1/org/links', { parentId: Y, childId: P1 }); // P1 serves two locations
   S1 = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Sub One', parentId: P1 })).json.id;
   await seedUser(P1U, P1, 'admin');

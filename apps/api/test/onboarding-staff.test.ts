@@ -10,6 +10,7 @@ import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
+import { addBrokerFixture, caseOfBroker } from './support/broker.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
 async function call(email: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown) {
@@ -39,7 +40,7 @@ before(async () => {
     }
   });
   for (const e of [OFF, MGR, MGR2, STF, TRAINER, STF2]) await call(e, 'POST', '/v1/consent/first-login');
-  BROKER = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Toronto Staffed Broker', parentId: TOR })).json.id;
+  BROKER = await addBrokerFixture(call, db.ownerUrl, TOR, 'Toronto Staffed Broker');
   // The broker's own administrator fills in the file and gives consent, as a partner does, before any check is recorded.
   await owner(async (o) => {
     const u = (await o.query(`INSERT INTO app_users (tenant_id,email,display_name,home_node_id,status) VALUES ($1,$2,'broker admin',$3,'active') RETURNING id`, [co.tenantId, AG, BROKER])).rows[0].id;
@@ -48,11 +49,11 @@ before(async () => {
   await call(AG, 'POST', '/v1/consent/first-login');
   assert.equal((await call(AG, 'PUT', `/v1/compliance/partners/${BROKER}/profile`, { entityType: 'corporation', legalName: 'Toronto Staffed Broker Inc', businessNumber: '123456789', fields: { province: 'ON' } })).status, 204);
   await owner((o) => o.query('UPDATE compliance_profiles SET submitted_at = now() WHERE node_id = $1', [BROKER]));
-  CASE = (await call(OFF, 'POST', '/v1/onboarding/cases', { nodeId: BROKER, country: 'CA' })).json.id;
+  CASE = (await caseOfBroker(db.ownerUrl, BROKER));
   assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${CASE}/form`)).status, 201);
   assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${CASE}/consents`, { consents: [{ kind: 'credit_check', accepted: true }, { kind: 'background_check', accepted: true }, { kind: 'carrier_reporting', accepted: false }] })).status, 201);
-  OTT_BROKER = (await call(ADMIN, 'POST', '/v1/org/partners', { name: 'Ottawa Staffed Broker', parentId: OTT })).json.id;
-  OTT_CASE = (await call(ADMIN, 'POST', '/v1/onboarding/cases', { nodeId: OTT_BROKER, country: 'CA' })).json.id;
+  OTT_BROKER = await addBrokerFixture(call, db.ownerUrl, OTT, 'Ottawa Staffed Broker');
+  OTT_CASE = (await caseOfBroker(db.ownerUrl, OTT_BROKER));
   // A recorded credit check with a score, so the staff analytics can show it is complete without the score.
   assert.equal((await call(OFF, 'POST', `/v1/onboarding/cases/${CASE}/checks`, { kind: 'credit', provider: 'Equifax Canada', status: 'complete', score: 731 })).status, 201);
 });
