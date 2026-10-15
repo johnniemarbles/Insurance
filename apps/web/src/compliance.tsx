@@ -8,6 +8,7 @@ import type { HostOptions, Locale } from './types.ts';
 import { ExpiryBars, Funnel, needsOf, NeedsYou, titles, Trend, Widgets, type Insights, type NeedTab } from './hoinsights.tsx';
 import { ManagerProgressBoard, OnboardingDashboard, SectionHead } from './onboarding.tsx';
 import { PartnerOnboarding } from './onboarding-partner.tsx';
+import { CountrySwitchLink } from './overview.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Step { id: string; done: boolean; hint?: string }
@@ -285,7 +286,7 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs }: { call: Cal
   const waiting = rows.filter((r) => r.status === 'submitted').length;
   return (
     <div class="home">
-      <SectionHead title={ho ? x.headTitle : x.title} sub={ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub} right={tabs} />
+      <SectionHead title={ho ? x.headTitle : x.title} sub={ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub} right={ho ? <>{ho && <CountrySwitchLink locale={locale} />}{tabs}</> : tabs} />
       {scopeBar}
       {strip}
       {!ho && <ComingUp call={call} locale={locale} />}

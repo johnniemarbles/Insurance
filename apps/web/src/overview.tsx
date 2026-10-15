@@ -40,7 +40,7 @@ const T = {
 
 /** What a company or branch administrator sees first: the work in their own part of the organization, as numbers and small charts. */
 /** Head office only: a link to the other country's app (each country is its own app and database). */
-function CountrySwitchLink({ locale }: { locale: Locale }) {
+export function CountrySwitchLink({ locale }: { locale: Locale }) {
   const s = countrySwitch();
   if (!s) return null;
   const fr = locale === 'fr-CA';
