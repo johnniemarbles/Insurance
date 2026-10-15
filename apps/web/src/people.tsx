@@ -167,7 +167,7 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
     const place = placeName(i.nodeId) || rootName, role = roleLabel(i.role, i.nodeId) ?? i.role;
     return {
       to: i.email, subject: t.subj(rootName), review,
-      html: `<div style="font-family:Arial,sans-serif;font-size:15px;color:#0f172a;max-width:520px"><p>${t.mailHi}</p><p>${t.mailBody(esc(me?.name ?? ''), esc(rootName), esc(place), esc(role))}</p>${i.note ? `<p style="border-left:3px solid #c7d2fe;padding-left:10px;color:#475569">${esc(i.note)}</p>` : ''}<p><a href="${i.acceptUrl}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">${t.mailBtn}</a></p><p style="color:#64748b;font-size:13px">${t.mailFoot}</p></div>`,
+      html: `<div style="font-family:Arial,sans-serif;font-size:15px;color:#0f172a;max-width:520px"><p>${t.mailHi}</p><p>${t.mailBody(esc(me?.name ?? ''), esc(rootName), esc(place), esc(role))}</p>${i.note ? `<p style="border-left:3px solid #c7d2fe;padding-left:10px;color:#475569">${esc(i.note)}</p>` : ''}<p><a href="${i.acceptUrl}" style="display:inline-block;background:#6355F6;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">${t.mailBtn}</a></p><p style="color:#64748b;font-size:13px">${t.mailFoot}</p></div>`,
     };
   };
   const report = (id: string, method: 'gmail' | 'link', ok: boolean, error?: string, threadId?: string) => call('POST', `/v1/invitations/${id}/delivery`, { method, ok, ...(error ? { error: error.slice(0, 300) } : {}), ...(threadId && /^[A-Za-z0-9_:-]{4,80}$/.test(threadId) ? { threadId } : {}) }).catch(() => undefined);
