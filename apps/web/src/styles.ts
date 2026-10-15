@@ -462,4 +462,17 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .dl-bar.exp{background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0)),var(--warn)}
 .dl-day.today b{display:table;margin:2px auto 0;background:var(--pri);color:#fff;border-radius:999px;padding:0 8px;line-height:22px;font-size:13px}
 .dl-day.today{color:var(--pri)}
+/* Reference completion: backdrop panel, partner avatars and status chips, days-left pills, onboarding progress text. */
+.dl-glass{background:#f3f5f9;border-radius:24px;padding:16px;border:1px solid #e9edf4}
+.dl-glass>.hcard,.dl-glass>.pg-cols>.hcard{background:#fff}
+.dl-who{flex-direction:row;align-items:center;gap:10px}
+.dl-wt{display:flex;flex-direction:column;min-width:0}
+.dl-av{width:34px;height:34px;border-radius:50%;background:#dbe7ff;color:#1d4ed8;font-weight:700;font-size:12px;display:grid;place-items:center;flex:0 0 auto}
+.dl-chip{font-style:normal;font-size:11px;font-weight:600;border-radius:999px;padding:1px 8px;background:#eef2ff;color:#1d4ed8;align-self:flex-start;margin-top:3px}
+.dl-chip.exp{background:#fff1e6;color:#b45309}
+.dl-up li{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.dl-up .dl-wt{flex:1 1 180px}
+@media(max-width:600px){.dl-up li{flex-direction:column;align-items:flex-start}.dl-up .dl-pill{margin-left:0}}
+.dl-pill{margin-left:auto;flex:0 0 auto;font-style:normal;font-size:12px;font-weight:600;border-radius:999px;padding:4px 10px;background:#fff7ed;color:#b45309;white-space:nowrap}
+.dl-ob>div{display:flex;flex-direction:column;gap:2px}
+.dl-ob small{font-size:12px;color:var(--mute);margin-top:4px}
 `;
