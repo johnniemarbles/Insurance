@@ -96,7 +96,7 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
   const outcome = view.outcome ? (OUTCOME_LABEL[view.outcome]?.[lc] ?? view.outcome) : t.pending;
 
   return (
-    <section class="obwrap obpartner" aria-label={t.title}>
+    <section class="obwrap obpartner pg" aria-label={t.title}>
       <header class="obhead">
         <div><span class="obkicker">{t.title}</span><h2>{view.partnerName}</h2></div>
         <div class="obhead-right">

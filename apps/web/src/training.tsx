@@ -31,7 +31,7 @@ function TrainingDashboard({ call, locale }: { call: Call; locale: Locale }) {
     : { head: 'Training dashboard', sub: 'Assignments, progress and what is due, for your branches.', assigned: 'Assigned', inProgress: 'In progress', completed: 'Completed', overdue: 'Overdue', course: 'Course', branch: 'Branch' };
   const tile = (n: number, label: string, warn?: boolean) => (<div class={`obtile ${warn && n > 0 ? 'warn' : ''}`}><b>{n}</b><span>{label}</span></div>);
   return (
-    <section class="tpad">
+    <section class="pg-sec">
       <h3>{x.head}</h3>
       <p class="muted">{x.sub}</p>
       <div class="obtiles">
@@ -60,8 +60,7 @@ export function TrainingView({ call, t, locale, canAuthor, isHeadOffice = false,
       {(view.k === 'list' || tab !== 'courses') && <div class="tpad" style={{ paddingBottom: 0 }}><div class="seg" role="tablist">{tabs.map((x) => <button role="tab" aria-selected={tab === x} onClick={() => { setTab(x); setView({ k: 'list' }); }}>{label[x]}</button>)}</div></div>}
       {tab === 'learning' && <MyLearning call={call} locale={locale} canAuthor={canAuthor} onOpen={(id) => { setTab('courses'); setView({ k: 'course', id }); }} />}
       {tab === 'my' && <MyCe call={call} locale={locale} />}
-      {tab === 'team' && <TrainingDashboard call={call} locale={locale} />}
-      {tab === 'team' && <PeopleCe call={call} locale={locale} officer={false} />}
+      {tab === 'team' && <div class="pg"><TrainingDashboard call={call} locale={locale} /><PeopleCe call={call} locale={locale} officer={false} /></div>}
       {tab === 'officer' && <PeopleCe call={call} locale={locale} officer={true} />}
       {tab === 'courses' && view.k === 'list' && <CourseList call={call} t={t} locale={locale} canAuthor={canAuthor} onOpen={(id) => setView({ k: 'course', id })} />}
       {tab === 'courses' && view.k === 'course' && <CoursePage key={view.id} id={view.id} call={call} t={t} locale={locale} onOpenCourse={(nid) => setView({ k: 'course', id: nid })} onBack={() => setView({ k: 'list' })} onLesson={(id) => setView({ k: 'lesson', courseId: (view as { id: string }).id, id })} />}

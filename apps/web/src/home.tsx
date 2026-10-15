@@ -149,7 +149,7 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
   const brandNew = d.recent.length === 0 && pipes.length > 0;
   const act = (f: (typeof feed)[number]) => (f.kind === 'note' ? k.note : f.toStage && f.fromStage ? k.moved(f.toStage) : f.toStage ? k.created : k.created);
   return (
-    <div class="home">
+    <div class="home pg">
       <div class="hhead">
         <div><h2>{x.greet(new Date().getHours(), first)}</h2><span class="muted">{today}</span></div>
         <span class="spacer" />
