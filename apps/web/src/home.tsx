@@ -9,6 +9,7 @@ import { HomeLearning } from './ce.tsx';
 import { LMS } from './features.ts';
 import { DashboardPanel } from './dashboard.tsx';
 import { FirstWeekCard } from './firstweek.tsx';
+import { AssistantPanel } from './assistant-panel.tsx';
 import type { ComposeApi } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -178,6 +179,7 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
       </div>
 
       <FirstWeekCard call={call} locale={locale} go={go} />
+      <AssistantPanel call={call} locale={locale} first={first} />
       {LMS && <HomeLearning call={call} locale={locale} go={go} />}
 
       <div class="hcols">
