@@ -70,3 +70,57 @@ test('a red flag never turns a low score into a pass, and a missing answer is pe
   assert.equal(suggestedStanding({ creditScore: 800, backgroundAdverse: false, insolvencyOrJudgment: null }), 'pending');
   assert.equal(suggestedStanding({ creditScore: 800, backgroundAdverse: false, insolvencyOrJudgment: false, redFlag: null }), 'pending');
 });
+
+// Ownership tiers for a corporate broker (onboarding plan, section 7): directors and holders of 25% or more are identified;
+// holders of 10% or more sign personal guarantees; every person gets a PEP and HIO determination; if nobody holds 25% or more,
+// the steps taken to reach that conclusion are recorded.
+import { ownershipProblems, type OwnerRecord } from '../src/onboarding.ts';
+const person = (over: Partial<OwnerRecord> = {}): OwnerRecord => ({ isDirector: false, sharePercent: 0, identified: false, pepHioDetermined: false, guaranteeSigned: false, ...over });
+
+test('a broker type must be recorded before ownership is judged', () => {
+  assert.deepEqual(ownershipProblems(null, [], false), ['type_missing']);
+});
+
+test('an individual broker needs no ownership tiers', () => {
+  assert.deepEqual(ownershipProblems('individual', [], false), []);
+});
+
+test('a corporate broker needs at least one director', () => {
+  assert.ok(ownershipProblems('corporate', [person({ sharePercent: 30, identified: true, pepHioDetermined: true, guaranteeSigned: true })], true).includes('directors_missing'));
+});
+
+test('a corporate broker with a complete, verified file has no problems', () => {
+  const owners = [
+    person({ isDirector: true, sharePercent: 40, identified: true, pepHioDetermined: true, guaranteeSigned: true }),
+    person({ sharePercent: 30, identified: true, pepHioDetermined: true, guaranteeSigned: true }),
+    person({ isDirector: true, sharePercent: 8, identified: true, pepHioDetermined: true }),
+    person({ sharePercent: 22, pepHioDetermined: true, guaranteeSigned: true }),
+  ];
+  assert.deepEqual(ownershipProblems('corporate', owners, false), []);
+});
+
+test('a director or a holder of 25% or more must be identified', () => {
+  const owners = [person({ isDirector: true, sharePercent: 40, pepHioDetermined: true, guaranteeSigned: true })];
+  assert.ok(ownershipProblems('corporate', owners, false).includes('identity_missing'));
+});
+
+test('a holder of 10% or more signs a personal guarantee', () => {
+  const owners = [person({ isDirector: true, sharePercent: 12, identified: true, pepHioDetermined: true })];
+  assert.ok(ownershipProblems('corporate', owners, false).includes('guarantee_missing'));
+});
+
+test('a holder under 10% does not need a guarantee', () => {
+  const owners = [person({ isDirector: true, sharePercent: 9, identified: true, pepHioDetermined: true }), person({ sharePercent: 91, identified: true, pepHioDetermined: true, guaranteeSigned: true })];
+  assert.ok(!ownershipProblems('corporate', owners, false).includes('guarantee_missing'));
+});
+
+test('every person needs a PEP and HIO determination', () => {
+  const owners = [person({ isDirector: true, sharePercent: 40, identified: true, guaranteeSigned: true })];
+  assert.ok(ownershipProblems('corporate', owners, false).includes('pep_hio_missing'));
+});
+
+test('with nobody at 25% or more, the steps taken must be recorded', () => {
+  const owners = [person({ isDirector: true, sharePercent: 20, identified: true, pepHioDetermined: true, guaranteeSigned: false })];
+  assert.ok(ownershipProblems('corporate', owners, false).includes('steps_missing'));
+  assert.ok(!ownershipProblems('corporate', owners, true).includes('steps_missing'));
+});

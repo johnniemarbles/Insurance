@@ -75,6 +75,7 @@ test('the partner completes the form and consents; the officer runs the checks a
   assert.equal(bg.json.stage, 'checks_complete');
   assert.equal((await call(AG, 'POST', `/v1/onboarding/cases/${id}/decision`, { outcome: 'good_standing', reason: 'mine' })).status, 403, 'the partner cannot decide');
   assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/screening`, { insolvencyOrJudgment: false, redFlag: false, answers: { debtToInsurer: 'no' } })).status, 201);
+  assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/type`, { type: 'individual' })).status, 200);
   const dec = await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/decision`, { outcome: 'good_standing', reason: 'Credit 640, background clear' });
   assert.equal(dec.status, 200);
   assert.equal(dec.json.outcome, 'good_standing');
@@ -129,6 +130,7 @@ test('a partner not in good standing keeps no access, and cannot get an agency a
   assert.equal((await call(OTHER, 'POST', `/v1/onboarding/cases/${id}/consents`, consentsAll)).status, 201);
   await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/checks`, { kind: 'credit', provider: 'Equifax Canada', status: 'complete', score: 540 });
   await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/checks`, { kind: 'background', provider: 'Sterling Backcheck', status: 'complete', adverse: false });
+  await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/type`, { type: 'individual' });
   await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/screening`, { insolvencyOrJudgment: false, redFlag: false, answers: { debtToInsurer: 'no' } });
   const dec = await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/decision`, { outcome: 'not_in_good_standing', reason: 'Credit below 575' });
   assert.equal(dec.status, 200);
