@@ -52,3 +52,21 @@ test('a carrier packet waits for the agency agreement, activation, good standing
   assert.deepEqual(carrierPacketBlocks({ ...ok, lastChecked: new Date('2026-01-01T00:00:00Z') }), ['check_overdue']);
   assert.deepEqual(carrierPacketBlocks({ ...ok, lastChecked: null }), ['check_overdue']);
 });
+
+// Onboarding plan, section 2 (adopted from the external review): a credit score alone never passes a broker.
+test('an undischarged bankruptcy, proposal, arrangement or judgment goes to review, whatever the score', () => {
+  assert.equal(suggestedStanding({ creditScore: 800, backgroundAdverse: false, insolvencyOrJudgment: true }), 'needs_review');
+  assert.equal(suggestedStanding({ creditScore: 300, backgroundAdverse: false, insolvencyOrJudgment: true }), 'needs_review');
+  assert.equal(suggestedStanding({ creditScore: 800, backgroundAdverse: false, insolvencyOrJudgment: false }), 'good_standing');
+});
+
+test('a yes to any red-flag screening question goes to review', () => {
+  assert.equal(suggestedStanding({ creditScore: 800, backgroundAdverse: false, insolvencyOrJudgment: false, redFlag: true }), 'needs_review');
+  assert.equal(suggestedStanding({ creditScore: 800, backgroundAdverse: false, insolvencyOrJudgment: false, redFlag: false }), 'good_standing');
+});
+
+test('a red flag never turns a low score into a pass, and a missing answer is pending once the questionnaire is required', () => {
+  assert.equal(suggestedStanding({ creditScore: 500, backgroundAdverse: false, insolvencyOrJudgment: false, redFlag: true }), 'needs_review');
+  assert.equal(suggestedStanding({ creditScore: 800, backgroundAdverse: false, insolvencyOrJudgment: null }), 'pending');
+  assert.equal(suggestedStanding({ creditScore: 800, backgroundAdverse: false, insolvencyOrJudgment: false, redFlag: null }), 'pending');
+});

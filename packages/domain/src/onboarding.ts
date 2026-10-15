@@ -24,12 +24,19 @@ export interface CheckOutcomes {
   creditScore: number | null;
   /** true = adverse finding in the background report; false = clear; null = still running. */
   backgroundAdverse: boolean | null;
+  /** Any undischarged bankruptcy, consumer proposal, creditor arrangement or unsatisfied judgment, whatever the score. Undefined until the questionnaire is wired in. */
+  insolvencyOrJudgment?: boolean | null;
+  /** Any screening question answered yes: debt to an insurer or agency, licence refusal or conditions, termination for cause, complaints or discipline. Undefined until the questionnaire is wired in. */
+  redFlag?: boolean | null;
 }
 
-/** Suggested outcome from the check results. 'pending' while a result is missing. An adverse background report always goes to review. */
+/**
+ * Suggested outcome from the check results. 'pending' while a result is missing. Any of these goes to review, whatever the score:
+ * an adverse background report, an insolvency or judgment, or a red-flag answer. A credit score alone never passes a broker.
+ */
 export function suggestedStanding(c: CheckOutcomes, t: CheckThresholds = CANADA_THRESHOLDS): StandingOutcome | 'pending' {
-  if (c.backgroundAdverse === true) return 'needs_review';
-  if (c.backgroundAdverse === null || c.creditScore === null) return 'pending';
+  if (c.backgroundAdverse === true || c.insolvencyOrJudgment === true || c.redFlag === true) return 'needs_review';
+  if (c.backgroundAdverse === null || c.creditScore === null || c.insolvencyOrJudgment === null || c.redFlag === null) return 'pending';
   if (c.creditScore >= t.creditPassMin) return 'good_standing';
   if (c.creditScore >= t.creditReviewMin) return 'needs_review';
   return 'not_in_good_standing';
