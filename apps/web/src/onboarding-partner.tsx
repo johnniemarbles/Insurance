@@ -12,6 +12,7 @@ const P = {
   en: {
     frozen: 'Your licence or E&O policy has expired, so carrier submissions are on hold. Renew it to continue.',
     title: 'Your partner onboarding', none: 'There is no onboarding for your partner account.',
+    expiresHead: 'Licence and E&O expiry', expiresNone: 'No licence or E&O dates on file yet.', expiryKind: { licence: 'Licence', eo: 'E&O' }, expiryState: { expired: 'Expired: coverage is frozen', expiring: 'Expires within 30 days', valid: 'Valid' },
     progress: 'Your progress', outcome: 'Standing', nextCheck: 'Next check due', next: 'What happens next', pending: 'Being checked',
     keepGood: 'You are in good standing.', keepReview: 'Your file is being reviewed. Your access continues while it is open.',
     keepNot: 'Your file is not in good standing. Your access continues, but please contact your compliance officer.',
@@ -35,6 +36,7 @@ const P = {
   'fr-CA': {
     frozen: 'Votre permis ou votre police E&O a expiré : les soumissions aux assureurs sont suspendues. Renouvelez-la pour continuer.',
     title: 'Votre intégration de partenaire', none: 'Il n’y a pas d’intégration pour votre compte de partenaire.',
+    expiresHead: 'Expiration du permis et de l’E&O', expiresNone: 'Aucune date de permis ou d’E&O au dossier pour l’instant.', expiryKind: { licence: 'Permis', eo: 'E&O' }, expiryState: { expired: 'Expiré : la couverture est gelée', expiring: 'Expire dans 30 jours', valid: 'Valide' },
     progress: 'Votre progression', outcome: 'Réputation', nextCheck: 'Prochaine vérification', next: 'Ce qui suit', pending: 'En cours de vérification',
     keepGood: 'Vous êtes en bonne réputation.', keepReview: 'Votre dossier est en cours d’examen. Votre accès se poursuit pendant l’examen.',
     keepNot: 'Votre dossier n’est pas en bonne réputation. Votre accès se poursuit, mais veuillez communiquer avec votre responsable de la conformité.',
@@ -61,6 +63,7 @@ interface View {
   id: string; partnerName: string; country: string; stage: string; outcome: string | null; label: string; keepsAccess: boolean; warning: boolean; loginCreated: boolean; extensionInstalled: boolean;
   recheck: { dueOn: string; status: string } | null; consentsGiven: string[];
   carrierPackets: { id: string; carrier: string; status: string; effectiveDate: string | null }[];
+  expiries?: { id: string; kind: 'licence' | 'eo'; label: string; expiresOn: string; status: 'expired' | 'expiring' | 'valid' }[];
 }
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -110,6 +113,13 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
         <div class="obnext" role="status"><b>{t.next}:</b> {t[`next_${stage}` as 'next_active']}</div>
         {keepText && <div class={`banner ${view.warning ? 'warn' : ''}`} role="status">{keepText}</div>}
         {view.recheck && <p class="muted obnote">{t.nextCheck}: {view.recheck.dueOn.slice(0, 10)}</p>}
+      </section>
+
+      <section class="obcard">
+        <h3>{t.expiresHead}</h3>
+        {(view.expiries ?? []).length === 0 ? <p class="muted">{t.expiresNone}</p> : (
+          <ul class="oblist">{(view.expiries ?? []).map((e) => <li key={e.id}>{e.label} · {t.expiryKind[e.kind]} · {e.expiresOn}<span class="muted">{t.expiryState[e.status]}</span></li>)}</ul>
+        )}
       </section>
 
       <SelfReportForm call={call} locale={locale} caseId={view.id} />
