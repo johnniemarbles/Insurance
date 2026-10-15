@@ -373,7 +373,7 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
   };
 
   return (
-    <div class="home obwrap">
+    <div class="home obwrap pg">
       <SectionHead title={t.title} sub={t.sub} right={tabs} />
       {error && <div class="err" role="alert">{error}</div>}
 

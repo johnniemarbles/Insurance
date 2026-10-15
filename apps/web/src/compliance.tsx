@@ -285,7 +285,7 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs }: { call: Cal
   if (!rows) return <div class="msg">…</div>;
   const waiting = rows.filter((r) => r.status === 'submitted').length;
   return (
-    <div class="home">
+    <div class="home pg">
       <SectionHead title={ho ? x.headTitle : x.title} sub={ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub} right={ho ? <>{ho && <CountrySwitchLink locale={locale} />}{tabs}</> : tabs} />
       {scopeBar}
       {strip}
