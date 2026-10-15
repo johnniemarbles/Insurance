@@ -16,6 +16,39 @@ type View = { k: 'list' } | { k: 'course'; id: string } | { k: 'lesson'; courseI
 const move = <T,>(a: T[], i: number, d: number): T[] => { const b = [...a]; const j = i + d; if (j < 0 || j >= b.length) return b; [b[i], b[j]] = [b[j]!, b[i]!]; return b; };
 const Bar = ({ pct }: { pct: number }) => <div class="pbar" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${Math.min(100, pct)}%` }} /></div>;
 
+/** Trainer dashboard (plan v6, section 9): assignments, progress and what is due, for the branches the viewer may see. */
+function TrainingDashboard({ call, locale }: { call: Call; locale: Locale }) {
+  const fr = locale === 'fr-CA';
+  const [d, setD] = useState<any>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    call('GET', '/v1/training/dashboard').then((r) => setD(r)).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, [call]);
+  if (error) return null; // Learners and others without training roles have no dashboard; nothing to show.
+  if (!d) return null;
+  const x = fr
+    ? { head: 'Tableau de bord de formation', sub: 'Affectations, progression et échéances pour vos succursales.', assigned: 'Affectés', inProgress: 'En cours', completed: 'Terminés', overdue: 'En retard', course: 'Cours', branch: 'Succursale' }
+    : { head: 'Training dashboard', sub: 'Assignments, progress and what is due, for your branches.', assigned: 'Assigned', inProgress: 'In progress', completed: 'Completed', overdue: 'Overdue', course: 'Course', branch: 'Branch' };
+  const tile = (n: number, label: string, warn?: boolean) => (<div class={`obtile ${warn && n > 0 ? 'warn' : ''}`}><b>{n}</b><span>{label}</span></div>);
+  return (
+    <section class="tpad">
+      <h3>{x.head}</h3>
+      <p class="muted">{x.sub}</p>
+      <div class="obtiles">
+        {tile(d.totals.assigned, x.assigned)}{tile(d.totals.inProgress, x.inProgress)}{tile(d.totals.completed, x.completed)}{tile(d.totals.overdue, x.overdue, true)}
+      </div>
+      {d.courses.length > 0 && (
+        <table class="tbl"><thead><tr><th>{x.course}</th><th>{x.assigned}</th><th>{x.completed}</th><th>{x.overdue}</th></tr></thead>
+          <tbody>{d.courses.map((c: any) => <tr key={c.title}><td>{c.title}</td><td>{c.assigned}</td><td>{c.completed}</td><td>{c.overdue}</td></tr>)}</tbody></table>
+      )}
+      {d.branches.length > 0 && (
+        <table class="tbl"><thead><tr><th>{x.branch}</th><th>{x.assigned}</th><th>{x.completed}</th><th>{x.overdue}</th></tr></thead>
+          <tbody>{d.branches.map((b: any) => <tr key={b.name}><td>{b.name}</td><td>{b.assigned}</td><td>{b.completed}</td><td>{b.overdue}</td></tr>)}</tbody></table>
+      )}
+    </section>
+  );
+}
+
 export function TrainingView({ call, t, locale, canAuthor, isHeadOffice = false, isAdmin = false }: { call: Call; t: Strings; locale: Locale; canAuthor: boolean; isHeadOffice?: boolean; isAdmin?: boolean }) {
   const k = ceStrings(locale);
   const tabs = isHeadOffice ? (canAuthor || isAdmin ? (['officer', 'courses', 'learning', 'my', 'team'] as const) : (['officer', 'learning', 'my'] as const)) : (canAuthor || isAdmin ? (['courses', 'learning', 'my', 'team'] as const) : (['courses', 'learning', 'my'] as const));
@@ -27,6 +60,7 @@ export function TrainingView({ call, t, locale, canAuthor, isHeadOffice = false,
       {(view.k === 'list' || tab !== 'courses') && <div class="tpad" style={{ paddingBottom: 0 }}><div class="seg" role="tablist">{tabs.map((x) => <button role="tab" aria-selected={tab === x} onClick={() => { setTab(x); setView({ k: 'list' }); }}>{label[x]}</button>)}</div></div>}
       {tab === 'learning' && <MyLearning call={call} locale={locale} canAuthor={canAuthor} onOpen={(id) => { setTab('courses'); setView({ k: 'course', id }); }} />}
       {tab === 'my' && <MyCe call={call} locale={locale} />}
+      {tab === 'team' && <TrainingDashboard call={call} locale={locale} />}
       {tab === 'team' && <PeopleCe call={call} locale={locale} officer={false} />}
       {tab === 'officer' && <PeopleCe call={call} locale={locale} officer={true} />}
       {tab === 'courses' && view.k === 'list' && <CourseList call={call} t={t} locale={locale} canAuthor={canAuthor} onOpen={(id) => setView({ k: 'course', id })} />}
