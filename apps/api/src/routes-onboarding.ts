@@ -216,7 +216,9 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     if (!BROKER_TYPES.includes(type as never)) throw invalid('type must be individual or corporate');
     return run(ctx, async (tx) => {
       const c = await loadCase(tx, id);
-      await requireOfficer(tx, c);
+      // A branch manager records the type when it starts the broker (stage invited only); after that, the officer decides.
+      const managerStarting = c.stage === 'invited' && (await isBranchManagerAbove(tx, c.nodeId));
+      if (!managerStarting) await requireOfficer(tx, c);
       if (c.stage === 'active') throw conflict('The broker is already Active');
       await tx.query('UPDATE onboarding_cases SET broker_type = $2, updated_at = now() WHERE id = $1', [id, type]);
       await audit(tx, ctx, 'onboarding.type_recorded', 'onboarding_case', id, { type });

@@ -47,3 +47,22 @@ export function canChangeStructure(
 export function canEditRecord(actor: { isTenantAdmin: boolean; nodeIds: string[] }, ownerNodeId: string): boolean {
   return actor.isTenantAdmin || actor.nodeIds.includes(ownerNodeId);
 }
+
+/**
+ * Who may add a broker (a partner) under a parent.
+ * - Tenant admins: anywhere.
+ * - A partner administrator on the parent partner's chain: sub-brokers beneath that partner.
+ * - A Branch manager of the location: brokers under its own branch only. It starts their onboarding (plan section 6).
+ * - Nobody else.
+ */
+export function canAddBroker(
+  actor: { isTenantAdmin: boolean },
+  parent: OrgNodeType,
+  isAdminOnParentChain: boolean,
+  isManagerOfParentBranch: boolean,
+): boolean {
+  if (actor.isTenantAdmin) return true;
+  if (parent === 'partner') return isAdminOnParentChain;
+  if (parent === 'location') return isManagerOfParentBranch;
+  return false;
+}
