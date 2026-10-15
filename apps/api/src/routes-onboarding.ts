@@ -13,7 +13,7 @@ import {
 import { audit } from './audit.ts';
 import { escapeHtml } from './merge-render.ts';
 import { createPartnerInvitation, sendPartnerInvitation } from './partner-invite.ts';
-import { isAdminAbove } from './routes-people.ts';
+import { isAdminAbove, managesBranchAbove } from './routes-people.ts';
 import { conflict, forbidden, invalid, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 
@@ -175,6 +175,34 @@ async function requirementsOf(tx: Tx, tenantId: string): Promise<Record<Requirem
   if (row) for (const k of REQUIREMENT_KEYS) out[k] = row[REQUIREMENT_COLUMN[k]] === true;
   return out;
 }
+
+/** Is the signed-in person a staff member assigned to this broker? */
+async function isAssignedStaff(tx: Tx, caseId: string): Promise<boolean> {
+  return (await tx.query<{ ok: boolean }>(
+    'SELECT EXISTS (SELECT 1 FROM onboarding_staff WHERE case_id = $1 AND user_id = app_user_id()) AS ok', [caseId])).rows[0]?.ok === true;
+}
+
+/** The staff members assigned to this broker: name only. */
+async function assignedStaff(tx: Tx, caseId: string): Promise<{ userId: string; name: string }[]> {
+  return (await tx.query<{ userId: string; name: string }>(
+    `SELECT s.user_id AS "userId", u.display_name AS name FROM onboarding_staff s JOIN app_users u ON u.id = s.user_id
+      WHERE s.case_id = $1 ORDER BY u.display_name`, [caseId])).rows;
+}
+
+/**
+ * The analytics a staff member sees for a broker it manages: stage progress, the recheck date, and whether each check is
+ * complete or outstanding. Never a score, a provider, the screening answers, the standing, or a decision (plan v7, section 6).
+ */
+async function staffView(tx: Tx, c: CaseRow) {
+  const checks = (await tx.query<{ kind: string; status: string }>(
+    'SELECT kind, status FROM onboarding_check_status_for_staff($1)', [c.id])).rows;
+  return {
+    id: c.id, partnerName: c.partnerName, steps: progressSteps(c.stage), recheck: recheckView(c.lastCheckedAt),
+    checks: checks.map((r) => ({ kind: r.kind, complete: r.status === 'complete' })),
+  };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
@@ -423,22 +451,26 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
                 c.login_created_at AS "loginCreatedAt", c.extension_installed_at AS "extensionInstalledAt",
                 inv.email AS "inviteEmail", inv.accepted_at AS "inviteAccepted", inv.link_opened_at AS "inviteOpened",
                 inv.sent_at AS "inviteSent", inv.reminders_sent AS "inviteReminders", inv.delivery_error AS "inviteError",
-                app_is_compliance_at_or_above(c.tenant_id, c.node_id) AS "full"
+                app_is_compliance_at_or_above(c.tenant_id, c.node_id) AS "full",
+                EXISTS (SELECT 1 FROM onboarding_staff s WHERE s.case_id = c.id AND s.user_id = app_user_id()) AS "assigned"
            FROM onboarding_cases c JOIN org_nodes n ON n.id = c.node_id LEFT JOIN compliance_profiles p ON p.node_id = n.id
            LEFT JOIN LATERAL (SELECT i.email::text AS email, i.accepted_at, i.link_opened_at, i.sent_at, i.reminders_sent, i.delivery_error
                                 FROM invitations i WHERE i.onboarding_case_id = c.id ORDER BY i.created_at DESC LIMIT 1) inv ON true
           WHERE app_is_compliance_at_or_above(c.tenant_id, c.node_id) OR ${BRANCH_MANAGER_SQL.replace('%NODE%', 'c.node_id')}
-          ORDER BY c.created_at DESC`)).rows;
-      return {
-        cases: rows.map((c) => (c.full
-          ? {
+             OR EXISTS (SELECT 1 FROM onboarding_staff s WHERE s.case_id = c.id AND s.user_id = app_user_id())
+          ORDER BY c.created_at DESC`)).rows as Array<CaseRow & { full: boolean; assigned: boolean; inviteEmail: string | null; inviteAccepted: Date | null; inviteOpened: Date | null; inviteSent: Date | null; inviteReminders: number; inviteError: string | null }>;
+      const cases = await Promise.all(rows.map(async (c) => {
+        if (c.full) {
+          return {
             id: c.id, nodeId: c.nodeId, partnerName: c.partnerName, country: c.country, stage: c.stage,
             ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
             loginCreated: c.loginCreatedAt != null, extensionInstalled: c.extensionInstalledAt != null,
             invite: inviteView(c),
-          }
-          : progressView(c))),
-      };
+          };
+        }
+        return c.assigned ? staffView(tx, c) : progressView(c);
+      }));
+      return { cases };
     });
   });
 
@@ -449,7 +481,8 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     return run(ctx, async (tx) => {
       const c = await loadCase(tx, id);
       if (!(await isOfficer(tx, c.tenantId, c.nodeId))) {
-        if (await isBranchManagerAbove(tx, c.nodeId)) return progressView(c);
+        if (await isBranchManagerAbove(tx, c.nodeId)) return { ...progressView(c), staff: await assignedStaff(tx, id) };
+        if (await isAssignedStaff(tx, id)) return staffView(tx, c);
         throw forbidden('Only the Compliance officer for this region can do this');
       }
       const consents = (await tx.query(
@@ -713,7 +746,52 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
       const onboarding = await partnerView(tx, `c.node_id IN (SELECT node_id FROM user_node_roles WHERE user_id = app_user_id())`, []);
       const branchManager = (await tx.query<{ ok: boolean }>(
         `SELECT EXISTS (SELECT 1 FROM onboarding_cases c WHERE ${BRANCH_MANAGER_SQL.replace('%NODE%', 'c.node_id')}) AS ok`)).rows[0]?.ok === true;
-      return { officer, branchManager, onboarding };
+      const staff = (await tx.query<{ ok: boolean }>(
+        'SELECT EXISTS (SELECT 1 FROM onboarding_staff WHERE user_id = app_user_id()) AS ok')).rows[0]?.ok === true;
+      return { officer, branchManager, staff, onboarding };
     });
+  });
+
+  /**
+   * A branch manager assigns a staff member of its branch to a broker in its branch (plan v7, section 6).
+   * The staff member must hold the staff role at that branch. Assigning is the only way a staff member sees a broker.
+   */
+  app.post('/v1/onboarding/cases/:id/staff', async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const id = caseId((req.params as { id: string }).id);
+    const userId = str(body(req).userId, 'userId', 60);
+    if (!UUID_RE.test(userId)) throw invalid('Choose a person to assign');
+    const out = await run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      if (!(await managesBranchAbove(tx, ctx.userId, c.nodeId))) throw forbidden('Only the branch manager of this broker\'s branch can assign staff to it');
+      const member = (await tx.query<{ ok: boolean }>(
+        `SELECT EXISTS (SELECT 1 FROM user_node_roles r JOIN org_nodes a ON a.id = r.node_id AND a.type = 'location'
+                          JOIN org_reach o ON o.ancestor_id = r.node_id
+                         WHERE r.user_id = $1 AND r.role::text = 'staff' AND o.descendant_id = $2) AS ok`, [userId, c.nodeId])).rows[0]?.ok === true;
+      if (!member) throw invalid('Only a staff member of this branch can be assigned to its brokers');
+      await tx.query(
+        `INSERT INTO onboarding_staff (tenant_id, case_id, node_id, user_id, assigned_by) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+        [c.tenantId, id, c.nodeId, userId, ctx.userId]);
+      await audit(tx, ctx, 'onboarding.staff_assigned', 'onboarding_case', id, { user: userId });
+      return { userId };
+    });
+    reply.code(201);
+    return out;
+  });
+
+  /** A branch manager removes a staff member from a broker in its branch. */
+  app.delete('/v1/onboarding/cases/:id/staff/:userId', async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const params = req.params as { id: string; userId: string };
+    const id = caseId(params.id);
+    if (!UUID_RE.test(params.userId)) throw invalid('Choose a person to remove');
+    await run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      if (!(await managesBranchAbove(tx, ctx.userId, c.nodeId))) throw forbidden('Only the branch manager of this broker\'s branch can remove staff from it');
+      const r = await tx.query('DELETE FROM onboarding_staff WHERE case_id = $1 AND user_id = $2', [id, params.userId]);
+      if (!r.rowCount) throw notFound('That person is not assigned to this broker');
+      await audit(tx, ctx, 'onboarding.staff_removed', 'onboarding_case', id, { user: params.userId });
+    });
+    return reply.code(204).send();
   });
 }

@@ -74,7 +74,8 @@ test('the branch manager sees progress only: step names and status, never checks
 
   const one = await call(MGR_TOR, 'GET', `/v1/onboarding/cases/${CASE}`);
   assert.equal(one.status, 200, one.raw);
-  assert.deepEqual(Object.keys(one.json).sort(), PROGRESS_KEYS);
+  // The detail also names who is assigned to the broker (plan v7, slice 2); it never carries checks or scores.
+  assert.deepEqual(Object.keys(one.json).sort(), [...PROGRESS_KEYS, 'staff'].sort());
   for (const hidden of ['"checks"', '"standing"', '"suggested"', '"score"', '"consents"', '"decisions"', '"outcome"', '"thresholds"']) {
     assert.ok(!one.raw.includes(hidden), `manager view must not contain ${hidden}`);
   }
