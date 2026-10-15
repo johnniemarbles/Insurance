@@ -361,14 +361,15 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     const { ctx } = await deps.authenticate(req);
     const b = body(req);
     const nodeId = caseId(str(b.nodeId, 'nodeId', 60));
-    const country = b.country === 'US' ? 'US' : 'CA';
+    // The country is the company's (each country is its own company and database). A country sent in the body is ignored.
     const locale: 'en' | 'fr-CA' = b.locale === 'fr-CA' ? 'fr-CA' : 'en';
     const adminEmail = b.adminEmail === undefined || b.adminEmail === null || b.adminEmail === ''
       ? null : str(b.adminEmail, 'adminEmail', 320).trim().toLowerCase();
     if (adminEmail !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) throw invalid('Enter a valid email address for the partner administrator');
     const out = await run(ctx, async (tx) => {
-      const n = (await tx.query<{ tenantId: string; type: string; name: string }>(
-        'SELECT tenant_id AS "tenantId", type, name FROM org_nodes WHERE id = $1', [nodeId])).rows[0];
+      const n = (await tx.query<{ tenantId: string; type: string; name: string; country: string }>(
+        `SELECT n.tenant_id AS "tenantId", n.type, n.name, t.country_code::text AS country
+           FROM org_nodes n JOIN tenants t ON t.id = n.tenant_id WHERE n.id = $1`, [nodeId])).rows[0];
       if (!n || n.type !== 'partner') throw notFound('Unknown partner');
       const allowed = (await isOfficer(tx, n.tenantId, nodeId)) || (await isAdminAbove(tx, ctx, nodeId)) || (await isBranchManagerAbove(tx, nodeId));
       if (!allowed) throw forbidden('Only the Compliance officer for this region, an administrator of this partner, or a manager of its branch, can start it');
@@ -377,8 +378,8 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
       let id = existing?.id;
       if (!id) {
         id = (await tx.query<{ id: string }>(
-          `INSERT INTO onboarding_cases (tenant_id, node_id, country) VALUES ($1, $2, $3) RETURNING id`, [n.tenantId, nodeId, country])).rows[0]!.id;
-        await audit(tx, ctx, 'onboarding.invited', 'onboarding_case', id, { partner: n.name, country });
+          `INSERT INTO onboarding_cases (tenant_id, node_id, country) VALUES ($1, $2, $3) RETURNING id`, [n.tenantId, nodeId, n.country])).rows[0]!.id;
+        await audit(tx, ctx, 'onboarding.invited', 'onboarding_case', id, { partner: n.name, country: n.country });
       }
       const invitation = adminEmail === null ? null : {
         ...(await createPartnerInvitation(tx, ctx, { caseId: id, nodeId, email: adminEmail, locale })),
