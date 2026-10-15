@@ -389,7 +389,7 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 /* Phase 1 page system (docs/claude/dashboard-design-plan.md): one shell, one card, one stat row, one control height. */
 :host{--pg-max:1200px;--pg-gut:32px;--pg-gap:16px;--pg-sect:24px;--ctl-h:40px;--card-r:12px}
 .pg{box-sizing:border-box;width:100%;max-width:var(--pg-max);margin:0 auto;padding:24px var(--pg-gut) 40px;display:flex;flex-direction:column;gap:var(--pg-sect);overflow:auto}
-.pg>*{min-width:0;margin:0}
+.pg>*{min-width:0;margin:0;flex-shrink:0}
 .pg-head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--pg-gap);flex-wrap:wrap}
 .pg-head h1,.pg-head h2{margin:0;font-size:22px;line-height:1.25;color:var(--navy);letter-spacing:-.01em}
 .pg-head p{margin:4px 0 0;color:var(--mute)}
@@ -411,4 +411,34 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .pg-sec{padding:0;margin:0;max-width:none;width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:16px}
 .pg .tpad{padding-left:0;padding-right:0;max-width:none}
 .pg-sec h2,.pg-sec h3,.pg-sec p{margin:0}
+/* Renewals and deadlines (compliance officers). Uses the page shell and card styles above. */
+.dl{display:flex;flex-direction:column;gap:var(--pg-gap);min-width:0}
+.dl-h h2{margin:0;font-size:18px;color:var(--navy);letter-spacing:-.01em}
+.dl-h p{margin:2px 0 14px;color:var(--mute);font-size:13px}
+.dl-tl{overflow-x:auto;padding-bottom:4px}
+.dl-in{min-width:820px}
+.dl-row{display:grid;grid-template-columns:220px repeat(14,minmax(40px,1fr));gap:6px;align-items:center;margin-bottom:8px}
+.dl-head{margin-bottom:6px}
+.dl-who-h{font-size:13px;color:var(--mute)}
+.dl-day{font-size:12px;color:var(--mute);text-align:center;line-height:1.25}
+.dl-day b{display:block;font-size:14px;color:var(--ink)}
+.dl-day.today,.dl-day.today b{color:var(--pri)}
+.dl-who{min-width:0;display:flex;flex-direction:column;background:var(--tint);border:1px solid var(--line);border-radius:10px;padding:6px 10px}
+.dl-who b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dl-who span{font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dl-cell{height:40px;border-radius:8px;background:var(--tint);border:1px solid var(--tint2)}
+.dl-cell.we{background:repeating-linear-gradient(135deg,#EEF2FB 0 6px,#F7F9FF 6px 12px)}
+.dl-bar{grid-row:1;height:40px;border-radius:10px;display:flex;align-items:center;padding:0 12px;color:#fff;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;background:var(--warn2);box-shadow:0 4px 12px rgba(10,31,92,.15)}
+.dl-bar.exp{background:var(--warn)}
+.dl-up{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.dl-up li{border:1px solid var(--line);border-radius:12px;padding:12px}
+.dl-up li.hot{background:#fff7ed;border-color:#fcd9a8}
+.dl-up b{display:block;font-size:14px}
+.dl-up span{font-size:12px;color:var(--mute)}
+.dl-ob{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.dl-ob div{border:1px solid var(--line);border-radius:12px;padding:12px}
+.dl-ob b{display:block;font-size:14px}
+.dl-ob span{font-size:12px;color:var(--mute)}
+.dl-bar2{height:6px;border-radius:999px;background:var(--tint2);margin-top:8px;overflow:hidden}
+.dl-bar2 i{display:block;height:100%;background:var(--pri)}
 `;

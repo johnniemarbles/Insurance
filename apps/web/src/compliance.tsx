@@ -8,6 +8,7 @@ import type { HostOptions, Locale } from './types.ts';
 import { ExpiryBars, Funnel, needsOf, NeedsYou, titles, Trend, Widgets, type Insights, type NeedTab } from './hoinsights.tsx';
 import { ManagerProgressBoard, OnboardingDashboard, SectionHead } from './onboarding.tsx';
 import { PartnerOnboarding } from './onboarding-partner.tsx';
+import { DeadlinesPanel } from './deadlines.tsx';
 import { CountrySwitchLink } from './overview.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -113,7 +114,8 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call:
   ) : undefined;
   if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
   const own = officer === false ? <div class="obwrap"><PartnerOnboarding call={call} locale={locale} embedded /></div> : null;
-  const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} extra={panels} tabs={tabs} />;
+  const lead = officer === true ? <DeadlinesPanel call={call} locale={locale} /> : undefined;
+  const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} openFile={setOpen} host={host} extra={panels} tabs={tabs} lead={lead} />;
   const board = (manager || staff) && officer === false ? <div class="obwrap"><ManagerProgressBoard call={call} locale={locale} /></div> : null;
   return <>{own}{board}{body}</>;
 }
@@ -223,7 +225,7 @@ function FilesAtRisk({ call, locale }: { call: Call; locale: Locale; go: (page: 
   );
 }
 
-function ListView({ call, locale, ho, openFile, host, extra, tabs }: { call: Call; locale: Locale; ho: boolean; openFile: (id: string) => void; host?: HostOptions; extra?: ComponentChildren; tabs?: ComponentChildren }) {
+function ListView({ call, locale, ho, openFile, host, extra, tabs, lead }: { call: Call; locale: Locale; ho: boolean; openFile: (id: string) => void; host?: HostOptions; extra?: ComponentChildren; tabs?: ComponentChildren; lead?: ComponentChildren }) {
   const x = X[locale];
   const base = ho ? '/v1/ho' : '/v1/compliance';
   const [rows, setRows] = useState<any[] | null>(null);
@@ -287,6 +289,7 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs }: { call: Cal
   return (
     <div class="home pg">
       <SectionHead title={ho ? x.headTitle : x.title} sub={ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub} right={ho ? <>{ho && <CountrySwitchLink locale={locale} />}{tabs}</> : tabs} />
+      {lead}
       {scopeBar}
       {strip}
       {!ho && <ComingUp call={call} locale={locale} />}
