@@ -75,16 +75,22 @@ async function requirePartnerUser(tx: Tx, c: CaseRow): Promise<void> {
   if (!ok) throw forbidden('Only people at this partner can do this step');
 }
 
-/** Latest completed credit and background results, as the standing rules read them. */
+/** Latest completed credit and background results, and the latest screening answers, as the standing rules read them. */
 async function outcomesOf(tx: Tx, caseId: string) {
   const rows = (await tx.query<{ kind: string; score: number | null; adverse: boolean | null; status: string }>(
     `SELECT DISTINCT ON (kind) kind, score, adverse, status FROM onboarding_checks
       WHERE case_id = $1 AND kind IN ('credit', 'background') ORDER BY kind, requested_at DESC`, [caseId])).rows;
   const credit = rows.find((r) => r.kind === 'credit');
   const background = rows.find((r) => r.kind === 'background');
+  // No screening recorded yet: the flags stay undefined and do not change the suggestion.
+  const screening = (await tx.query<{ insolvencyOrJudgment: boolean; redFlag: boolean }>(
+    `SELECT insolvency_or_judgment AS "insolvencyOrJudgment", red_flag AS "redFlag" FROM onboarding_screenings
+      WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1`, [caseId])).rows[0];
   return {
     creditScore: credit?.status === 'complete' ? credit.score : null,
     backgroundAdverse: background?.status === 'complete' ? background.adverse : null,
+    insolvencyOrJudgment: screening?.insolvencyOrJudgment,
+    redFlag: screening?.redFlag,
   };
 }
 
@@ -255,9 +261,37 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
         id, nodeId: c.nodeId, partnerName: c.partnerName, country: c.country, stage: c.stage, ...outcomeView(c.standing), recheck: recheckView(c.lastCheckedAt),
         loginCreated: c.loginCreatedAt != null, extensionInstalled: c.extensionInstalledAt != null, invite: latest ? inviteView({ ...c, ...latest }) : null,
         suggested: suggestedStanding(await outcomesOf(tx, id)), thresholds: CANADA_THRESHOLDS,
+        screening: (await tx.query(
+          `SELECT insolvency_or_judgment AS "insolvencyOrJudgment", red_flag AS "redFlag", answers, created_at AS "recordedAt"
+             FROM onboarding_screenings WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1`, [id])).rows[0] ?? null,
         consents, checks, decisions, carrierPackets: packets,
       };
     });
+  });
+
+  /**
+   * Record the screening questionnaire for a broker: insolvency or judgment (yes/no) and red flags (yes/no), with the answers.
+   * Officer only. The latest recording counts; each recording is kept.
+   */
+  app.post('/v1/onboarding/cases/:id/screening', async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const id = caseId((req.params as { id: string }).id);
+    const b = body(req);
+    if (typeof b.insolvencyOrJudgment !== 'boolean') throw invalid('insolvencyOrJudgment must be yes or no (true or false)');
+    if (typeof b.redFlag !== 'boolean') throw invalid('redFlag must be yes or no (true or false)');
+    const answers = b.answers === undefined ? {} : b.answers;
+    if (typeof answers !== 'object' || answers === null || Array.isArray(answers)) throw invalid('answers must be an object');
+    await run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      await requireOfficer(tx, c);
+      await tx.query(
+        `INSERT INTO onboarding_screenings (tenant_id, case_id, node_id, insolvency_or_judgment, red_flag, answers, recorded_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [c.tenantId, id, c.nodeId, b.insolvencyOrJudgment, b.redFlag, JSON.stringify(answers), ctx.userId]);
+      await audit(tx, ctx, 'onboarding.screening_recorded', 'onboarding_case', id, { insolvencyOrJudgment: b.insolvencyOrJudgment, redFlag: b.redFlag });
+    });
+    reply.code(201);
+    return { recorded: true };
   });
 
   /** Record a check result (Equifax credit, Sterling background, or a licence check). Moves the case to checks_requested / checks_complete. */
