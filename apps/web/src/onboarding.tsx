@@ -131,38 +131,22 @@ export function SectionHead({ title, sub, right }: { title: string; sub: string;
 }
 
 const MP = {
-  en: { title: 'Partner onboarding progress', sub: 'The steps each partner in your branch has reached. Checks and decisions are kept by compliance.', none: 'No partner in your branch is in onboarding yet.', name: 'Partner', add: 'Add broker', sent: 'Sent' },
-  'fr-CA': { title: 'Progression de l’intégration des partenaires', sub: 'Les étapes atteintes par chaque partenaire de votre succursale. Les vérifications et décisions sont gérées par la conformité.', none: 'Aucun partenaire de votre succursale n’est en intégration pour l’instant.', name: 'Partenaire', add: 'Ajouter un courtier', sent: 'Envoyé' },
+  en: { title: 'Partner onboarding progress', sub: 'The steps each partner in your branch has reached. Checks and decisions are kept by compliance.', none: 'No partner in your branch is in onboarding yet.', name: 'Partner' },
+  'fr-CA': { title: 'Progression de l’intégration des partenaires', sub: 'Les étapes atteintes par chaque partenaire de votre succursale. Les vérifications et décisions sont gérées par la conformité.', none: 'Aucun partenaire de votre succursale n’est en intégration pour l’instant.', name: 'Partenaire' },
 } as const;
 
 /** A branch manager's view of partner onboarding: each partner's steps and their status. The API sends nothing else to a manager. */
 export function ManagerProgressBoard({ call, locale }: { call: Call; locale: Locale }) {
   const [rows, setRows] = useState<{ id: string; partnerName: string; steps?: { step: Stage; status: 'done' | 'current' | 'pending' }[] }[] | null>(null);
-  const [inviting, setInviting] = useState(false);
-  const [partners, setPartners] = useState<{ id: string; name: string }[]>([]);
-  const [notice, setNotice] = useState('');
   const lc = locale === 'fr-CA' ? 'fr-CA' : 'en';
   const m = MP[lc];
   const x = OB[lc];
-  const t: Dict = T[lc];
-  const load = () => call('GET', '/v1/onboarding/cases').then((r) => setRows(r.cases ?? []), () => setRows([]));
-  useEffect(() => { void load(); }, [call]);
-  // The people in the branch the manager can start: the wizard offers them as existing partners.
-  const openWizard = () => {
-    setNotice('');
-    setInviting(true);
-    void call('GET', '/v1/compliance/partners').then((r) => setPartners((r.partners ?? []) as { id: string; name: string }[]), () => setPartners([]));
-  };
+  // Progress only (plan v7): a branch manager does not start or decide brokers.
+  useEffect(() => { void call('GET', '/v1/onboarding/cases').then((r) => setRows(r.cases ?? []), () => setRows([])); }, [call]);
   const shown = (rows ?? []).filter((r) => Array.isArray(r.steps));
   return (
     <section class="obmanager" aria-label={m.title}>
-      <SectionHead title={m.title} sub={m.sub} right={!inviting ? <button class="btn" onClick={openWizard}>{m.add}</button> : undefined} />
-      {notice && <div class="msg" role="status">{notice}</div>}
-      {inviting && (
-        <AddBrokerWizard call={call} t={t} partners={partners}
-          onSent={(n) => { setNotice(n); setInviting(false); void load(); }}
-          onCancel={() => setInviting(false)} />
-      )}
+      <SectionHead title={m.title} sub={m.sub} />
       {rows === null && <div class="msg">…</div>}
       {rows !== null && shown.length === 0 && <div class="calm">{m.none}</div>}
       {shown.map((r) => (

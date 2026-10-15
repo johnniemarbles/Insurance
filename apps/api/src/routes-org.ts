@@ -19,16 +19,6 @@ async function isAdminOnPartnerChain(tx: Tx, ctx: RequestContext, nodeId: string
   return rows[0]?.ok === true;
 }
 
-/** The signed-in person is a Branch manager of this location (a manager role held on the location itself). */
-async function isBranchManagerOf(tx: Tx, locationId: string): Promise<boolean> {
-  const { rows } = await tx.query<{ ok: boolean }>(
-    `SELECT EXISTS (SELECT 1 FROM user_node_roles r JOIN org_nodes a ON a.id = r.node_id AND a.type = 'location'
-                     WHERE r.user_id = app_user_id() AND r.role::text = 'manager' AND r.node_id = $1) AS ok`,
-    [locationId],
-  );
-  return rows[0]?.ok === true;
-}
-
 async function nodeType(tx: Tx, id: string): Promise<OrgNodeType> {
   const { rows } = await tx.query<{ type: OrgNodeType }>('SELECT type FROM org_nodes WHERE id = $1', [id]);
   if (!rows[0]) throw notFound('Unknown organization node');
@@ -83,8 +73,7 @@ export function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): void {
         const kind = linkKindFor(parentType, 'partner');
         if (!kind) throw invalid('A partner can only be created under a location or another partner');
         const adminOnChain = parentType === 'partner' ? await isAdminOnPartnerChain(tx, ctx, parentId) : false;
-        const managerOfBranch = parentType === 'location' ? await isBranchManagerOf(tx, parentId) : false;
-        if (!canAddBroker(ctx, parentType, adminOnChain, managerOfBranch)) throw forbidden();
+        if (!canAddBroker(ctx, parentType, adminOnChain)) throw forbidden();
         // No RETURNING: a brand-new, not-yet-linked node is invisible to a partner admin until the link exists.
         const id = randomUUID();
         await tx.query(`INSERT INTO org_nodes (id, tenant_id, type, name) VALUES ($1, $2, 'partner', $3)`, [id, ctx.tenantId, name.trim()]);

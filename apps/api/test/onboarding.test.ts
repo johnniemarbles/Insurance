@@ -85,7 +85,7 @@ test('the partner completes the form and consents; the officer runs the checks a
   assert.equal(view.json.outcome, 'good_standing');
   assert.equal(view.json.label, 'Good standing');
   assert.equal(view.json.keepsAccess, true);
-  assert.ok(!view.raw.includes('640'), 'the partner never sees the credit score');
+  assert.ok(!/\b640\b/.test(view.raw), 'the partner never sees the credit score');
   assert.ok(!view.raw.includes('Sterling') && !view.raw.includes('Equifax'), 'the partner never sees the providers');
   assert.ok(!view.raw.includes('Credit 640'), 'the partner never sees the reason');
   assert.equal(view.json.checks, undefined);

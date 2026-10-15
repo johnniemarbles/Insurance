@@ -216,9 +216,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     if (!BROKER_TYPES.includes(type as never)) throw invalid('type must be individual or corporate');
     return run(ctx, async (tx) => {
       const c = await loadCase(tx, id);
-      // A branch manager records the type when it starts the broker (stage invited only); after that, the officer decides.
-      const managerStarting = c.stage === 'invited' && (await isBranchManagerAbove(tx, c.nodeId));
-      if (!managerStarting) await requireOfficer(tx, c);
+      await requireOfficer(tx, c);
       if (c.stage === 'active') throw conflict('The broker is already Active');
       await tx.query('UPDATE onboarding_cases SET broker_type = $2, updated_at = now() WHERE id = $1', [id, type]);
       await audit(tx, ctx, 'onboarding.type_recorded', 'onboarding_case', id, { type });
@@ -371,8 +369,9 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
         `SELECT n.tenant_id AS "tenantId", n.type, n.name, t.country_code::text AS country
            FROM org_nodes n JOIN tenants t ON t.id = n.tenant_id WHERE n.id = $1`, [nodeId])).rows[0];
       if (!n || n.type !== 'partner') throw notFound('Unknown partner');
-      const allowed = (await isOfficer(tx, n.tenantId, nodeId)) || (await isAdminAbove(tx, ctx, nodeId)) || (await isBranchManagerAbove(tx, nodeId));
-      if (!allowed) throw forbidden('Only the Compliance officer for this region, an administrator of this partner, or a manager of its branch, can start it');
+      // Plan v7: starting a broker is the Compliance Manager's job. Branch managers see progress only.
+      const allowed = (await isOfficer(tx, n.tenantId, nodeId)) || (await isAdminAbove(tx, ctx, nodeId));
+      if (!allowed) throw forbidden('Only the Compliance Manager for this branch, or an administrator of this partner, can start it');
       const existing = (await tx.query<{ id: string }>('SELECT id FROM onboarding_cases WHERE node_id = $1', [nodeId])).rows[0];
       if (existing && adminEmail === null) throw conflict('This partner is already in onboarding');
       let id = existing?.id;

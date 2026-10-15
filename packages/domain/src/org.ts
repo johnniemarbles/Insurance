@@ -1,7 +1,7 @@
 // Organization model (PRD 6B): tenant > location > partner > sub-partner.
 // A tenant is one company in one country. Pure logic: no database access here.
 
-export const ORG_ROLES = ['admin', 'manager', 'trainer', 'partner', 'learner', 'compliance', 'auditor'] as const;
+export const ORG_ROLES = ['admin', 'manager', 'trainer', 'partner', 'learner', 'compliance', 'auditor', 'staff'] as const;
 export type OrgRole = (typeof ORG_ROLES)[number];
 
 export type OrgNodeType = 'tenant' | 'location' | 'partner';
@@ -48,21 +48,35 @@ export function canEditRecord(actor: { isTenantAdmin: boolean; nodeIds: string[]
   return actor.isTenantAdmin || actor.nodeIds.includes(ownerNodeId);
 }
 
+/** The roles a branch manager gives in its own branch (plan v7, section 3). */
+export const BRANCH_MANAGER_GRANTS: readonly OrgRole[] = ['manager', 'trainer', 'staff'];
+
 /**
- * Who may add a broker (a partner) under a parent.
- * - Tenant admins: anywhere.
- * - A partner administrator on the parent partner's chain: sub-brokers beneath that partner.
- * - A Branch manager of the location: brokers under its own branch only. It starts their onboarding (plan section 6).
- * - Nobody else.
+ * Who may give a role at a place (add it, or remove it).
+ * - Tenant admins: any role, anywhere.
+ * - A partner administrator (on the partner): the partner's own roles, as before.
+ * - A branch manager: manager, trainer and staff, in its own branch only.
+ * - Nobody else. A Compliance Manager is appointed by the company administrator only.
  */
-export function canAddBroker(
-  actor: { isTenantAdmin: boolean },
-  parent: OrgNodeType,
-  isAdminOnParentChain: boolean,
-  isManagerOfParentBranch: boolean,
+export function canGrantRole(
+  actor: { isTenantAdmin: boolean; isAdminAbove: boolean; managesBranch: boolean },
+  role: OrgRole,
+  nodeType: OrgNodeType,
 ): boolean {
   if (actor.isTenantAdmin) return true;
+  if (nodeType === 'partner') return actor.isAdminAbove;
+  if (nodeType === 'location') return actor.managesBranch && (BRANCH_MANAGER_GRANTS as readonly string[]).includes(role);
+  return false;
+}
+
+/**
+ * Who may add a broker (a partner) under a parent.
+ * - Tenant admins: anywhere (until slice 3 limits it to Compliance Managers).
+ * - A partner administrator on the parent partner's chain: sub-brokers beneath that partner.
+ * - Branch managers: no. Starting a broker is the Compliance Manager's job (plan v7, section 5).
+ */
+export function canAddBroker(actor: { isTenantAdmin: boolean }, parent: OrgNodeType, isAdminOnParentChain: boolean): boolean {
+  if (actor.isTenantAdmin) return true;
   if (parent === 'partner') return isAdminOnParentChain;
-  if (parent === 'location') return isManagerOfParentBranch;
   return false;
 }

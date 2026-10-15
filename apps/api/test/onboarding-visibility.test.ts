@@ -53,14 +53,13 @@ before(async () => {
 });
 after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });
 
-test('a branch manager starts a broker onboarding in its own branch, and not in another', async () => {
-  const mine = await call(MGR_TOR, 'POST', '/v1/onboarding/cases', { nodeId: AGN, country: 'CA' });
+test('a branch manager cannot start a broker onboarding, in its own branch or another; the Compliance Manager does', async () => {
+  assert.equal((await call(MGR_TOR, 'POST', '/v1/onboarding/cases', { nodeId: AGN, country: 'CA' })).status, 403, 'not in its own branch');
+  assert.ok([403, 404].includes((await call(MGR_VAN, 'POST', '/v1/onboarding/cases', { nodeId: AGN, country: 'CA' })).status), 'not in another branch');
+  const mine = await call(ON_OFF, 'POST', '/v1/onboarding/cases', { nodeId: AGN, country: 'CA' });
   assert.equal(mine.status, 201, mine.raw);
   assert.equal(mine.json.stage, 'invited');
   CASE = mine.json.id;
-  const other = await call(MGR_VAN, 'POST', '/v1/onboarding/cases', { nodeId: AGN, country: 'CA' });
-  assert.ok([403, 404].includes(other.status), `Vancouver manager must not start an Ontario broker (got ${other.status})`);
-  assert.equal((await call(MGR_VAN, 'POST', '/v1/onboarding/cases', { nodeId: VANP, country: 'CA' })).status, 201, 'but it can start one in Vancouver');
 });
 
 test('the branch manager sees progress only: step names and status, never checks, scores or the standing', async () => {

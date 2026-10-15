@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { ORG_ROLES, type RequestContext } from '@pii/domain';
+import { canGrantRole, ORG_ROLES, type OrgRole, type RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { newToken } from '@pii/platform';
 import { audit } from './audit.ts';
@@ -12,6 +12,37 @@ import type { AppDeps } from './app.ts';
 const INVITE_DAYS = 7;
 
 /** Admin on the node itself, or on any node that reaches it (location -> partner -> sub-partner). */
+/** The signed-in person is a Branch manager of the branch this node sits in (the branch itself, or a place beneath it). */
+export async function managesBranchAbove(tx: Tx, userId: string, nodeId: string): Promise<boolean> {
+  const { rows } = await tx.query<{ ok: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM user_node_roles r JOIN org_nodes a ON a.id = r.node_id AND a.type = 'location'
+                      JOIN org_reach o ON o.ancestor_id = r.node_id
+                     WHERE r.user_id = $1 AND r.role::text = 'manager' AND o.descendant_id = $2) AS ok`,
+    [userId, nodeId],
+  );
+  return rows[0]?.ok === true;
+}
+
+/** May this person give this role at this place? Used by adding a person, changing roles and removing them. */
+export async function mayGrantRole(tx: Tx, ctx: RequestContext, nodeId: string, role: string): Promise<void> {
+  const node = (await tx.query<{ type: string }>('SELECT type FROM org_nodes WHERE id = $1', [nodeId])).rows[0];
+  if (!node) throw notFound('Unknown organization node');
+  const allowed = canGrantRole(
+    {
+      isTenantAdmin: ctx.isTenantAdmin,
+      isAdminAbove: await isAdminAbove(tx, ctx, nodeId),
+      managesBranch: await managesBranchAbove(tx, ctx.userId, nodeId),
+    },
+    role as OrgRole,
+    node.type as 'tenant' | 'location' | 'partner',
+  );
+  if (!allowed) {
+    throw forbidden(node.type === 'location'
+      ? 'A branch manager can give only the manager, trainer and staff roles, in its own branch'
+      : 'You can only change roles in a branch you administer');
+  }
+}
+
 export async function isAdminAbove(tx: Tx, ctx: RequestContext, nodeId: string): Promise<boolean> {
   if (ctx.isTenantAdmin) return true;
   if (ctx.adminNodeIds.includes(nodeId)) return true;
@@ -97,8 +128,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
         const node = await tx.query<{ type: string }>('SELECT type FROM org_nodes WHERE id = $1', [body.nodeId]);
         if (!node.rows[0]) throw notFound('Unknown organization node');
         if (node.rows[0].type === 'tenant' && !ctx.isTenantAdmin) throw forbidden();
-        if (!(await isAdminAbove(tx, ctx, body.nodeId))) throw forbidden('You can only invite people into a branch you administer');
-        if (role === 'admin' && !ctx.isTenantAdmin && node.rows[0].type === 'location') throw forbidden('Only a tenant admin can add a location admin');
+        await mayGrantRole(tx, ctx, body.nodeId, role);
         const { token, hash } = newToken();
         const expiresAt = new Date(Date.now() + INVITE_DAYS * 86_400_000);
         const { rows } = await tx.query<{ id: string }>(
@@ -208,10 +238,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
   const roleBody = { type: 'object', required: ['userId', 'nodeId', 'role'], additionalProperties: false, properties: { userId: { type: 'string', format: 'uuid' }, nodeId: { type: 'string', format: 'uuid' }, role: { type: 'string', enum: [...ORG_ROLES] } } } as const;
 
   async function mayManageRole(tx: Tx, ctx: RequestContext, nodeId: string, role: string): Promise<void> {
-    const node = (await tx.query<{ type: string }>('SELECT type FROM org_nodes WHERE id = $1', [nodeId])).rows[0];
-    if (!node) throw notFound('Unknown organization node');
-    if (!(await isAdminAbove(tx, ctx, nodeId))) throw forbidden('You can only change roles in a branch you administer');
-    if (role === 'admin' && !ctx.isTenantAdmin && node.type !== 'partner') throw forbidden('Only a company administrator can make someone an admin here');
+    await mayGrantRole(tx, ctx, nodeId, role);
   }
 
   /** The roles a place offers, for the add-person screen. */
@@ -221,7 +248,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
     return run(ctx, async (tx) => {
       const node = (await tx.query<{ type: string }>('SELECT type FROM org_nodes WHERE id = $1', [nodeId])).rows[0];
       if (!node) throw notFound('Unknown organization node');
-      return { type: node.type, roles: rolesFor(node.type, ctx.isTenantAdmin) };
+      return { type: node.type, roles: rolesFor(node.type, ctx.isTenantAdmin, await managesBranchAbove(tx, ctx.userId, nodeId)) };
     });
   });
 
@@ -231,7 +258,7 @@ export function registerPeopleRoutes(app: FastifyInstance, deps: AppDeps): void 
     await run(ctx, async (tx) => {
       await mayManageRole(tx, ctx, b.nodeId, b.role);
       const type = (await tx.query<{ type: string }>('SELECT type FROM org_nodes WHERE id = $1', [b.nodeId])).rows[0]!.type;
-      if (!rolesFor(type, ctx.isTenantAdmin).includes(b.role)) throw invalid(`This place does not take the ${b.role} role`);
+      if (!rolesFor(type, ctx.isTenantAdmin, await managesBranchAbove(tx, ctx.userId, b.nodeId)).includes(b.role)) throw invalid(`This place does not take the ${b.role} role`);
       if (!(await tx.query('SELECT 1 FROM app_users WHERE id = $1', [b.userId])).rowCount) throw notFound('Unknown person');
       await tx.query('INSERT INTO user_node_roles (tenant_id, user_id, node_id, role) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING', [ctx.tenantId, b.userId, b.nodeId, b.role]);
       await audit(tx, ctx, 'role_added', 'user', b.userId, { nodeId: b.nodeId, role: b.role, email: await emailOf(tx, b.userId) }, b.nodeId);
