@@ -8,6 +8,8 @@ export interface Config {
   /** Shown to people and in notices, e.g. "PII by Punjab Insurance". */
   productDisplayName: string;
   appOrigin: string;
+  /** The same product for the other country (its own app and database), linked from the head office. Optional. */
+  otherRegionUrl?: string;
   port: number;
   logLevel: string;
   databaseUrl: string;
@@ -88,6 +90,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     productName: env.PRODUCT_NAME ?? 'PII',
     productDisplayName: env.PRODUCT_DISPLAY_NAME ?? 'PII by Punjab Insurance',
     appOrigin,
+    otherRegionUrl: env.OTHER_REGION_URL || undefined,
     port: Number(env.PORT ?? 3000),
     logLevel: env.LOG_LEVEL ?? 'info',
     databaseUrl: req(env, 'DATABASE_URL'),
