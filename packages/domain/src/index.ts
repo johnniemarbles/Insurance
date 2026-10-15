@@ -18,3 +18,4 @@ export * from './retention.ts';
 export * from './vendors.ts';
 export * from './onboarding.ts';
 export * from './self-report.ts';
+export * from './audit-engagement.ts';
