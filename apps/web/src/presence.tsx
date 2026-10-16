@@ -25,7 +25,7 @@ export function Face({ p }: { p: Peer }) {
 
 /**
  * Keeps this person marked as active while the tab is open, and lists the partners in the same branch who are active now.
- * Renders nothing for staff and head office (the server returns no partners for them) and when nobody else is online.
+ * Shows the active partners the server returns for this person: partners in their branch, or every active partner for staff. Renders nothing when nobody else is online.
  */
 export function PartnersOnline({ call }: { call: Call }) {
   const [peers, setPeers] = useState<Peer[]>([]);

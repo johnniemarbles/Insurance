@@ -6,16 +6,16 @@ type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, 
 
 const X = {
   en: {
-    title: 'Partners', companies: 'Every partner company you can see. Open one to see its compliance file.', branch: 'Partners in your branch',
-    branchSub: 'The partners in your branch and whether they are online now.', online: 'Online now', none: 'Nobody else in your branch is online.',
-    search: 'Search partners', steps: 'steps', noCompanies: 'No partner companies yet.', noMembers: 'No other partners in your branch yet.',
+    title: 'Partners', companies: 'Every partner company you can see. Open one to see its compliance file.', branch: 'Partners across the country',
+    branchSub: 'Grouped by branch, with who is online now.', online: 'Online now', none: 'Nobody else is online right now.',
+    search: 'Search partners', steps: 'steps', noCompanies: 'No partner companies yet.', noMembers: 'No other partners yet.',
     you: 'you', onlineNow: 'Online now', notSignedIn: 'Not signed in yet', lastActive: 'Last active', open: 'Open file', loading: 'Loading…',
     status: { complete: 'Complete', incomplete: 'Incomplete', approved: 'Approved', pending: 'Waiting', frozen: 'Frozen' } as Record<string, string>,
   },
   'fr-CA': {
-    title: 'Partenaires', companies: 'Chaque entreprise partenaire que vous voyez. Ouvrez-en une pour voir son dossier de conformité.', branch: 'Partenaires de votre succursale',
-    branchSub: 'Les partenaires de votre succursale et s’ils sont en ligne maintenant.', online: 'En ligne maintenant', none: 'Personne d’autre de votre succursale n’est en ligne.',
-    search: 'Rechercher un partenaire', steps: 'étapes', noCompanies: 'Aucune entreprise partenaire pour l’instant.', noMembers: 'Aucun autre partenaire dans votre succursale pour l’instant.',
+    title: 'Partenaires', companies: 'Chaque entreprise partenaire que vous voyez. Ouvrez-en une pour voir son dossier de conformité.', branch: 'Partenaires de tout le pays',
+    branchSub: 'Groupés par succursale, avec qui est en ligne maintenant.', online: 'En ligne maintenant', none: 'Personne d’autre n’est en ligne pour l’instant.',
+    search: 'Rechercher un partenaire', steps: 'étapes', noCompanies: 'Aucune entreprise partenaire pour l’instant.', noMembers: 'Aucun autre partenaire pour l’instant.',
     you: 'vous', onlineNow: 'En ligne maintenant', notSignedIn: 'Pas encore connecté', lastActive: 'Dernière activité', open: 'Ouvrir le dossier', loading: 'Chargement…',
     status: { complete: 'Complet', incomplete: 'Incomplet', approved: 'Approuvé', pending: 'En attente', frozen: 'Gelé' } as Record<string, string>,
   },
@@ -82,6 +82,12 @@ function Companies({ call, locale, headOffice, go }: { call: Call; locale: Local
   );
 }
 
+function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {
+  const out: Record<string, T[]> = {};
+  for (const it of items) (out[key(it)] ??= []).push(it);
+  return out;
+}
+
 function Branch({ call, locale }: { call: Call; locale: Locale }) {
   const x = X[locale];
   const [members, setMembers] = useState<any[] | null>(null);
@@ -104,21 +110,26 @@ function Branch({ call, locale }: { call: Call; locale: Locale }) {
       </div>
       <div class="hcard">
         {members && members.length === 0 ? <p class="muted">{x.noMembers}</p> : (
-          <ul class="pt-list">
-            {(members ?? []).map((m) => (
-              <li key={m.id}>
-                <div class="pt-row static">
-                  <span class="pt-av" aria-hidden="true">{m.pictureUrl ? <img src={m.pictureUrl} alt="" referrerPolicy="no-referrer" /> : initials(m.name)}</span>
-                  <span class="pt-main"><b>{m.name}{m.me ? <small class="muted"> · {x.you}</small> : null}</b><small class="muted">{m.company}</small></span>
-                  <span class="pt-meta">
-                    {m.onlineNow
-                      ? <span class="pt-pill ok"><i class="pt-dot" aria-hidden="true" /> {x.onlineNow}</span>
-                      : <small class="muted">{m.lastActiveAt ? `${x.lastActive} ${ago(m.lastActiveAt, locale)}` : x.notSignedIn}</small>}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
+          Object.entries(groupBy(members ?? [], (m) => m.branch || '—')).map(([branch, list]) => (
+            <section key={branch}>
+              <h4 style={{ margin: '12px 0 6px' }}>{branch} <small class="muted">· {list.length}</small></h4>
+              <ul class="pt-list">
+                {list.map((m) => (
+                  <li key={m.id}>
+                    <div class="pt-row static">
+                      <span class="pt-av" aria-hidden="true">{m.pictureUrl ? <img src={m.pictureUrl} alt="" referrerPolicy="no-referrer" /> : initials(m.name)}</span>
+                      <span class="pt-main"><b>{m.name}{m.me ? <small class="muted"> · {x.you}</small> : null}</b><small class="muted">{m.company}</small></span>
+                      <span class="pt-meta">
+                        {m.onlineNow
+                          ? <span class="pt-pill ok"><i class="pt-dot" aria-hidden="true" /> {x.onlineNow}</span>
+                          : <small class="muted">{m.lastActiveAt ? `${x.lastActive} ${ago(m.lastActiveAt, locale)}` : x.notSignedIn}</small>}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
         )}
       </div>
     </div>
