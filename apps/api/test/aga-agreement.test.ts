@@ -19,13 +19,15 @@ test('known details replace their marks, and the advisor name stays until the si
     aga_name: 'Aman Singh',
     province: 'ON',
     city: 'Toronto',
+    street: '200 Bay Street',
+    postal: 'M5J 2J2',
     corporation_name: 'N/A',
     officer_name: '____________________',
     effective_date: '16 October 2026',
     advisor_name: '{{advisor_name}}',
   });
   assert.match(filled, /Aman Singh/);
-  assert.match(filled, /Toronto/);
+  assert.match(filled, /200 Bay Street, Toronto, ON M5J 2J2/);
   assert.doesNotMatch(filled, /\{\{aga_name\}\}/);
   assert.match(filled, /\{\{advisor_name\}\}/);
   const signed = fillAgreement(filled, { ...signDateParts(new Date('2026-10-16T18:00:00Z')), advisor_name: 'Aman Singh' });

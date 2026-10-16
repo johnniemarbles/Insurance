@@ -22,7 +22,10 @@ export const LINES_OF_AUTHORITY: Record<Country, readonly string[]> = {
 export interface ProfileField { key: string; label: { en: string; 'fr-CA': string }; maxLength: number; options?: readonly string[] }
 export const PROFILE_FIELDS: Record<Country, readonly ProfileField[]> = {
   CA: [
+    { key: 'street', label: { en: 'Street address', 'fr-CA': 'Adresse' }, maxLength: 60 },
+    { key: 'city', label: { en: 'City', 'fr-CA': 'Ville' }, maxLength: 60 },
     { key: 'province', label: { en: 'Province or territory', 'fr-CA': 'Province ou territoire' }, maxLength: 40, options: ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'] },
+    { key: 'postal', label: { en: 'Postal code', 'fr-CA': 'Code postal' }, maxLength: 10 },
     { key: 'gst_hst', label: { en: 'GST/HST registration number', 'fr-CA': 'Numéro d’inscription TPS/TVH' }, maxLength: 40 },
     // BC supervision (optional for now). Counsel confirms the 24-month rule before go-live; nothing is required yet.
     { key: 'bc_supervisor_name', label: { en: 'BC supervising licensee name (optional, BC agents under 24 months)', 'fr-CA': 'Nom du titulaire de licence superviseur en C.-B. (facultatif, agents de moins de 24 mois)' }, maxLength: 60 },

@@ -60,7 +60,7 @@ const T = {
     agHint: 'The signing code goes only to partner administrators on this broker, not to staff or learners.',
     tpl: {
       head: 'Company agreement wording',
-      hint: 'The AGA agreement is already in the box. Marks such as {{aga_name}} and {{province}} are filled from the broker’s file when you send. The advisor’s name and the date are filled when they sign. Save it once for the company.',
+      hint: 'The AGA agreement is already in the box. The agent’s name, email, street, city, province, postal code and licence are filled from the file when you send. The advisor’s name and the date are filled when they sign.',
       empty: 'Not saved yet. Review the agreement, then save it. Schedules A and B are named in section 7 and were not in the file you supplied.',
       title: 'Title', version: 'Version', body: 'Agreement text', save: 'Save company wording',
       saved: 'Saved. Earlier wording is kept.', only: 'Only a Compliance Manager or the company administrator can save this.',
@@ -116,7 +116,7 @@ const T = {
     agHint: 'Le code de signature va seulement aux administrateurs du partenaire, pas au personnel ni aux apprenants.',
     tpl: {
       head: 'Texte d’entente de l’entreprise',
-      hint: 'L’entente AGA est déjà dans la case. Les marques comme {{aga_name}} et {{province}} sont remplies depuis le dossier du courtier à l’envoi. Le nom du conseiller et la date le sont à la signature. Enregistrez-la une fois pour l’entreprise.',
+      hint: 'L’entente AGA est déjà dans la case. Le nom, le courriel, la rue, la ville, la province, le code postal et le permis de l’agent sont remplis depuis le dossier à l’envoi. Le nom et la date le sont à la signature.',
       empty: 'Pas encore enregistrée. Relisez l’entente, puis enregistrez-la. Les annexes A et B sont nommées à l’article 7 et n’étaient pas dans le fichier fourni.',
       title: 'Titre', version: 'Version', body: 'Texte de l’entente', save: 'Enregistrer le texte',
       saved: 'Enregistré. Le texte précédent est conservé.', only: 'Seul un gestionnaire de conformité ou l’administrateur de l’entreprise peut l’enregistrer.',
