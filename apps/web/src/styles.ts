@@ -509,4 +509,6 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .settings .sgrid{background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow-soft);padding:20px 24px}
 @media(max-width:600px){.settings .sgrid{padding:16px}}
 .pg-frame .bar{margin-bottom:12px}
+/* Pipeline toolbar on phones: one scrollable strip instead of uneven wrapped rows */
+@media(max-width:600px){.pg-frame .bar:has(.btn.quiet){flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.pg-frame .bar:has(.btn.quiet)::-webkit-scrollbar{display:none}.pg-frame .bar:has(.btn.quiet)>*{flex-shrink:0}.pg-frame .bar:has(.btn.quiet) .spacer{display:none}}
 `;
