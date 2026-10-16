@@ -679,7 +679,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
         await tx.query('UPDATE onboarding_cases SET last_checked_at = now() WHERE id = $1', [id]);
       }
       if (stage !== c.stage) await tx.query('UPDATE onboarding_cases SET stage = $2, updated_at = now() WHERE id = $1', [id, stage]);
-      await audit(tx, ctx, 'onboarding.check_recorded', 'onboarding_case', id, { kind, provider, status });
+      await audit(tx, ctx, 'onboarding.check_recorded', 'onboarding_case', id, { kind, provider, status, source: 'manual' });
       return { stage, suggested: suggestedStanding(o) };
     });
     reply.code(201);

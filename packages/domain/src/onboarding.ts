@@ -117,7 +117,9 @@ export function carrierPacketBlocks(p: {
 
 /**
  * Onboarding requirements a Compliance Manager can switch on or off for the company. All are on by default. A switch-off is
- * recorded with a reason. screeningBeforeDecision is enforced now; the others are enforced as their steps are built.
+ * recorded with a reason. All four are enforced on the decision: screening before the decision, ownership for a corporate
+ * broker, only a Compliance Manager may decide while pending approval is on, and a red-flag good-standing needs the
+ * President and CEO's exception.
  */
 export const REQUIREMENT_KEYS = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'] as const;
 export type RequirementKey = (typeof REQUIREMENT_KEYS)[number];
