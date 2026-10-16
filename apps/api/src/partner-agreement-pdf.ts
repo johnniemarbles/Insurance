@@ -5,6 +5,7 @@ import { pdfText } from './pdf-text.ts';
 export interface PartnerAgreementSeal {
   firm: string; partnerName: string; title: string; body: string; version: string;
   typedName: string; signedAt: Date; ip: string | null; agent: string | null;
+  countersigner?: { name: string; signedAt: Date } | null;
 }
 
 /** The fingerprint of the agreement wording, so the signed copy can be matched to exactly what was shown. */
@@ -54,6 +55,13 @@ export async function sealedPartnerAgreementPdf(i: PartnerAgreementSeal): Promis
   wrap(`Signed on: ${i.signedAt.toISOString()}`);
   wrap(`Signed from: ${i.ip ?? 'not recorded'}${i.agent ? ` (${i.agent})` : ''}`);
   wrap('Method: one-time code sent to the email on file, then typed name', font, 10, grey);
+  if (i.countersigner) {
+    y -= 6;
+    wrap(`Countersigned by: ${i.countersigner.name}`);
+    wrap('For: Punjab Insurance Inc.');
+    wrap(`Countersigned on: ${i.countersigner.signedAt.toISOString()}`);
+    wrap('Method: signed in PII by the compliance manager named on the agreement', font, 10, grey);
+  }
   wrap(`Wording fingerprint (SHA-256): ${agreementHash(i.title, i.body, i.version)}`, font, 8.5, grey);
 
   doc.setTitle(tk.clean(i.title));
