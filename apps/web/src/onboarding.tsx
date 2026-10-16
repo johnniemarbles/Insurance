@@ -51,7 +51,10 @@ const T = {
     exc: { head: 'President and CEO exception', why: 'This file has a red flag, a judgment, an insolvency or an adverse background report. It can be decided as good standing only with the President and CEO’s approval.', reason: 'Reason for the exception (kept on the file)', approve: 'Approve exception', waiting: 'Waiting for the President and CEO’s approval.', none: 'No exception approved yet.', approved: 'Approved by', pendingChip: 'Pending compliance approval', pendingNote: 'Only a Compliance Manager records the decision while this applies.' },
     own: { head: 'Broker type and ownership', type: 'Broker type', individual: 'Individual', corporate: 'Corporation', saveType: 'Save type', typeNone: 'Not recorded yet.', owners: 'Directors and owners', name: 'Name', director: 'Director', share: 'Share %', identified: 'Identified', pep: 'PEP and HIO checked', guarantee: 'Guarantee signed', remove: 'Remove', add: 'Add person', none: 'No one added yet.', complete: 'The ownership file is complete.', stepsHead: 'Steps taken (nobody holds 25% or more)', stepsHint: 'Describe how the holders were established. At least 10 characters.', stepsSave: 'Save steps', ownerRequired: 'Needed before the decision while the requirement is on.', missing: { type_missing: 'Record the broker type', directors_missing: 'Add at least one director', identity_missing: 'Identify each director and each holder of 25% or more', guarantee_missing: 'Signed guarantee for each holder of 10% or more', pep_hio_missing: 'PEP and HIO checked for each person', steps_missing: 'Record the steps taken' } as Record<string, string>, locked: 'Only the Compliance Manager can change the ownership file.' },
     agTitle: 'Agreement title', agVersion: 'Version', agText: 'Agreement text (paste the wording counsel issued. PII has no locked template.)', agSend: 'Send agency agreement to the partner',
-    agResend: 'Send the agreement again', agWaiting: 'Waiting for the partner administrator to sign.',
+    agResend: 'Send the agreement again', agWaiting: 'Waiting for the agent to sign. The compliance manager signs after that.',
+    cmWait: (name: string) => `${name} signs next. The agent has already signed.`,
+    cmSign: 'Sign as compliance manager', cmName: 'Type your full name',
+    cmAgree: 'I have read this agreement and I agree to sign it for the company.', cmVault: 'Saved in the agreement vault',
     agEmailed: (n: number) => n === 1 ? 'The link was emailed to 1 partner administrator.' : `The link was emailed to ${n} partner administrators.`,
     agNotEmailed: 'The email was not sent. Copy this link and give it to the partner administrator.',
     agHint: 'The signing code goes only to partner administrators on this broker, not to staff or learners.',
@@ -104,7 +107,10 @@ const T = {
     exc: { head: 'Exception du président et chef de la direction', why: 'Ce dossier comporte un signal d’alerte, un jugement, une insolvabilité ou un rapport défavorable. Il ne peut être décidé comme bonne réputation qu’avec l’approbation du président et chef de la direction.', reason: 'Motif de l’exception (conservé au dossier)', approve: 'Approuver l’exception', waiting: 'En attente de l’approbation du président et chef de la direction.', none: 'Aucune exception approuvée pour l’instant.', approved: 'Approuvée par', pendingChip: 'Approbation de conformité en attente', pendingNote: 'Seul un gestionnaire de conformité enregistre la décision tant que ceci s’applique.' },
     own: { head: 'Type de courtier et propriété', type: 'Type de courtier', individual: 'Particulier', corporate: 'Société', saveType: 'Enregistrer le type', typeNone: 'Pas encore enregistré.', owners: 'Administrateurs et propriétaires', name: 'Nom', director: 'Administrateur', share: 'Part %', identified: 'Identifié', pep: 'PPE et OIR vérifiés', guarantee: 'Garantie signée', remove: 'Retirer', add: 'Ajouter une personne', none: 'Personne ajoutée pour l’instant.', complete: 'Le dossier de propriété est complet.', stepsHead: 'Démarches effectuées (personne ne détient 25 % ou plus)', stepsHint: 'Décrivez comment les détenteurs ont été établis. Au moins 10 caractères.', stepsSave: 'Enregistrer les démarches', ownerRequired: 'Requis avant la décision tant que l’exigence est active.', missing: { type_missing: 'Indiquer le type de courtier', directors_missing: 'Ajouter au moins un administrateur', identity_missing: 'Identifier chaque administrateur et chaque détenteur de 25 % ou plus', guarantee_missing: 'Garantie signée pour chaque détenteur de 10 % ou plus', pep_hio_missing: 'PPE et OIR vérifiés pour chaque personne', steps_missing: 'Consigner les démarches effectuées' } as Record<string, string>, locked: 'Seul le gestionnaire de conformité peut modifier le dossier de propriété.' },
     agTitle: 'Titre de l’entente', agVersion: 'Version', agText: 'Texte de l’entente (collez le libellé émis par le conseiller juridique. PII n’a pas de modèle verrouillé.)', agSend: 'Envoyer l’entente d’agence au partenaire',
-    agResend: 'Renvoyer l’entente', agWaiting: 'En attente de la signature de l’administrateur du partenaire.',
+    agResend: 'Renvoyer l’entente', agWaiting: 'En attente de la signature de l’agent. Le gestionnaire de conformité signe ensuite.',
+    cmWait: (name: string) => `${name} signe ensuite. L’agent a déjà signé.`,
+    cmSign: 'Signer comme gestionnaire de conformité', cmName: 'Écrivez votre nom complet',
+    cmAgree: 'J’ai lu cette entente et j’accepte de la signer pour l’entreprise.', cmVault: 'Conservée dans le coffre des ententes',
     agEmailed: (n: number) => n === 1 ? 'Le lien a été envoyé à 1 administrateur du partenaire.' : `Le lien a été envoyé à ${n} administrateurs du partenaire.`,
     agNotEmailed: 'Le courriel n’a pas été envoyé. Copiez ce lien et remettez-le à l’administrateur du partenaire.',
     agHint: 'Le code de signature va seulement aux administrateurs du partenaire, pas au personnel ni aux apprenants.',
@@ -651,10 +657,14 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
   const agrFilled = useRef(false);
   const [signed, setSigned] = useState<{ id: string; title: string; version: string; signedAt: string }[]>([]);
   const [sent, setSent] = useState<{ url: string; emailed: boolean; signers: number } | null>(null);
+  const [sig, setSig] = useState<{ agentSigned: boolean; fullySigned: boolean; cmName: string | null; canCountersign: boolean; vaultId: string | null } | null>(null);
+  const [cmTyped, setCmTyped] = useState('');
+  const [cmAgree, setCmAgree] = useState(false);
   const lc = locale === 'fr-CA' ? 'fr-CA' : 'en';
 
   const load = async () => {
     try { setD((await call('GET', `/v1/onboarding/cases/${id}`)) as Detail); setError(''); } catch (e) { setError(errText(e)); }
+    try { setSig(await call('GET', `/v1/onboarding/cases/${id}/agreement-status`) as { agentSigned: boolean; fullySigned: boolean; cmName: string | null; canCountersign: boolean; vaultId: string | null }); } catch { setSig(null); }
   };
   useEffect(() => { void load(); }, [id]);
   useEffect(() => {
@@ -903,7 +913,15 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
               )}
             </>
           )}
-          {d.stage === 'agency_agreement_sent' && <p class="muted">{t.agWaiting}</p>}
+          {d.stage === 'agency_agreement_sent' && <p class="muted">{sig?.agentSigned && sig.cmName ? t.cmWait(sig.cmName) : t.agWaiting}</p>}
+          {sig?.canCountersign && (
+            <form class="obform" onSubmit={(e) => { e.preventDefault(); void run(async () => { await call('POST', `/v1/onboarding/cases/${id}/agreement/countersign`, { typedName: cmTyped.trim(), agree: true }); setCmTyped(''); setCmAgree(false); }); }}>
+              <label class="fl">{t.cmName}<input value={cmTyped} onInput={(e) => setCmTyped((e.target as HTMLInputElement).value)} /></label>
+              <label class="chk obspan2"><input type="checkbox" checked={cmAgree} onChange={(e) => setCmAgree((e.target as HTMLInputElement).checked)} /> {t.cmAgree}</label>
+              <button class="btn" type="submit" disabled={busy || cmTyped.trim().length < 2 || !cmAgree}>{t.cmSign}</button>
+            </form>
+          )}
+          {sig?.vaultId && <p class="muted"><a href={`/v1/onboarding/agreement-vault/${sig.vaultId}/pdf`}>{t.cmVault}</a></p>}
           <h4>{t.sections.signed}</h4>
           {signed.length === 0 ? <p class="muted">{t.noSigned}</p> : (
             <ul class="oblist">{signed.map((a) => <li>{a.title} · {a.version}<span>{t.agSignedOn} {dateOf(a.signedAt)} · <a href={`/v1/onboarding/agreements/${a.id}/pdf`}>{t.agPdf}</a></span></li>)}</ul>

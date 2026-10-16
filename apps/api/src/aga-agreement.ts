@@ -39,6 +39,20 @@ AND
 {{aga_name}}
 (hereinafter called the AGA)
 
+The AGA
+Name: {{aga_name}}
+Email: {{aga_email}}
+Province: {{province}}
+City: {{city}}
+Life licence: {{licence}}
+Corporation: {{corporation_name}}
+
+The Company, by its Compliance Manager
+Name: {{cm_name}}
+Email: {{cm_email}}
+Title: {{cm_title}}
+PUNJAB INSURANCE INC.
+
 1. RELATIONSHIP WITH COMPANY: It is hereby agreed that this document between The Company and the AGA is effective from {{effective_date}}
 
 2. GOAL: As agreed upon this date, the Company retains the AGA as a licensed producer who solicits, writes, sells and services insurance policies for their own clients through The Company as their Associate General Agency, (hereinafter called the AGA). This AGA Agreement is to operate in conjunction with the Agent Agreement between the AGA and each of the Life Insurance Companies for which the AGA is contracted.
@@ -86,12 +100,14 @@ e) Either party provides written notice to the other party requesting terminatio
 
 DATED AT {{city}}, {{province}}, THIS {{sign_day}} DAY OF {{sign_month}}, {{sign_year}}
 
-ADVISOR NAME: {{advisor_name}}
+AGENT
+Name: {{advisor_name}}
+The agent signs first. The signature is the typed name on the signature page.
 
-SIGNING OFFICER (CORPORATION): {{officer_name}}
-NAME OF CORPORATION: {{corporation_name}}
-
-NAME & TITLE OF OFFICER: {{officer_name}}
-
+COMPLIANCE MANAGER
+Name: {{cm_signed_name}}
+Date: {{cm_sign_day}} {{cm_sign_month}} {{cm_sign_year}}
+Title: {{cm_title}}
+The compliance manager signs after the agent.
 AUTHORIZED OFFICER
 PUNJAB INSURANCE INC.`;

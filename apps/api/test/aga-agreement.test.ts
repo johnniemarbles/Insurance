@@ -7,7 +7,9 @@ test('the supplied contract is the agreement, with marks where the paper had bla
   assert.equal(AGA_TITLE, 'AGA Agreement');
   assert.match(AGA_BODY, /PUNJAB INSURANCE INC\./);
   assert.match(AGA_BODY, /\{\{aga_name\}\}/);
-  assert.match(AGA_BODY, /\{\{advisor_name\}\}/);
+  assert.match(AGA_BODY, /\{\{cm_name\}\}/);
+  assert.match(AGA_BODY, /\{\{cm_signed_name\}\}/);
+  assert.match(AGA_BODY, /The agent signs first/);
   assert.match(AGA_BODY, /Schedule A/);
   assert.match(AGA_BODY, /production bones/);
 });
@@ -27,7 +29,8 @@ test('known details replace their marks, and the advisor name stays until the si
   assert.doesNotMatch(filled, /\{\{aga_name\}\}/);
   assert.match(filled, /\{\{advisor_name\}\}/);
   const signed = fillAgreement(filled, { ...signDateParts(new Date('2026-10-16T18:00:00Z')), advisor_name: 'Aman Singh' });
-  assert.match(signed, /ADVISOR NAME: Aman Singh/);
+  assert.match(signed, /AGENT\nName: Aman Singh/);
+  assert.match(signed, /\{\{cm_signed_name\}\}/);
   assert.doesNotMatch(signed, /\{\{advisor_name\}\}/);
   assert.match(signed, /AUTHORIZED OFFICER\nPUNJAB INSURANCE INC\./);
 });

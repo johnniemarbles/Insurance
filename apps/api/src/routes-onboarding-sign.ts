@@ -1,7 +1,7 @@
 // Partner agency agreement signing. The Compliance officer sends the agreement once the standing is good; the partner signs
 // through a private link, with a one-time code emailed to the partner's people. The signed agreement and its sealed PDF are kept
 // with the onboarding case. Separate from client advice signing (routes-sign.ts), which is tied to client boxes and consents.
-import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
 import { OTP_MAX_ATTEMPTS, OTP_MINUTES, stageMoveBlock, type OnboardingStage, type RequestContext, type StandingOutcome } from '@pii/domain';
@@ -10,13 +10,13 @@ import { actingAs } from './effects.ts';
 import { conflict, forbidden, invalid, notFound, HttpError } from './errors.ts';
 import { agreementHash, sealedPartnerAgreementPdf } from './partner-agreement-pdf.ts';
 import { blank, fillAgreement, signDateParts } from './aga-agreement.ts';
+import { seal, open } from '@pii/platform';
 import { signPage } from './routes-sign.ts';
 import type { AppDeps } from './app.ts';
 
 const LINK_DAYS = 7;
 const MAX_SENDS = 5;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const tokenHash = (t: string) => createHash('sha256').update(t).digest();
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const mask = (e: string | null) => (e ? e.replace(/^(.).*(@.*)$/, '$1***$2') : '');
@@ -26,6 +26,8 @@ interface CaseRow { id: string; tenantId: string; nodeId: string; stage: Onboard
 interface LinkRow {
   id: string; tenant_id: string; case_id: string; node_id: string; created_by: string; title: string; body: string; version: string;
   expires_at: Date; otp_hash: Buffer | null; otp_expires_at: Date | null; otp_attempts: number; sends: number; used_at: Date | null;
+  agent_signed_at: Date | null; agent_typed_name: string | null; agent_signed_ip: string | null; agent_signed_agent: string | null;
+  cm_user_id: string | null; cm_name: string | null; cm_email: string | null;
 }
 
 const body = (req: FastifyRequest): Record<string, unknown> => (req.body ?? {}) as Record<string, unknown>;
@@ -93,22 +95,41 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
            LEFT JOIN onboarding_owners o ON o.case_id = c.id AND o.is_director
           WHERE c.id = $1
           ORDER BY o.created_at NULLS LAST LIMIT 1`, [id])).rows[0];
-      const agaName = c.partnerName;
+      const licence = (await tx.query<{ label: string; number: string | null; jurisdiction: string | null }>(
+        `SELECT label, number, jurisdiction FROM compliance_items WHERE node_id = $1 AND kind = 'licence' ORDER BY created_at DESC LIMIT 1`,
+        [c.nodeId])).rows[0];
+      const cm = (await tx.query<{ id: string; name: string; email: string }>(
+        `SELECT u.id, coalesce(nullif(btrim(u.display_name), ''), u.email::text) AS name, u.email::text AS email
+           FROM app_users u
+           JOIN user_node_roles r ON r.user_id = u.id AND r.role::text = 'compliance'
+           JOIN org_reach o ON o.ancestor_id = r.node_id AND o.descendant_id = $2
+          WHERE u.status::text <> 'disabled'
+          ORDER BY (u.id = $1) DESC, u.email
+          LIMIT 1`, [ctx.userId, c.nodeId])).rows[0];
+      if (!cm) throw conflict('Add a Compliance Manager before sending the agreement. Their name is written into it.');
+      const agaName = profile?.legalName?.trim() || c.partnerName;
       const province = typeof profile?.fields?.province === 'string' ? profile.fields.province.trim() : '';
       const city = typeof profile?.fields?.city === 'string' ? profile.fields.city.trim() : '';
       const corporate = director?.brokerType === 'corporate' || profile?.entityType === 'corporation' || profile?.entityType === 'llc' || profile?.entityType === 's_corp';
+      const licenceText = licence ? [licence.label, licence.number, licence.jurisdiction].filter(Boolean).join(' · ') : blank;
+      const kept = {
+        advisor_name: '{{advisor_name}}', sign_day: '{{sign_day}}', sign_month: '{{sign_month}}', sign_year: '{{sign_year}}',
+        cm_signed_name: '{{cm_signed_name}}', cm_sign_day: '{{cm_sign_day}}', cm_sign_month: '{{cm_sign_month}}', cm_sign_year: '{{cm_sign_year}}',
+      };
       const agreementBody = fillAgreement(rawBody, {
         ...signDateParts(new Date()),
+        ...kept,
         aga_name: agaName,
+        aga_email: '{{aga_email}}',
         city: city || blank,
         province: province || blank,
+        licence: licenceText,
         corporation_name: corporate ? (profile?.legalName?.trim() || c.partnerName) : 'N/A',
         officer_name: director?.name?.trim() || blank,
         officer_title: blank,
-        advisor_name: '{{advisor_name}}',
-        sign_day: '{{sign_day}}',
-        sign_month: '{{sign_month}}',
-        sign_year: '{{sign_year}}',
+        cm_name: cm.name,
+        cm_email: cm.email,
+        cm_title: 'Compliance Manager',
       });
       if (c.stage !== 'agency_agreement_sent') {
         const block = stageMoveBlock(c.stage, 'agency_agreement_sent', c.standing ?? 'pending');
@@ -117,18 +138,18 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
         await audit(tx, ctx, 'onboarding.stage', 'onboarding_case', id, { to: 'agency_agreement_sent' });
       }
       await audit(tx, ctx, 'onboarding.agreement_sent', 'onboarding_case', id, { version, hash: agreementHash(title, agreementBody, version) });
-      return { partnerName: c.partnerName, nodeId: c.nodeId, tenantId: c.tenantId, body: agreementBody };
+      return { partnerName: c.partnerName, nodeId: c.nodeId, tenantId: c.tenantId, body: agreementBody, cm };
     });
-    // A fresh link replaces any unused one for this case.
     const token = randomBytes(24).toString('base64url');
     const expires = new Date(Date.now() + LINK_DAYS * 86_400_000);
+    const to = await partnerEmails(deps.authPool, out.nodeId);
+    const agreementBody = fillAgreement(out.body, { aga_email: to[0] ?? blank });
     await deps.authPool.query('DELETE FROM onboarding_signing_links WHERE case_id = $1 AND used_at IS NULL', [id]);
     await deps.authPool.query(
-      `INSERT INTO onboarding_signing_links (tenant_id, case_id, node_id, created_by, title, body, version, token_hash, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [out.tenantId, id, out.nodeId, ctx.userId, title, out.body, version, tokenHash(token), expires]);
+      `INSERT INTO onboarding_signing_links (tenant_id, case_id, node_id, created_by, title, body, version, token_hash, expires_at, cm_user_id, cm_name, cm_email)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [out.tenantId, id, out.nodeId, ctx.userId, title, agreementBody, version, tokenHash(token), expires, out.cm.id, out.cm.name, out.cm.email]);
     const url = `${deps.config.appOrigin}/sign/partner/${token}`;
-    const to = await partnerEmails(deps.authPool, out.nodeId);
     let emailed = false;
     if (deps.mailer && to.length > 0) {
       const firm = (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [out.tenantId])).rows[0]?.name ?? '';
@@ -181,7 +202,7 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
     const partnerName = (await deps.authPool.query<{ name: string }>('SELECT name FROM org_nodes WHERE id = $1', [l.node_id])).rows[0]?.name ?? '';
     return {
       firm, partnerName, clientName: partnerName, kind: { en: 'Agency agreement', 'fr-CA': 'Entente d’agence' },
-      title: l.title, body: l.body, version: l.version, signed: !!l.used_at,
+      title: l.title, body: l.body, version: l.version, signed: !!l.used_at, agentSigned: !!l.agent_signed_at,
       emailHint: mask(emails[0] ?? null),
       codeSent: !!l.otp_hash && !!l.otp_expires_at && l.otp_expires_at.getTime() > Date.now(),
     };
@@ -190,6 +211,7 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
   app.post('/v1/public/partner-sign/:token/code', async (req) => {
     const { token } = req.params as { token: string };
     const l = await linkFor(deps.authPool, token);
+    if (l.agent_signed_at) throw conflict('You have already signed. The compliance manager signs next.');
     if (l.sends >= MAX_SENDS) throw new HttpError(429, 'too_many_codes', 'Too many codes were sent. Ask your Compliance officer for a new link.');
     await withRequestTx(deps.appPool, actor(l), async (tx) => {
       const c = await loadCase(tx, l.case_id);
@@ -227,22 +249,120 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
     const signedAt = new Date();
     const ip = (req.ip ?? null) as string | null;
     const agent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'].slice(0, 300) : null;
-    const firm = (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [l.tenant_id])).rows[0]?.name ?? '';
+    if (l.agent_signed_at) throw conflict('You have already signed. The compliance manager signs next.');
     await withRequestTx(deps.appPool, ctx, async (tx) => {
       const c = await loadCase(tx, l.case_id);
-      if (c.stage !== 'agency_agreement_sent') throw conflict('This agreement has already been signed');
-      const signedBody = fillAgreement(l.body, { ...signDateParts(signedAt), advisor_name: typedName });
+      if (c.stage !== 'agency_agreement_sent') throw conflict('This agreement is not waiting for the agent’s signature');
+    });
+    const signedBody = fillAgreement(l.body, { ...signDateParts(signedAt), advisor_name: typedName });
+    await deps.authPool.query(
+      `UPDATE onboarding_signing_links
+          SET agent_signed_at = $2, agent_typed_name = $3, agent_signed_ip = $4, agent_signed_agent = $5, body = $6, otp_hash = NULL
+        WHERE id = $1 AND agent_signed_at IS NULL`,
+      [l.id, signedAt, typedName, ip, agent, signedBody]);
+    if (deps.mailer && l.cm_email) {
+      const msg = `${typedName} has signed “${l.title}”. Open PII, go to Compliance, then Onboarding, and sign it. You sign after the agent. Both of you receive a copy once you have signed.`;
+      try { await deps.mailer.send({ to: l.cm_email, subject: `Please countersign: ${l.title}`, text: msg, html: `<p>${esc(msg)}</p>` }); } catch { /* the agreement is waiting in the app */ }
+    }
+    return { ok: true, waitingFor: 'compliance' };
+  });
+
+  /** Where the agreement stands: who has signed, and whether this person is the compliance manager who signs next. */
+  app.get('/v1/onboarding/cases/:id/agreement-status', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const id = caseId((req.params as { id: string }).id);
+    await run(ctx, async (tx) => { const c = await loadCase(tx, id); await requireOfficer(tx, c); });
+    const link = (await deps.authPool.query<{ agent_signed_at: Date | null; used_at: Date | null; cm_user_id: string | null; cm_name: string | null; cm_email: string | null }>(
+      `SELECT agent_signed_at, used_at, cm_user_id, cm_name, cm_email FROM onboarding_signing_links
+        WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1`, [id])).rows[0];
+    const vault = await run(ctx, async (tx) => (await tx.query<{ id: string }>(
+      'SELECT id FROM agreement_vault WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1', [id])).rows[0]);
+    return {
+      sent: !!link,
+      agentSigned: !!link?.agent_signed_at,
+      fullySigned: !!link?.used_at,
+      cmName: link?.cm_name ?? null,
+      cmEmail: link?.cm_email ?? null,
+      canCountersign: !!link?.agent_signed_at && !link.used_at && link.cm_user_id === ctx.userId,
+      vaultId: vault?.id ?? null,
+    };
+  });
+
+  /** The compliance manager named on the agreement signs second. Then both parties are sent a copy, and the vault keeps one. */
+  app.post('/v1/onboarding/cases/:id/agreement/countersign', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const id = caseId((req.params as { id: string }).id);
+    const b = body(req);
+    const typedName = text(b.typedName, 'Your full name', 200);
+    if (b.agree !== true) throw invalid('Please confirm you have read the agreement and agree to sign it');
+    const link = (await deps.authPool.query<LinkRow>(
+      `SELECT * FROM onboarding_signing_links WHERE case_id = $1 AND used_at IS NULL ORDER BY created_at DESC LIMIT 1`, [id])).rows[0];
+    if (!link?.agent_signed_at || !link.agent_typed_name) throw conflict('The agent signs first');
+    if (link.cm_user_id !== ctx.userId) throw forbidden('Only the compliance manager named on this agreement can sign it');
+    const signedAt = new Date();
+    const parts = signDateParts(signedAt);
+    const signedBody = fillAgreement(link.body, {
+      cm_signed_name: typedName, cm_sign_day: parts.sign_day, cm_sign_month: parts.sign_month, cm_sign_year: parts.sign_year,
+    });
+    const firm = (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [link.tenant_id])).rows[0]?.name ?? '';
+    const agreementId = randomUUID();
+    await run(ctx, async (tx) => {
+      const c = await loadCase(tx, id);
+      await requireOfficer(tx, c);
+      if (c.stage !== 'agency_agreement_sent') throw conflict('This agreement is not waiting for the compliance manager');
       const pdf = await sealedPartnerAgreementPdf({
-        firm, partnerName: c.partnerName, title: l.title, body: signedBody, version: l.version, typedName, signedAt, ip, agent,
+        firm, partnerName: c.partnerName, title: link.title, body: signedBody, version: link.version,
+        typedName: link.agent_typed_name!, signedAt: link.agent_signed_at!, ip: null, agent: null,
+        countersigner: { name: typedName, signedAt },
       });
       await tx.query(
-        `INSERT INTO onboarding_agreements (tenant_id, case_id, node_id, title, body, version, body_hash, typed_name, signed_ip, signed_agent, signed_at, sealed_pdf)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-        [l.tenant_id, l.case_id, l.node_id, l.title, signedBody, l.version, agreementHash(l.title, signedBody, l.version), typedName, ip, agent, signedAt, Buffer.from(pdf)]);
-      await tx.query(`UPDATE onboarding_cases SET stage = 'agency_agreement_signed', updated_at = now() WHERE id = $1`, [l.case_id]);
-      await audit(tx, ctx, 'onboarding.agreement_signed', 'onboarding_case', l.case_id, { version: l.version });
+        `INSERT INTO onboarding_agreements (id, tenant_id, case_id, node_id, title, body, version, body_hash, typed_name, signed_ip, signed_agent, signed_at, sealed_pdf, officer_name, officer_signed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        [agreementId, link.tenant_id, id, link.node_id, link.title, signedBody, link.version, agreementHash(link.title, signedBody, link.version),
+          link.agent_typed_name, link.agent_signed_ip ?? null, link.agent_signed_agent ?? null, link.agent_signed_at, Buffer.from(pdf), typedName, signedAt]);
+      if (deps.keys) {
+        const sealed = seal(deps.keys, Buffer.from(pdf), `${link.tenant_id}:agreement-vault:${agreementId}`);
+        await tx.query(
+          `INSERT INTO agreement_vault (id, tenant_id, case_id, agreement_id, node_id, title, key_id, data_enc, plain_sha256)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [randomUUID(), link.tenant_id, id, agreementId, link.node_id, link.title, sealed.keyId, sealed.data, createHash('sha256').update(Buffer.from(pdf)).digest('hex')]);
+      }
+      await tx.query(`UPDATE onboarding_cases SET stage = 'agency_agreement_signed', updated_at = now() WHERE id = $1`, [id]);
+      await audit(tx, ctx, 'onboarding.agreement_signed', 'onboarding_case', id, { version: link.version, by: 'agent_and_compliance' });
     });
-    await deps.authPool.query('UPDATE onboarding_signing_links SET used_at = now(), otp_hash = NULL WHERE id = $1', [l.id]);
+    await deps.authPool.query('UPDATE onboarding_signing_links SET used_at = now(), body = $2 WHERE id = $1', [link.id, signedBody]);
+    if (deps.mailer) {
+      const partners = await partnerEmails(deps.authPool, link.node_id);
+      const note = `“${link.title}” is signed by ${link.agent_typed_name} and ${typedName}. Open PII to download the signed copy. The compliance copy is kept in the agreement vault.`;
+      for (const email of [...new Set([...partners, link.cm_email].filter((e): e is string => !!e))]) {
+        try { await deps.mailer.send({ to: email, subject: `Signed copy: ${link.title}`, text: note, html: `<p>${esc(note)}</p>` }); } catch { /* the copy remains in PII */ }
+      }
+    }
     return { ok: true };
+  });
+
+  /** The encrypted compliance copy. A partner does not see these rows. */
+  app.get('/v1/onboarding/agreement-vault', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const caseFilter = typeof (req.query as { caseId?: string }).caseId === 'string' ? (req.query as { caseId: string }).caseId : null;
+    return run(ctx, async (tx) => {
+      const rows = (await tx.query(
+        `SELECT id, case_id AS "caseId", title, created_at AS "createdAt" FROM agreement_vault
+          ${caseFilter && UUID.test(caseFilter) ? 'WHERE case_id = $1' : ''} ORDER BY created_at DESC LIMIT 50`,
+        caseFilter && UUID.test(caseFilter) ? [caseFilter] : [])).rows;
+      return { agreements: rows };
+    });
+  });
+
+  app.get('/v1/onboarding/agreement-vault/:vaultId/pdf', async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    const vaultId = (req.params as { vaultId: string }).vaultId;
+    if (!UUID.test(vaultId)) throw notFound('Unknown agreement');
+    if (!deps.keys) throw new HttpError(503, 'no_keys', 'The agreement vault cannot be opened without the encryption key');
+    const row = await run(ctx, async (tx) => (await tx.query<{ key_id: string; data_enc: Buffer; title: string; agreement_id: string; tenant_id: string }>(
+      'SELECT key_id, data_enc, title, agreement_id, tenant_id FROM agreement_vault WHERE id = $1', [vaultId])).rows[0]);
+    if (!row) throw notFound('Unknown agreement');
+    const pdf = open(deps.keys, { keyId: row.key_id, data: row.data_enc }, `${row.tenant_id}:agreement-vault:${row.agreement_id}`);
+    return reply.type('application/pdf').header('content-disposition', `attachment; filename="${row.title.replace(/[^A-Za-z0-9 _-]/g, '')}.pdf"`).send(pdf);
   });
 }

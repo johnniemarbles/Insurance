@@ -120,13 +120,19 @@ test('the partner completes the form and consents; the officer runs the checks a
   const wrong = codeRes.json.devCode === '000000' ? '111111' : '000000';
   assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: wrong, typedName: 'Agency One', agree: true })).status, 422);
   assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: codeRes.json.devCode, typedName: 'Agency One', agree: true })).status, 200);
+  assert.equal((await call(ON_OFF, 'GET', `/v1/onboarding/cases/${id}/agreements`)).json.agreements.length, 0, 'the agreement is not finished until the compliance manager signs');
+  assert.equal((await call(ON_OFF, 'GET', `/v1/onboarding/cases/${id}/agreement-status`)).json.canCountersign, true);
+  assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: codeRes.json.devCode, typedName: 'Agency One', agree: true })).status, 409, 'the agent cannot sign twice');
+  assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/agreement/countersign`, { typedName: 'Ontario Officer', agree: true })).status, 200);
   const agreements = (await call(ON_OFF, 'GET', `/v1/onboarding/cases/${id}/agreements`)).json.agreements;
   assert.equal(agreements.length, 1);
   const pdf = await app.inject({ method: 'GET', url: `/v1/onboarding/agreements/${agreements[0].id}/pdf`, headers: { 'x-dev-user-email': ON_OFF } });
   assert.equal(pdf.statusCode, 200);
   assert.ok(pdf.body.startsWith('%PDF'), 'the signed agreement is a PDF');
+  const vault = await call(ON_OFF, 'GET', `/v1/onboarding/agreement-vault?caseId=${id}`);
+  assert.equal(vault.json.agreements.length, 1, 'the compliance copy is in the vault');
+  assert.equal((await call(AG, 'GET', `/v1/onboarding/agreement-vault?caseId=${id}`)).json.agreements.length, 0, 'the partner cannot read the vault');
   assert.equal((await call(AG, 'GET', `/v1/public/partner-sign/${token}`)).json.signed, true);
-  assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: codeRes.json.devCode, typedName: 'Agency One', agree: true })).status, 404, 'a used link cannot be signed again');
   assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'active' })).status, 200);
 
   const pk = await call(AG, 'POST', `/v1/onboarding/cases/${id}/carrier-packets`, { carrier: 'iA Financial Group', templateVersion: 'F11-92A' });
