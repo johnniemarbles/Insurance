@@ -32,6 +32,7 @@ import { defaultSorts, emptyFilters, filterParams, hasFilters, migrateView, sort
 import { strings, type Strings } from './i18n.ts';
 import { ink, money, stageColor } from './theme.ts';
 import type { Box, BoxEvent, ComposeApi, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, Stage } from './types.ts';
+import { PartnersOnline } from './presence.tsx';
 
 const PAGE = 100;
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -121,6 +122,12 @@ const older = (have?: string, need?: string) => {
 
 type PageId = 'inbox' | 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance' | 'contacts' | 'merges' | 'training' | 'settings';
 const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewals', 'training', 'compliance', 'contacts', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
+/** The top menu: three entries across the top; the rest of the sections stay in the left column. */
+const TOP_PAGES: { p: PageId; text: (l: Locale) => string }[] = [
+  { p: 'home', text: (l) => (l === 'fr-CA' ? 'Tableau de bord' : 'Dashboard') },
+  { p: 'compliance', text: (l) => (l === 'fr-CA' ? 'Partenaires' : 'Partners') },
+  { p: 'renewals', text: (l) => (l === 'fr-CA' ? 'Rapports' : 'Reports') },
+];
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
 function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, meEmail, meName, demoUserId, compose, host, minExt, supportEmail }: { demoUserId?: string; isHeadOffice: boolean; isAdmin: boolean; call: Call; t: Strings; locale: Locale; onLocale: (l: Locale) => void; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
@@ -150,13 +157,17 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
     <div class={`pii shell${settings?.get<boolean>('ui.compact') ? ' compact' : ''}${railOpen ? '' : ' rail-closed'}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
       {demoUserId && <DemoBar call={call} locale={locale} meId={demoUserId} />}
       {older(host.extVersion, minExt) && <div class="banner warn" role="alert">{t.updateNeeded}</div>}
-      {(
-        <div class="tabs" role="tablist">
+      <>
+        <nav class="topnav" role="tablist" aria-label={locale === 'fr-CA' ? 'Menu principal' : 'Main menu'}>
+          {TOP_PAGES.map((x) => <button key={x.p} role="tab" aria-selected={page === x.p} onClick={() => go(x.p)} title={x.text(locale)}><svg class="nv" viewBox="0 0 24 24" aria-hidden="true"><path d={NAV_ICON[x.p] ?? 'M4 12h16'} /></svg><span>{x.text(locale)}</span></button>)}
+          <PartnersOnline call={call} />
+        </nav>
+        <div class="tabs" role="tablist" aria-label={locale === 'fr-CA' ? 'Sections' : 'Sections'}>
           <button class="rail-toggle" type="button" onClick={toggleRail} aria-expanded={railOpen} aria-label={railOpen ? t.railFold : t.railOpen} title={railOpen ? t.railFold : t.railOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={railOpen ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6'} /></svg></button>
-          {PAGES.filter((p) => p !== 'merges' && p !== 'notifications' && (p !== 'inbox' || demoUserId)).map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)} title={label[p]}><svg class="nv" viewBox="0 0 24 24" aria-hidden="true"><path d={NAV_ICON[p] ?? 'M4 12h16'} /></svg><span class="tl">{label[p]}</span></button>)}
+          {PAGES.filter((p) => p !== 'home' && p !== 'merges' && p !== 'notifications' && (p !== 'inbox' || demoUserId)).map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)} title={label[p]}><svg class="nv" viewBox="0 0 24 24" aria-hidden="true"><path d={NAV_ICON[p] ?? 'M4 12h16'} /></svg><span class="tl">{label[p]}</span></button>)}
           {supportEmail && <a class="tabs-fb" style={{ marginLeft: 0 }} href={`mailto:${supportEmail}?subject=PII%20feedback`}>{t.sendFeedback}</a>}
         </div>
-      )}
+      </>
       {/* framed: list pages share the page width and gutter (Phase 2) */}
       <Boundary key={`${page}:${routeId ?? ''}:${nonce}`} msg={t.crashed} retry={t.retry}>
       <div class={framed ? 'pg-frame' : 'pg-raw'}>

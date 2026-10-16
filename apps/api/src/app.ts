@@ -44,6 +44,7 @@ import { registerAuditEngagementRoutes } from './routes-audit-engagements.ts';
 import { registerSubBrokerRoutes } from './routes-sub-brokers.ts';
 import { registerCeRoutes } from './routes-ce.ts';
 import { registerFirstWeekRoutes } from './routes-firstweek.ts';
+import { registerPresenceRoutes } from './routes-presence.ts';
 import { registerForecastRoutes } from './routes-forecast.ts';
 import { registerDuplicateRoutes } from './routes-duplicates.ts';
 import { registerPublicApiRoutes } from './routes-publicapi.ts';
@@ -185,6 +186,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerSubBrokerRoutes(app, deps);
   registerCeRoutes(app, deps);
   registerFirstWeekRoutes(app, deps);
+  registerPresenceRoutes(app, deps);
   registerForecastRoutes(app, deps);
   registerDuplicateRoutes(app, deps);
   registerNotificationRoutes(app, deps);

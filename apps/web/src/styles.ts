@@ -619,17 +619,24 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 @media(max-width:600px){.seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.seg::-webkit-scrollbar{display:none}.seg button{flex:none}}
 @media(max-width:600px){.bar>.seg[aria-label="View"]{flex:1 1 100%;display:flex}.bar>.seg[aria-label="View"] button{flex:1 1 0}}
 @media(max-width:600px){.pg-frame .bar{flex-wrap:wrap}}
-/* Top menu on every screen size: the section links run across the top, the left column goes away, and the content takes the full width. */
-.rail-toggle{display:none!important}
+/* Top menu (Dashboard, Partners, Reports) across the top; the other sections stay in the left column on wide screens. */
+.topnav{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);background:#fff}
+.topnav button{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line2);background:#fff;border-radius:999px;padding:7px 14px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer}
+.topnav button[aria-selected=true]{background:var(--pri);border-color:var(--pri);color:#fff}
+.topnav .nv{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.topnav .pz{margin-left:auto}
 @media(min-width:1100px){
-  .shell{grid-template-columns:minmax(0,1fr);grid-template-rows:none}
-  .shell>.tabs{grid-column:1;grid-row:1;flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px;padding:12px 20px;border-right:0;border-bottom:1px solid var(--line);background:#fff;min-height:0}
-  .shell>*:not(.tabs){grid-column:1;grid-row:auto;min-width:0}
-  .shell>.tabs-fb,.shell>.tabs .tabs-fb{margin:0 0 0 auto}
-  .shell.rail-closed{grid-template-columns:minmax(0,1fr)}
-  .shell.rail-closed>.tabs{padding:12px 20px;align-items:center}
-  .shell.rail-closed .tabs button{justify-content:flex-start;padding:7px 14px;width:auto}
-  .shell.rail-closed .tabs button .tl{display:inline}
-  .shell.rail-closed .tabs-fb{display:inline}
+  .shell>.topnav{grid-column:1 / -1;grid-row:1;padding:12px 20px;gap:6px}
+  .topnav button{border:0;background:none;color:var(--mute);padding:8px 14px}
+  .topnav button[aria-selected=true]{background:var(--pri-soft);color:var(--pri)}
+  .shell>.tabs{grid-row:2 / span 30}
+  .shell>*:not(.tabs):not(.topnav){grid-column:2;grid-row:auto;min-width:0}
 }
+/* Partners online in the branch: overlapping faces with a green dot. */
+.pz{display:inline-flex;align-items:center;padding-left:8px;margin-left:auto}
+.pz-face{position:relative;width:32px;height:32px;margin-left:-8px;border-radius:50%;border:2px solid #fff;background:var(--pri-soft);color:var(--pri);display:inline-flex;align-items:center;justify-content:center;overflow:visible;flex:none}
+.pz-face img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.pz-init{font-size:12px;font-weight:700}
+.pz-dot{position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:50%;background:#22C55E;border:2px solid #fff}
+.pz-more{margin-left:4px;font-size:12px;font-weight:600;color:var(--mute)}
 `;

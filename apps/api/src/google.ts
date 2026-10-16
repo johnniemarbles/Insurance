@@ -6,6 +6,8 @@ export interface GoogleProfile {
   email: string;
   emailVerified: boolean;
   name?: string;
+  /** Google's profile photo, kept only when it is on Google's image host. */
+  picture?: string;
 }
 
 /** The only part of Google sign-in the app depends on. Replaced by a fake in tests. */
@@ -53,7 +55,8 @@ export async function verifyIdToken(idToken: string, clientId: string, nonce: st
   if (typeof c.exp !== 'number' || c.exp * 1000 < now) throw new Error('id_token expired');
   if (c.nonce !== nonce) throw new Error('Bad id_token nonce');
   if (typeof c.sub !== 'string' || typeof c.email !== 'string') throw new Error('id_token lacks identity');
-  return { sub: c.sub, email: c.email, emailVerified: c.email_verified === true, name: typeof c.name === 'string' ? c.name : undefined };
+  const picture = typeof c.picture === 'string' && c.picture.startsWith('https://lh3.googleusercontent.com/') ? c.picture : undefined;
+  return { sub: c.sub, email: c.email, emailVerified: c.email_verified === true, name: typeof c.name === 'string' ? c.name : undefined, ...(picture ? { picture } : {}) };
 }
 
 export function realGoogleClient(config: Config): GoogleClient {

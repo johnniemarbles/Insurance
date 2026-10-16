@@ -93,6 +93,7 @@ export interface GoogleIdentity {
   sub: string;
   email: string;
   name?: string;
+  picture?: string;
 }
 
 /**
@@ -179,9 +180,10 @@ export async function signInWithGoogle(
     await authPool.query(
       `UPDATE app_users SET google_sub = $2, last_login_at = now(),
               display_name = coalesce(display_name, $3),
+              picture_url = coalesce($4, picture_url),
               status = CASE WHEN status = 'invited' THEN 'active'::user_status ELSE status END
         WHERE id = $1`,
-      [user.userId, id.sub, id.name ?? null],
+      [user.userId, id.sub, id.name ?? null, id.picture ?? null],
     );
     return { ok: true, user: { ...user, status: user.status === 'invited' ? 'active' : user.status }, accepted };
   } catch (err) {

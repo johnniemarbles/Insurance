@@ -53,7 +53,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps): void {
       return fail(deps, reply, 'google');
     }
     if (!profile.emailVerified) return fail(deps, reply, 'email_not_verified');
-    const result = await signInWithGoogle(deps.authPool, { sub: profile.sub, email: profile.email, name: profile.name }, { inviteToken: flow.i ?? undefined, tenantId: flow.t ?? undefined });
+    const result = await signInWithGoogle(deps.authPool, { sub: profile.sub, email: profile.email, name: profile.name, picture: profile.picture }, { inviteToken: flow.i ?? undefined, tenantId: flow.t ?? undefined });
     if (!result.ok) return fail(deps, reply, result.reason);
     const token = await createSession(deps.authPool, result.user.tenantId, result.user.userId);
     reply.header('set-cookie', [sessionCookie(deps, token), clearCookie(deps, FLOW_COOKIE)]);
