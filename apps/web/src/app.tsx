@@ -530,7 +530,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
           </select>
         )}
         <button class="btn quiet" onClick={() => setDupOpen(true)}>⧉ {locale === 'fr-CA' ? 'Doublons' : 'Duplicates'}</button>
-        <span class="spacer" /><small title={t.shortcuts}>⌨ {t.shortcuts}</small>
+        <span class="spacer" /><small class="kbdhint" title={t.shortcuts}>⌨ {t.shortcuts}</small>
       </div>
       {picked.size > 0 && (
         <div class="bulk" role="region" aria-label={t.selected(picked.size)}>
