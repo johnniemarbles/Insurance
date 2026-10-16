@@ -1,5 +1,5 @@
 import { ErrorBar } from './errorbar.tsx';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useDialogFocus } from './a11y.ts';
 import { stageColor, money } from './theme.ts';
 import type { Locale, Pipeline } from './types.ts';
@@ -178,6 +178,7 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
       </div>
 
       <FirstWeekCard call={call} locale={locale} go={go} />
+      <RecentCarousel rows={d.recent.slice(0, 8)} colorOf={colorOf} onOpen={openRec} title={x.recent} />
       <AssistantPanel call={call} locale={locale} first={first} />
       {LMS && <HomeLearning call={call} locale={locale} go={go} />}
 
@@ -306,6 +307,31 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
         </section>
       </aside>
     </div>
+  );
+}
+
+// Carousel of recent records: title row with circular arrows, then a horizontal track of cards.
+function RecentCarousel({ rows, colorOf, onOpen, title }: { rows: RecRow[]; colorOf: (pid: string, stage: string) => string; onOpen: (r: RecRow) => void; title: string }) {
+  const track = useRef<HTMLDivElement>(null);
+  const step = (dir: number) => track.current?.scrollBy({ left: dir * (track.current.clientWidth * 0.8), behavior: 'smooth' });
+  if (rows.length === 0) return null;
+  return (
+    <section class="hcard car" aria-label={title}>
+      <div class="car-h"><h3>{title}</h3>
+        <span class="spacer" />
+        <button class="carbtn" aria-label="Previous" onClick={() => step(-1)}>‹</button>
+        <button class="carbtn" aria-label="Next" onClick={() => step(1)}>›</button>
+      </div>
+      <div class="car-track" ref={track}>
+        {rows.map((r) => (
+          <button class="carcard" key={r.id} onClick={() => onOpen(r)}>
+            <span class="carcat" style={{ background: colorOf(r.pipelineId, r.stage) }}>{r.stage}</span>
+            <b class="cartitle">{r.name}</b>
+            <span class="carfoot"><span class="car-av" aria-hidden="true">{r.name.split(' ').map((w) => w[0] ?? '').slice(0, 2).join('').toUpperCase()}</span><small class="muted">{r.pipeline}</small></span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -593,7 +593,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
                       {c.sort ? <button onClick={() => headSort(c.sort!)}>{c.label}{arrow(c.sort)}</button> : c.label}
                     </th>
                   ))}
-                </tr>
+                <th class="openc" aria-hidden="true" /></tr>
               </thead>
               <tbody>
                 {boxes.map((b, i) => {
@@ -620,6 +620,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
                         <tr class="row" tabIndex={0} key={b.id} onClick={() => setOpenId(b.id)} onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter') setOpenId(b.id); else if (e.key === ' ') { e.preventDefault(); togglePick(b.id); } }}>
                           <td class="sticky1" onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={b.name} checked={picked.has(b.id)} onChange={() => togglePick(b.id)} /></td>
                           {cols.map((c) => <Cell key={c.id} box={b} col={c} x={cellCtx} />)}
+                          <td class="openc" onClick={(e) => e.stopPropagation()}><button class="ocirc" aria-label={b.name} onClick={() => setOpenId(b.id)}>↗</button></td>
                         </tr>
                       )}
                     </>
