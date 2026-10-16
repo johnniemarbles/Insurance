@@ -9,8 +9,10 @@ import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import { sweepOnboardingRechecks } from '../src/onboarding-recheck.ts';
 import { addBrokerFixture, caseOfBroker } from './support/broker.ts';
+import type { Mail } from '../src/mailer.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = []; let co: { tenantId: string; rootNodeId: string }; let deps: AppDeps;
+const mails: Mail[] = [];
 type M = 'GET' | 'POST' | 'PUT';
 async function call(email: string, method: M, url: string, body?: unknown) {
   const res = await app.inject({ method, url, headers: { 'x-dev-user-email': email }, ...(body ? { payload: body as object } : {}) });
@@ -33,7 +35,7 @@ before(async () => {
   db = await createTestDb('ca-qc');
   const appPool = createPool(db.appUrl, 4), authPool = createPool(db.authUrl, 2); pools = [appPool, authPool];
   const config = loadConfig({ APP_ENV: 'test', REGION: 'ca-qc', DATABASE_URL: db.ownerUrl, APP_DATABASE_URL: db.appUrl, AUTH_DATABASE_URL: db.authUrl, DEV_AUTH: 'true' });
-  deps = { config, appPool, authPool, authenticate: devAuthenticator(authPool), keys: localKeyProvider('0123456789abcdef0123') };
+  deps = { config, appPool, authPool, authenticate: devAuthenticator(authPool), keys: localKeyProvider('0123456789abcdef0123'), mailer: { send: async (m) => { mails.push(m); } } };
   app = buildApp(deps);
   co = await bootstrapTenant(db.ownerUrl, { name: 'Maple Insurance', countryCode: 'CA', adminEmail: ADMIN });
   await call(ADMIN, 'POST', '/v1/consent/first-login');
@@ -101,14 +103,20 @@ test('the partner completes the form and consents; the officer runs the checks a
   assert.equal((await call(AG, 'GET', `/v1/onboarding/cases/${id}`)).status, 403, 'the partner cannot open the officer file');
   assert.equal((await call(ON_OFF, 'GET', `/v1/onboarding/cases/${id}`)).json.checks.length, 2, 'the officer sees every check');
 
+  await seedUser(co.tenantId, 'staff.agency@co.test', AGN, 'staff');
+  mails.length = 0;
   const sent = await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/agreement`, { title: 'Agency agreement', body: 'Wording as issued by counsel.', version: 'test-1' });
   assert.equal(sent.status, 200);
+  assert.equal(sent.json.signers, 1, 'only the partner administrator is a signer');
+  assert.equal(sent.json.emailed, true);
+  assert.ok(mails.every((m) => m.to === AG), 'the agreement email does not go to anyone else');
   const token = new URL(sent.json.url).pathname.split('/').pop() as string;
   assert.equal((await call(AG, 'GET', `/v1/public/partner-sign/${token}`)).json.signed, false);
   assert.equal((await call(ON_OFF, 'POST', `/v1/onboarding/cases/${id}/stage`, { to: 'active' })).status, 409, 'activation waits for the signed agreement');
   assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: '000000', typedName: 'Agency One', agree: true })).status, 409, 'a code is asked for first');
   const codeRes = await call(AG, 'POST', `/v1/public/partner-sign/${token}/code`);
   assert.equal(codeRes.status, 200);
+  assert.ok(mails.filter((m) => m.subject.startsWith('Your confirmation code')).every((m) => m.to === AG), 'the signing code stays with the partner administrator');
   const wrong = codeRes.json.devCode === '000000' ? '111111' : '000000';
   assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: wrong, typedName: 'Agency One', agree: true })).status, 422);
   assert.equal((await call(AG, 'POST', `/v1/public/partner-sign/${token}/confirm`, { code: codeRes.json.devCode, typedName: 'Agency One', agree: true })).status, 200);

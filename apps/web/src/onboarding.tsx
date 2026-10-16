@@ -38,6 +38,8 @@ const T = {
     } as Record<string, string>,
     sections: { consents: 'Consents given', checks: 'Checks', decision: 'Good-standing decision', agreement: 'Agency agreement', packets: 'Carrier packets', signed: 'Signed agreements', decisions: 'Decisions on file' },
     noConsent: 'No consent recorded yet.', noChecks: 'No checks yet.', noPackets: 'None yet.', noSigned: 'None signed yet.',
+    manualCheck: 'Type the result from the bureau report. PII does not contact Equifax or Sterling.',
+    draftWording: 'Consent wording onboarding-draft-1. Counsel has not signed this text.',
     kind: { credit: 'Credit (Equifax)', background: 'Background (Sterling)', licence: 'Licence' } as Record<string, string>,
     status: { requested: 'Requested', complete: 'Complete', failed: 'Failed' } as Record<string, string>,
     checkCol: 'Check', checkL: 'Check', statusL: 'Status',
@@ -48,8 +50,11 @@ const T = {
     reqs: { head: 'Onboarding requirements', hint: 'Compliance Managers can switch each requirement on or off for the company. Every change needs a reason and is kept on record.', only: 'Only a Compliance Manager can change these.', on: 'On', off: 'Off', change: 'Change', reason: 'Reason (kept with the change)', save: 'Save change', cancel: 'Cancel', history: 'Changes on record', none: 'No changes yet.', pending: 'Not yet enforced: stored now, enforced when its step is built.', items: { screeningBeforeDecision: 'Screening questions before a decision', ownershipRequired: 'Ownership tiers for a corporate broker', pendingApproval: 'Pending Compliance Approval before a broker is decided', presidentExceptions: 'President and CEO approval for red-flag exceptions' } as Record<string, string>, shortReason: 'Give a reason of at least 10 characters.' },
     exc: { head: 'President and CEO exception', why: 'This file has a red flag, a judgment, an insolvency or an adverse background report. It can be decided as good standing only with the President and CEO’s approval.', reason: 'Reason for the exception (kept on the file)', approve: 'Approve exception', waiting: 'Waiting for the President and CEO’s approval.', none: 'No exception approved yet.', approved: 'Approved by', pendingChip: 'Pending compliance approval', pendingNote: 'Only a Compliance Manager records the decision while this applies.' },
     own: { head: 'Broker type and ownership', type: 'Broker type', individual: 'Individual', corporate: 'Corporation', saveType: 'Save type', typeNone: 'Not recorded yet.', owners: 'Directors and owners', name: 'Name', director: 'Director', share: 'Share %', identified: 'Identified', pep: 'PEP and HIO checked', guarantee: 'Guarantee signed', remove: 'Remove', add: 'Add person', none: 'No one added yet.', complete: 'The ownership file is complete.', stepsHead: 'Steps taken (nobody holds 25% or more)', stepsHint: 'Describe how the holders were established. At least 10 characters.', stepsSave: 'Save steps', ownerRequired: 'Needed before the decision while the requirement is on.', missing: { type_missing: 'Record the broker type', directors_missing: 'Add at least one director', identity_missing: 'Identify each director and each holder of 25% or more', guarantee_missing: 'Signed guarantee for each holder of 10% or more', pep_hio_missing: 'PEP and HIO checked for each person', steps_missing: 'Record the steps taken' } as Record<string, string>, locked: 'Only the Compliance Manager can change the ownership file.' },
-    agTitle: 'Agreement title', agVersion: 'Version', agText: 'Agreement text (as issued by counsel)', agSend: 'Send agency agreement to the partner',
-    agResend: 'Send the agreement again', agWaiting: 'Waiting for the partner to sign. The link was emailed to the partner’s people.', agSentOk: 'Agreement sent.', agHint: 'The partner signs through a private link with a code sent to their email.',
+    agTitle: 'Agreement title', agVersion: 'Version', agText: 'Agreement text (paste the wording counsel issued. PII has no locked template.)', agSend: 'Send agency agreement to the partner',
+    agResend: 'Send the agreement again', agWaiting: 'Waiting for the partner administrator to sign.',
+    agEmailed: (n: number) => n === 1 ? 'The link was emailed to 1 partner administrator.' : `The link was emailed to ${n} partner administrators.`,
+    agNotEmailed: 'The email was not sent. Copy this link and give it to the partner administrator.',
+    agHint: 'The signing code goes only to partner administrators on this broker, not to staff or learners.',
     agSignedOn: 'Signed', agPdf: 'Sealed PDF', activate: 'Activate partner',
     outcomeL: { good_standing: 'Good standing', needs_review: 'Needs review', not_in_good_standing: 'Not in good standing' } as Record<string, string>,
     credit: (pass: number, review: number) => `Credit ${pass} or more passes. ${review} to ${pass - 1} needs review. Below ${review} is not in good standing.`,
@@ -79,6 +84,8 @@ const T = {
     } as Record<string, string>,
     sections: { consents: 'Consentements donnés', checks: 'Vérifications', decision: 'Décision de bonne réputation', agreement: 'Entente d’agence', packets: 'Dossiers auprès des assureurs', signed: 'Ententes signées', decisions: 'Décisions au dossier' },
     noConsent: 'Aucun consentement enregistré pour l’instant.', noChecks: 'Aucune vérification pour l’instant.', noPackets: 'Aucun pour l’instant.', noSigned: 'Aucune entente signée pour l’instant.',
+    manualCheck: 'Saisissez le résultat du rapport du bureau. PII ne contacte pas Equifax ni Sterling.',
+    draftWording: 'Texte de consentement onboarding-draft-1. Le conseiller juridique ne l’a pas encore approuvé.',
     kind: { credit: 'Crédit (Equifax)', background: 'Antécédents (Sterling)', licence: 'Permis' } as Record<string, string>,
     status: { requested: 'Demandée', complete: 'Terminée', failed: 'Échouée' } as Record<string, string>,
     checkCol: 'Vérification', checkL: 'Vérification', statusL: 'Statut',
@@ -89,8 +96,11 @@ const T = {
     reqs: { head: 'Exigences d’intégration', hint: 'Les gestionnaires de conformité peuvent activer ou désactiver chaque exigence pour l’entreprise. Chaque changement exige un motif et est conservé au dossier.', only: 'Seul un gestionnaire de conformité peut modifier ces exigences.', on: 'Activé', off: 'Désactivé', change: 'Modifier', reason: 'Motif (conservé avec le changement)', save: 'Enregistrer le changement', cancel: 'Annuler', history: 'Changements consignés', none: 'Aucun changement pour l’instant.', pending: 'Pas encore appliquée : enregistrée maintenant, appliquée quand son étape sera construite.', items: { screeningBeforeDecision: 'Questions de filtrage avant une décision', ownershipRequired: 'Paliers de propriété pour un courtier constitué en société', pendingApproval: 'Approbation de conformité en attente avant la décision sur un courtier', presidentExceptions: 'Approbation du président et chef de la direction pour les exceptions à signal d’alerte' } as Record<string, string>, shortReason: 'Donnez un motif d’au moins 10 caractères.' },
     exc: { head: 'Exception du président et chef de la direction', why: 'Ce dossier comporte un signal d’alerte, un jugement, une insolvabilité ou un rapport défavorable. Il ne peut être décidé comme bonne réputation qu’avec l’approbation du président et chef de la direction.', reason: 'Motif de l’exception (conservé au dossier)', approve: 'Approuver l’exception', waiting: 'En attente de l’approbation du président et chef de la direction.', none: 'Aucune exception approuvée pour l’instant.', approved: 'Approuvée par', pendingChip: 'Approbation de conformité en attente', pendingNote: 'Seul un gestionnaire de conformité enregistre la décision tant que ceci s’applique.' },
     own: { head: 'Type de courtier et propriété', type: 'Type de courtier', individual: 'Particulier', corporate: 'Société', saveType: 'Enregistrer le type', typeNone: 'Pas encore enregistré.', owners: 'Administrateurs et propriétaires', name: 'Nom', director: 'Administrateur', share: 'Part %', identified: 'Identifié', pep: 'PPE et OIR vérifiés', guarantee: 'Garantie signée', remove: 'Retirer', add: 'Ajouter une personne', none: 'Personne ajoutée pour l’instant.', complete: 'Le dossier de propriété est complet.', stepsHead: 'Démarches effectuées (personne ne détient 25 % ou plus)', stepsHint: 'Décrivez comment les détenteurs ont été établis. Au moins 10 caractères.', stepsSave: 'Enregistrer les démarches', ownerRequired: 'Requis avant la décision tant que l’exigence est active.', missing: { type_missing: 'Indiquer le type de courtier', directors_missing: 'Ajouter au moins un administrateur', identity_missing: 'Identifier chaque administrateur et chaque détenteur de 25 % ou plus', guarantee_missing: 'Garantie signée pour chaque détenteur de 10 % ou plus', pep_hio_missing: 'PPE et OIR vérifiés pour chaque personne', steps_missing: 'Consigner les démarches effectuées' } as Record<string, string>, locked: 'Seul le gestionnaire de conformité peut modifier le dossier de propriété.' },
-    agTitle: 'Titre de l’entente', agVersion: 'Version', agText: 'Texte de l’entente (tel que publié par les conseillers juridiques)', agSend: 'Envoyer l’entente d’agence au partenaire',
-    agResend: 'Renvoyer l’entente', agWaiting: 'En attente de la signature du partenaire. Le lien a été envoyé par courriel aux personnes du partenaire.', agSentOk: 'Entente envoyée.', agHint: 'Le partenaire signe par un lien privé avec un code envoyé à son courriel.',
+    agTitle: 'Titre de l’entente', agVersion: 'Version', agText: 'Texte de l’entente (collez le libellé émis par le conseiller juridique. PII n’a pas de modèle verrouillé.)', agSend: 'Envoyer l’entente d’agence au partenaire',
+    agResend: 'Renvoyer l’entente', agWaiting: 'En attente de la signature de l’administrateur du partenaire.',
+    agEmailed: (n: number) => n === 1 ? 'Le lien a été envoyé à 1 administrateur du partenaire.' : `Le lien a été envoyé à ${n} administrateurs du partenaire.`,
+    agNotEmailed: 'Le courriel n’a pas été envoyé. Copiez ce lien et remettez-le à l’administrateur du partenaire.',
+    agHint: 'Le code de signature va seulement aux administrateurs du partenaire, pas au personnel ni aux apprenants.',
     agSignedOn: 'Signée', agPdf: 'PDF scellé', activate: 'Activer le partenaire',
     outcomeL: { good_standing: 'Bonne réputation', needs_review: 'À examiner', not_in_good_standing: 'Réputation non conforme' } as Record<string, string>,
     credit: (pass: number, review: number) => `Crédit de ${pass} ou plus : réussi. De ${review} à ${pass - 1} : à examiner. Sous ${review} : non conforme.`,
@@ -102,7 +112,7 @@ export interface InviteInfo { email: string; status: 'created' | 'sent' | 'opene
 export interface CaseRow { id: string; nodeId: string; partnerName: string; country: string; stage: Stage; outcome: string | null; label: string; keepsAccess: boolean; recheck: { dueOn: string; status: string } | null; loginCreated?: boolean; extensionInstalled?: boolean; invite?: InviteInfo | null }
 interface Detail extends CaseRow {
   suggested: string; thresholds: { creditPassMin: number; creditReviewMin: number };
-  consents: { kind: string; accepted: boolean; createdAt: string }[];
+  consents: { kind: string; wordingVersion?: string; accepted: boolean; createdAt: string }[];
   checks: { id: string; kind: string; provider: string; status: string; score: number | null; adverse: boolean | null; requestedAt: string }[];
   decisions: { suggested: string; outcome: string; reason: string; decidedAt: string }[];
   carrierPackets: { id: string; carrier: string; templateVersion: string; status: string; createdAt: string }[];
@@ -284,7 +294,7 @@ export function RequirementsPanel({ call, t, locale: _locale, onChange }: { call
   );
 }
 const REQ_KEYS = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'] as const;
-/** Requirements the server enforces today. The rest are stored and will be enforced when their step is built. */
+/** Requirements the server enforces on the standing decision. */
 const REQ_ENFORCED: string[] = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'];
 
 /** The Compliance officer's queue and decision view: totals, a progress table for every broker, and the file for one broker. Brokers are added from the Structure page (Add broker). */
@@ -577,7 +587,7 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
   const [screenRequired, setScreenRequired] = useState(true);
   const [agr, setAgr] = useState({ title: 'PII agency agreement', version: '', body: '' });
   const [signed, setSigned] = useState<{ id: string; title: string; version: string; signedAt: string }[]>([]);
-  const [sentOk, setSentOk] = useState(false);
+  const [sent, setSent] = useState<{ url: string; emailed: boolean; signers: number } | null>(null);
   const lc = locale === 'fr-CA' ? 'fr-CA' : 'en';
 
   const load = async () => {
@@ -654,7 +664,10 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
         <section class="obcard">
           <h3>{t.sections.consents}</h3>
           {d.consents.length === 0 ? <p class="muted">{t.noConsent}</p> : (
-            <ul class="oblist">{d.consents.map((c) => <li>{c.kind.replace(/_/g, ' ')}<span class={c.accepted ? 'chip ok' : 'chip warn'}>{c.accepted ? 'Yes' : 'No'}</span></li>)}</ul>
+            <>
+              <p class="muted">{t.draftWording}</p>
+              <ul class="oblist">{d.consents.map((c) => <li>{c.kind.replace(/_/g, ' ')}<span class={c.accepted ? 'chip ok' : 'chip warn'}>{c.accepted ? 'Yes' : 'No'}</span></li>)}</ul>
+            </>
           )}
         </section>
 
@@ -687,6 +700,7 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
           )}
           {canRecord && (
             <form class="obform" onSubmit={(e) => { e.preventDefault(); void recordCheck(); }}>
+              <p class="muted obspan2">{t.manualCheck}</p>
               <label class="fl">{t.checkL}
                 <select value={check.kind} onChange={(e) => setCheck({ ...check, kind: (e.target as HTMLSelectElement).value, provider: (e.target as HTMLSelectElement).value === 'credit' ? 'Equifax Canada' : 'Sterling Backcheck' })}>
                   <option value="credit">{t.kind.credit}</option><option value="background">{t.kind.background}</option>
@@ -793,7 +807,10 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
           {(d.stage === 'standing_decided' || d.stage === 'agency_agreement_sent') && d.outcome === 'good_standing' && (
             <>
               <p class="muted">{t.agHint}</p>
-              <form class="obform" onSubmit={(e) => { e.preventDefault(); void run(async () => { await call('POST', `/v1/onboarding/cases/${id}/agreement`, agr); setSentOk(true); }); }}>
+              <form class="obform" onSubmit={(e) => { e.preventDefault(); void run(async () => {
+                const res = await call('POST', `/v1/onboarding/cases/${id}/agreement`, agr) as { url: string; emailed: boolean; signers: number };
+                setSent(res);
+              }); }}>
                 <label class="fl">{t.agTitle}<input value={agr.title} onInput={(e) => setAgr({ ...agr, title: (e.target as HTMLInputElement).value })} /></label>
                 <label class="fl">{t.agVersion}<input value={agr.version} onInput={(e) => setAgr({ ...agr, version: (e.target as HTMLInputElement).value })} /></label>
                 <label class="fl obspan2">{t.agText}
@@ -803,7 +820,12 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
                   {d.stage === 'agency_agreement_sent' ? t.agResend : t.agSend}
                 </button>
               </form>
-              {sentOk && d.stage === 'standing_decided' && <p class="muted">{t.agSentOk}</p>}
+              {sent && (
+                <p class="muted obspan2">
+                  {sent.emailed ? t.agEmailed(sent.signers) : t.agNotEmailed}
+                  {' '}<a href={sent.url}>{sent.url}</a>
+                </p>
+              )}
             </>
           )}
           {d.stage === 'agency_agreement_sent' && <p class="muted">{t.agWaiting}</p>}

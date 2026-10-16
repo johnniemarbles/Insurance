@@ -50,11 +50,12 @@ async function requireOfficer(tx: Tx, c: CaseRow): Promise<void> {
   if (!ok) throw forbidden('Only the Compliance officer for this region can do this');
 }
 
-/** The people at the partner who receive the link and the code. */
+/** Partner administrators on this broker. The signing link and the code go only to them, never to staff, learners or trainers on the same node. */
 async function partnerEmails(authPool: AppDeps['authPool'], nodeId: string): Promise<string[]> {
   return (await authPool.query<{ email: string }>(
     `SELECT DISTINCT u.email::text AS email FROM app_users u JOIN user_node_roles r ON r.user_id = u.id
-      WHERE r.node_id = $1 AND u.status::text <> 'disabled'`, [nodeId])).rows.map((r) => r.email);
+      WHERE r.node_id = $1 AND u.status::text <> 'disabled' AND r.role::text IN ('admin', 'partner')
+      ORDER BY email`, [nodeId])).rows.map((r) => r.email);
 }
 
 async function linkFor(authPool: AppDeps['authPool'], token: string, allowUsed = false): Promise<LinkRow> {
@@ -100,16 +101,16 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [out.tenantId, id, out.nodeId, ctx.userId, title, agreementBody, version, tokenHash(token), expires]);
     const url = `${deps.config.appOrigin}/sign/partner/${token}`;
+    const to = await partnerEmails(deps.authPool, out.nodeId);
     let emailed = false;
-    if (deps.mailer) {
-      const to = await partnerEmails(deps.authPool, out.nodeId);
+    if (deps.mailer && to.length > 0) {
       const firm = (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [out.tenantId])).rows[0]?.name ?? '';
       const msg = `${firm} has prepared “${title}” for ${out.partnerName}. Please read it and sign here:\n${url}\n\nThe link works for ${LINK_DAYS} days.`;
       for (const email of to) {
         try { await deps.mailer.send({ to: email, subject: `Please review and sign: ${title}`, text: msg, html: `<p>${esc(msg).replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>` }); emailed = true; } catch { /* the officer can share the link */ }
       }
     }
-    return { url, expiresAt: expires.toISOString(), emailed };
+    return { url, expiresAt: expires.toISOString(), emailed, signers: to.length };
   });
 
   /** The signed agreements for a case, newest first. Visibility follows the case (officer above the partner, and the partner itself). */
