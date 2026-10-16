@@ -57,8 +57,8 @@ const T = {
     agHint: 'The signing code goes only to partner administrators on this broker, not to staff or learners.',
     tpl: {
       head: 'Company agreement wording',
-      hint: 'Paste the wording counsel issued. It fills the send form for every broker. PII does not supply this text.',
-      empty: 'No company wording yet. Each send still needs the text pasted in.',
+      hint: 'The AGA agreement is already in the box. Marks such as {{aga_name}} and {{province}} are filled from the broker’s file when you send. The advisor’s name and the date are filled when they sign. Save it once for the company.',
+      empty: 'Not saved yet. Review the agreement, then save it. Schedules A and B are named in section 7 and were not in the file you supplied.',
       title: 'Title', version: 'Version', body: 'Agreement text', save: 'Save company wording',
       saved: 'Saved. Earlier wording is kept.', only: 'Only a Compliance Manager or the company administrator can save this.',
     },
@@ -110,8 +110,8 @@ const T = {
     agHint: 'Le code de signature va seulement aux administrateurs du partenaire, pas au personnel ni aux apprenants.',
     tpl: {
       head: 'Texte d’entente de l’entreprise',
-      hint: 'Collez le libellé émis par le conseiller juridique. Il remplit le formulaire d’envoi pour chaque courtier. PII ne fournit pas ce texte.',
-      empty: 'Aucun texte d’entreprise pour l’instant. Chaque envoi exige encore le texte collé.',
+      hint: 'L’entente AGA est déjà dans la case. Les marques comme {{aga_name}} et {{province}} sont remplies depuis le dossier du courtier à l’envoi. Le nom du conseiller et la date le sont à la signature. Enregistrez-la une fois pour l’entreprise.',
+      empty: 'Pas encore enregistrée. Relisez l’entente, puis enregistrez-la. Les annexes A et B sont nommées à l’article 7 et n’étaient pas dans le fichier fourni.',
       title: 'Titre', version: 'Version', body: 'Texte de l’entente', save: 'Enregistrer le texte',
       saved: 'Enregistré. Le texte précédent est conservé.', only: 'Seul un gestionnaire de conformité ou l’administrateur de l’entreprise peut l’enregistrer.',
     },
@@ -319,9 +319,10 @@ function AgreementTemplatePanel({ call, t }: { call: Call; t: Dict }) {
   useEffect(() => {
     void (async () => {
       try {
-        const r = await call('GET', '/v1/onboarding/agreement-template') as { canChange: boolean; template: { title: string; version: string; body: string } | null };
+        const r = await call('GET', '/v1/onboarding/agreement-template') as { canChange: boolean; starter?: { title: string; version: string; body: string }; template: { title: string; version: string; body: string } | null };
         setCanChange(r.canChange);
         if (r.template) { setForm(r.template); setHas(true); }
+        else if (r.starter) setForm(r.starter);
       } catch (e) { setError(errText(e)); }
     })();
   }, [call]);
@@ -344,7 +345,7 @@ function AgreementTemplatePanel({ call, t }: { call: Call; t: Dict }) {
         <form class="obform" onSubmit={(e) => { e.preventDefault(); void save(); }}>
           <label class="fl">{t.tpl.title}<input value={form.title} onInput={(e) => setForm({ ...form, title: (e.target as HTMLInputElement).value })} /></label>
           <label class="fl">{t.tpl.version}<input value={form.version} onInput={(e) => setForm({ ...form, version: (e.target as HTMLInputElement).value })} /></label>
-          <label class="fl obspan2">{t.tpl.body}<textarea rows={6} value={form.body} onInput={(e) => setForm({ ...form, body: (e.target as HTMLTextAreaElement).value })} /></label>
+          <label class="fl obspan2">{t.tpl.body}<textarea rows={16} value={form.body} onInput={(e) => setForm({ ...form, body: (e.target as HTMLTextAreaElement).value })} /></label>
           <button class="btn" type="submit" disabled={busy || !ready}>{t.tpl.save}</button>
           {note && <p class="muted">{note}</p>}
         </form>
@@ -659,10 +660,11 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
   useEffect(() => {
     void (async () => {
       try {
-        const r = await call('GET', '/v1/onboarding/agreement-template') as { template: { title: string; version: string; body: string } | null };
-        if (!agrFilled.current && r.template) {
+        const r = await call('GET', '/v1/onboarding/agreement-template') as { template: { title: string; version: string; body: string } | null; starter?: { title: string; version: string; body: string } };
+        const source = r.template ?? r.starter;
+        if (!agrFilled.current && source) {
           agrFilled.current = true;
-          setAgr({ title: r.template.title, version: r.template.version, body: r.template.body });
+          setAgr({ title: source.title, version: source.version, body: source.body });
         }
       } catch { /* the send form still works when the template cannot be read */ }
     })();
