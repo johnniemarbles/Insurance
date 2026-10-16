@@ -204,6 +204,14 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
   const [quickLocs, setQuickLocs] = useState<{ id: string; name: string }[]>([]);
   const [quickLoc, setQuickLoc] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  // The More menu is placed under its button on screen, so it never runs off the left or right edge.
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
+  const toggleMenu = () => {
+    const r = moreRef.current?.getBoundingClientRect();
+    if (r) setMenuPos({ top: r.bottom + 4, left: Math.max(12, Math.min(r.right - 240, window.innerWidth - 252)) });
+    setMenuOpen((o) => !o);
+  };
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [hideStart, setHideStart] = useState(!prefs.startTips);
   const [boxes, setBoxes] = useState<Box[]>([]);
@@ -469,6 +477,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
       else if (e.key === 'v') setViewSaved(view === 'table' ? 'board' : 'table');
     }}>
       <div class="bar">
+        <div class="bar-row r1">
         <h1>{pipeline?.name}</h1>
         {pipeline?.templateCode && pipeline.templateVersion != null && (latest[pipeline.templateCode] ?? 0) > pipeline.templateVersion && (
           <button class="chip warn" title={outdatedText(locale, pipeline.templateVersion, latest[pipeline.templateCode]!)} onClick={() => setNewPipe(true)}>{locale === 'fr-CA' ? 'Nouvelle version' : 'New version available'}</button>
@@ -485,28 +494,32 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
           <button aria-pressed={view === 'table'} onClick={() => setViewSaved('table')}>{t.table}</button>
           <button aria-pressed={view === 'board'} onClick={() => setViewSaved('board')}>{t.board}</button>
         </div>
-        <span class="spacer" />
+          <span class="spacer" />
+        </div>
+        <div class="bar-row r2">
         <button class="btn quiet" onClick={() => setAttentionOpen(true)}>⚠ {t.attention}{riskCount > 0 && <span class="badge">{riskCount}</span>}</button>
         <button class="btn quiet" onClick={openTasks}>{t.myTasks}{dueCount > 0 && <span class="badge">{dueCount}</span>}</button>
         <ColumnPicker all={allCols} visible={colIds ?? []} t={t} onChange={(ids) => { setColIds(ids); saveColumns(pid, ids); }} onReset={() => { saveColumns(pid, null); setColIds(loadColumns(pid, allCols)); }} />
-        <div class="menuwrap">
-          <button class="btn quiet" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>⋯ {t.moreActions}</button>
-          {menuOpen && (
-            <div class="kebab" role="menu" onClick={() => setMenuOpen(false)}>
-              <button role="menuitem" onClick={refresh}>{t.refresh} <small>Alt+R</small></button>
-              <button role="menuitem" onClick={() => setAttentionOpen(true)}>{t.attention}</button>
-              <button role="menuitem" onClick={() => setReportsOpen(true)}>{t.reports}</button>
-              <button role="menuitem" onClick={() => setFeedOpen(true)}>{t.newsfeed}</button>
-              <button role="menuitem" onClick={() => setIntegrationsOpen(true)}>{t.integrations}</button>
-              <button role="menuitem" onClick={() => setMergeIds([])}>{t.mailMerge}</button>
-              <button role="menuitem" onClick={() => setEditing(true)}>{t.editPipeline}</button>
-              <button role="menuitem" onClick={() => setNewPipe(true)}>{t.newPipeline}</button>
-              <button role="menuitem" onClick={() => setImporting(true)}>{t.import}</button>
-              <button role="menuitem" onClick={exportCsv}>{t.exportCsv}</button>
-            </div>
-          )}
+          <span class="spacer" />
+          <div class="menuwrap">
+            <button ref={moreRef} class="btn quiet" aria-haspopup="menu" aria-expanded={menuOpen} onClick={toggleMenu}>⋯ {t.moreActions}</button>
+            {menuOpen && (
+              <div class="kebab" role="menu" style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, right: 'auto' }} onClick={() => setMenuOpen(false)}>
+                <button role="menuitem" onClick={refresh}>{t.refresh} <small>Alt+R</small></button>
+                <button role="menuitem" onClick={() => setAttentionOpen(true)}>{t.attention}</button>
+                <button role="menuitem" onClick={() => setReportsOpen(true)}>{t.reports}</button>
+                <button role="menuitem" onClick={() => setFeedOpen(true)}>{t.newsfeed}</button>
+                <button role="menuitem" onClick={() => setIntegrationsOpen(true)}>{t.integrations}</button>
+                <button role="menuitem" onClick={() => setMergeIds([])}>{t.mailMerge}</button>
+                <button role="menuitem" onClick={() => setEditing(true)}>{t.editPipeline}</button>
+                <button role="menuitem" onClick={() => setNewPipe(true)}>{t.newPipeline}</button>
+                <button role="menuitem" onClick={() => setImporting(true)}>{t.import}</button>
+                <button role="menuitem" onClick={exportCsv}>{t.exportCsv}</button>
+              </div>
+            )}
+          </div>
+  <button class="btn" onClick={() => setCreating(true)}>+ {t.newBox}</button>
         </div>
-        <button class="btn" onClick={() => setCreating(true)}>+ {t.newBox}</button>
       </div>
 
       <FilterBar t={t} pipeline={pipeline} people={people} meEmail={meEmail} filters={filters} onFilters={setFilters} sorts={sorts} onSorts={setSorts} groupBy={groupBy} onGroupBy={setGroupBy} />

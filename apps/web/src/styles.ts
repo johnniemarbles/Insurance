@@ -639,4 +639,9 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .pz-init{font-size:12px;font-weight:700}
 .pz-dot{position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:50%;background:#22C55E;border:2px solid #fff}
 .pz-more{margin-left:4px;font-size:12px;font-weight:600;color:var(--mute)}
+/* Pipeline toolbar: two rows. Row 1 is the pipeline and its scope/view; row 2 is the actions, with More and New on the right. */
+.bar:has(.bar-row){flex-direction:column;align-items:stretch;gap:8px}
+.bar-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+.bar-row .seg{margin-bottom:0}
+@media(max-width:600px){.bar-row{gap:8px}.bar-row>.btn{flex:1 1 auto;justify-content:center}.bar-row .seg{flex:1 1 100%;display:flex}.bar-row .seg button{flex:1 1 0}}
 `;
