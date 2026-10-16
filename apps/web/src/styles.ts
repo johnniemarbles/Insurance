@@ -619,4 +619,17 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 @media(max-width:600px){.seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.seg::-webkit-scrollbar{display:none}.seg button{flex:none}}
 @media(max-width:600px){.bar>.seg[aria-label="View"]{flex:1 1 100%;display:flex}.bar>.seg[aria-label="View"] button{flex:1 1 0}}
 @media(max-width:600px){.pg-frame .bar{flex-wrap:wrap}}
+/* Top menu on every screen size: the section links run across the top, the left column goes away, and the content takes the full width. */
+.rail-toggle{display:none!important}
+@media(min-width:1100px){
+  .shell{grid-template-columns:minmax(0,1fr);grid-template-rows:none}
+  .shell>.tabs{grid-column:1;grid-row:1;flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px;padding:12px 20px;border-right:0;border-bottom:1px solid var(--line);background:#fff;min-height:0}
+  .shell>*:not(.tabs){grid-column:1;grid-row:auto;min-width:0}
+  .shell>.tabs-fb,.shell>.tabs .tabs-fb{margin:0 0 0 auto}
+  .shell.rail-closed{grid-template-columns:minmax(0,1fr)}
+  .shell.rail-closed>.tabs{padding:12px 20px;align-items:center}
+  .shell.rail-closed .tabs button{justify-content:flex-start;padding:7px 14px;width:auto}
+  .shell.rail-closed .tabs button .tl{display:inline}
+  .shell.rail-closed .tabs-fb{display:inline}
+}
 `;
