@@ -148,16 +148,15 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
     ...d.tasks.filter((t0) => !late(t0.dueAt)).map((t0): Row => ({ key: `d${t0.id}`, label: x.fToday, tone: '', title: t0.title, sub: t0.boxName ?? '', open: () => openTask(t0) })),
   ].slice(0, 8);
   const brandNew = d.recent.length === 0 && pipes.length > 0;
+  const goalPct = d.week ? Math.min(100, Math.round((d.week.done / Math.max(1, d.week.goal)) * 100)) : 0;
   const act = (f: (typeof feed)[number]) => (f.kind === 'note' ? k.note : f.toStage && f.fromStage ? k.moved(f.toStage) : f.toStage ? k.created : k.created);
   return (
     <div class="home pg">
-      <div class="hhead">
-        <div><h2>{x.greet(new Date().getHours(), first)}</h2><span class="muted">{today}</span></div>
-        <span class="spacer" />
+      <div class="home-main">
+      <div class="hero">
+        <div class="hero-txt"><span class="hero-eye">{today}</span><h2>{x.greet(new Date().getHours(), first)}</h2></div>
         {compose && meEmail && <button class="link" onClick={() => void emailDay()}>{x.emailDay}</button>}
-        {d.week?.ring && (() => { const w = d.week; const p = Math.min(100, Math.round((w.done / Math.max(1, w.goal)) * 100)); return (
-          <div class="goal" title={`${w.done} / ${w.goal}`}><div class="ring" role="img" aria-label={`${w.done} / ${w.goal}`} style={{ '--p': p } as any}><span>{w.done}/{w.goal}</span></div></div>
-        ); })()}
+        <button class="hero-cta" onClick={() => actPipe && go('pipelines', `${actPipe}::new`)}>＋ {x.newRecord} <span aria-hidden="true">→</span></button>
       </div>
 
       <div class="qbar" role="toolbar" aria-label={k.quick}>
@@ -279,6 +278,33 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
       {taskOpen && <TaskDialog call={call} x={x} options={[...d.recent, ...d.trending.filter((r) => !d.recent.some((q) => q.id === r.id))]} onClose={() => setTaskOpen(false)} onDone={() => { setTaskOpen(false); setToast(x.saved); void load(); }} />}
       {editOpen && <PinsDialog call={call} x={x} views={d.views} onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); void load(); }} />}
       {toast && <div class="toast" role="status">{toast}</div>}
+      </div>
+      <aside class="home-side" aria-label={x.snapshot}>
+        <div class="side-prof">
+          <div class="side-ring" role="img" aria-label={d.week ? `${d.week.done} / ${d.week.goal}` : ''} style={{ '--p': goalPct } as any}><span>{goalPct}%</span></div>
+          <b>{first}</b>
+          <span class="muted">{today}</span>
+        </div>
+        <section class="hcard side-bars"><h3>{x.snapshot}</h3>
+          {pipe && sum ? (() => {
+            const counts = pipe.stages.map((s) => sum.find((z) => z.stageId === s.id)?.count ?? 0);
+            const max = Math.max(1, ...counts);
+            return <div class="sbars">{pipe.stages.map((s, i) => (
+              <div class="sbar" key={s.id}><b>{counts[i]}</b><i class={i % 2 ? 'alt' : ''} style={{ height: `${Math.max(4, Math.round((counts[i]! / max) * 100))}%` }} /><small>{s.name}</small></div>
+            ))}</div>;
+          })() : <p class="muted">{x.noStages}</p>}
+        </section>
+        <section class="hcard"><h3>{x.recent}</h3>
+          {d.recent.slice(0, 3).map((r) => (
+            <button class="side-row" key={r.id} onClick={() => openRec(r)}>
+              <span class="side-av" aria-hidden="true">{r.name.split(' ').map((w) => w[0] ?? '').slice(0, 2).join('').toUpperCase()}</span>
+              <span class="side-tx"><b>{r.name}</b></span>
+              <span class="side-pill">{k.open}</span>
+            </button>
+          ))}
+          <button class="side-all" onClick={() => go('pipelines')}>{x.openPipe} →</button>
+        </section>
+      </aside>
     </div>
   );
 }

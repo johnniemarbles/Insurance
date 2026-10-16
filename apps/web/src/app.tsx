@@ -37,6 +37,18 @@ const PAGE = 100;
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 class ApiErr extends Error { constructor(public status: number, m: string) { super(m); } }
 
+// Minimal line icons for the left rail (wide screens only).
+const NAV_ICON: Record<string, string> = {
+  home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
+  inbox: 'M4 4h16v12H4zM4 16l4-4h8l4 4',
+  pipelines: 'M4 6h6v4H4zM14 6h6v4h-6zM4 14h6v4H4zM14 14h6v4h-6z',
+  renewals: 'M7 3v3M17 3v3M4 9h16M5 5h14v15H5z',
+  training: 'M12 4l9 4-9 4-9-4zM7 11v4c0 1.5 2.2 3 5 3s5-1.5 5-3v-4',
+  compliance: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+  contacts: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21c0-4 3-6 7-6s7 2 7 6M16 4a4 4 0 0 1 0 8M22 21c0-2-1-4-3-5',
+  settings: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4',
+};
+
 export function App({ host }: { host: HostOptions }) {
   const [me, setMe] = useState<Me | 'out' | null>(null);
   const [error, setError] = useState('');
@@ -132,12 +144,12 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
   // Home, Compliance and Training bring their own page width; every other page is framed the same way.
   const framed = page !== 'home' && page !== 'compliance' && !(page === 'training' && LMS);
   return (
-    <div class={`pii${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
+    <div class={`pii shell${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
       {demoUserId && <DemoBar call={call} locale={locale} meId={demoUserId} />}
       {older(host.extVersion, minExt) && <div class="banner warn" role="alert">{t.updateNeeded}</div>}
       {(
         <div class="tabs" role="tablist">
-          {PAGES.filter((p) => p !== 'merges' && p !== 'notifications' && (p !== 'inbox' || demoUserId)).map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)}>{label[p]}</button>)}
+          {PAGES.filter((p) => p !== 'merges' && p !== 'notifications' && (p !== 'inbox' || demoUserId)).map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)}><svg class="nv" viewBox="0 0 24 24" aria-hidden="true"><path d={NAV_ICON[p] ?? 'M4 12h16'} /></svg>{label[p]}</button>)}
           {supportEmail && <a class="tabs-fb" style={{ marginLeft: 0 }} href={`mailto:${supportEmail}?subject=PII%20feedback`}>{t.sendFeedback}</a>}
         </div>
       )}
