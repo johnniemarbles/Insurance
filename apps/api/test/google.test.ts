@@ -30,3 +30,11 @@ test('wrong audience, nonce, issuer, expiry, algorithm, key or signature are all
   const other = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey;
   await assert.rejects(verifyIdToken(token({}, { key: other }), 'cid', 'n1'), /signature/);
 });
+
+test('a Google profile photo is kept only when it is served from Google', async () => {
+  const photo = 'https://lh3.googleusercontent.com/a/ACg8ocabc=s96-c';
+  assert.equal((await verifyIdToken(token({ picture: photo }), 'cid', 'n1')).picture, photo);
+  assert.equal('picture' in (await verifyIdToken(token({ picture: 'https://evil.example/p.png' }), 'cid', 'n1')), false);
+  assert.equal('picture' in (await verifyIdToken(token({ picture: 'http://lh3.googleusercontent.com/a' }), 'cid', 'n1')), false);
+  assert.equal('picture' in (await verifyIdToken(token({ picture: 42 }), 'cid', 'n1')), false);
+});
