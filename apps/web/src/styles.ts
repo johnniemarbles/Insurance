@@ -619,4 +619,9 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 @media(max-width:600px){.seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.seg::-webkit-scrollbar{display:none}.seg button{flex:none}}
 @media(max-width:600px){.bar>.seg[aria-label="View"]{flex:1 1 100%;display:flex}.bar>.seg[aria-label="View"] button{flex:1 1 0}}
 @media(max-width:600px){.pg-frame .bar{flex-wrap:wrap}}
+/* Pipeline toolbar: two rows. Row 1 is the pipeline and its scope/view; row 2 is the actions, with More and New on the right. */
+.bar:has(.bar-row){flex-direction:column;align-items:stretch;gap:8px}
+.bar-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+.bar-row .seg{margin-bottom:0}
+@media(max-width:600px){.bar-row{gap:8px}.bar-row>.btn{flex:1 1 auto;justify-content:center}.bar-row .seg{flex:1 1 100%;display:flex}.bar-row .seg button{flex:1 1 0}}
 `;
