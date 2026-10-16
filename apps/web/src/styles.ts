@@ -665,7 +665,7 @@ button.pt-row:hover{background:#F7F8FC}
 
 /* Onboarding and alert tiles: one definition. Badge on the left, the number above its label, equal heights in each row. */
 .obtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;align-items:stretch}
-.obtiles .obtile{position:relative;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:6px;min-height:104px;box-sizing:border-box;padding:18px 18px 18px 72px;border:1px solid var(--line);border-radius:20px;background:#fff;box-shadow:var(--shadow-soft);text-align:left}
+.obtiles .obtile{position:relative;display:flex;flex-direction:column;justify-content:flex-start;align-items:flex-start;gap:6px;min-height:104px;box-sizing:border-box;padding:20px 18px 20px 72px;border:1px solid var(--line);border-radius:20px;background:#fff;box-shadow:var(--shadow-soft);text-align:left}
 .obtiles .obtile b{display:block;font-size:26px;line-height:1;color:var(--navy);font-weight:700}
 .obtiles .obtile span{display:block;font-size:13px;line-height:1.35;color:var(--mute);font-weight:500;overflow-wrap:anywhere}
 .obtiles .obtile small{font-size:12px;color:var(--mute)}
@@ -686,4 +686,6 @@ a.btn{text-decoration:none}
   .topnav button,.tabs button,.tabs-fb{flex:none;white-space:nowrap}
   .topnav{padding:10px 14px}
 }
+.obform{align-items:start}.obform .btn{align-self:end}
+select{background-color:#fff;border:1px solid var(--line2);border-radius:10px;padding:7px 10px;font:inherit;color:var(--ink)}
 `;
