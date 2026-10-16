@@ -9,6 +9,7 @@ import { audit } from './audit.ts';
 import { actingAs } from './effects.ts';
 import { conflict, forbidden, invalid, notFound, HttpError } from './errors.ts';
 import { agreementHash, sealedPartnerAgreementPdf } from './partner-agreement-pdf.ts';
+import { blank, fillAgreement, signDateParts } from './aga-agreement.ts';
 import { signPage } from './routes-sign.ts';
 import type { AppDeps } from './app.ts';
 
@@ -78,11 +79,37 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
     const id = caseId((req.params as { id: string }).id);
     const b = body(req);
     const title = text(b.title, 'Title', 200);
-    const agreementBody = text(b.body, 'Agreement text', MAX_BODY);
+    const rawBody = text(b.body, 'Agreement text', MAX_BODY);
     const version = text(b.version, 'Version', 60);
     const out = await run(ctx, async (tx) => {
       const c = await loadCase(tx, id);
       await requireOfficer(tx, c);
+      const profile = (await tx.query<{ legalName: string | null; entityType: string | null; fields: Record<string, string> }>(
+        `SELECT legal_name AS "legalName", entity_type AS "entityType", fields FROM compliance_profiles WHERE node_id = $1`,
+        [c.nodeId])).rows[0];
+      const director = (await tx.query<{ name: string; brokerType: string | null }>(
+        `SELECT o.full_name AS name, c.broker_type AS "brokerType"
+           FROM onboarding_cases c
+           LEFT JOIN onboarding_owners o ON o.case_id = c.id AND o.is_director
+          WHERE c.id = $1
+          ORDER BY o.created_at NULLS LAST LIMIT 1`, [id])).rows[0];
+      const agaName = c.partnerName;
+      const province = typeof profile?.fields?.province === 'string' ? profile.fields.province.trim() : '';
+      const city = typeof profile?.fields?.city === 'string' ? profile.fields.city.trim() : '';
+      const corporate = director?.brokerType === 'corporate' || profile?.entityType === 'corporation' || profile?.entityType === 'llc' || profile?.entityType === 's_corp';
+      const agreementBody = fillAgreement(rawBody, {
+        ...signDateParts(new Date()),
+        aga_name: agaName,
+        city: city || blank,
+        province: province || blank,
+        corporation_name: corporate ? (profile?.legalName?.trim() || c.partnerName) : 'N/A',
+        officer_name: director?.name?.trim() || blank,
+        officer_title: blank,
+        advisor_name: '{{advisor_name}}',
+        sign_day: '{{sign_day}}',
+        sign_month: '{{sign_month}}',
+        sign_year: '{{sign_year}}',
+      });
       if (c.stage !== 'agency_agreement_sent') {
         const block = stageMoveBlock(c.stage, 'agency_agreement_sent', c.standing ?? 'pending');
         if (block) throw conflict(block === 'standing_not_good' ? 'The agency agreement waits for a good-standing decision' : 'The agreement is sent after the standing is decided');
@@ -90,7 +117,7 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
         await audit(tx, ctx, 'onboarding.stage', 'onboarding_case', id, { to: 'agency_agreement_sent' });
       }
       await audit(tx, ctx, 'onboarding.agreement_sent', 'onboarding_case', id, { version, hash: agreementHash(title, agreementBody, version) });
-      return { partnerName: c.partnerName, nodeId: c.nodeId, tenantId: c.tenantId };
+      return { partnerName: c.partnerName, nodeId: c.nodeId, tenantId: c.tenantId, body: agreementBody };
     });
     // A fresh link replaces any unused one for this case.
     const token = randomBytes(24).toString('base64url');
@@ -99,7 +126,7 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
     await deps.authPool.query(
       `INSERT INTO onboarding_signing_links (tenant_id, case_id, node_id, created_by, title, body, version, token_hash, expires_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [out.tenantId, id, out.nodeId, ctx.userId, title, agreementBody, version, tokenHash(token), expires]);
+      [out.tenantId, id, out.nodeId, ctx.userId, title, out.body, version, tokenHash(token), expires]);
     const url = `${deps.config.appOrigin}/sign/partner/${token}`;
     const to = await partnerEmails(deps.authPool, out.nodeId);
     let emailed = false;
@@ -204,13 +231,14 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
     await withRequestTx(deps.appPool, ctx, async (tx) => {
       const c = await loadCase(tx, l.case_id);
       if (c.stage !== 'agency_agreement_sent') throw conflict('This agreement has already been signed');
+      const signedBody = fillAgreement(l.body, { ...signDateParts(signedAt), advisor_name: typedName });
       const pdf = await sealedPartnerAgreementPdf({
-        firm, partnerName: c.partnerName, title: l.title, body: l.body, version: l.version, typedName, signedAt, ip, agent,
+        firm, partnerName: c.partnerName, title: l.title, body: signedBody, version: l.version, typedName, signedAt, ip, agent,
       });
       await tx.query(
         `INSERT INTO onboarding_agreements (tenant_id, case_id, node_id, title, body, version, body_hash, typed_name, signed_ip, signed_agent, signed_at, sealed_pdf)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-        [l.tenant_id, l.case_id, l.node_id, l.title, l.body, l.version, agreementHash(l.title, l.body, l.version), typedName, ip, agent, signedAt, Buffer.from(pdf)]);
+        [l.tenant_id, l.case_id, l.node_id, l.title, signedBody, l.version, agreementHash(l.title, signedBody, l.version), typedName, ip, agent, signedAt, Buffer.from(pdf)]);
       await tx.query(`UPDATE onboarding_cases SET stage = 'agency_agreement_signed', updated_at = now() WHERE id = $1`, [l.case_id]);
       await audit(tx, ctx, 'onboarding.agreement_signed', 'onboarding_case', l.case_id, { version: l.version });
     });

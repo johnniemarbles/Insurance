@@ -12,6 +12,7 @@ import {
   type OnboardingStage, type RequestContext, type StandingOutcome,
 } from '@pii/domain';
 import { audit } from './audit.ts';
+import { AGA_BODY, AGA_TITLE, AGA_VERSION } from './aga-agreement.ts';
 import { escapeHtml } from './merge-render.ts';
 import { createPartnerInvitation, sendPartnerInvitation } from './partner-invite.ts';
 import { managesBranchAbove } from './routes-people.ts';
@@ -397,7 +398,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     });
   });
 
-  /** The company's agency-agreement wording, if a Compliance Manager has saved one. There is no default text. */
+  /** The company's saved wording, plus the AGA agreement supplied by Punjab Insurance for a company that has not saved one yet. */
   app.get('/v1/onboarding/agreement-template', async (req) => {
     const { ctx } = await deps.authenticate(req);
     return run(ctx, async (tx) => {
@@ -408,6 +409,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
         'SELECT app_is_compliance_role() OR app_is_tenant_admin() AS ok')).rows[0]?.ok === true;
       return {
         canChange,
+        starter: { title: AGA_TITLE, version: AGA_VERSION, body: AGA_BODY },
         template: row ? { title: row.title, version: row.version, body: row.body, updatedAt: row.updatedAt.toISOString() } : null,
       };
     });
