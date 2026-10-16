@@ -7,7 +7,7 @@ import { STAGE_LABEL } from './onboarding-shared.tsx';
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 
 export interface Expiry { id: string; kind: 'licence' | 'eo'; label: string; expiresOn: string; status: 'expired' | 'expiring'; partnerName: string }
-interface CaseRow { id: string; partnerName: string; stage: string }
+interface CaseRow { id: string; partnerName: string; stage: string; profile?: { done: number; total: number } | null }
 
 const DAYS = 14;
 const DAY_MS = 86400000;
@@ -110,14 +110,14 @@ export function DeadlinesPanel({ call, locale }: { call: Call; locale: Locale })
           {inOnboarding.length === 0 ? <p class="muted">{t.obNone}</p> : (
             <div class="dl-ob">
               {inOnboarding.map((c) => {
-                const idx = STAGES.indexOf(c.stage as keyof typeof STAGE_LABEL);
-                const pct = Math.max(0, Math.round((idx / (STAGES.length - 1)) * 100));
+                const prof = c.profile ?? { done: 0, total: 5 };
+                const pct = Math.round((prof.done / prof.total) * 100);
                 return (
                   <div>
                     <div class="dl-av" aria-hidden="true">{initials(c.partnerName)}</div>
                     <b>{c.partnerName}</b>
                     <span>{STAGE_LABEL[c.stage as keyof typeof STAGE_LABEL]?.[locale === 'fr-CA' ? 'fr-CA' : 'en'] ?? c.stage}</span>
-                    <small>{Math.max(0, idx)}/{STAGES.length - 1} {t.steps}</small>
+                    <small>{prof.done}/{prof.total} {t.steps}</small>
                     <div class="dl-bar2" aria-hidden="true"><i style={{ width: `${pct}%` }} /></div>
                   </div>
                 );
