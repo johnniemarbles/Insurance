@@ -73,3 +73,11 @@ test('the online list for a partner shows active branch mates only, with their p
 test('a photo must be a Google-hosted https address', async () => {
   await assert.rejects(owner((o) => o.query(`UPDATE app_users SET picture_url = 'https://evil.example/x.png' WHERE email = $1`, [ME])), /check constraint|picture_url/);
 });
+
+test('staff see every active partner in the tenant, with photos', async () => {
+  await call(ADMIN, 'POST', '/v1/presence');
+  const { partners } = (await call(ADMIN, 'GET', '/v1/presence/partners')).json;
+  const names = partners.map((p: { name: string }) => p.name);
+  assert.ok(names.includes('Mate Partner') && names.includes('Me Partner') && names.includes('Outsider'), 'staff are not limited to one branch');
+  assert.equal(partners.find((p: { name: string }) => p.name === 'Mate Partner').pictureUrl, PHOTO);
+});
