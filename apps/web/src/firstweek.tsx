@@ -23,6 +23,8 @@ const L = {
     hints: { limit_low: 'La limite E&O est sous le minimum', requested: 'Demandée, en attente du siège social', none_assigned: 'Rien d’assigné pour l’instant', rejected: 'Retourné : lisez la note et corrigez', waiting: 'En attente du siège social' } as Record<string, string>,
   },
 };
+/** The profile-setup steps (the business profile checklist). The Home header counts only these. */
+const PROFILE_STEPS = ['profile', 'licence', 'eo', 'attestation', 'agreement'];
 const WHERE: Record<string, string> = { profile: 'compliance', licence: 'compliance', eo: 'compliance', attestation: 'compliance', agreement: 'compliance', submitted: 'compliance', approved: 'compliance', carriers: 'compliance', team: 'settings', ce: 'training', training: 'training', client: 'pipelines' };
 
 function Bar({ pct }: { pct: number }) { return <span class="cbar" role="img" aria-label={`${pct}%`}><i style={{ width: `${pct}%` }} /></span>; }
@@ -71,9 +73,12 @@ export function FirstWeekCard({ call, locale, go }: { call: Call; locale: Locale
   if (!w || !w.applicable || w.complete || w.day > 30) return null;
   const open = w.steps.filter((s) => !s.done);
   const shown = all ? w : { ...w, steps: open.slice(0, 3) };
+  const prof = w.steps.filter((s) => PROFILE_STEPS.includes(s.id));
+  const profDone = prof.filter((s) => s.done).length;
+  const head = { ...w, done: profDone, total: prof.length, percent: prof.length ? Math.round((profDone / prof.length) * 100) : 0 };
   return (
     <section class="hcard" aria-label={x.title}>
-      <Head w={w} locale={locale} />
+      <Head w={head} locale={locale} />
       <p class="muted" style={{ margin: '6px 0' }}>{w.late ? x.late : x.day(w.day, w.daysLeft)}</p>
       <Steps w={shown} locale={locale} go={go} />
       {!all && open.length > 3 && <button class="link" onClick={() => setAll(true)}>{x.hide}</button>}
