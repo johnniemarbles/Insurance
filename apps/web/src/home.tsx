@@ -41,7 +41,7 @@ const X = {
     quick: 'Quick access', edit: 'Edit shortcuts', noPins: 'Pin your saved views here for one-click access.',
     newRecord: 'Create record', newTask: 'Create task', merge: 'Start mail merge', import: 'Import',
     recent: 'Recent records', recents: 'Recents', trending: 'Trending', noRecent: 'Records you create or update show up here.', noTrending: 'Nothing busy this week.', ago: 'updated', moves: (n: number) => `${n} ${n === 1 ? 'update' : 'updates'} this week`,
-    snapshot: 'Pipeline', openPipe: 'Open pipeline', noStages: 'No pipelines yet.', records: (n: number) => `${n} ${n === 1 ? 'record' : 'records'}`,
+    weekGoal: 'Weekly goal', weekOf: (d: number, g: number) => `${d} of ${g} this week`, noGoal: 'No weekly goal set.', snapshot: 'Pipeline', openPipe: 'Open pipeline', noStages: 'No pipelines yet.', records: (n: number) => `${n} ${n === 1 ? 'record' : 'records'}`,
     radar: 'Renewals coming up', radarAll: 'See all renewals', noRadar: 'No renewals in the next 45 days.', rLeft: (n: number) => (n < 0 ? `${-n} d overdue` : n === 0 ? 'Today' : `in ${n} d`),
     title: 'My day', due: 'Due today and overdue', noTasks: 'Nothing due. Nice.', later: 'Coming up and no date', noDate: 'No date', attention: 'Needs attention', noRisk: 'Nothing looks stuck.', merges: 'Mail merges in progress', noMerges: 'No merge is running.',
     overdue: 'Overdue', today: 'Today', sent: (a: number, b: number) => `${a} of ${b} sent`, paused: 'paused', days: (n: number) => `${n} days in stage`,
@@ -58,7 +58,7 @@ const X = {
     quick: 'Accès rapide', edit: 'Modifier les raccourcis', noPins: 'Épinglez vos vues enregistrées ici pour y accéder d’un clic.',
     newRecord: 'Créer un dossier', newTask: 'Créer une tâche', merge: 'Lancer un publipostage', import: 'Importer',
     recent: 'Dossiers récents', recents: 'Récents', trending: 'Populaires', noRecent: 'Les dossiers que vous créez ou modifiez apparaissent ici.', noTrending: 'Rien de très actif cette semaine.', ago: 'modifié', moves: (n: number) => `${n} ${n === 1 ? 'mise à jour' : 'mises à jour'} cette semaine`,
-    snapshot: 'Pipeline', openPipe: 'Ouvrir le pipeline', noStages: 'Aucun pipeline pour l’instant.', records: (n: number) => `${n} ${n === 1 ? 'dossier' : 'dossiers'}`,
+    weekGoal: 'Objectif hebdomadaire', weekOf: (d: number, g: number) => `${d} sur ${g} cette semaine`, noGoal: 'Aucun objectif hebdomadaire.', snapshot: 'Pipeline', openPipe: 'Ouvrir le pipeline', noStages: 'Aucun pipeline pour l’instant.', records: (n: number) => `${n} ${n === 1 ? 'dossier' : 'dossiers'}`,
     radar: 'Renouvellements à venir', radarAll: 'Voir tous les renouvellements', noRadar: 'Aucun renouvellement dans les 45 prochains jours.', rLeft: (n: number) => (n < 0 ? `${-n} j de retard` : n === 0 ? 'Aujourd’hui' : `dans ${n} j`),
     title: 'Ma journée', due: 'À faire aujourd’hui et en retard', noTasks: 'Rien à faire. Parfait.', later: 'À venir et sans date', noDate: 'Sans date', attention: 'À surveiller', noRisk: 'Rien ne semble bloqué.', merges: 'Publipostages en cours', noMerges: 'Aucun publipostage en cours.',
     overdue: 'En retard', today: 'Aujourd’hui', sent: (a: number, b: number) => `${a} sur ${b} envoyés`, paused: 'en pause', days: (n: number) => `${n} jours dans l’étape`,
@@ -282,8 +282,10 @@ export function HomePage({ call, t, locale, go, name, isAdmin, currency, compose
       </div>
       <aside class="home-side" aria-label={x.snapshot}>
         <div class="side-prof">
-          <div class="side-ring" role="img" aria-label={d.week ? `${d.week.done} / ${d.week.goal}` : ''} style={{ '--p': goalPct } as any}><span>{goalPct}%</span></div>
-          <b>{first}</b>
+          <div class="side-ring" role="img" aria-label={d.week ? `${x.weekGoal}: ${goalPct}%, ${x.weekOf(d.week.done, d.week.goal)}` : x.noGoal} style={{ '--p': goalPct } as any}><span>{goalPct}%</span></div>
+          <b>{x.weekGoal}</b>
+          <span class="muted">{d.week ? x.weekOf(d.week.done, d.week.goal) : x.noGoal}</span>
+          <b class="side-name">{first}</b>
           <span class="muted">{today}</span>
         </div>
         <section class="hcard side-bars"><h3>{x.snapshot}</h3>

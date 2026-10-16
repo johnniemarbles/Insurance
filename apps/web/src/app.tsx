@@ -124,6 +124,9 @@ const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewa
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
 function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, meEmail, meName, demoUserId, compose, host, minExt, supportEmail }: { demoUserId?: string; isHeadOffice: boolean; isAdmin: boolean; call: Call; t: Strings; locale: Locale; onLocale: (l: Locale) => void; canAuthor: boolean; meEmail: string; meName: string; compose?: ComposeApi; host: HostOptions; minExt?: string; supportEmail?: string }) {
+  // The left menu on wide screens folds to icons; the choice is remembered on this device.
+  const [railOpen, setRailOpen] = useState<boolean>(() => { try { return localStorage.getItem('pii.rail') !== 'closed'; } catch { return true; } });
+  const toggleRail = () => setRailOpen((o) => { const n = !o; try { localStorage.setItem('pii.rail', n ? 'open' : 'closed'); } catch { /* private window: keep it for this visit only */ } return n; });
   const [page, setPage] = useState<PageId>(() => {
     if (host.route) return pageOf(host.route.page);
     try { const v = localStorage.getItem('pii.page'); return pageOf(v ?? undefined); } catch { return 'pipelines'; }
@@ -144,12 +147,13 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
   // Home, Compliance and Training bring their own page width; every other page is framed the same way.
   const framed = page !== 'home' && page !== 'compliance' && !(page === 'training' && LMS);
   return (
-    <div class={`pii shell${settings?.get<boolean>('ui.compact') ? ' compact' : ''}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
+    <div class={`pii shell${settings?.get<boolean>('ui.compact') ? ' compact' : ''}${railOpen ? '' : ' rail-closed'}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
       {demoUserId && <DemoBar call={call} locale={locale} meId={demoUserId} />}
       {older(host.extVersion, minExt) && <div class="banner warn" role="alert">{t.updateNeeded}</div>}
       {(
         <div class="tabs" role="tablist">
-          {PAGES.filter((p) => p !== 'merges' && p !== 'notifications' && (p !== 'inbox' || demoUserId)).map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)}><svg class="nv" viewBox="0 0 24 24" aria-hidden="true"><path d={NAV_ICON[p] ?? 'M4 12h16'} /></svg>{label[p]}</button>)}
+          <button class="rail-toggle" type="button" onClick={toggleRail} aria-expanded={railOpen} aria-label={railOpen ? t.railFold : t.railOpen} title={railOpen ? t.railFold : t.railOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={railOpen ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6'} /></svg></button>
+          {PAGES.filter((p) => p !== 'merges' && p !== 'notifications' && (p !== 'inbox' || demoUserId)).map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)} title={label[p]}><svg class="nv" viewBox="0 0 24 24" aria-hidden="true"><path d={NAV_ICON[p] ?? 'M4 12h16'} /></svg><span class="tl">{label[p]}</span></button>)}
           {supportEmail && <a class="tabs-fb" style={{ marginLeft: 0 }} href={`mailto:${supportEmail}?subject=PII%20feedback`}>{t.sendFeedback}</a>}
         </div>
       )}
