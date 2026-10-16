@@ -688,4 +688,12 @@ a.btn{text-decoration:none}
 }
 .obform{align-items:start}.obform .btn{align-self:end}
 select{background-color:#fff;border:1px solid var(--line2);border-radius:10px;padding:7px 10px;font:inherit;color:var(--ink)}
+
+/* Pipeline controls on phones: dropdowns, the quick-add field and its buttons share one height and split each row evenly. */
+@media(max-width:600px){
+  .pg-frame select,.pg-frame input[type=text],.pg-frame input:not([type]),.pg-frame .sel{height:36px;min-height:36px;box-sizing:border-box}
+  .pg-frame .quick{display:flex;gap:8px;align-items:stretch}
+  .pg-frame .quick>*{flex:1 1 0;min-width:0}
+  .pg-frame .quick button{flex:0 0 auto}
+}
 `;
