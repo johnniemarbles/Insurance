@@ -93,8 +93,8 @@ const SEC = {
   'fr-CA': { files: 'Dossiers', onb: 'Intégration', label: 'Sections de conformité' },
 };
 
-export function CompliancePage({ call, locale, isHeadOffice, go, host }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions }) {
-  const [open, setOpen] = useState<string | null>(null);
+export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions; openId?: string }) {
+  const [open, setOpen] = useState<string | null>(openId ?? null);
   // Null while the account's role is loading. Compliance officers get the onboarding dashboard as a second section; partners see their own onboarding at the top.
   const [officer, setOfficer] = useState<boolean | null>(null);
   const [section, setSection] = useState<'files' | 'onboarding'>('files');

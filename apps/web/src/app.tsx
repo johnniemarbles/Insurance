@@ -33,6 +33,7 @@ import { strings, type Strings } from './i18n.ts';
 import { ink, money, stageColor } from './theme.ts';
 import type { Box, BoxEvent, ComposeApi, FieldDef, HostOptions, Locale, Me, Pipeline, Scope, Stage } from './types.ts';
 import { PartnersOnline } from './presence.tsx';
+import { PartnersPage } from './partners.tsx';
 
 const PAGE = 100;
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -40,6 +41,7 @@ class ApiErr extends Error { constructor(public status: number, m: string) { sup
 
 // Minimal line icons for the left rail (wide screens only).
 const NAV_ICON: Record<string, string> = {
+  partners: 'M3 21h18M5 21V7l7-4 7 4v14M9 9h1m4 0h1M9 13h1m4 0h1M9 17h6',
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
   inbox: 'M4 4h16v12H4zM4 16l4-4h8l4 4',
   pipelines: 'M4 6h6v4H4zM14 6h6v4h-6zM4 14h6v4H4zM14 14h6v4h-6z',
@@ -120,12 +122,12 @@ const older = (have?: string, need?: string) => {
   return false;
 };
 
-type PageId = 'inbox' | 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance' | 'contacts' | 'merges' | 'training' | 'settings';
-const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewals', 'training', 'compliance', 'contacts', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
+type PageId = 'inbox' | 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance' | 'partners' | 'contacts' | 'merges' | 'training' | 'settings';
+const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewals', 'training', 'compliance', 'partners', 'contacts', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 /** The top menu: three entries across the top; the rest of the sections stay in the left column. */
 const TOP_PAGES: { p: PageId; text: (l: Locale) => string }[] = [
   { p: 'home', text: (l) => (l === 'fr-CA' ? 'Tableau de bord' : 'Dashboard') },
-  { p: 'compliance', text: (l) => (l === 'fr-CA' ? 'Partenaires' : 'Partners') },
+  { p: 'partners', text: (l) => (l === 'fr-CA' ? 'Partenaires' : 'Partners') },
   { p: 'renewals', text: (l) => (l === 'fr-CA' ? 'Rapports' : 'Reports') },
 ];
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
@@ -149,7 +151,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
     const next = pageOf(p); setPage(next); setRouteId(id);
     try { localStorage.setItem('pii.page', next); } catch { /* private window */ }
   };
-  const label: Record<PageId, string> = { inbox: locale === 'fr-CA' ? 'Boîte de démo' : 'Demo inbox', home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
+  const label: Record<PageId, string> = { inbox: locale === 'fr-CA' ? 'Boîte de démo' : 'Demo inbox', home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', partners: locale === 'fr-CA' ? 'Partenaires' : 'Partners', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   // Home, Compliance and Training bring their own page width; every other page is framed the same way.
   const framed = page !== 'home' && page !== 'compliance' && !(page === 'training' && LMS);
@@ -174,7 +176,8 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
       {page === 'home' ? <HomePage call={call} t={t} locale={locale} go={go} name={meName} isAdmin={isAdmin} currency={host.region === 'us' ? 'USD' : 'CAD'} compose={compose} meEmail={meEmail} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'renewals' ? <RenewalsPage call={call} locale={locale} go={go} />
-        : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} host={host} />
+        : page === 'partners' ? <PartnersPage call={call} locale={locale} headOffice={isHeadOffice} go={go} />
+        : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} host={host} openId={routeId} />
         : page === 'contacts' ? <ContactsView call={call} t={t} />
         : page === 'training' && LMS ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} isHeadOffice={isHeadOffice} isAdmin={isAdmin} />
         : page === 'inbox' && demoUserId ? <DemoInbox locale={locale} meEmail={meEmail} meName={meName} />
