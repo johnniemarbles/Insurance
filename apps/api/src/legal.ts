@@ -48,7 +48,7 @@ export function privacy(i: LegalInfo, l: Lang): Doc {
     sections: [
       { h: 'Who uses this service', p: ['The service is available by invitation to partners, producers and administrators in our network. Your organization decides who is invited and what role each person has.'] },
       { h: 'What we collect', p: [
-        'Your Google account: email address, name and profile picture. We use them to sign you in. While you are online, your name and photo are shown to other partners in your branch and to our staff. Signing in does not give us access to your inbox.',
+        'Your Google account: email address, name and profile picture. We use them to sign you in. While you are online, your name and photo are shown to other partners and to our staff. Signing in does not give us access to your inbox.',
         'What you enter: records, contacts, pipelines, notes, tasks, settings and compliance documents (licences, E&O insurance, partner agreement).',
         'Email conversations you choose to link to a record, stored in full with attachment names. For other messages we may keep limited details (sender, recipients, subject, date and a short preview) to provide reminders and follow-ups.',
         'Activity and security logs (who did what, and when).'] },

@@ -58,15 +58,20 @@ test('a heartbeat marks the caller online and the branch directory shows it', as
   assert.equal(me.name, 'Me Partner'); assert.equal(me.onlineNow, true);
   assert.equal(mate.onlineNow, false, 'half an hour ago is not online');
   assert.equal(mate.pictureUrl, PHOTO);
-  assert.equal(members.some((m: { name: string }) => m.name === 'Outsider'), false, 'other branches are not listed');
+  const out = members.find((m: { name: string }) => m.name === 'Outsider');
+  assert.ok(out, 'partners in other branches are listed across the country');
+  assert.equal(out.branch, 'Montreal', 'each partner carries their branch');
+  assert.equal(mate.branch, 'Toronto');
 });
 
-test('the online list for a partner shows active branch mates only, with their photo', async () => {
+test('the online list shows active partners across the country, with their photo, but not the caller', async () => {
   let { partners } = (await call(ME, 'GET', '/v1/presence/partners')).json;
-  assert.deepEqual(partners, [], 'the Mate was not active in the last five minutes');
+  assert.equal(partners.some((p: { name: string }) => p.name === 'Mate Partner'), false, 'the Mate was not active in the last five minutes');
   await owner((o) => o.query(`UPDATE app_users SET last_active_at = now() WHERE email = $1`, [MATE]));
   ({ partners } = (await call(ME, 'GET', '/v1/presence/partners')).json);
-  assert.deepEqual(partners, [{ id: partners[0].id, name: 'Mate Partner', pictureUrl: PHOTO }]);
+  const mate = partners.find((p: { name: string }) => p.name === 'Mate Partner');
+  assert.deepEqual(mate, { id: mate.id, name: 'Mate Partner', pictureUrl: PHOTO });
+  assert.ok(partners.some((p: { name: string }) => p.name === 'Outsider'), 'a partner in another branch is shown too');
   assert.equal(partners.some((p: { name: string }) => p.name === 'Me Partner'), false, 'a person is not shown to themselves');
 });
 
@@ -78,6 +83,6 @@ test('staff see every active partner in the tenant, with photos', async () => {
   await call(ADMIN, 'POST', '/v1/presence');
   const { partners } = (await call(ADMIN, 'GET', '/v1/presence/partners')).json;
   const names = partners.map((p: { name: string }) => p.name);
-  assert.ok(names.includes('Mate Partner') && names.includes('Me Partner') && names.includes('Outsider'), 'staff are not limited to one branch');
+  assert.ok(names.includes('Mate Partner') && names.includes('Me Partner') && names.includes('Outsider'), 'staff see the partners across the country');
   assert.equal(partners.find((p: { name: string }) => p.name === 'Mate Partner').pictureUrl, PHOTO);
 });
