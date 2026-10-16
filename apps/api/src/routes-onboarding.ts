@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
 import {
-  CANADA_THRESHOLDS, STANDING_LABELS, STANDING_OUTCOMES, carrierPacketBlocks, coverageFrozen, keepsAccessWhile, standingWarning, nextCheckDue, recheckStatus, stageMoveBlock,
+  computeChecklist, CANADA_THRESHOLDS, STANDING_LABELS, STANDING_OUTCOMES, carrierPacketBlocks, coverageFrozen, keepsAccessWhile, standingWarning, nextCheckDue, recheckStatus, stageMoveBlock,
   progressSteps, suggestedStanding, REQUIREMENT_COLUMN, REQUIREMENT_DEFAULTS, REQUIREMENT_KEYS, type RequirementKey,
   BROKER_TYPES, canAddBroker, ownershipProblems, type BrokerType, type OwnershipProblem,
   type OnboardingStage, type RequestContext, type StandingOutcome,
@@ -15,6 +15,7 @@ import { audit } from './audit.ts';
 import { escapeHtml } from './merge-render.ts';
 import { createPartnerInvitation, sendPartnerInvitation } from './partner-invite.ts';
 import { managesBranchAbove } from './routes-people.ts';
+import { eoMinFor } from './routes-compliance.ts';
 import { conflict, forbidden, invalid, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 
@@ -550,6 +551,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
           WHERE app_is_compliance_at_or_above(c.tenant_id, c.node_id) OR ${BRANCH_MANAGER_SQL.replace('%NODE%', 'c.node_id')}
              OR EXISTS (SELECT 1 FROM onboarding_staff s WHERE s.case_id = c.id AND s.user_id = app_user_id())
           ORDER BY c.created_at DESC`)).rows as Array<CaseRow & { full: boolean; assigned: boolean; inviteEmail: string | null; inviteAccepted: Date | null; inviteOpened: Date | null; inviteSent: Date | null; inviteReminders: number; inviteError: string | null }>;
+      const profiles = await profileChecklists(tx, ctx, [...new Set(rows.map((r) => r.nodeId))]);
       const cases = await Promise.all(rows.map(async (c) => {
         if (c.full) {
           return {
@@ -565,7 +567,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
         if (await managesBranchAbove(tx, ctx.userId, c.nodeId)) return { ...view, staff: await assignedStaff(tx, c.id), candidates: await staffCandidates(tx, c) };
         return view;
       }));
-      return { cases };
+      return { cases: cases.map((v, i) => ({ ...v, profile: profiles.get(rows[i]!.nodeId) ?? null })) };
     });
   });
 
@@ -907,4 +909,24 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     });
     return reply.code(204).send();
   });
+}
+
+/** Each partner's business-profile checklist (5 steps), so the profile completion counts can be shown for every partner. */
+async function profileChecklists(tx: Tx, ctx: RequestContext, nodeIds: string[]) {
+  const out = new Map<string, { done: number; total: number }>();
+  if (nodeIds.length === 0) return out;
+  const eoMin = await eoMinFor(tx, ctx);
+  const rows = (await tx.query<{ nodeId: string; entityType: string | null; legalName: string | null; businessNumber: string | null; agreement: string | null; attested: boolean; licences: number; eoCount: number; eoMax: number | null }>(
+    `SELECT n.id AS "nodeId", p.entity_type AS "entityType", p.legal_name AS "legalName", p.business_number AS "businessNumber",
+            p.agreement_status AS agreement, (p.attested_at IS NOT NULL) AS attested,
+            (SELECT count(*)::int FROM compliance_items i WHERE i.node_id = n.id AND i.kind = 'licence') AS licences,
+            (SELECT count(*)::int FROM compliance_items i WHERE i.node_id = n.id AND i.kind = 'eo') AS "eoCount",
+            (SELECT max(i.limit_amount)::float FROM compliance_items i WHERE i.node_id = n.id AND i.kind = 'eo' AND (i.expires_on IS NULL OR i.expires_on >= current_date)) AS "eoMax"
+       FROM org_nodes n LEFT JOIN compliance_profiles p ON p.node_id = n.id
+      WHERE n.id = ANY($1::uuid[])`, [nodeIds])).rows;
+  for (const r of rows) {
+    const cl = computeChecklist({ profile: { entityType: r.entityType, legalName: r.legalName, businessNumber: r.businessNumber, attestedAt: r.attested ? 'x' : null, agreementStatus: r.agreement }, licences: r.licences, eoCount: r.eoCount, eoMaxLimit: r.eoMax, eoMin });
+    out.set(r.nodeId, { done: cl.steps.filter((x) => x.done).length, total: cl.steps.length });
+  }
+  return out;
 }
