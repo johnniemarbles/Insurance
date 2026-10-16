@@ -11,7 +11,7 @@ function initials(name: string): string {
 }
 
 /** One face: the Google photo when there is one, otherwise initials. */
-function Face({ p }: { p: Peer }) {
+export function Face({ p }: { p: Peer }) {
   const [broken, setBroken] = useState(false);
   return (
     <span class="pz-face" title={`${p.name} · online now`} aria-label={`${p.name}, online now`}>

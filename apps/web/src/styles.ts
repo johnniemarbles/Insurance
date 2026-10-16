@@ -463,7 +463,7 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .dl-day.today b{display:table;margin:2px auto 0;background:var(--pri);color:#fff;border-radius:999px;padding:0 8px;line-height:22px;font-size:13px}
 .dl-day.today{color:var(--pri)}
 /* Reference completion: backdrop panel, partner avatars and status chips, days-left pills, onboarding progress text. */
-.dl-glass{background:#f3f5f9;border-radius:24px;padding:16px;border:1px solid #e9edf4}
+.dl-glass{background:transparent;border:0;padding:0;border-radius:0}
 .dl-glass>.hcard,.dl-glass>.pg-cols>.hcard{background:#fff}
 .dl-who{flex-direction:row;align-items:center;gap:10px}
 .dl-wt{display:flex;flex-direction:column;min-width:0}
@@ -644,4 +644,48 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .bar-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
 .bar-row .seg{margin-bottom:0}
 @media(max-width:600px){.bar-row{gap:8px}.bar-row>.btn{flex:1 1 auto;justify-content:center}.bar-row .seg{flex:1 1 100%;display:flex}.bar-row .seg button{flex:1 1 0}}
+
+/* Partners page: one row per company or person, avatar on the left, status on the right. */
+.pt-search{width:100%;max-width:360px;padding:10px 14px;border:1px solid var(--line2);border-radius:999px;font:inherit;background:#fff;color:var(--ink);margin-bottom:12px}
+.pt-list{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.pt-row{display:flex;align-items:center;gap:14px;width:100%;padding:12px 10px;border:0;border-radius:12px;background:transparent;text-align:left;font:inherit;color:var(--ink);cursor:pointer}
+button.pt-row:hover{background:#F7F8FC}
+.pt-row.static{cursor:default}
+.pt-av{flex:none;width:40px;height:40px;border-radius:50%;background:var(--pri-soft);color:var(--pri);display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;overflow:hidden}
+.pt-av img{width:100%;height:100%;object-fit:cover;display:block}
+.pt-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pt-main b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pt-main small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pt-meta{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px;text-align:right}
+.pt-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;background:#F1F2F6;color:var(--mute)}
+.pt-pill.ok{background:#E6F7EE;color:#0a7d3b}
+.pt-dot{width:7px;height:7px;border-radius:50%;background:#22C55E;display:inline-block}
+.pt-online{padding:0;margin-top:6px}
+@media(max-width:600px){.pt-row{gap:10px;padding:10px 4px}.pt-meta{max-width:42%}}
+
+/* Onboarding and alert tiles: one definition. Badge on the left, the number above its label, equal heights in each row. */
+.obtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;align-items:stretch}
+.obtiles .obtile{position:relative;display:flex;flex-direction:column;justify-content:flex-start;align-items:flex-start;gap:6px;min-height:104px;box-sizing:border-box;padding:20px 18px 20px 72px;border:1px solid var(--line);border-radius:20px;background:#fff;box-shadow:var(--shadow-soft);text-align:left}
+.obtiles .obtile b{display:block;font-size:26px;line-height:1;color:var(--navy);font-weight:700}
+.obtiles .obtile span{display:block;font-size:13px;line-height:1.35;color:var(--mute);font-weight:500;overflow-wrap:anywhere}
+.obtiles .obtile small{font-size:12px;color:var(--mute)}
+.obtiles .obtile::before{content:"";position:absolute;left:18px;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:12px;background:var(--kbg);color:var(--kfg);display:grid;place-items:center;font-size:16px;font-weight:700}
+@media(max-width:600px){.obtiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.obtiles .obtile{padding:14px 12px 14px 60px;min-height:96px}.obtiles .obtile::before{left:12px;width:36px;height:36px}.obtiles .obtile b{font-size:22px}}
+
+/* Tap targets: links and buttons are at least 34px tall, so they are easy to hit on a phone. */
+button.link,a.link{min-height:34px;display:inline-flex;align-items:center;padding:4px 6px;box-sizing:border-box}
+.btn{min-height:34px;box-sizing:border-box}
+button{min-height:32px;box-sizing:border-box}
+th button{min-height:32px;display:inline-flex;align-items:center;padding:6px 2px;box-sizing:border-box}
+a.btn{text-decoration:none}
+
+/* Phone and tablet navigation: one line each, scrolled sideways, so the page content starts near the top. */
+@media(max-width:1099px){
+  .topnav,.tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .topnav::-webkit-scrollbar,.tabs::-webkit-scrollbar{display:none}
+  .topnav button,.tabs button,.tabs-fb{flex:none;white-space:nowrap}
+  .topnav{padding:10px 14px}
+}
+.obform{align-items:start}.obform .btn{align-self:end}
+select{background-color:#fff;border:1px solid var(--line2);border-radius:10px;padding:7px 10px;font:inherit;color:var(--ink)}
 `;
