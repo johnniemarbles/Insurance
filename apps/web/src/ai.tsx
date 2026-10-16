@@ -5,7 +5,7 @@ import type { Locale } from './types.ts';
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 type Kind = 'summary' | 'next_action' | 'reply_draft';
 interface Insight { kind: Kind; body: string; usedEmail: boolean; createdAt: string }
-interface Settings { enabled: boolean; includeEmail: boolean; available: boolean; canChange: boolean }
+interface Settings { enabled: boolean; includeEmail: boolean; partnersEnabled: boolean; allowedForMe: boolean; available: boolean; canChange: boolean }
 
 const X = {
   'en': {
@@ -14,7 +14,7 @@ const X = {
     title: 'Needs attention', help: 'Records that look stuck, based on simple rules: time in stage, overdue tasks, a passed close date, and no next step.', none: 'Nothing looks stuck. Nice.', days: (n: number) => `${n} days in stage`,
     why: { stalled: 'Stalled', overdue: 'Overdue task', past_close: 'Past close date', no_next_step: 'No next step', unowned: 'No owner' } as Record<string, string>,
     adminTitle: 'AI assistant', adminHelp: 'Summaries, next-step ideas and reply drafts. When you use it, the record’s name, stage, value, notes and tasks are sent to Anthropic’s AI service to write the answer; nothing is used to train models. Off by default.',
-    enable: 'Turn on the assistant for my company', email: 'Also let it read emails that people have linked to a record', unavailable: 'The server has no AI service connected yet.', close: 'Close',
+    enable: 'Turn on the assistant for my company', partners: 'Partners can use the assistant too', email: 'Also let it read emails that people have linked to a record', unavailable: 'The server has no AI service connected yet.', close: 'Close',
   },
   'fr-CA': {
     section: 'Assistant', summary: 'Résumer', next_action: 'Prochaine étape', reply_draft: 'Rédiger une réponse', working: 'Réflexion…', copy: 'Copier', copied: 'Copié', ask: 'Quelque chose à inclure? (facultatif)',
@@ -22,7 +22,7 @@ const X = {
     title: 'À surveiller', help: 'Dossiers qui semblent bloqués, selon des règles simples : temps dans l’étape, tâches en retard, date de clôture dépassée et aucune prochaine étape.', none: 'Rien ne semble bloqué. Parfait.', days: (n: number) => `${n} jours dans l’étape`,
     why: { stalled: 'Bloqué', overdue: 'Tâche en retard', past_close: 'Clôture dépassée', no_next_step: 'Aucune prochaine étape', unowned: 'Sans responsable' } as Record<string, string>,
     adminTitle: 'Assistant IA', adminHelp: 'Résumés, idées de prochaine étape et brouillons de réponse. À l’utilisation, le nom du dossier, l’étape, la valeur, les notes et les tâches sont envoyés au service d’IA d’Anthropic pour rédiger la réponse; rien n’est utilisé pour entraîner des modèles. Désactivé par défaut.',
-    enable: 'Activer l’assistant pour mon entreprise', email: 'Lui permettre aussi de lire les courriels liés à un dossier', unavailable: 'Aucun service d’IA n’est encore connecté au serveur.', close: 'Fermer',
+    enable: 'Activer l’assistant pour mon entreprise', partners: 'Les partenaires peuvent aussi utiliser l’assistant', email: 'Lui permettre aussi de lire les courriels liés à un dossier', unavailable: 'Aucun service d’IA n’est encore connecté au serveur.', close: 'Fermer',
   },
 };
 
@@ -102,7 +102,7 @@ export function AiAdminCard({ call, locale }: { call: Call; locale: Locale }) {
   const [s, setS] = useState<Settings | null>(null);
   const [err, setErr] = useState('');
   useEffect(() => { call('GET', '/v1/ai/settings').then(setS, () => undefined); }, [call]);
-  const save = async (enabled: boolean, includeEmail: boolean) => { setErr(''); try { setS(await call('PUT', '/v1/ai/settings', { enabled, includeEmail })); } catch (e) { setErr((e as Error).message); } };
+  const save = async (next: { enabled: boolean; includeEmail: boolean; partnersEnabled: boolean }) => { setErr(''); try { setS(await call('PUT', '/v1/ai/settings', next)); } catch (e) { setErr((e as Error).message); } };
   if (!s) return null;
   return (
     <section class="srow">
@@ -110,8 +110,9 @@ export function AiAdminCard({ call, locale }: { call: Call; locale: Locale }) {
       <p class="muted">{x.adminHelp}</p>
       {!s.available && <p class="muted">{x.unavailable}</p>}
       {err && <p class="err" role="alert">{err}</p>}
-      <label class="check"><input type="checkbox" disabled={!s.canChange} checked={s.enabled} onChange={(e) => void save((e.target as HTMLInputElement).checked, s.includeEmail)} /> {x.enable}</label>
-      <label class="check"><input type="checkbox" disabled={!s.canChange || !s.enabled} checked={s.includeEmail} onChange={(e) => void save(s.enabled, (e.target as HTMLInputElement).checked)} /> {x.email}</label>
+      <label class="check"><input type="checkbox" disabled={!s.canChange} checked={s.enabled} onChange={(e) => void save({ enabled: (e.target as HTMLInputElement).checked, includeEmail: s.includeEmail, partnersEnabled: s.partnersEnabled })} /> {x.enable}</label>
+      <label class="check"><input type="checkbox" disabled={!s.canChange || !s.enabled} checked={s.partnersEnabled} onChange={(e) => void save({ enabled: s.enabled, includeEmail: s.includeEmail, partnersEnabled: (e.target as HTMLInputElement).checked })} /> {x.partners}</label>
+      <label class="check"><input type="checkbox" disabled={!s.canChange || !s.enabled} checked={s.includeEmail} onChange={(e) => void save({ enabled: s.enabled, includeEmail: (e.target as HTMLInputElement).checked, partnersEnabled: s.partnersEnabled })} /> {x.email}</label>
     </section>
   );
 }
