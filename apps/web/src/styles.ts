@@ -510,12 +510,12 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 @media(max-width:600px){.settings .sgrid{padding:16px}}
 .pg-frame .bar{margin-bottom:12px}
 /* Pipeline toolbar on phones: one scrollable strip instead of uneven wrapped rows */
-@media(max-width:600px){.pg-frame .bar:has(.btn.quiet){flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.pg-frame .bar:has(.btn.quiet)::-webkit-scrollbar{display:none}.pg-frame .bar:has(.btn.quiet)>*{flex-shrink:0}.pg-frame .bar:has(.btn.quiet) .spacer{display:none}}
+@media(max-width:600px){.pg-frame .bar:has(.btn.quiet){flex-wrap:wrap}.pg-frame .bar:has(.btn.quiet)>*{flex-shrink:1}.pg-frame .bar:has(.btn.quiet) .spacer{display:none}}
 /* Spec pieces: floating frame and left rail on wide screens, hero banner, Home right column, glass scrims, table style. */
 .nv{display:none}
 @media(min-width:1100px){
   :host{background:#E9ECF3}
-  .shell{border-radius:28px;box-shadow:0 20px 48px -12px rgba(90,100,140,.10);margin:20px;min-height:calc(100vh - 40px);overflow:hidden;display:grid;grid-template-columns:232px minmax(0,1fr);align-content:stretch}
+  .shell{border-radius:28px;box-shadow:0 20px 48px -12px rgba(90,100,140,.10);margin:20px;min-height:calc(100vh - 40px);overflow:hidden;display:grid;grid-template-columns:200px minmax(0,1fr);align-content:stretch}
   .shell>.tabs{grid-column:1;grid-row:1 / span 30;flex-direction:column;align-items:stretch;flex-wrap:nowrap;padding:22px 14px;border-bottom:0;border-right:1px solid var(--line);gap:4px;background:#FBFCFE;min-height:100%}
   .shell>*:not(.tabs){grid-column:2;min-width:0}
   .tabs button{display:flex;align-items:center;gap:10px;text-align:left;border-bottom:0;border-radius:12px;padding:10px 12px;font-size:14px}
@@ -607,4 +607,16 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .obtiles .obtile:nth-child(6n+4){--kbg:#FDE8E8;--kfg:#EB5757}.obtiles .obtile:nth-child(6n+4)::before{content:"◷"}
 .obtiles .obtile:nth-child(6n+5){--kbg:#FEF3C7;--kfg:#D97706}.obtiles .obtile:nth-child(6n+5)::before{content:"⟳"}
 .obtiles .obtile:nth-child(6n){--kbg:#E6F7EE;--kfg:#0a7d3b}.obtiles .obtile:nth-child(6n)::before{content:"!"}
+/* Phone and tablet: the section tabs read as pills; the current section is filled in indigo. */
+@media(max-width:1099px){
+  .tabs{gap:6px;padding:10px 14px 12px}
+  .tabs button{border:1px solid var(--line2);border-bottom:1px solid var(--line2);border-radius:999px;background:#fff;padding:7px 14px;font-size:14px;color:var(--ink)}
+  .tabs button[aria-selected=true]{background:var(--pri);border-color:var(--pri);color:#fff}
+  .tabs-fb{margin-left:0;padding:6px 4px}
+}
+/* Phones: keyboard shortcuts do not apply; segmented controls scroll sideways inside themselves instead of spilling off the screen. */
+@media(max-width:760px){.kbdhint{display:none}}
+@media(max-width:600px){.seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.seg::-webkit-scrollbar{display:none}.seg button{flex:none}}
+@media(max-width:600px){.bar>.seg[aria-label="View"]{flex:1 1 100%;display:flex}.bar>.seg[aria-label="View"] button{flex:1 1 0}}
+@media(max-width:600px){.pg-frame .bar{flex-wrap:wrap}}
 `;
