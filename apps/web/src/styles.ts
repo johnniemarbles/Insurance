@@ -583,4 +583,19 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .ocirc{width:32px;height:32px;border-radius:50%;border:1px solid var(--pri-line);background:#fff;color:var(--pri);cursor:pointer;font-size:14px;line-height:1;padding:0;display:inline-grid;place-items:center}
 .ocirc:hover{background:var(--pri-soft)}
 .pg th.openc,.pg td.openc{width:52px;text-align:right}
+/* Foldable left menu (wide screens): the toggle shows only on wide screens; folded it keeps icons. */
+.rail-toggle{display:none}
+@media(min-width:1100px){
+  .rail-toggle{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;border:1px solid var(--line2);background:#fff;color:var(--mute);cursor:pointer;padding:0;margin:0 0 6px auto}
+  .rail-toggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .rail-toggle:hover{color:var(--pri);border-color:var(--pri-line)}
+  .tabs button .tl{white-space:nowrap}
+  .shell.rail-closed{grid-template-columns:72px minmax(0,1fr)}
+  .shell.rail-closed>.tabs{padding:22px 12px;align-items:center}
+  .shell.rail-closed>.tabs .rail-toggle{margin:0 auto 6px}
+  .shell.rail-closed .tabs button{justify-content:center;padding:10px 0;width:100%}
+  .shell.rail-closed .tabs button .tl{display:none}
+  .shell.rail-closed .tabs-fb{display:none}
+}
+.side-name{margin-top:4px}
 `;
