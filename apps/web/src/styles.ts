@@ -533,7 +533,7 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .hero .hero-cta{border:0;border-radius:999px;background:#191C32;color:#fff;font:inherit;font-weight:600;font-size:14px;padding:10px 10px 10px 18px;cursor:pointer;display:inline-flex;align-items:center;gap:10px}
 .hero .hero-cta span{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#fff;color:#191C32;font-size:12px}
 @media(min-width:1280px){
-  .home{display:grid;grid-template-columns:minmax(0,1fr) 300px;column-gap:24px;align-items:start}
+  .home:has(>.home-main){display:grid;grid-template-columns:minmax(0,1fr) 300px;column-gap:24px;align-items:start}
   .home-main{min-width:0}
   .home-side{position:sticky;top:12px;display:grid;gap:14px}
 }
