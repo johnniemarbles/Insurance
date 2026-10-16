@@ -42,8 +42,7 @@ AND
 The AGA
 Name: {{aga_name}}
 Email: {{aga_email}}
-Province: {{province}}
-City: {{city}}
+Address: {{street}}, {{city}}, {{province}} {{postal}}
 Life licence: {{licence}}
 Corporation: {{corporation_name}}
 

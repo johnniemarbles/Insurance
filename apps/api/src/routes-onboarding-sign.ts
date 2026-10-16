@@ -108,8 +108,9 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
           LIMIT 1`, [ctx.userId, c.nodeId])).rows[0];
       if (!cm) throw conflict('Add a Compliance Manager before sending the agreement. Their name is written into it.');
       const agaName = profile?.legalName?.trim() || c.partnerName;
-      const province = typeof profile?.fields?.province === 'string' ? profile.fields.province.trim() : '';
-      const city = typeof profile?.fields?.city === 'string' ? profile.fields.city.trim() : '';
+      const field = (key: string) => { const v = profile?.fields?.[key]; return typeof v === 'string' ? v.trim() : ''; };
+      const province = field('province');
+      const city = field('city');
       const corporate = director?.brokerType === 'corporate' || profile?.entityType === 'corporation' || profile?.entityType === 'llc' || profile?.entityType === 's_corp';
       const licenceText = licence ? [licence.label, licence.number, licence.jurisdiction].filter(Boolean).join(' · ') : blank;
       const kept = {
@@ -121,8 +122,10 @@ export function registerOnboardingSignRoutes(app: FastifyInstance, deps: AppDeps
         ...kept,
         aga_name: agaName,
         aga_email: '{{aga_email}}',
+        street: field('street') || blank,
         city: city || blank,
         province: province || blank,
+        postal: field('postal') || blank,
         licence: licenceText,
         corporation_name: corporate ? (profile?.legalName?.trim() || c.partnerName) : 'N/A',
         officer_name: director?.name?.trim() || blank,
