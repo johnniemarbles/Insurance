@@ -25,28 +25,34 @@ export function registerAiRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: Parameters<typeof withRequestTx>[1], fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
 
   const settings = async (tx: Tx) => {
-    const r = (await tx.query<{ enabled: boolean; include_email: boolean }>('SELECT enabled, include_email FROM tenant_ai')).rows[0];
-    return { enabled: r?.enabled ?? false, includeEmail: r?.include_email ?? false };
+    const r = (await tx.query<{ enabled: boolean; include_email: boolean; partners_enabled: boolean }>('SELECT enabled, include_email, partners_enabled FROM tenant_ai')).rows[0];
+    return { enabled: r?.enabled ?? false, includeEmail: r?.include_email ?? false, partnersEnabled: r?.partners_enabled ?? false };
   };
+  // A user whose only roles are partner roles is a partner; partners need the partner switch as well as the company switch.
+  const allowedFor = (ctx: { roles: { role: string }[] }, s: { enabled: boolean; partnersEnabled: boolean }) =>
+    s.enabled && (!(ctx.roles.length > 0 && ctx.roles.every((r) => r.role === 'partner')) || s.partnersEnabled);
 
   app.get('/v1/ai/settings', async (req) => {
     const { ctx } = await deps.authenticate(req);
-    return run(ctx, async (tx) => ({ ...(await settings(tx)), available: !!deps.ai, canChange: ctx.isTenantAdmin }));
+    return run(ctx, async (tx) => { const s = await settings(tx); return { ...s, allowedForMe: allowedFor(ctx, s), available: !!deps.ai, canChange: ctx.isTenantAdmin }; });
   });
 
-  app.put('/v1/ai/settings', { schema: { body: { type: 'object', required: ['enabled'], additionalProperties: false, properties: { enabled: { type: 'boolean' }, includeEmail: { type: 'boolean' } } } } }, async (req) => {
+  app.put('/v1/ai/settings', { schema: { body: { type: 'object', required: ['enabled'], additionalProperties: false, properties: { enabled: { type: 'boolean' }, includeEmail: { type: 'boolean' }, partnersEnabled: { type: 'boolean' } } } } }, async (req) => {
     const { ctx } = await deps.authenticate(req);
     if (!ctx.isTenantAdmin) throw forbidden('Only a company administrator can change AI assistance');
-    const b = req.body as { enabled: boolean; includeEmail?: boolean };
+    const b = req.body as { enabled: boolean; includeEmail?: boolean; partnersEnabled?: boolean };
     return run(ctx, async (tx) => {
+      const cur = await settings(tx);
       const inc = b.enabled && !!b.includeEmail;
+      const partners = b.enabled && (b.partnersEnabled ?? cur.partnersEnabled);
       await tx.query(
-        `INSERT INTO tenant_ai (tenant_id, enabled, include_email, changed_by, changed_at) VALUES ($1,$2,$3,$4, now())
-         ON CONFLICT (tenant_id) DO UPDATE SET enabled = $2, include_email = $3, changed_by = $4, changed_at = now()`,
-        [ctx.tenantId, b.enabled, inc, ctx.userId],
+        `INSERT INTO tenant_ai (tenant_id, enabled, include_email, partners_enabled, changed_by, changed_at) VALUES ($1,$2,$3,$4,$5, now())
+         ON CONFLICT (tenant_id) DO UPDATE SET enabled = $2, include_email = $3, partners_enabled = $4, changed_by = $5, changed_at = now()`,
+        [ctx.tenantId, b.enabled, inc, partners, ctx.userId],
       );
-      await audit(tx, ctx, 'ai_settings_changed', 'tenant', ctx.tenantId, { enabled: b.enabled, includeEmail: inc });
-      return { ...(await settings(tx)), available: !!deps.ai, canChange: true };
+      await audit(tx, ctx, 'ai_settings_changed', 'tenant', ctx.tenantId, { enabled: b.enabled, includeEmail: inc, partnersEnabled: partners });
+      const s = await settings(tx);
+      return { ...s, allowedForMe: allowedFor(ctx, s), available: !!deps.ai, canChange: true };
     });
   });
 
@@ -76,7 +82,7 @@ export function registerAiRoutes(app: FastifyInstance, deps: AppDeps): void {
     // 1. Gather what the person is allowed to see, inside the request transaction.
     const gathered = await run(ctx, async (tx) => {
       const s = await settings(tx);
-      if (!s.enabled) throw forbidden('AI assistance is switched off for your company');
+      if (!allowedFor(ctx, s)) throw forbidden('AI assistance is switched off for your company');
       const box = (await tx.query<{ name: string; owner_node_id: string; context_node_id: string | null; stage: string; won: boolean; lost: boolean; value: string | null; currency: string; close_date: string | null; days: number }>(
         `SELECT b.name, b.owner_node_id, b.context_node_id, s.name AS stage, s.is_won AS won, s.is_lost AS lost, b.value_amount::text AS value, b.currency, b.close_date::text,
                 floor(extract(epoch FROM (now() - b.stage_entered_at)) / 86400)::int AS days
@@ -152,7 +158,7 @@ export function registerAiRoutes(app: FastifyInstance, deps: AppDeps): void {
     const lang = identity.user.locale === 'fr-CA' ? 'Canadian French' : 'English';
     await run(ctx, async (tx) => {
       const s = await settings(tx);
-      if (!s.enabled) throw forbidden('AI assistance is switched off for your company');
+      if (!allowedFor(ctx, s)) throw forbidden('AI assistance is switched off for your company');
       await audit(tx, ctx, 'ai_ask', 'tenant', ctx.tenantId, { length: q.length });
     });
     const text = await deps.ai.complete({

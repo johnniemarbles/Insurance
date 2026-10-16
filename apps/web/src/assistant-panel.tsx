@@ -32,7 +32,7 @@ export function AssistantPanel({ call, locale, first }: { call: Call; locale: Lo
   const [question, setQuestion] = useState('');
   useEffect(() => {
     let live = true;
-    void call('GET', '/v1/ai/settings').then((r) => { if (live) setAi({ enabled: r.enabled === true, available: r.available === true }); }, () => { if (live) setAi({ enabled: false, available: false }); });
+    void call('GET', '/v1/ai/settings').then((r) => { if (live) setAi({ enabled: (r.allowedForMe ?? r.enabled) === true, available: r.available === true }); }, () => { if (live) setAi({ enabled: false, available: false }); });
     return () => { live = false; };
   }, [call]);
 
