@@ -3,7 +3,7 @@
 // The partner's own view is in onboarding-partner.tsx. Results and reasons are shown here only; the API never returns them to partners.
 import { SelfReportQueue } from './self-report.tsx';
 import { SubBrokerQueue } from './sub-broker.tsx';
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { Locale } from './types.ts';
 import { OB, ProgressBar, STAGE_LABEL, StepList, WAITING_ON, stagePercent, type Stage } from './onboarding-shared.tsx';
@@ -55,6 +55,13 @@ const T = {
     agEmailed: (n: number) => n === 1 ? 'The link was emailed to 1 partner administrator.' : `The link was emailed to ${n} partner administrators.`,
     agNotEmailed: 'The email was not sent. Copy this link and give it to the partner administrator.',
     agHint: 'The signing code goes only to partner administrators on this broker, not to staff or learners.',
+    tpl: {
+      head: 'Company agreement wording',
+      hint: 'Paste the wording counsel issued. It fills the send form for every broker. PII does not supply this text.',
+      empty: 'No company wording yet. Each send still needs the text pasted in.',
+      title: 'Title', version: 'Version', body: 'Agreement text', save: 'Save company wording',
+      saved: 'Saved. Earlier wording is kept.', only: 'Only a Compliance Manager can save this.',
+    },
     agSignedOn: 'Signed', agPdf: 'Sealed PDF', activate: 'Activate partner',
     outcomeL: { good_standing: 'Good standing', needs_review: 'Needs review', not_in_good_standing: 'Not in good standing' } as Record<string, string>,
     credit: (pass: number, review: number) => `Credit ${pass} or more passes. ${review} to ${pass - 1} needs review. Below ${review} is not in good standing.`,
@@ -101,6 +108,13 @@ const T = {
     agEmailed: (n: number) => n === 1 ? 'Le lien a été envoyé à 1 administrateur du partenaire.' : `Le lien a été envoyé à ${n} administrateurs du partenaire.`,
     agNotEmailed: 'Le courriel n’a pas été envoyé. Copiez ce lien et remettez-le à l’administrateur du partenaire.',
     agHint: 'Le code de signature va seulement aux administrateurs du partenaire, pas au personnel ni aux apprenants.',
+    tpl: {
+      head: 'Texte d’entente de l’entreprise',
+      hint: 'Collez le libellé émis par le conseiller juridique. Il remplit le formulaire d’envoi pour chaque courtier. PII ne fournit pas ce texte.',
+      empty: 'Aucun texte d’entreprise pour l’instant. Chaque envoi exige encore le texte collé.',
+      title: 'Titre', version: 'Version', body: 'Texte de l’entente', save: 'Enregistrer le texte',
+      saved: 'Enregistré. Le texte précédent est conservé.', only: 'Seul un gestionnaire de conformité peut l’enregistrer.',
+    },
     agSignedOn: 'Signée', agPdf: 'PDF scellé', activate: 'Activer le partenaire',
     outcomeL: { good_standing: 'Bonne réputation', needs_review: 'À examiner', not_in_good_standing: 'Réputation non conforme' } as Record<string, string>,
     credit: (pass: number, review: number) => `Crédit de ${pass} ou plus : réussi. De ${review} à ${pass - 1} : à examiner. Sous ${review} : non conforme.`,
@@ -293,6 +307,52 @@ export function RequirementsPanel({ call, t, locale: _locale, onChange }: { call
     </section>
   );
 }
+
+/** Company agency-agreement wording. Empty until a Compliance Manager pastes what counsel issued. */
+function AgreementTemplatePanel({ call, t }: { call: Call; t: Dict }) {
+  const [canChange, setCanChange] = useState(false);
+  const [form, setForm] = useState({ title: '', version: '', body: '' });
+  const [has, setHas] = useState(false);
+  const [error, setError] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const r = await call('GET', '/v1/onboarding/agreement-template') as { canChange: boolean; template: { title: string; version: string; body: string } | null };
+        setCanChange(r.canChange);
+        if (r.template) { setForm(r.template); setHas(true); }
+      } catch (e) { setError(errText(e)); }
+    })();
+  }, [call]);
+  const save = async () => {
+    setBusy(true); setError(''); setNote('');
+    try {
+      await call('PUT', '/v1/onboarding/agreement-template', form);
+      setHas(true); setNote(t.tpl.saved);
+    } catch (e) { setError(errText(e)); } finally { setBusy(false); }
+  };
+  const ready = form.title.trim().length > 0 && form.version.trim().length > 0 && form.body.trim().length > 0;
+  return (
+    <section class="obcard">
+      <h3>{t.tpl.head}</h3>
+      <p class="muted">{t.tpl.hint}</p>
+      {!has && <p class="muted">{t.tpl.empty}</p>}
+      {!canChange && <p class="muted">{t.tpl.only}</p>}
+      {error && <div class="err" role="alert">{error}</div>}
+      {canChange && (
+        <form class="obform" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+          <label class="fl">{t.tpl.title}<input value={form.title} onInput={(e) => setForm({ ...form, title: (e.target as HTMLInputElement).value })} /></label>
+          <label class="fl">{t.tpl.version}<input value={form.version} onInput={(e) => setForm({ ...form, version: (e.target as HTMLInputElement).value })} /></label>
+          <label class="fl obspan2">{t.tpl.body}<textarea rows={6} value={form.body} onInput={(e) => setForm({ ...form, body: (e.target as HTMLTextAreaElement).value })} /></label>
+          <button class="btn" type="submit" disabled={busy || !ready}>{t.tpl.save}</button>
+          {note && <p class="muted">{note}</p>}
+        </form>
+      )}
+    </section>
+  );
+}
+
 const REQ_KEYS = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'] as const;
 /** Requirements the server enforces on the standing decision. */
 const REQ_ENFORCED: string[] = ['screeningBeforeDecision', 'ownershipRequired', 'pendingApproval', 'presidentExceptions'];
@@ -394,6 +454,7 @@ export function OnboardingDashboard({ call, locale, tabs }: { call: Call; locale
       <AlertsPanel call={call} t={t} />
 
       <RequirementsPanel call={call} t={t} locale={locale} />
+      <AgreementTemplatePanel call={call} t={t} />
 
       <SelfReportQueue call={call} locale={locale} />
 
@@ -585,7 +646,8 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
   const [decision, setDecision] = useState({ outcome: 'good_standing', reason: '' });
   const [scr, setScr] = useState({ insolv: 'no', debt: 'no', licence: 'no', term: 'no', sponsor: 'no', complaints: 'no' });
   const [screenRequired, setScreenRequired] = useState(true);
-  const [agr, setAgr] = useState({ title: 'PII agency agreement', version: '', body: '' });
+  const [agr, setAgr] = useState({ title: '', version: '', body: '' });
+  const agrFilled = useRef(false);
   const [signed, setSigned] = useState<{ id: string; title: string; version: string; signedAt: string }[]>([]);
   const [sent, setSent] = useState<{ url: string; emailed: boolean; signers: number } | null>(null);
   const lc = locale === 'fr-CA' ? 'fr-CA' : 'en';
@@ -594,6 +656,17 @@ function CaseFile({ call, t, locale, id, onBack }: { call: Call; t: Dict; locale
     try { setD((await call('GET', `/v1/onboarding/cases/${id}`)) as Detail); setError(''); } catch (e) { setError(errText(e)); }
   };
   useEffect(() => { void load(); }, [id]);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const r = await call('GET', '/v1/onboarding/agreement-template') as { template: { title: string; version: string; body: string } | null };
+        if (!agrFilled.current && r.template) {
+          agrFilled.current = true;
+          setAgr({ title: r.template.title, version: r.template.version, body: r.template.body });
+        }
+      } catch { /* the send form still works when the template cannot be read */ }
+    })();
+  }, [id]);
   useEffect(() => {
     void (async () => {
       try { const r = (await call('GET', '/v1/onboarding/requirements')) as Requirements; setScreenRequired(r.requirements.screeningBeforeDecision !== false); } catch { setScreenRequired(true); }
