@@ -696,4 +696,8 @@ select{background-color:#fff;border:1px solid var(--line2);border-radius:10px;pa
   .pg-frame .quick>*{flex:1 1 0;min-width:0}
   .pg-frame .quick button{flex:0 0 auto}
 }
+
+/* Training: the four stat tiles share the row evenly, and the sub-tabs stay on one scrollable line on phones. */
+@media(min-width:1100px){.kstrip{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}}
+@media(max-width:600px){.seg{flex-wrap:nowrap}}
 `;
