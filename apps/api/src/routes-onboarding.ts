@@ -397,6 +397,45 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     });
   });
 
+  /** The company's agency-agreement wording, if a Compliance Manager has saved one. There is no default text. */
+  app.get('/v1/onboarding/agreement-template', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    return run(ctx, async (tx) => {
+      const row = (await tx.query<{ title: string; version: string; body: string; updatedAt: Date }>(
+        `SELECT title, version, body, updated_at AS "updatedAt" FROM onboarding_agreement_templates WHERE tenant_id = $1`,
+        [ctx.tenantId])).rows[0];
+      const canChange = (await tx.query<{ ok: boolean }>('SELECT app_is_compliance_role() AS ok')).rows[0]?.ok === true;
+      return {
+        canChange,
+        template: row ? { title: row.title, version: row.version, body: row.body, updatedAt: row.updatedAt.toISOString() } : null,
+      };
+    });
+  });
+
+  /** Save the company wording. Compliance Managers only. The previous wording stays in the revision table. */
+  app.put('/v1/onboarding/agreement-template', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const b = body(req);
+    const title = str(b.title, 'title', 200);
+    const version = str(b.version, 'version', 60);
+    const agreementBody = str(b.body, 'body', 60_000);
+    return run(ctx, async (tx) => {
+      if (!(await tx.query<{ ok: boolean }>('SELECT app_is_compliance_role() AS ok')).rows[0]?.ok) {
+        throw forbidden('Only a Compliance Manager can save the agency agreement wording');
+      }
+      await tx.query(
+        `INSERT INTO onboarding_agreement_templates (tenant_id, title, version, body, updated_by)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (tenant_id) DO UPDATE SET title = $2, version = $3, body = $4, updated_by = $5, updated_at = now()`,
+        [ctx.tenantId, title, version, agreementBody, ctx.userId]);
+      await tx.query(
+        `INSERT INTO onboarding_agreement_revisions (tenant_id, title, version, body, saved_by) VALUES ($1,$2,$3,$4,$5)`,
+        [ctx.tenantId, title, version, agreementBody, ctx.userId]);
+      await audit(tx, ctx, 'onboarding.agreement_template_saved', 'tenant', ctx.tenantId, { title, version });
+      return { template: { title, version, body: agreementBody } };
+    });
+  });
+
   // ---- Compliance officer ------------------------------------------------------------------------------------------
 
   /**

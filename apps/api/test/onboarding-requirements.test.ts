@@ -100,3 +100,26 @@ test('every change is kept in the history with who made it, the old and new valu
   const rows = await owner((o) => o.query('SELECT count(*)::int AS n FROM onboarding_requirement_changes'));
   assert.equal(rows.rows[0].n, 1);
 });
+
+const WORDING = { title: 'Agency agreement', version: 'counsel-draft-1', body: 'Wording pasted from counsel. Not supplied by PII.' };
+
+test('there is no agency-agreement wording until a Compliance Manager saves one', async () => {
+  const empty = await call(MGR, 'GET', '/v1/onboarding/agreement-template');
+  assert.equal(empty.status, 200, empty.raw);
+  assert.equal(empty.json.template, null);
+  assert.equal(empty.json.canChange, false);
+  assert.equal((await call(MGR, 'PUT', '/v1/onboarding/agreement-template', WORDING)).status, 403);
+  assert.equal((await call(ADMIN, 'PUT', '/v1/onboarding/agreement-template', WORDING)).status, 403);
+  assert.equal((await call(OFF, 'PUT', '/v1/onboarding/agreement-template', { title: 'x', version: '1', body: '   ' })).status, 422);
+});
+
+test('the saved wording is readable by the company and the previous wording is kept', async () => {
+  assert.equal((await call(OFF, 'PUT', '/v1/onboarding/agreement-template', WORDING)).status, 200);
+  const next = { ...WORDING, version: 'counsel-draft-2', body: WORDING.body + ' Second paste.' };
+  assert.equal((await call(OFF, 'PUT', '/v1/onboarding/agreement-template', next)).status, 200);
+  const got = await call(AG, 'GET', '/v1/onboarding/agreement-template');
+  assert.equal(got.json.template.version, 'counsel-draft-2');
+  assert.equal(got.json.template.body, next.body);
+  const revisions = await owner((o) => o.query('SELECT version FROM onboarding_agreement_revisions ORDER BY created_at'));
+  assert.deepEqual(revisions.rows.map((r) => r.version), ['counsel-draft-1', 'counsel-draft-2']);
+});
