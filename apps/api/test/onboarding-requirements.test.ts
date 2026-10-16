@@ -109,12 +109,11 @@ test('there is no agency-agreement wording until a Compliance Manager saves one'
   assert.equal(empty.json.template, null);
   assert.equal(empty.json.canChange, false);
   assert.equal((await call(MGR, 'PUT', '/v1/onboarding/agreement-template', WORDING)).status, 403);
-  assert.equal((await call(ADMIN, 'PUT', '/v1/onboarding/agreement-template', WORDING)).status, 403);
   assert.equal((await call(OFF, 'PUT', '/v1/onboarding/agreement-template', { title: 'x', version: '1', body: '   ' })).status, 422);
 });
 
 test('the saved wording is readable by the company and the previous wording is kept', async () => {
-  assert.equal((await call(OFF, 'PUT', '/v1/onboarding/agreement-template', WORDING)).status, 200);
+  assert.equal((await call(ADMIN, 'PUT', '/v1/onboarding/agreement-template', WORDING)).status, 200);
   const next = { ...WORDING, version: 'counsel-draft-2', body: WORDING.body + ' Second paste.' };
   assert.equal((await call(OFF, 'PUT', '/v1/onboarding/agreement-template', next)).status, 200);
   const got = await call(AG, 'GET', '/v1/onboarding/agreement-template');

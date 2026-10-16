@@ -404,7 +404,8 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
       const row = (await tx.query<{ title: string; version: string; body: string; updatedAt: Date }>(
         `SELECT title, version, body, updated_at AS "updatedAt" FROM onboarding_agreement_templates WHERE tenant_id = $1`,
         [ctx.tenantId])).rows[0];
-      const canChange = (await tx.query<{ ok: boolean }>('SELECT app_is_compliance_role() AS ok')).rows[0]?.ok === true;
+      const canChange = (await tx.query<{ ok: boolean }>(
+        'SELECT app_is_compliance_role() OR app_is_tenant_admin() AS ok')).rows[0]?.ok === true;
       return {
         canChange,
         template: row ? { title: row.title, version: row.version, body: row.body, updatedAt: row.updatedAt.toISOString() } : null,
@@ -412,7 +413,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     });
   });
 
-  /** Save the company wording. Compliance Managers only. The previous wording stays in the revision table. */
+  /** Save the company wording. A Compliance Manager or the company administrator. The previous wording stays in the revision table. */
   app.put('/v1/onboarding/agreement-template', async (req) => {
     const { ctx } = await deps.authenticate(req);
     const b = body(req);
@@ -420,8 +421,8 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
     const version = str(b.version, 'version', 60);
     const agreementBody = str(b.body, 'body', 60_000);
     return run(ctx, async (tx) => {
-      if (!(await tx.query<{ ok: boolean }>('SELECT app_is_compliance_role() AS ok')).rows[0]?.ok) {
-        throw forbidden('Only a Compliance Manager can save the agency agreement wording');
+      if (!(await tx.query<{ ok: boolean }>('SELECT app_is_compliance_role() OR app_is_tenant_admin() AS ok')).rows[0]?.ok) {
+        throw forbidden('Only a Compliance Manager or the company administrator can save the agency agreement wording');
       }
       await tx.query(
         `INSERT INTO onboarding_agreement_templates (tenant_id, title, version, body, updated_by)
