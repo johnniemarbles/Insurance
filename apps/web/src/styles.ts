@@ -533,7 +533,7 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .hero .hero-cta{border:0;border-radius:999px;background:#191C32;color:#fff;font:inherit;font-weight:600;font-size:14px;padding:10px 10px 10px 18px;cursor:pointer;display:inline-flex;align-items:center;gap:10px}
 .hero .hero-cta span{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#fff;color:#191C32;font-size:12px}
 @media(min-width:1280px){
-  .home:has(>.home-main){display:grid;grid-template-columns:minmax(0,1fr) 300px;column-gap:24px;align-items:start}
+  .home:has(>.home-side){display:grid;grid-template-columns:minmax(0,1fr) 300px;column-gap:24px;align-items:start}
   .home-main{min-width:0}
   .home-side{position:sticky;top:12px;display:grid;gap:14px}
 }
@@ -619,4 +619,24 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 @media(max-width:600px){.seg{max-width:100%;overflow-x:auto;scrollbar-width:none}.seg::-webkit-scrollbar{display:none}.seg button{flex:none}}
 @media(max-width:600px){.bar>.seg[aria-label="View"]{flex:1 1 100%;display:flex}.bar>.seg[aria-label="View"] button{flex:1 1 0}}
 @media(max-width:600px){.pg-frame .bar{flex-wrap:wrap}}
+/* Top menu (Dashboard, Partners, Reports) across the top; the other sections stay in the left column on wide screens. */
+.topnav{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);background:#fff}
+.topnav button{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line2);background:#fff;border-radius:999px;padding:7px 14px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer}
+.topnav button[aria-selected=true]{background:var(--pri);border-color:var(--pri);color:#fff}
+.topnav .nv{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.topnav .pz{margin-left:auto}
+@media(min-width:1100px){
+  .shell>.topnav{grid-column:1 / -1;grid-row:1;padding:12px 20px;gap:6px}
+  .topnav button{border:0;background:none;color:var(--mute);padding:8px 14px}
+  .topnav button[aria-selected=true]{background:var(--pri-soft);color:var(--pri)}
+  .shell>.tabs{grid-row:2 / span 30}
+  .shell>*:not(.tabs):not(.topnav){grid-column:2;grid-row:auto;min-width:0}
+}
+/* Partners online in the branch: overlapping faces with a green dot. */
+.pz{display:inline-flex;align-items:center;padding-left:8px;margin-left:auto}
+.pz-face{position:relative;width:32px;height:32px;margin-left:-8px;border-radius:50%;border:2px solid #fff;background:var(--pri-soft);color:var(--pri);display:inline-flex;align-items:center;justify-content:center;overflow:visible;flex:none}
+.pz-face img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.pz-init{font-size:12px;font-weight:700}
+.pz-dot{position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:50%;background:#22C55E;border:2px solid #fff}
+.pz-more{margin-left:4px;font-size:12px;font-weight:600;color:var(--mute)}
 `;

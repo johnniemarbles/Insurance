@@ -289,13 +289,12 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs, lead, switcha
   const waiting = rows.filter((r) => r.status === 'submitted').length;
   return (
     <div class="home pg">
+      <div class="home-main">
       <SectionHead title={ho ? x.headTitle : x.title} sub={ho ? (multi ? x.headSubC(hereLabel) : x.headSub) : x.sub} right={ho ? <>{switchable && <CountrySwitchLink locale={locale} />}{tabs}</> : tabs} />
       {lead}
       {scopeBar}
       {strip}
       {!ho && <ComingUp call={call} locale={locale} />}
-      {ho && ins && <NeedsYou locale={locale} openAll={needAll} setOpenAll={setNeedAll}
-        needs={needsOf(ins, locale).map((need) => ({ need, go: () => { if (need.tab) setTab(need.tab); } }))} />}
       {ho && <>
         <div class="hstats">
           <div class={`hstat ${waiting ? 'warn' : ''}`}><b>{waiting}</b><span>{x.hWaiting}</span>{ins && <Trend now={waiting} before={ins.prev?.data.waiting} since={ins.prev?.day} locale={locale} />}</div>
@@ -303,13 +302,6 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs, lead, switcha
           <div class="hstat"><b>{rows.length}</b><span>{x.hPartners}</span>{ins && <Trend now={rows.length} before={ins.prev?.data.partners} since={ins.prev?.day} locale={locale} />}</div>
           <div class="hstat"><b>{cos.length}</b><span>{x.hCompanies}</span>{ins && <Trend now={cos.length} before={ins.prev?.data.companies} since={ins.prev?.day} locale={locale} />}</div>
         </div>
-        {ins && <>
-          <div class="charts">
-            <section class="hcard chartcard"><h4>{titles(locale).funnel}</h4><Funnel f={ins.funnel} locale={locale} /></section>
-            <section class="hcard chartcard"><h4>{titles(locale).expiry}</h4><ExpiryBars e={ins.expiry} locale={locale} /></section>
-          </div>
-          <Widgets i={ins} locale={locale} />
-        </>}
         <div class="seg" role="tablist" aria-label={x.title} style={{ margin: '8px 0' }}>
           {([['review', x.review], ['all', x.all], ['expiring', x.expiring], ...(multi ? [] : [['companies', x.companies] as const])] as const).map(([k, l]) => <button role="tab" aria-selected={tab === k} onClick={() => setTab(k as typeof tab)}>{l}</button>)}
         </div>
@@ -345,6 +337,18 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs, lead, switcha
         </section>
       )}
       {extra}
+      </div>
+      {ho && ins && (
+        <aside class="home-side" aria-label={x.title}>
+          <NeedsYou locale={locale} openAll={needAll} setOpenAll={setNeedAll}
+        needs={needsOf(ins, locale).map((need) => ({ need, go: () => { if (need.tab) setTab(need.tab); } }))} />
+          <div class="charts">
+            <section class="hcard chartcard"><h4>{titles(locale).funnel}</h4><Funnel f={ins.funnel} locale={locale} /></section>
+            <section class="hcard chartcard"><h4>{titles(locale).expiry}</h4><ExpiryBars e={ins.expiry} locale={locale} /></section>
+          </div>
+          <Widgets i={ins} locale={locale} />
+        </aside>
+      )}
     </div>
   );
 }
