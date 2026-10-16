@@ -598,4 +598,13 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
   .shell.rail-closed .tabs-fb{display:none}
 }
 .side-name{margin-top:4px}
+/* Partner onboarding: overview tiles get the same coloured glyph badges as the Home stat tiles. */
+.obtiles .obtile{position:relative;padding-left:68px;min-height:78px;justify-content:center;text-align:left}
+.obtiles .obtile::before{content:"";position:absolute;left:14px;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:12px;background:var(--kbg);color:var(--kfg);display:grid;place-items:center;font-size:16px;font-weight:700}
+.obtiles .obtile:nth-child(6n+1){--kbg:#E8F4FD;--kfg:#2D9CDB}.obtiles .obtile:nth-child(6n+1)::before{content:"▣"}
+.obtiles .obtile:nth-child(6n+2){--kbg:#F3E8FF;--kfg:#9B51E0}.obtiles .obtile:nth-child(6n+2)::before{content:"✓"}
+.obtiles .obtile:nth-child(6n+3){--kbg:#EEEBFF;--kfg:#6355F6}.obtiles .obtile:nth-child(6n+3)::before{content:"%"}
+.obtiles .obtile:nth-child(6n+4){--kbg:#FDE8E8;--kfg:#EB5757}.obtiles .obtile:nth-child(6n+4)::before{content:"◷"}
+.obtiles .obtile:nth-child(6n+5){--kbg:#FEF3C7;--kfg:#D97706}.obtiles .obtile:nth-child(6n+5)::before{content:"⟳"}
+.obtiles .obtile:nth-child(6n){--kbg:#E6F7EE;--kfg:#0a7d3b}.obtiles .obtile:nth-child(6n)::before{content:"!"}
 `;
