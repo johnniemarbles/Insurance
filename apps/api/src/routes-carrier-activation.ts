@@ -20,7 +20,9 @@ export function registerCarrierActivationRoutes(app:FastifyInstance,deps:AppDeps
  app.post('/v1/compliance/carrier-contracts/:id/activate',async req=>{
   const {ctx}=await deps.authenticate(req);
   const id=(req.params as {id:string}).id;
-  const b=(req.body??{}) as Record<string,unknown>;
+  if (!req.body || typeof req.body!=='object' || Array.isArray(req.body)) throw invalid('JSON object body required');
+  const b=req.body as Record<string,unknown>;
+  if (Object.keys(b).some(k=>k!=='productCode')) throw invalid('Only productCode is accepted');
   const productCode=typeof b.productCode==='string'?b.productCode.trim().toUpperCase():'';
   if(!UUID.test(id)||!/^[A-Z0-9_-]{1,80}$/.test(productCode)) throw invalid('Valid contract and product code required');
   return withRequestTx(deps.appPool,ctx,async tx=>{
