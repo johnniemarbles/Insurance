@@ -57,13 +57,15 @@ export function registerCarrierAuthorizationEvidenceRoutes(app:FastifyInstance,d
     if(!UUID.test(id)||reason.length<8||reason.length>500) throw invalid('Valid evidence ID and revocation reason required');
     return withRequestTx(deps.appPool,ctx,async tx=>{
       const e=(await tx.query<{tenant_id:string;node_id:string;contract_id:string;revoked_at:string|null}>(
-        'SELECT tenant_id,node_id,contract_id,revoked_at FROM carrier_authorization_evidence WHERE id=$1 FOR UPDATE',[id])).rows[0];
+        'SELECT tenant_id,node_id,contract_id,revoked_at FROM carrier_authorization_evidence WHERE id=$1',[id])).rows[0];
       if(!e) throw notFound('Evidence not found');
       const allowed=(await tx.query<{ok:boolean}>('SELECT app_is_compliance_at_or_above($1,$2) AS ok',[e.tenant_id,e.node_id])).rows[0]?.ok;
       if(!allowed) throw forbidden('Compliance authorization required');
-      if(e.revoked_at) throw invalid('Evidence already revoked');
-      // Serialize revocation with staging and activation, which lock this contract first.
-      await tx.query('SELECT id FROM carrier_contract_cases WHERE id=$1 AND tenant_id=$2 AND node_id=$3 FOR UPDATE',[e.contract_id,e.tenant_id,e.node_id]);
+      // Lock the contract BEFORE the evidence row to match staging/activation lock order.
+      const lockedContract=(await tx.query('SELECT id FROM carrier_contract_cases WHERE id=$1 AND tenant_id=$2 AND node_id=$3 FOR UPDATE',[e.contract_id,e.tenant_id,e.node_id])).rows[0];
+      if(!lockedContract) throw notFound('Contract not found');
+      const current=(await tx.query<{revoked_at:string|null}>('SELECT revoked_at FROM carrier_authorization_evidence WHERE id=$1 FOR UPDATE',[id])).rows[0];
+      if(!current || current.revoked_at) throw invalid('Evidence already revoked');
       await tx.query('UPDATE carrier_authorization_evidence SET revoked_at=now(),revoked_by=$2,revocation_reason=$3 WHERE id=$1',[id,ctx.userId,reason]);
       await audit(tx,ctx,'compliance.carrier_authorization_evidence_revoked','carrier_contract_case',e.contract_id,{evidenceId:id,reason});
       return {id,revoked:true};
