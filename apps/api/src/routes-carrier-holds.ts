@@ -13,7 +13,7 @@ export function registerCarrierHoldRoutes(app:FastifyInstance,deps:AppDeps):void
    const c=(await tx.query<{tenant_id:string;node_id:string}>('SELECT tenant_id,node_id FROM carrier_contract_cases WHERE id=$1',[id])).rows[0];
    if(!c)throw notFound('Carrier contract not found');
    if(!(await tx.query<{ok:boolean}>('SELECT app_is_compliance_at_or_above($1,$2) AS ok',[c.tenant_id,c.node_id])).rows[0]?.ok)throw forbidden('Compliance authorization required');
-   const holds=(await tx.query('SELECT id,reason,created_at,released_at,release_reason FROM carrier_compliance_holds WHERE tenant_id=$1 AND node_id=$2 AND contract_id=$3 ORDER BY created_at DESC',[c.tenant_id,c.node_id,id])).rows;
+   const holds=(await tx.query('SELECT id,reason,created_by,created_at,released_by,released_at,release_reason FROM carrier_compliance_holds WHERE tenant_id=$1 AND node_id=$2 AND contract_id=$3 ORDER BY created_at DESC',[c.tenant_id,c.node_id,id])).rows;
    return {holds};
   });
  });
