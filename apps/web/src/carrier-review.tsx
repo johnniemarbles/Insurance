@@ -43,7 +43,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    return (statusFilter==='all'||(statusFilter==='attention'?['suspended','expired','correction_required'].includes(state)||(c.state==='active'&&!c.appointmentCurrentlyValid):state===statusFilter))
      && (!query||[c.carrierName,c.jurisdiction,c.onboardingCaseId].some(value=>value.toLocaleLowerCase().includes(query)));
  });
- const refresh=async()=>{try{const r=await call('GET','/v1/compliance/carrier-contracts');setContracts(r.contracts??[]);setError('');}catch(e){setError(String(e));}finally{setLoading(false);}};
+ const refresh=async()=>{try{const r=await call('GET','/v1/compliance/carrier-contracts');setContracts(r.contracts??[]);setError('');}catch(e){setContracts([]);setError(String(e));}finally{setLoading(false);}};
  useEffect(()=>{void refresh();},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
