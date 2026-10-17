@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
 import type { Locale } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -23,10 +24,10 @@ const workspaceNames: Record<Locale, Record<string, string>> = {
 };
 
 const priorities: Record<string, Module[]> = {
-  admin: ['crm', 'compliance', 'onboarding', 'training', 'learning', 'notifications'],
+  admin: ['crm', 'compliance', 'onboarding', 'carriers', 'training', 'learning', 'audit', 'notifications'],
   manager: ['crm', 'onboarding', 'training', 'learning', 'notifications'],
   partner: ['crm', 'onboarding', 'learning', 'notifications'],
-  compliance: ['compliance', 'onboarding', 'carriers', 'notifications'],
+  compliance: ['compliance', 'onboarding', 'carriers', 'audit', 'notifications'],
   auditor: ['audit', 'notifications'],
   trainer: ['training', 'learning', 'notifications'],
   learner: ['learning', 'notifications'],
@@ -46,20 +47,36 @@ const endpoints: Partial<Record<Module, string>> = {
 
 const titles: Record<Locale, Record<Module, string>> = {
   en: {
-    crm: 'Pipeline performance', compliance: 'Compliance alerts', onboarding: 'Onboarding',
-    carriers: 'Carrier authorizations', learning: 'My learning', training: 'Training and CE', audit: 'Audit engagements',
+    crm: 'Pipeline performance',
+    compliance: 'Compliance alerts',
+    onboarding: 'Onboarding',
+    carriers: 'Carrier contract cases',
+    learning: 'My learning',
+    training: 'Training and CE',
+    audit: 'Audit engagements',
     notifications: 'Notifications',
   },
   'fr-CA': {
-    crm: 'Rendement des dossiers', compliance: 'Alertes de conformité', onboarding: 'Intégration',
-    carriers: 'Autorisations assureurs', learning: 'Mon apprentissage', training: 'Formation et UFC', audit: 'Missions d’audit',
+    crm: 'Rendement des dossiers',
+    compliance: 'Alertes de conformité',
+    onboarding: 'Intégration',
+    carriers: 'Dossiers contrats assureurs',
+    learning: 'Mon apprentissage',
+    training: 'Formation et UFC',
+    audit: 'Missions d’audit',
     notifications: 'Notifications',
   },
 };
 
 const destinations: Record<Module, string> = {
-  crm: 'pipelines', compliance: 'compliance', onboarding: 'compliance',
-  carriers: 'compliance', learning: 'training', training: 'training', audit: 'compliance', notifications: 'notifications',
+  crm: 'pipelines',
+  compliance: 'compliance',
+  onboarding: 'compliance',
+  carriers: 'compliance',
+  learning: 'training',
+  training: 'training',
+  audit: 'home',
+  notifications: 'notifications',
 };
 
 function Metrics({ module, data, fr }: { module: Module; data: any; fr: boolean }) {
@@ -89,9 +106,10 @@ function Metrics({ module, data, fr }: { module: Module; data: any; fr: boolean 
     [fr ? 'Récentes' : 'Recent', data.notifications.length],
   ];
   if (module === 'learning' && Array.isArray(data?.enrollments)) entries = [
-    [fr ? 'Assignés' : 'Assigned', data.enrollments.length],
-    [fr ? 'En cours' : 'In progress', data.enrollments.filter((e: any) => e.status === 'in_progress').length],
+    [fr ? 'Inscrits' : 'Enrolled', data.enrollments.length],
+    [fr ? 'À faire' : 'To do', data.enrollments.filter((e: any) => e.status === 'assigned' || e.status === 'in_progress').length],
     [fr ? 'Complétés' : 'Completed', data.enrollments.filter((e: any) => e.status === 'completed').length],
+    [fr ? 'Échéance proche ou en retard' : 'Due soon or overdue', data.enrollments.filter((e: any) => (e.status === 'assigned' || e.status === 'in_progress') && e.dueAt && new Date(e.dueAt).getTime() < Date.now() + 7 * 86400000).length],
   ];
   if (module === 'training' && data?.totals) entries = [
     [fr ? 'Assignés' : 'Assigned', data.totals.assigned],
@@ -118,26 +136,59 @@ function Panel({ module, load, go, fr }: { module: Module; load: Load<any>; go: 
     <section class="pii-workspace-panel" style={{ border: '1px solid #dfe5ed', borderRadius: '12px', padding: '20px' }} aria-label={panelTitle}>
       <div class="pii-workspace-panel-head">
         <h2>{panelTitle}</h2>
-        <button class="btn" onClick={() => go(destinations[module])}>
-          {fr ? 'Ouvrir l’espace' : 'Open workspace'}
-        </button>
+        {module !== 'audit' && (
+          <button class="btn" onClick={() => go(destinations[module])}>
+            {fr ? 'Ouvrir l’espace' : 'Open workspace'}
+          </button>
+        )}
       </div>
       {load.state === 'loading' ? <p role="status">{fr ? 'Chargement…' : 'Loading…'}</p> :
        load.state === 'forbidden' ? <p>{fr ? 'Accès non accordé pour cet espace de travail.' : 'Access not granted for this workspace.'}</p> :
        load.state === 'unavailable' ? <p>{fr ? 'Sommaire non connecté pour le moment. Ouvrez l’espace spécialisé.' : 'Summary not connected yet. Open the specialist workspace.'}</p> :
        load.state === 'error' ? <p role="alert">{fr ? `Impossible de charger ce sommaire : ${load.message}` : `Could not load this summary: ${load.message}`}</p> :
-       <Metrics module={module} data={load.value} fr={fr} />}
+       <>
+         <Metrics module={module} data={load.value} fr={fr} />
+         {module === 'audit' && Array.isArray(load.value?.engagements) && (
+           <div style={{ marginTop: '16px' }}>
+             <h3>{fr ? 'Missions autorisées' : 'Authorized engagements'}</h3>
+             {load.value.engagements.length === 0 ? (
+               <p>{fr ? 'Aucune mission d’audit n’est actuellement visible.' : 'No audit engagements are currently visible.'}</p>
+             ) : (
+               <ul>
+                 {load.value.engagements.slice(0, 10).map((e: any) => (
+                   <li key={e.id}>
+                     {String(e.name ?? e.title ?? (fr ? 'Mission' : 'Engagement'))} — {String(e.status ?? 'unknown')}
+                   </li>
+                 ))}
+               </ul>
+             )}
+           </div>
+         )}
+       </>}
     </section>
   );
 }
 
-export function UnifiedWorkspace({ call, go, locale, name }: { call: Call; go: (page: string) => void; locale: Locale; name: string }) {
+export function UnifiedWorkspace({
+  call,
+  go,
+  locale,
+  name,
+  legacyHome,
+}: {
+  call: Call;
+  go: (page: string) => void;
+  locale: Locale;
+  name: string;
+  legacyHome?: ComponentChildren;
+}) {
   const fr = locale === 'fr-CA';
   const roleNames = fr ? workspaceNames['fr-CA'] : workspaceNames.en;
   const [context, setContext] = useState<Load<Context>>(pending());
   const [active, setActive] = useState('');
   const [loads, setLoads] = useState<Partial<Record<Module, Load<any>>>>({});
   const [generation, setGeneration] = useState(0);
+  const [homeRevision, setHomeRevision] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,14 +212,14 @@ export function UnifiedWorkspace({ call, go, locale, name }: { call: Call; go: (
   }, [call, generation]);
 
   useEffect(() => {
-    if (context.state !== 'ready') return;
+    if (context.state !== 'ready' || !active || !context.value.roles.includes(active)) return;
     let cancelled = false;
     const allowed = (priorities[active] ?? []).filter(m => context.value.modules[m]);
     setLoads(Object.fromEntries(allowed.map(m => [m, pending()])));
     for (const m of allowed) {
       const path = endpoints[m];
       if (!path) {
-        setLoads(old => ({ ...old, [m]: { state: 'unavailable' } }));
+        setLoads(old => cancelled ? old : ({ ...old, [m]: { state: 'unavailable' } }));
         continue;
       }
       call('GET', path).then(
@@ -184,20 +235,26 @@ export function UnifiedWorkspace({ call, go, locale, name }: { call: Call; go: (
   }, [context, active, call]);
 
   if (context.state === 'loading') {
-    return <div class="pii-workspace"><p role="status">{fr ? 'Chargement de votre espace de travail…' : 'Loading your workspace…'}</p></div>;
+    return (
+      <div class="pii-workspace">
+        <p role="status">{fr ? 'Chargement de votre espace de travail…' : 'Loading your workspace…'}</p>
+      </div>
+    );
   }
   if (context.state === 'error') {
     return (
       <div class="pii-workspace">
         <p role="alert">{fr ? `Erreur de chargement : ${context.message}` : context.message}</p>
-        <button class="btn" onClick={() => setGeneration(x => x + 1)}>{fr ? 'Réessayer' : 'Retry'}</button>
+        <button class="btn" onClick={() => setGeneration(x => x + 1)}>
+          {fr ? 'Réessayer' : 'Retry'}
+        </button>
       </div>
     );
   }
   if (context.state !== 'ready') return null;
 
   const c = context.value;
-  const visible = (priorities[active] ?? []).filter(m => c.modules[m]);
+  const visible = c.roles.includes(active) ? (priorities[active] ?? []).filter(m => c.modules[m]) : [];
   const activeRoleName = roleNames[active] ?? (fr ? 'Personnel' : 'Personal');
   const scopeNames = c.scopes.map(s => s.name).join(', ') || (fr ? 'Espace autorisé' : 'Authorized workspace');
 
@@ -209,7 +266,9 @@ export function UnifiedWorkspace({ call, go, locale, name }: { call: Call; go: (
           <h1>{fr ? 'Mon espace de travail' : 'My workspace'}{name ? ', ' + name : ''}</h1>
           <p>{fr ? `Aperçu ${activeRoleName} · Données limitées à vos autorisations` : `${activeRoleName} overview · Data limited to your authorized access`}</p>
         </div>
-        <button class="btn" onClick={() => setGeneration(x => x + 1)}>{fr ? 'Actualiser' : 'Refresh'}</button>
+        <button class="btn" onClick={() => { setGeneration(x => x + 1); setHomeRevision(x => x + 1); }}>
+          {fr ? 'Actualiser' : 'Refresh'}
+        </button>
       </header>
 
       {c.roles.length > 1 && (
@@ -230,6 +289,10 @@ export function UnifiedWorkspace({ call, go, locale, name }: { call: Call; go: (
         </div>
       ) : (
         <p>{fr ? 'Aucun module récapitulatif disponible pour ce rôle. Contactez votre administrateur si un accès est attendu.' : 'No summary modules are currently available for this role. Contact your administrator if access is expected.'}</p>
+      )}
+
+      {c.roles.includes(active) && c.modules.crm && (priorities[active] ?? []).includes('crm') && (
+        <div key={homeRevision}>{legacyHome}</div>
       )}
 
       <p class="pii-workspace-footnote">

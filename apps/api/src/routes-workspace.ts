@@ -8,8 +8,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
     const { ctx } = await deps.authenticate(req);
     const roles = [...new Set(ctx.roles.map(r => r.role))];
     const isTenantAdmin = Boolean(ctx.isTenantAdmin);
+    const admin = isTenantAdmin || roles.includes('admin');
     const compliance = isTenantAdmin || roles.includes('compliance');
-    const training = isTenantAdmin || roles.includes('trainer') || roles.includes('manager');
+    const training = admin || roles.includes('trainer') || roles.includes('manager');
 
     // Node names and audit engagement links are resolved strictly through RLS.
     const { scopes, hasAuditEngagement } = await withRequestTx(deps.appPool, ctx, async tx => {
@@ -24,8 +25,8 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
     });
 
     const isAuditor = roles.includes('auditor') || hasAuditEngagement;
-    const audit = isTenantAdmin || compliance || isAuditor;
-    const crm = Boolean(ctx.canUseCrm) && (isTenantAdmin || roles.some(r => r === 'admin' || r === 'manager' || r === 'partner' || r === 'staff'));
+    const audit = admin || compliance || isAuditor;
+    const crm = Boolean(ctx.canUseCrm) && (admin || roles.some(r => ['partner', 'manager', 'staff'].includes(r)));
 
     const modules = {
       crm, compliance, training, learning: true, audit,
@@ -35,7 +36,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
     };
 
     // A user with no roles who is not linked to an engagement does NOT get the auditor role.
-    const resolvedRoles = roles.length ? roles : isAuditor ? ['auditor'] : [];
+    const resolvedRoles = isTenantAdmin
+      ? (roles.includes('admin') ? roles : ['admin', ...roles])
+      : (roles.length ? roles : (isAuditor ? ['auditor'] : []));
 
     return {
       version: 1,
@@ -43,7 +46,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
       country: deps.config.region === 'us' ? 'US' : 'CA',
       roles: resolvedRoles,
       activeNodeIds: ctx.nodeIds,
-      isTenantAdmin: Boolean(ctx.isTenantAdmin),
+      isTenantAdmin,
       modules,
       scopes,
       // The dashboard never accepts arbitrary node IDs as an authority.

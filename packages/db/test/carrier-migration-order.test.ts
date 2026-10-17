@@ -15,3 +15,14 @@ test('carrier reapproval migrations do not drop the same constraint twice', () =
   assert.match(latestReapproval, /WHERE revoked_at IS NULL/);
   assert.match(latestReapproval, /DROP INDEX IF EXISTS carrier_product_one_live_grant/);
 });
+
+test('carrier directory migration specifies unverified defaults and privilege restrictions', () => {
+  const content = migration('0131_carrier_directory.sql');
+  assert.match(content, /connection_mode text NOT NULL DEFAULT 'manual'/);
+  assert.match(content, /connection_verified boolean NOT NULL DEFAULT false/);
+  assert.match(content, /CHECK \(connection_mode <> 'manual' OR connection_verified = false\)/);
+  assert.match(content, /GRANT SELECT ON carrier_directory TO app_runtime/);
+  assert.match(content, /REVOKE INSERT, UPDATE, DELETE ON carrier_directory FROM app_runtime/);
+  assert.match(content, /REVOKE ALL ON carrier_directory FROM app_auth/);
+});
+
