@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
+import { registerCarrierContractRoutes } from '../src/routes-carrier-contracts.ts';
 import { registerCarrierReviewRoutes } from '../src/routes-carrier-review.ts';
 import { registerCarrierActivationRoutes } from '../src/routes-carrier-activation.ts';
 import { registerCarrierAuthorizationEvidenceRoutes } from '../src/routes-carrier-authorization-evidence.ts';
@@ -18,6 +19,7 @@ test('carrier mutation endpoints reject malformed and unexpected input before da
     authenticate: async () => ({ ctx: { userId: id, tenantId: id } }),
     appPool: undefined,
   } as unknown as AppDeps;
+  registerCarrierContractRoutes(app, deps);
   registerCarrierReviewRoutes(app, deps);
   registerCarrierActivationRoutes(app, deps);
   registerCarrierAuthorizationEvidenceRoutes(app, deps);
@@ -29,6 +31,8 @@ test('carrier mutation endpoints reject malformed and unexpected input before da
     return reply.code(500).send({ code: 'unexpected' });
   });
   const cases: Array<{ url: string; payload: unknown }> = [
+    { url: '/v1/onboarding/cases/' + id + '/carrier-contracts', payload: [] },
+    { url: '/v1/onboarding/cases/' + id + '/carrier-contracts', payload: { carrierName: 'Acme', jurisdiction: 'CA-ON', unexpected: true } },
     { url: base + '/review', payload: [] },
     { url: base + '/review', payload: { state: 'submitted', unexpected: true } },
     { url: base + '/review', payload: { state: 'submitted', reason: 'bad\nreason' } },
