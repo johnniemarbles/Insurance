@@ -76,6 +76,9 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [consent, setConsent] = useState({ credit: false, background: false, carrier: false });
+  const [carrierChoice, setCarrierChoice] = useState({ carrierName: '', jurisdiction: 'CA-ON' });
+  const [contracts, setContracts] = useState<{ id: string; carrierName: string; jurisdiction: string; state: string }[]>([]);
+  const [contractsError, setContractsError] = useState('');
   const [packet, setPacket] = useState({ carrier: 'iA Financial Group', templateVersion: 'F11-92A' });
 
   const load = async () => {
