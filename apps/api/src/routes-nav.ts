@@ -56,7 +56,8 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/v1/home', async (req) => {
     const { ctx } = await deps.authenticate(req);
-    if (!ctx.canUseCrm) {
+    const hasCrmRole = ctx.isTenantAdmin || ctx.roles.some((r) => ['admin', 'manager', 'partner', 'staff'].includes(r.role));
+    if (!ctx.canUseCrm || !hasCrmRole) {
       return { week: null, renewals: [], tasks: [], upcoming: [], risks: [], merges: [], recent: [], trending: [], pins: [], views: [], defaultPipeline: '', capabilities: { crm: false } };
     }
     return withRequestTx(deps.appPool, ctx, async (tx) => {
