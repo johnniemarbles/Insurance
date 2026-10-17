@@ -32,3 +32,6 @@ The internal staging ledger is append-only (migration 0123), requires canonical 
 
 ## Duplicate staging reference behavior
 The API checks for a previously staged `externalReference` after locking the carrier contract. If it exists, it returns HTTP 409 with `duplicate_external_reference` and creates no additional record. The database unique constraint remains authoritative under concurrent requests. This is duplicate rejection, not replay of the original result; callers must not interpret a 409 as a newly staged record.
+
+## Read-side authorization boundary
+Migrations 0125 and 0126 restrict staging-ledger and product-grant reads to Compliance officers. This is intentional: carrier evidence and holds already have Compliance-only RLS, so a broader grant-status reader could observe misleading results when related rows are hidden. Broker-facing eligibility should use an explicitly designed redacted endpoint rather than direct grant rows or the diagnostic view. Confirm Compliance hierarchy permissions and broker-denial behavior using app_runtime PostgreSQL sessions before release.
