@@ -19,7 +19,7 @@ export function registerCarrierExpiryRoutes(app: FastifyInstance, deps: AppDeps)
          WHERE state IN ('active','appointment_verified')
            AND (appointment_expires_on IS NULL OR appointment_expires_on < CURRENT_DATE)
            AND app_is_compliance_at_or_above(tenant_id,node_id)
-         ORDER BY id FOR UPDATE LIMIT 200`)).rows;
+         ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 200`)).rows;
       for (const row of rows) {
         await tx.query("UPDATE carrier_contract_cases SET state='expired',updated_at=now() WHERE id=$1",[row.id]);
         await tx.query(
