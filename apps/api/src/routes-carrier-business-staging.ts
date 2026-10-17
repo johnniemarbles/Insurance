@@ -50,8 +50,9 @@ export function registerCarrierBusinessStagingRoutes(app: FastifyInstance, deps:
         [contract.tenant_id,id,reference])).rows[0];
       if (existing) return { staged: false, reason: 'duplicate_external_reference' };
       const created = (await tx.query<{ id: string }>(
-        'INSERT INTO carrier_business_submissions (tenant_id,node_id,contract_id,product_code,external_reference,created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+        'INSERT INTO carrier_business_submissions (tenant_id,node_id,contract_id,product_code,external_reference,created_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (tenant_id,contract_id,external_reference) DO NOTHING RETURNING id',
         [contract.tenant_id, contract.node_id, id, productCode, reference, ctx.userId])).rows[0];
+      if (!created) return { staged: false, reason: 'duplicate_external_reference' };
       await audit(tx, ctx, 'compliance.carrier_business_staged', 'carrier_business_submission', created.id, { contractId: id, productCode });
       return { staged: true, id: created.id, status: 'staged' as const };
     });
