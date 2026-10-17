@@ -58,6 +58,10 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
       if (!ok) throw forbidden('Compliance authorization required');
       const next: CarrierContractState = kind === 'signature' ? 'broker_signed' : kind === 'carrier_approval' ? 'approved' : 'appointment_verified';
       if (!canMoveCarrierContract(c.state,next)) throw invalid('Invalid verification transition');
+      if (kind === 'signature') {
+        const prepared = (await tx.query<{template_version:string|null}>('SELECT template_version FROM carrier_contract_cases WHERE id=$1',[id])).rows[0];
+        if (!prepared?.template_version) throw invalid('Agreement template version required before signature verification');
+      }
       if (kind === 'signature') await tx.query(
         'UPDATE carrier_contract_cases SET signature_evidence_ref=$1,signature_verified_by=$2,signature_verified_at=now(),state=$3,updated_at=now() WHERE id=$4',
         [reference,ctx.userId,next,id]);
