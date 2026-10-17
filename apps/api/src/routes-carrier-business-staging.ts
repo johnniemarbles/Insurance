@@ -43,6 +43,10 @@ export function registerCarrierBusinessStagingRoutes(app: FastifyInstance, deps:
         'SELECT carrier_product_submission_authorized_locked($1,$2) AS ok',
         [id, productCode])).rows[0]?.ok === true;
       if (!authorized) return { staged: false, reason: 'carrier_product_not_authorized' };
+      const existing = (await tx.query<{ id: string; product_code: string }>(
+        'SELECT id,product_code FROM carrier_business_submissions WHERE tenant_id=$1 AND contract_id=$2 AND external_reference=$3',
+        [contract.tenant_id,id,reference])).rows[0];
+      if (existing) return { staged: false, reason: 'duplicate_external_reference' };
       const created = (await tx.query<{ id: string }>(
         'INSERT INTO carrier_business_submissions (tenant_id,node_id,contract_id,product_code,external_reference,created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
         [contract.tenant_id, contract.node_id, id, productCode, reference, ctx.userId])).rows[0];
