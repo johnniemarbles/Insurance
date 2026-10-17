@@ -35,7 +35,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    {error&&<p role="alert" class="err">{error}</p>}
    <label class="fl">{fr?'Motif de la décision':'Review reason'}
      <input value={reason} maxLength={500} onInput={e=>setReason((e.target as HTMLInputElement).value)}/></label>
-   <label class="fl">Carrier agreement template version
+   <label class="fl">{fr?'Version du modèle de contrat':'Carrier agreement template version'}
      <input value={templateVersion} maxLength={120} onInput={e=>setTemplateVersion((e.target as HTMLInputElement).value)}/></label>
    {contracts.length===0?<p class="muted">{fr?'Aucun contrat en attente.':'No carrier contracts found.'}</p>:
      <ul class="oblist">{contracts.map(c=><li key={c.id}>
