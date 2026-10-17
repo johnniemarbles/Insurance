@@ -54,7 +54,8 @@ export function registerCarrierAuthorizationEvidenceRoutes(app:FastifyInstance,d
   app.post('/v1/compliance/carrier-authorization-evidence/:id/revoke',async req=>{
     const {ctx}=await deps.authenticate(req);
     const id=(req.params as {id:string}).id;
-    const b=(req.body??{}) as Record<string,unknown>;
+    if (!req.body || typeof req.body!=='object' || Array.isArray(req.body)) throw invalid('JSON object body required');
+    const b=req.body as Record<string,unknown>;
     if (Object.keys(b).some(k=>k!=='reason')) throw invalid('Only reason is accepted');
     const reason=typeof b.reason==='string'?b.reason.trim():'';
     if(!UUID.test(id)||reason.length<8||reason.length>500||/[\u0000-\u001f\u007f]/.test(reason)) throw invalid('Valid evidence ID and revocation reason required');
