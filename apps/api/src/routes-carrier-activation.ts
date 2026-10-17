@@ -34,13 +34,14 @@ export function registerCarrierActivationRoutes(app:FastifyInstance,deps:AppDeps
         AND revoked_at IS NULL AND effective_on<=CURRENT_DATE AND expires_on>=CURRENT_DATE`,
     [c.tenant_id,c.node_id,id,productCode])).rows;
    const kinds=new Set(evidence.map(e=>e.kind));
+   const activeHold=(await tx.query<{blocked:boolean}>(`SELECT EXISTS(SELECT 1 FROM carrier_compliance_holds WHERE tenant_id=$1 AND node_id=$2 AND contract_id=$3 AND released_at IS NULL) AS blocked`,[c.tenant_id,c.node_id,id])).rows[0]?.blocked!==false;
    const blocks=carrierAuthorizationBlocks({
     brokerCleared:c.broker_cleared===true,agencyAgreementCountersigned:c.agency_signed===true,
     licenceValid:c.licence_valid===true,eoValid:c.eo_valid===true,
     trainingCurrent:kinds.has('training'),jurisdictionAllowed:kinds.has('jurisdiction_scope'),
     productAllowed:kinds.has('product_scope'),carrierState:c.state==='appointment_verified'?'active':c.state,
     appointmentEffective:c.appointment_effective===true,appointmentNotExpired:c.appointment_not_expired===true,
-    complianceHold:!kinds.has('hold_clearance')
+    complianceHold:activeHold||!kinds.has('hold_clearance')
    });
    if(!['appointment_verified','active'].includes(c.state)||blocks.length) return {activated:false,blocks:['appointment_verified','active'].includes(c.state)?blocks:['invalid_carrier_state',...blocks],productCode};
    const already=(await tx.query<{id:string}>("SELECT id FROM carrier_product_activations WHERE contract_id=$1 AND product_code=$2 AND revoked_at IS NULL FOR UPDATE",[id,productCode])).rows[0];
