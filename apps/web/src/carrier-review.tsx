@@ -30,6 +30,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [productRevocationReason,setProductRevocationReason]=useState<Record<string,string>>({});
  const [preflight,setPreflight]=useState<Record<string,{missing:string[];blocks?:string[];eligibleForFurtherChecks:boolean}>>({});
  const [templateVersions,setTemplateVersions]=useState<Record<string,string>>({});
+ const [grants,setGrants]=useState<Record<string,{id:string;productCode:string;activatedAt:string;revokedAt:string|null;reason:string|null}[]>>({});
  const [history,setHistory]=useState<Record<string,{toState:string;fromState:string|null;reason:string|null;recordedAt:string}[]>>({});
  const [eligibility,setEligibility]=useState<Record<string,{blocks:string[];authorized:boolean;evidence?:Record<string,boolean>}>>({});
  const fr=locale==='fr-CA';
@@ -48,11 +49,12 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  useEffect(()=>{void refresh();return ()=>{refreshSequence.current++;};},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
+ const loadGrants=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/products`);setGrants(p=>({...p,[id]:r.grants??[]}));setError('');}catch(e){setError(String(e));}};
  const productFor=(id:string)=>(contractProducts[id]??'').trim().toUpperCase();
  const validProduct=(id:string)=>/^[A-Z0-9_-]{1,80}$/.test(productFor(id));
  const checkProduct=async(id:string)=>{const selected=productFor(id);try{const r=await call('GET',`/v1/carrier-contracts/${id}/products/${encodeURIComponent(selected)}/preflight`);if((latestProducts.current[id]??'').trim().toUpperCase()===selected){setPreflight(p=>({...p,[id]:r}));setError('');}}catch(e){if((latestProducts.current[id]??'').trim().toUpperCase()===selected)setError(String(e));}};
- const activate=async(id:string)=>{setBusy(true);try{const r=await call('POST',`/v1/compliance/carrier-contracts/${id}/activate`,{productCode:productFor(id)});if(!r.activated)setError(`Activation blocked: ${(r.blocks??[]).join(', ')}`);else{setError('');await refresh();}}catch(e){setError(String(e));}finally{setBusy(false);}};
- const revokeProduct=async(id:string)=>{setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${id}/products/${productFor(id)}/revoke`,{reason:productRevocationReason[id]??''});setProductRevocationReason(p=>({...p,[id]:''}));setPreflight(p=>{const next={...p};delete next[id];return next;});setError('');await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
+ const activate=async(id:string)=>{setBusy(true);try{const r=await call('POST',`/v1/compliance/carrier-contracts/${id}/activate`,{productCode:productFor(id)});if(!r.activated)setError(`Activation blocked: ${(r.blocks??[]).join(', ')}`);else{setError('');await refresh();await loadGrants(id);}}catch(e){setError(String(e));}finally{setBusy(false);}};
+ const revokeProduct=async(id:string)=>{setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${id}/products/${productFor(id)}/revoke`,{reason:productRevocationReason[id]??''});setProductRevocationReason(p=>({...p,[id]:''}));setPreflight(p=>{const next={...p};delete next[id];return next;});setError('');await refresh();await loadGrants(id);}catch(e){setError(String(e));}finally{setBusy(false);}};
  const reconcile=async()=>{setBusy(true);try{await call('POST','/v1/compliance/carrier-contracts/reconcile-expiry',{});await refresh();setError('');}catch(e){setError(String(e));}finally{setBusy(false);}};
  const move=async(id:string,state:string)=>{
    setBusy(true);
