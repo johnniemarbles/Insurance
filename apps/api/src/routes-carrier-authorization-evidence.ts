@@ -32,7 +32,7 @@ export function registerCarrierAuthorizationEvidenceRoutes(app:FastifyInstance,d
     const evidenceRef=typeof b.evidenceRef==='string'?b.evidenceRef.trim():'';
     const effectiveOn=typeof b.effectiveOn==='string'?b.effectiveOn:'';
     const expiresOn=typeof b.expiresOn==='string'?b.expiresOn:'';
-    if(!kinds.includes(kind)||!productCode||productCode.length>80||evidenceRef.length<8||evidenceRef.length>500||
+    if(!kinds.includes(kind)||!/^[A-Z0-9_-]{1,80}$/.test(productCode)||evidenceRef.length<8||evidenceRef.length>500||
        !validDate(effectiveOn)||!validDate(expiresOn)||b.confirmedWithSource!==true)
       throw invalid('Verified evidence, product and validity dates required');
     return withRequestTx(deps.appPool,ctx,async tx=>{
