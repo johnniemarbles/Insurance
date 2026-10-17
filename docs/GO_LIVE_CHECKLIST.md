@@ -27,12 +27,15 @@ When Adobe approves API access: Compliance > Vendors > Adobe: enter the access p
 - AI assistance: data can leave the region when a company admin turns AI on. Get counsel sign-off on the cross-border wording before real Canadian users use AI.
 - US items: see US_COMPLIANCE.md.
 
-## 7. Before real Canadian users (residency and keys)
-- Confirm `REGION=ca-qc` on the Canadian Railway service and that `DATA_COUNTRY` is unset or `CA` (the app refuses a mismatch in staging/prod).
-- Confirm the privacy page (EN and fr-CA) says data is held in Canada — open `/privacy?lang=fr` on the live Canadian host. If you still see "servers are in the United States" while claiming Canada, the US-authority sentence in `legal.ts` must be gated on `stored === 'US'` (see AUDIT_NOTES).
-- Move the Canadian stack to a Montréal region host when ready; set physical region verified in `deployment_info`.
-- Replace `LOCAL_KEYS` with KMS-backed field encryption before storing real client PII at rest.
-- Custom domain `app.punjabinsurance.co` routed to the two regional stacks.
+## 7. Before real Canadian users (approved US-hosting path)
+- **Decision:** Canadian tenants may use US infrastructure, subject to safeguards and applicable legal/contractual requirements. See [Canadian US-hosting safeguards](CANADA_US_HOSTING_SAFEGUARDS.md). Do **not** claim physical Canadian residency.
+- Keep logical `REGION=ca-qc` for Canadian tenant isolation; set `HOSTED_IN=us` only after checking existing values and recording the actual host. Do not mark `PHYSICAL_REGION_VERIFIED=true` as Canadian-location evidence.
+- Verify English and French Canadian privacy pages disclose US hosting and cross-border processing accurately, including relevant service providers; obtain privacy/legal approval before enabling `RESIDENCY_ACKNOWLEDGED=true`.
+- Complete the independent migration 0130, forced RLS, tenant-wall, and zero-drift SQL checks in both databases. Record outputs and reviewer.
+- Verify vault bucket region, backups, encryption and keys, least-privilege access, incident response, retention, deletion, and customer/processor terms. Rotate previously exposed vault credentials as required by step 1.
+- Replace `LOCAL_KEYS` with approved KMS-backed field encryption before real client PII is stored, as required by the existing security plan.
+- Confirm custom domain `app.punjabinsurance.co` routing and test cross-border disclosure in both supported languages.
+- **Release hold:** A hosting decision alone does not certify safeguards; do not enable real Canadian customer data until documented gates are signed off.
 
 ## 8. Demo company on the Canadian server
 - Railway > pii-ca API service > Variables:
