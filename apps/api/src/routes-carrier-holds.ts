@@ -31,4 +31,21 @@ export function registerCarrierHoldRoutes(app:FastifyInstance,deps:AppDeps):void
    return {id:hold.id,created:true};
   });
  });
+ app.post('/v1/compliance/carrier-contracts/:id/holds/:holdId/release',async req=>{
+  const {ctx}=await deps.authenticate(req);
+  const {id,holdId}=req.params as {id:string;holdId:string};
+  const body=(req.body??{}) as Record<string,unknown>;
+  const reason=typeof body.reason==='string'?body.reason.trim():'';
+  if(!UUID.test(id)||!UUID.test(holdId)||reason.length<8||reason.length>500)throw invalid('Valid hold ID and release reason required');
+  return withRequestTx(deps.appPool,ctx,async tx=>{
+   const c=(await tx.query<{tenant_id:string;node_id:string}>('SELECT tenant_id,node_id FROM carrier_contract_cases WHERE id=$1 FOR UPDATE',[id])).rows[0];
+   if(!c)throw notFound('Carrier contract not found');
+   const permission=(await tx.query<{ok:boolean}>('SELECT app_is_compliance_at_or_above($1,$2) AS ok',[c.tenant_id,c.node_id])).rows[0]?.ok;
+   if(!permission)throw forbidden('Compliance authorization required');
+   const released=(await tx.query<{id:string}>('UPDATE carrier_compliance_holds SET released_at=now(),released_by=$5,release_reason=$6 WHERE tenant_id=$1 AND node_id=$2 AND contract_id=$3 AND id=$4 AND released_at IS NULL RETURNING id',[c.tenant_id,c.node_id,id,holdId,ctx.userId,reason])).rows[0];
+   if(!released)throw notFound('Open carrier hold not found');
+   await audit(tx,ctx,'compliance.carrier_hold_released','carrier_contract_case',id,{holdId,reason});
+   return {released:true,holdId};
+  });
+ });
 }
