@@ -23,17 +23,17 @@ export function registerCarrierEligibilityRoutes(app: FastifyInstance, deps: App
       }>(`SELECT cc.tenant_id, cc.node_id, cc.state,
            (oc.stage = 'active' AND oc.standing = 'good_standing') AS broker_cleared,
            EXISTS (SELECT 1 FROM onboarding_agreements a
-                     WHERE a.case_id = cc.onboarding_case_id AND a.officer_signed_at IS NOT NULL) AS agency_signed,
+                     WHERE a.case_id = cc.onboarding_case_id AND a.tenant_id = cc.tenant_id AND a.officer_signed_at IS NOT NULL) AS agency_signed,
            EXISTS (SELECT 1 FROM compliance_items i
-                     WHERE i.node_id = cc.node_id AND i.kind = 'licence'
+                     WHERE i.node_id = cc.node_id AND i.tenant_id = cc.tenant_id AND i.kind = 'licence'
                        AND i.expires_on IS NOT NULL AND i.expires_on >= CURRENT_DATE
-                       AND (i.jurisdiction IS NULL OR upper(i.jurisdiction) = upper(cc.jurisdiction))) AS licence_valid,
+                       AND i.jurisdiction IS NOT NULL AND upper(i.jurisdiction) = upper(cc.jurisdiction)) AS licence_valid,
            EXISTS (SELECT 1 FROM compliance_items i
-                     WHERE i.node_id = cc.node_id AND i.kind = 'eo'
+                     WHERE i.node_id = cc.node_id AND i.tenant_id = cc.tenant_id AND i.kind = 'eo'
                        AND i.expires_on IS NOT NULL AND i.expires_on >= CURRENT_DATE) AS eo_valid,
            (cc.appointment_effective_on IS NOT NULL AND cc.appointment_effective_on <= CURRENT_DATE) AS appointment_effective,
            (cc.appointment_expires_on IS NULL OR cc.appointment_expires_on >= CURRENT_DATE) AS appointment_not_expired
-         FROM carrier_contract_cases cc JOIN onboarding_cases oc ON oc.id = cc.onboarding_case_id
+         FROM carrier_contract_cases cc JOIN onboarding_cases oc ON oc.id = cc.onboarding_case_id AND oc.tenant_id = cc.tenant_id AND oc.node_id = cc.node_id
          WHERE cc.id = $1`, [id])).rows[0];
       if (!row) throw notFound('Carrier contract not found');
       const permitted = (await tx.query<{ ok: boolean }>(
