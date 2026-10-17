@@ -37,6 +37,7 @@ import { registerComplianceRoutes } from './routes-compliance.ts';
 import { registerOnboardingRoutes } from './routes-onboarding.ts';
 import { registerCarrierContractRoutes } from './routes-carrier-contracts.ts';
 import { registerCarrierReviewRoutes } from './routes-carrier-review.ts';
+import { registerCarrierEligibilityRoutes } from './routes-carrier-eligibility.ts';
 import { registerExtensionRoutes } from './routes-extension.ts';
 import { registerOnboardingSignRoutes } from './routes-onboarding-sign.ts';
 import { registerOnboardingSelfReportRoutes } from './routes-onboarding-self-report.ts';
@@ -181,6 +182,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerOnboardingRoutes(app, deps);
   registerCarrierContractRoutes(app, deps);
   registerCarrierReviewRoutes(app, deps);
+  registerCarrierEligibilityRoutes(app, deps);
   registerExtensionRoutes(app, deps);
   registerOnboardingSignRoutes(app, deps);
   registerOnboardingSelfReportRoutes(app, deps);
