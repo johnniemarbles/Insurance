@@ -15,10 +15,10 @@ const workspaceNames:Record<string,string> = {
   auditor:'Audit',trainer:'Training',learner:'Learning',staff:'Operations'
 };
 const priorities:Record<string,Module[]> = {
-  admin:['crm','compliance','onboarding','training','learning','notifications'],
+  admin:['crm','compliance','onboarding','carriers','training','learning','audit','notifications'],
   manager:['crm','onboarding','training','learning','notifications'],
   partner:['crm','onboarding','learning','notifications'],
-  compliance:['compliance','onboarding','carriers','notifications'],
+  compliance:['compliance','onboarding','carriers','audit','notifications'],
   auditor:['audit','notifications'],
   trainer:['training','learning','notifications'],
   learner:['learning','notifications'],
@@ -54,7 +54,7 @@ function Metrics({module,data}:{module:Module;data:any}) {
   if(module==='carriers' && Array.isArray(data?.contracts)) entries=[['Contract cases (max 200)',data.contracts.length],['Expired appointments',data.contracts.filter((x:any)=>x.effectiveState==='expired').length],['Valid appointment dates — not authorization',data.contracts.filter((x:any)=>x.appointmentCurrentlyValid===true).length]];
   if(module==='audit' && Array.isArray(data?.engagements)) entries=[['Active',data.engagements.filter((e:any)=>e.status==='active').length],['Visible',data.engagements.length]];
   if(module==='notifications' && Array.isArray(data?.notifications)) entries=[['Unread',data.unread??0],['Recent',data.notifications.length]];
-  if(module==='learning' && Array.isArray(data?.enrollments)) entries=[['Assigned',data.enrollments.length],['In progress',data.enrollments.filter((e:any)=>e.status==='in_progress').length],['Completed',data.enrollments.filter((e:any)=>e.status==='completed').length]];
+  if(module==='learning' && Array.isArray(data?.enrollments)) entries=[['Enrolled',data.enrollments.length],['To do',data.enrollments.filter((e:any)=>e.status!=='completed').length],['Completed',data.enrollments.filter((e:any)=>e.status==='completed').length],['Due soon or overdue',data.enrollments.filter((e:any)=>e.status!=='completed'&&e.dueAt&&new Date(e.dueAt).getTime()<Date.now()+7*86400000).length]];
   if(module==='training' && data?.totals) entries=[
     ['Assigned',data.totals.assigned],['In progress',data.totals.inProgress],
     ['Completed',data.totals.completed],['Overdue',data.totals.overdue]];
