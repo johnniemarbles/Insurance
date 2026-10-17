@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { CarrierEvidenceForm } from './carrier-evidence.tsx';
 type Call = (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<any>;
 type Contract = { id: string; carrierName: string; jurisdiction: string; state: string; onboardingCaseId: string; updatedAt: string };
 const options: Record<string,string[]> = {
@@ -37,6 +38,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
      <ul class="oblist">{contracts.map(c=><li key={c.id}>
        <div><strong>{c.carrierName}</strong> · {c.jurisdiction} · {c.state}
          <small class="muted"> · {c.onboardingCaseId}</small></div>
+       <CarrierEvidenceForm call={call} id={c.id} state={c.state} onSaved={refresh}/>
        <div>{(options[c.state]??[]).map(next=><button class="btn" type="button" disabled={busy ||
          (['declined','withdrawn','suspended','terminated','correction_required'].includes(next)&&!reason.trim())}
          onClick={()=>void move(c.id,next)}>{next.replaceAll('_',' ')}</button>)}</div>
