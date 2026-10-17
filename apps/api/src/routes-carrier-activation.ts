@@ -42,9 +42,12 @@ export function registerCarrierActivationRoutes(app:FastifyInstance,deps:AppDeps
     appointmentEffective:c.appointment_effective===true,appointmentNotExpired:c.appointment_not_expired===true,
     complianceHold:!kinds.has('hold_clearance')
    });
-   if(c.state!=='appointment_verified'||blocks.length) return {activated:false,blocks:c.state==='appointment_verified'?blocks:['invalid_carrier_state',...blocks],productCode};
-   await tx.query("UPDATE carrier_contract_cases SET state='active',updated_at=now() WHERE id=$1",[id]);
-   await tx.query('INSERT INTO carrier_contract_events(tenant_id,contract_id,node_id,from_state,to_state,actor_id,reason) VALUES($1,$2,$3,$4,$5,$6,$7)',
+   if(!['appointment_verified','active'].includes(c.state)||blocks.length) return {activated:false,blocks:['appointment_verified','active'].includes(c.state)?blocks:['invalid_carrier_state',...blocks],productCode};
+   const already=(await tx.query<{id:string}>("SELECT id FROM carrier_product_activations WHERE contract_id=$1 AND product_code=$2 FOR UPDATE",[id,productCode])).rows[0];
+   if(already) return {activated:false,blocks:['product_activation_exists'],productCode};
+   await tx.query('INSERT INTO carrier_product_activations(tenant_id,contract_id,node_id,product_code,activated_by) VALUES($1,$2,$3,$4,$5)',[c.tenant_id,id,c.node_id,productCode,ctx.userId]);
+   if(c.state==='appointment_verified') await tx.query("UPDATE carrier_contract_cases SET state='active',updated_at=now() WHERE id=$1",[id]);
+   if(c.state==='appointment_verified') await tx.query('INSERT INTO carrier_contract_events(tenant_id,contract_id,node_id,from_state,to_state,actor_id,reason) VALUES($1,$2,$3,$4,$5,$6,$7)',
     [c.tenant_id,id,c.node_id,c.state,'active',ctx.userId,'Product clearance checked: '+productCode]);
    await audit(tx,ctx,'compliance.carrier_activated','carrier_contract_case',id,{productCode});
    return {activated:true,state:'active',productCode};
