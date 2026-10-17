@@ -24,12 +24,14 @@ export function registerCarrierBusinessStagingRoutes(app: FastifyInstance, deps:
   app.post('/v1/compliance/carrier-contracts/:id/business-staging', async (req, reply) => {
     const { ctx } = await deps.authenticate(req);
     const id = (req.params as { id: string }).id;
+    if (req.body === null || typeof req.body !== 'object' || Array.isArray(req.body))
+      throw invalid('JSON object body required');
     const input = (req.body ?? {}) as Record<string, unknown>;
     const productCode = typeof input.productCode === 'string' ? input.productCode.trim().toUpperCase() : '';
     const reference = typeof input.externalReference === 'string' ? input.externalReference.trim() : '';
     if (Object.keys(input).some(key => !['productCode','externalReference'].includes(key)))
       throw invalid('Only productCode and externalReference are accepted');
-    if (!UUID.test(id) || !/^[A-Z0-9_-]{1,80}$/.test(productCode) || reference.length < 1 || reference.length > 120)
+    if (!UUID.test(id) || !/^[A-Z0-9_-]{1,80}$/.test(productCode) || reference.length < 1 || reference.length > 120 || /[\u0000-\u001f\u007f]/.test(reference))
       throw invalid('Valid contract, product and reference required');
     const result = await withRequestTx(deps.appPool, ctx, async tx => {
       const contract = (await tx.query<{ tenant_id: string; node_id: string }>(
