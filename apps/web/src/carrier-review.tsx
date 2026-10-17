@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CarrierEvidenceForm } from './carrier-evidence.tsx';
 import { CarrierAuthorizationEvidencePanel } from './carrier-authorization-evidence.tsx';
+import { CarrierHoldsPanel } from './carrier-holds.tsx';
 type Call = (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<any>;
 type Contract = { id: string; carrierName: string; jurisdiction: string; state: string; effectiveState?: string; onboardingCaseId: string; updatedAt: string; templateVersion: string | null; appointmentEffectiveOn: string | null; appointmentExpiresOn: string | null; appointmentCurrentlyValid: boolean };
 const options: Record<string,string[]> = {
@@ -63,6 +64,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <label class="fl">Product revocation reason<input value={productRevocationReason[c.id]??''} maxLength={500} onInput={e=>setProductRevocationReason(p=>({...p,[c.id]:(e.target as HTMLInputElement).value}))}/></label>
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
        <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
+       <CarrierHoldsPanel call={call} contractId={c.id}/>
        <button class="btn" type="button" disabled={!productFor(c.id).trim()} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
        {preflight[c.id]&&<p class="muted" role="status">{preflight[c.id]!.eligibleForFurtherChecks?'Evidence present; final checks still required':`Missing or invalid: ${(preflight[c.id]!.blocks??preflight[c.id]!.missing).join(', ')}`}</p>}
        {(c.state==='appointment_verified'||c.state==='active')&&<button class="btn" type="button" disabled={busy||!productFor(c.id).trim()} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
