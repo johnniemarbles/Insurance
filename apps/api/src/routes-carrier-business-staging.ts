@@ -27,6 +27,8 @@ export function registerCarrierBusinessStagingRoutes(app: FastifyInstance, deps:
     const input = (req.body ?? {}) as Record<string, unknown>;
     const productCode = typeof input.productCode === 'string' ? input.productCode.trim().toUpperCase() : '';
     const reference = typeof input.externalReference === 'string' ? input.externalReference.trim() : '';
+    if (Object.keys(input).some(key => !['productCode','externalReference'].includes(key)))
+      throw invalid('Only productCode and externalReference are accepted');
     if (!UUID.test(id) || !/^[A-Z0-9_-]{1,80}$/.test(productCode) || reference.length < 1 || reference.length > 120)
       throw invalid('Valid contract, product and reference required');
     const result = await withRequestTx(deps.appPool, ctx, async tx => {
