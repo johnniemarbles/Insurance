@@ -22,6 +22,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [busy,setBusy]=useState(false);
  const [reason,setReason]=useState('');
  const [activationProduct,setActivationProduct]=useState('');
+ const [contractProducts,setContractProducts]=useState<Record<string,string>>({});
  const [productRevocationReason,setProductRevocationReason]=useState('');
  const [preflight,setPreflight]=useState<Record<string,{missing:string[];blocks?:string[];eligibleForFurtherChecks:boolean}>>({});
  const [templateVersion,setTemplateVersion]=useState('');
@@ -32,9 +33,10 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  useEffect(()=>{void refresh();},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
- const checkProduct=async(id:string)=>{try{const r=await call('GET',`/v1/carrier-contracts/${id}/products/${activationProduct}/preflight`);setPreflight(p=>({...p,[id]:r}));setError('');}catch(e){setError(String(e));}};
- const activate=async(id:string)=>{setBusy(true);try{const r=await call('POST',`/v1/compliance/carrier-contracts/${id}/activate`,{productCode:activationProduct});if(!r.activated)setError(`Activation blocked: ${(r.blocks??[]).join(', ')}`);else{setError('');await refresh();}}catch(e){setError(String(e));}finally{setBusy(false);}};
- const revokeProduct=async(id:string)=>{setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${id}/products/${activationProduct}/revoke`,{reason:productRevocationReason});setProductRevocationReason('');setPreflight(p=>{const next={...p};delete next[id];return next;});setError('');await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
+ const productFor=(id:string)=>contractProducts[id]??activationProduct;
+ const checkProduct=async(id:string)=>{try{const r=await call('GET',`/v1/carrier-contracts/${id}/products/${productFor(id)}/preflight`);setPreflight(p=>({...p,[id]:r}));setError('');}catch(e){setError(String(e));}};
+ const activate=async(id:string)=>{setBusy(true);try{const r=await call('POST',`/v1/compliance/carrier-contracts/${id}/activate`,{productCode:productFor(id)});if(!r.activated)setError(`Activation blocked: ${(r.blocks??[]).join(', ')}`);else{setError('');await refresh();}}catch(e){setError(String(e));}finally{setBusy(false);}};
+ const revokeProduct=async(id:string)=>{setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${id}/products/${productFor(id)}/revoke`,{reason:productRevocationReason});setProductRevocationReason('');setPreflight(p=>{const next={...p};delete next[id];return next;});setError('');await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
  const reconcile=async()=>{setBusy(true);try{const r=await call('POST','/v1/compliance/carrier-contracts/reconcile-expiry',{});await refresh();setError('');}catch(e){setError(String(e));}finally{setBusy(false);}};
  const move=async(id:string,state:string)=>{
    setBusy(true);
@@ -59,12 +61,13 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        {c.templateVersion&&<p class="muted">{fr?'Modèle':'Template'}: {c.templateVersion}</p>}
        {c.appointmentEffectiveOn&&<p class="muted">{fr?'Nomination':'Appointment'}: {String(c.appointmentEffectiveOn).slice(0,10)} – {c.appointmentExpiresOn?String(c.appointmentExpiresOn).slice(0,10):(fr?'sans date de fin enregistrée':'no expiry recorded')}</p>}
        {c.state==='active'&&!c.appointmentCurrentlyValid&&<p role="alert" class="err">{fr?'Nomination non valide actuellement — vérification requise':'Appointment is not currently valid — review required'}</p>}
+       <label class="fl">Product code for this carrier<input maxLength={80} value={contractProducts[c.id]??activationProduct} onInput={e=>setContractProducts(p=>({...p,[c.id]:(e.target as HTMLInputElement).value.toUpperCase()}))}/></label>
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
        <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
-       <button class="btn" type="button" disabled={!activationProduct.trim()} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
+       <button class="btn" type="button" disabled={!productFor(c.id).trim()} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
        {preflight[c.id]&&<p class="muted" role="status">{preflight[c.id]!.eligibleForFurtherChecks?'Evidence present; final checks still required':`Missing or invalid: ${(preflight[c.id]!.blocks??preflight[c.id]!.missing).join(', ')}`}</p>}
-       {(c.state==='appointment_verified'||c.state==='active')&&<button class="btn" type="button" disabled={busy||!activationProduct.trim()} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
-       {c.state==='active'&&<button class="btn" type="button" disabled={busy||!activationProduct.trim()||productRevocationReason.trim().length<8} onClick={()=>void revokeProduct(c.id)}>Revoke product authorization</button>}
+       {(c.state==='appointment_verified'||c.state==='active')&&<button class="btn" type="button" disabled={busy||!productFor(c.id).trim()} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
+       {c.state==='active'&&<button class="btn" type="button" disabled={busy||!productFor(c.id).trim()||productRevocationReason.trim().length<8} onClick={()=>void revokeProduct(c.id)}>Revoke product authorization</button>}
        <button class="btn" type="button" onClick={()=>void showHistory(c.id)}>{fr?'Historique':'Review history'}</button>
        {history[c.id]&&<ol>{history[c.id]!.map((e,i)=><li key={i}>{e.fromState??'—'} → {e.toState} · {String(e.recordedAt).slice(0,19)}{e.reason?` · ${e.reason}`:''}</li>)}</ol>}
        <button class="btn" type="button" onClick={()=>void checkEligibility(c.id)}>{fr?'Vérifier les conditions':'Check eligibility'}</button>
