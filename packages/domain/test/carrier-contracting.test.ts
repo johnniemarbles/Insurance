@@ -55,3 +55,9 @@ test('each appointment and licensing failure independently blocks authorization'
     assert.equal(maySubmitCarrierBusiness({ ...valid, ...patch }), false);
   }
 });
+
+test('unrecognized carrier states fail closed rather than crash', () => {
+  assert.equal(canMoveCarrierContract('unknown' as never, 'active'), false);
+  assert.equal(canMoveCarrierContract('requested', 'unknown' as never), false);
+  assert.equal(maySubmitCarrierBusiness({ ...valid, carrierState: 'unknown' as never }), false);
+});
