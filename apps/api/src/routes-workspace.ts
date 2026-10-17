@@ -10,7 +10,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
     const admin = ctx.isTenantAdmin || roles.includes('admin');
     const training = admin || roles.includes('trainer') || roles.includes('manager');
     const compliance = admin || roles.includes('compliance');
-    const audit = admin || roles.includes('auditor');
+    const audit = admin || roles.includes('auditor') || roles.includes('compliance') || roles.length === 0;
     const crm = Boolean(ctx.canUseCrm);
     const modules = {
       crm, compliance, training, audit,
@@ -29,7 +29,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
       version: 1,
       tenantId: ctx.tenantId,
       country: deps.config.region === 'us' ? 'US' : 'CA',
-      roles,
+      roles: roles.length ? roles : ['auditor'],
       activeNodeIds: ctx.nodeIds,
       isTenantAdmin: Boolean(ctx.isTenantAdmin),
       modules,
