@@ -38,13 +38,14 @@ export function registerCarrierPreflightRoutes(app:FastifyInstance,deps:AppDeps)
    const missing=required.filter(x=>!kinds.has(x));
    const grant=(await tx.query<{ok:boolean}>("SELECT EXISTS(SELECT 1 FROM carrier_product_activations WHERE tenant_id=$1 AND node_id=$2 AND contract_id=$3 AND product_code=$4 AND revoked_at IS NULL) AS ok",[c.tenant_id,c.node_id,id,productCode])).rows[0]?.ok===true;
    if(!grant) missing.push('product_not_activated');
+   const activeHold=(await tx.query<{blocked:boolean}>(`SELECT EXISTS(SELECT 1 FROM carrier_compliance_holds WHERE tenant_id=$1 AND node_id=$2 AND contract_id=$3 AND released_at IS NULL) AS blocked`,[c.tenant_id,c.node_id,id])).rows[0]?.blocked!==false;
    const blocks=carrierAuthorizationBlocks({
     brokerCleared:c.broker_cleared===true,agencyAgreementCountersigned:c.agency_signed===true,
     licenceValid:c.licence_valid===true,eoValid:c.eo_valid===true,
     trainingCurrent:kinds.has('training'),jurisdictionAllowed:kinds.has('jurisdiction_scope'),
     productAllowed:kinds.has('product_scope'),carrierState:c.state,
     appointmentEffective:c.appointment_effective===true,appointmentNotExpired:c.appointment_not_expired===true,
-    complianceHold:!kinds.has('hold_clearance')
+    complianceHold:activeHold||!kinds.has('hold_clearance')
    });
    if(!grant) blocks.push('product_not_activated');
    return {contractId:id,productCode,eligibleForFurtherChecks:blocks.length===0,
