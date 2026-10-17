@@ -8,6 +8,7 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
   const [product, setProduct] = useState('');
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const activeContract = useRef(contractId);
   const requestVersion = useRef(0);
   if (activeContract.current !== contractId) {
@@ -23,13 +24,15 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
     const version = ++requestVersion.current;
     setEntries([]);
     setBusy(false);
+    setLoading(true);
     setProduct('');
     setReference('');
     setError('');
     setMessage('');
     void call('GET', path).then(result => {
       if (active && requestVersion.current === version) setEntries(result.submissions ?? []);
-    }).catch(e => { if (active && requestVersion.current === version) setError(String(e)); });
+    }).catch(e => { if (active && requestVersion.current === version) setError(String(e)); })
+      .finally(() => { if (active && requestVersion.current === version) setLoading(false); });
     return () => { active = false; };
   }, [call, contractId]);
 
@@ -74,7 +77,7 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
     <button class="btn" type="button" disabled={busy || !/^[A-Z0-9_-]{1,80}$/.test(product.trim()) || !reference.trim() || reference.trim().length > 120 || /[\u0000-\u001f\u007f]/.test(reference)} onClick={() => void stage()}>
       {busy ? 'Recording…' : 'Stage internally'}
     </button>
-    {entries.length === 0 ? <p class="muted">No staged business records.</p> :
+    {loading ? <p role="status" class="muted">Loading staged records…</p> : entries.length === 0 ? <p class="muted">{error ? 'Unable to load staged records.' : 'No staged business records.'}</p> :
       <ul>{entries.map(entry => <li key={entry.id}>{entry.product_code} · {entry.external_reference} · {String(entry.created_at).slice(0,10)} · {entry.status}</li>)}</ul>}
   </section>;
 }
