@@ -1,6 +1,6 @@
 /** Every configurable thing in PII is listed here once. The server validates against it; the Settings page is drawn from it. */
 export type SettingScope = 'user' | 'node' | 'tenant';
-export type SettingTab = 'me' | 'leftPanel' | 'notifications' | 'email' | 'team' | 'organization' | 'privacy';
+export type SettingTab = 'people' | 'me' | 'notifications' | 'email' | 'companyRules' | 'recordsSignatures' | 'privacy' | 'gmailSidePanel' | 'advanced' | 'leftPanel' | 'organization' | 'team';
 type L = { en: string; 'fr-CA': string };
 
 interface Base { key: string; tab: SettingTab; scopes: readonly SettingScope[]; lockable: boolean; label: L; help: L; keywords: string }
@@ -46,8 +46,13 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Default pipeline', 'fr-CA': 'Pipeline par défaut' }, help: { en: 'Opens first when you click Pipelines.', 'fr-CA': 'S’ouvre en premier quand vous cliquez sur Pipelines.' }, keywords: 'pipeline default first open home',
   },
   {
-    key: 'nav.layout', tab: 'leftPanel', type: 'json', default: { order: ['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings'], hidden: [] }, scopes: ALL, lockable: true,
-    label: { en: 'Left panel layout', 'fr-CA': 'Disposition du panneau de gauche' }, help: { en: 'Which items appear in Gmail’s left panel, and in what order.', 'fr-CA': 'Les éléments affichés dans le panneau de gauche de Gmail, et leur ordre.' }, keywords: 'left panel navigation menu sidebar order hide reorder',
+    key: 'nav.layout', tab: 'gmailSidePanel', type: 'json', default: { order: ['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings'], hidden: [] }, scopes: ALL, lockable: true,
+    label: { en: 'Gmail side panel', 'fr-CA': 'Panneau latéral de Gmail' },
+    help: {
+      en: 'This is the side panel inside Gmail. It does not change the menu on this website. People see it in Gmail after the extension that reads this layout is installed.',
+      'fr-CA': 'Il s’agit du panneau latéral à l’intérieur de Gmail. Il ne modifie pas le menu de ce site Web. Les personnes le voient dans Gmail une fois installée l’extension qui lit cette disposition.',
+    },
+    keywords: 'left panel gmail side panel navigation menu sidebar order hide reorder',
   },
   {
     key: 'email.snippetsButton', tab: 'email', type: 'bool', default: true, scopes: ['user', 'node', 'tenant'], lockable: false,
@@ -58,15 +63,15 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Mail merge: emails per day', 'fr-CA': 'Publipostage : courriels par jour' }, help: { en: 'The most merge emails sent from your Gmail in one day. 400 is the highest allowed.', 'fr-CA': 'Le maximum de courriels de publipostage envoyés par jour depuis votre Gmail. 400 est le plafond.' }, keywords: 'mail merge limit cap daily send quota',
   },
   {
-    key: 'compliance.eoMinLimit', tab: 'organization', type: 'int', default: 0, min: 0, max: 100_000_000, scopes: ['tenant'], lockable: false,
+    key: 'compliance.eoMinLimit', tab: 'companyRules', type: 'int', default: 0, min: 0, max: 100_000_000, scopes: ['tenant'], lockable: false,
     label: { en: 'Smallest E&O coverage limit allowed', 'fr-CA': 'Plus petite limite de garantie E&O permise' }, help: { en: 'Partners must hold errors and omissions cover of at least this amount (in your country’s currency). 0 means no minimum. The country’s own minimum, if there is one, still applies.', 'fr-CA': 'Les partenaires doivent détenir une assurance responsabilité professionnelle d’au moins ce montant (dans la devise de votre pays). 0 signifie aucun minimum. Le minimum du pays, s’il y en a un, s’applique toujours.' }, keywords: 'compliance E&O errors omissions insurance limit minimum coverage',
   },
   {
-    key: 'pipelines.partnerCreate', tab: 'organization', type: 'bool', default: true, scopes: ['tenant'], lockable: false,
+    key: 'pipelines.partnerCreate', tab: 'companyRules', type: 'bool', default: true, scopes: ['tenant'], lockable: false,
     label: { en: 'Partners can make their own pipelines', 'fr-CA': 'Les partenaires peuvent créer leurs propres pipelines' }, help: { en: 'Partners can start a pipeline from scratch, from a template, or by copying one they can see. Turn off to keep pipelines with managers only.', 'fr-CA': 'Les partenaires peuvent créer un pipeline à partir de zéro, d’un modèle ou en copiant un pipeline visible. Désactivez pour réserver les pipelines aux gestionnaires.' }, keywords: 'pipeline partner create copy clone template own',
   },
   {
-    key: 'pipelines.partnerCap', tab: 'organization', type: 'int', default: 10, min: 1, max: 100, scopes: ['tenant'], lockable: false,
+    key: 'pipelines.partnerCap', tab: 'companyRules', type: 'int', default: 10, min: 1, max: 100, scopes: ['tenant'], lockable: false,
     label: { en: 'Pipelines each partner may have', 'fr-CA': 'Nombre de pipelines par partenaire' }, help: { en: 'The most pipelines one partner can own. Managers and admins are not limited.', 'fr-CA': 'Le maximum de pipelines qu’un partenaire peut posséder. Les gestionnaires et administrateurs ne sont pas limités.' }, keywords: 'pipeline partner limit cap maximum',
   },
   {
