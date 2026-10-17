@@ -27,6 +27,9 @@ test('carrier compliance tables force tenant row-level security', async () => {
   const sources=(await c.query<{checkdef:string}>("SELECT pg_get_constraintdef(oid) AS checkdef FROM pg_constraint WHERE conname='carrier_grant_revocation_provenance'")).rows;
   assert.equal(sources.length,1);
   assert.match(sources[0].checkdef,/revocation_source/);
+  const staging=(await c.query<{indexname:string}>("SELECT indexname FROM pg_indexes WHERE tablename='carrier_business_submissions'")).rows.map(x=>x.indexname);
+  assert.ok(staging.includes('carrier_business_submissions_tenant_id_contract_id_external_reference_key'));
+  assert.ok(staging.includes('carrier_submission_queue_idx'));
   const indexNames=(await c.query<{indexname:string}>(
    "SELECT indexname FROM pg_indexes WHERE tablename IN ('carrier_product_activations','carrier_authorization_evidence')")).rows.map(x=>x.indexname);
   assert.ok(indexNames.includes('carrier_product_live_lookup_idx'));
