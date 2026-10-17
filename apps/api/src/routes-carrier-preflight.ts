@@ -30,7 +30,7 @@ export function registerCarrierPreflightRoutes(app:FastifyInstance,deps:AppDeps)
    const required=['training','product_scope','jurisdiction_scope','hold_clearance'];
    const missing=required.filter(x=>!kinds.has(x));
    return {contractId:id,productCode,eligibleForFurtherChecks:c.valid===true&&missing.length===0,
-     missing,advisoryOnly:true,submissionAuthorized:false};
+     missing,appointmentValid:c.valid===true,advisoryOnly:true,submissionAuthorized:false};
   });
  });
 }
