@@ -16,6 +16,9 @@ test('carrier compliance tables force tenant row-level security', async () => {
    assert.equal(row.relrowsecurity,true,row.relname);
    assert.equal(row.relforcerowsecurity,true,row.relname);
   }
+  const view=(await c.query<{reloptions:string[]|null}>(
+   "SELECT reloptions FROM pg_class WHERE oid='carrier_product_authorization_status'::regclass")).rows[0];
+  assert.ok(view?.reloptions?.includes('security_invoker=true'),'carrier status view must use caller RLS');
   const triggers=(await c.query<{tgname:string}>(
    `SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN
      ('carrier_contract_events'::regclass,'carrier_contract_cases'::regclass,
