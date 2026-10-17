@@ -9,9 +9,11 @@ export function registerCarrierProductRevocationRoutes(app:FastifyInstance,deps:
   const {ctx}=await deps.authenticate(req);
   const {id,productCode:raw}=req.params as {id:string;productCode:string};
   const productCode=raw.toUpperCase();
-  const b=(req.body??{}) as Record<string,unknown>;
+  if (!req.body || typeof req.body!=='object' || Array.isArray(req.body)) throw invalid('JSON object body required');
+  const b=req.body as Record<string,unknown>;
+  if (Object.keys(b).some(k=>k!=='reason')) throw invalid('Only reason is accepted');
   const reason=typeof b.reason==='string'?b.reason.trim():'';
-  if(!UUID.test(id)||!/^[A-Z0-9_-]{1,80}$/.test(productCode)||reason.length<8||reason.length>500)
+  if(!UUID.test(id)||!/^[A-Z0-9_-]{1,80}$/.test(productCode)||reason.length<8||reason.length>500||/[\u0000-\u001f\u007f]/.test(reason))
    throw invalid('Contract, product and reason required');
   return withRequestTx(deps.appPool,ctx,async tx=>{
    const c=(await tx.query<{tenant_id:string;node_id:string}>(
