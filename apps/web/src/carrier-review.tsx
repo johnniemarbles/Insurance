@@ -22,6 +22,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [busy,setBusy]=useState(false);
  const [reason,setReason]=useState('');
  const [activationProduct,setActivationProduct]=useState('');
+ const [productRevocationReason,setProductRevocationReason]=useState('');
  const [preflight,setPreflight]=useState<Record<string,{missing:string[];blocks?:string[];eligibleForFurtherChecks:boolean}>>({});
  const [templateVersion,setTemplateVersion]=useState('');
  const [history,setHistory]=useState<Record<string,{toState:string;fromState:string|null;reason:string|null;recordedAt:string}[]>>({});
@@ -33,6 +34,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
  const checkProduct=async(id:string)=>{try{const r=await call('GET',`/v1/carrier-contracts/${id}/products/${activationProduct}/preflight`);setPreflight(p=>({...p,[id]:r}));setError('');}catch(e){setError(String(e));}};
  const activate=async(id:string)=>{setBusy(true);try{const r=await call('POST',`/v1/compliance/carrier-contracts/${id}/activate`,{productCode:activationProduct});if(!r.activated)setError(`Activation blocked: ${(r.blocks??[]).join(', ')}`);else{setError('');await refresh();}}catch(e){setError(String(e));}finally{setBusy(false);}};
+ const revokeProduct=async(id:string)=>{setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${id}/products/${activationProduct}/revoke`,{reason:productRevocationReason});setProductRevocationReason('');setPreflight(p=>{const next={...p};delete next[id];return next;});setError('');await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
  const reconcile=async()=>{setBusy(true);try{const r=await call('POST','/v1/compliance/carrier-contracts/reconcile-expiry',{});await refresh();setError('');}catch(e){setError(String(e));}finally{setBusy(false);}};
  const move=async(id:string,state:string)=>{
    setBusy(true);
@@ -49,6 +51,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    <label class="fl">{fr?'Version du modèle de contrat':'Carrier agreement template version'}
      <input value={templateVersion} maxLength={120} onInput={e=>setTemplateVersion((e.target as HTMLInputElement).value)}/></label>
    <label class="fl">Product code for activation<input value={activationProduct} maxLength={80} onInput={e=>setActivationProduct((e.target as HTMLInputElement).value.toUpperCase())}/></label>
+   <label class="fl">Product revocation reason<input value={productRevocationReason} maxLength={500} onInput={e=>setProductRevocationReason((e.target as HTMLInputElement).value)}/></label>
    {contracts.length===0?<p class="muted">{fr?'Aucun contrat en attente.':'No carrier contracts found.'}</p>:
      <ul class="oblist">{contracts.map(c=><li key={c.id}>
        <div><strong>{c.carrierName}</strong> · {c.jurisdiction} · {c.effectiveState??c.state}
@@ -61,6 +64,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <button class="btn" type="button" disabled={!activationProduct.trim()} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
        {preflight[c.id]&&<p class="muted" role="status">{preflight[c.id]!.eligibleForFurtherChecks?'Evidence present; final checks still required':`Missing or invalid: ${(preflight[c.id]!.blocks??preflight[c.id]!.missing).join(', ')}`}</p>}
        {(c.state==='appointment_verified'||c.state==='active')&&<button class="btn" type="button" disabled={busy||!activationProduct.trim()} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
+       {c.state==='active'&&<button class="btn" type="button" disabled={busy||!activationProduct.trim()||productRevocationReason.trim().length<8} onClick={()=>void revokeProduct(c.id)}>Revoke product authorization</button>}
        <button class="btn" type="button" onClick={()=>void showHistory(c.id)}>{fr?'Historique':'Review history'}</button>
        {history[c.id]&&<ol>{history[c.id]!.map((e,i)=><li key={i}>{e.fromState??'—'} → {e.toState} · {String(e.recordedAt).slice(0,19)}{e.reason?` · ${e.reason}`:''}</li>)}</ol>}
        <button class="btn" type="button" onClick={()=>void checkEligibility(c.id)}>{fr?'Vérifier les conditions':'Check eligibility'}</button>
