@@ -15,13 +15,13 @@ export function registerCarrierPreflightRoutes(app:FastifyInstance,deps:AppDeps)
    const c=(await tx.query<{tenant_id:string;node_id:string;state:CarrierContractState;valid:boolean;broker_cleared:boolean;agency_signed:boolean;licence_valid:boolean;eo_valid:boolean;appointment_effective:boolean;appointment_not_expired:boolean}>(
      `SELECT cc.tenant_id,cc.node_id,cc.state,
       (cc.state='active' AND cc.appointment_effective_on<=CURRENT_DATE AND
-       (cc.appointment_expires_on IS NULL OR cc.appointment_expires_on>=CURRENT_DATE)) AS valid,
+       (cc.appointment_expires_on IS NOT NULL AND cc.appointment_expires_on>=CURRENT_DATE)) AS valid,
       (oc.stage='active' AND oc.standing='good_standing') AS broker_cleared,
       EXISTS(SELECT 1 FROM onboarding_agreements a WHERE a.tenant_id=cc.tenant_id AND a.case_id=oc.id AND a.officer_signed_at IS NOT NULL) AS agency_signed,
       EXISTS(SELECT 1 FROM compliance_items i WHERE i.tenant_id=cc.tenant_id AND i.node_id=cc.node_id AND i.kind='licence' AND i.expires_on>=CURRENT_DATE AND upper(i.jurisdiction)=upper(cc.jurisdiction)) AS licence_valid,
       EXISTS(SELECT 1 FROM compliance_items i WHERE i.tenant_id=cc.tenant_id AND i.node_id=cc.node_id AND i.kind='eo' AND i.expires_on>=CURRENT_DATE) AS eo_valid,
       (cc.appointment_effective_on<=CURRENT_DATE) AS appointment_effective,
-      (cc.appointment_expires_on IS NULL OR cc.appointment_expires_on>=CURRENT_DATE) AS appointment_not_expired
+      (cc.appointment_expires_on IS NOT NULL AND cc.appointment_expires_on>=CURRENT_DATE) AS appointment_not_expired
      FROM carrier_contract_cases cc JOIN onboarding_cases oc ON oc.id=cc.onboarding_case_id AND oc.tenant_id=cc.tenant_id AND oc.node_id=cc.node_id WHERE cc.id=$1`,[id])).rows[0];
    if(!c) throw notFound('Carrier contract not found');
    const permitted=(await tx.query<{ok:boolean}>(
