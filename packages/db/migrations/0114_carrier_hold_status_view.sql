@@ -1,0 +1,24 @@
+-- Defense in depth: a product status view must never report current authorization
+-- while an unresolved carrier compliance hold exists.
+CREATE OR REPLACE VIEW carrier_product_authorization_status
+WITH (security_invoker=true) AS
+SELECT g.tenant_id,g.node_id,g.contract_id,g.product_code,g.id AS grant_id,
+ (g.revoked_at IS NULL AND c.state='active'
+  AND c.appointment_effective_on<=CURRENT_DATE
+  AND c.appointment_expires_on IS NOT NULL
+  AND c.appointment_expires_on>=CURRENT_DATE
+  AND NOT EXISTS (
+    SELECT 1 FROM carrier_compliance_holds h
+    WHERE h.tenant_id=g.tenant_id AND h.node_id=g.node_id
+      AND h.contract_id=g.contract_id AND h.released_at IS NULL
+  )
+  AND (SELECT count(DISTINCT e.kind) FROM carrier_authorization_evidence e
+       WHERE e.tenant_id=g.tenant_id AND e.node_id=g.node_id
+         AND e.contract_id=g.contract_id AND e.product_code=g.product_code
+         AND e.revoked_at IS NULL AND e.effective_on<=CURRENT_DATE
+         AND e.expires_on>=CURRENT_DATE)=4) AS evidence_current
+FROM carrier_product_activations g
+JOIN carrier_contract_cases c ON c.id=g.contract_id
+ AND c.tenant_id=g.tenant_id AND c.node_id=g.node_id;
+REVOKE ALL ON carrier_product_authorization_status FROM PUBLIC;
+GRANT SELECT ON carrier_product_authorization_status TO app_runtime;
