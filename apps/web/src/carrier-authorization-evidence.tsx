@@ -12,14 +12,15 @@ export function CarrierAuthorizationEvidencePanel({call,contractId}:{call:Call;c
  const [reason,setReason]=useState('');
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
+ const [loading,setLoading]=useState(false);
  const generation=useRef(0);
- useEffect(()=>{generation.current++;setItems([]);setError('');setBusy(false);setReason('');setEvidenceRef('');setProductCode('');setConfirmed(false);return ()=>{generation.current++;};},[contractId]);
- const load=async()=>{const version=generation.current;const r=await call('GET',`/v1/compliance/carrier-contracts/${contractId}/authorization-evidence`);if(version===generation.current)setItems(r.evidence??[]);};
+ useEffect(()=>{generation.current++;setItems([]);setError('');setBusy(false);setLoading(false);setReason('');setEvidenceRef('');setProductCode('');setConfirmed(false);return ()=>{generation.current++;};},[contractId]);
+ const load=async()=>{const version=generation.current;setLoading(true);try{const r=await call('GET',`/v1/compliance/carrier-contracts/${contractId}/authorization-evidence`);if(version===generation.current){setItems(r.evidence??[]);setError('');}}catch(e){if(version===generation.current)setError(String(e));}finally{if(version===generation.current)setLoading(false);}};
  const save=async()=>{const version=generation.current;setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${contractId}/authorization-evidence`,{kind,productCode,evidenceRef,effectiveOn,expiresOn,confirmedWithSource:confirmed});if(version!==generation.current)return;setEvidenceRef('');setConfirmed(false);await load();if(version===generation.current)setError('');}catch(e){if(version===generation.current)setError(String(e));}finally{if(version===generation.current)setBusy(false);}};
  const revoke=async(id:string)=>{const version=generation.current;setBusy(true);try{await call('POST',`/v1/compliance/carrier-authorization-evidence/${id}/revoke`,{reason});if(version!==generation.current)return;await load();if(version===generation.current){setReason('');setError('');}}catch(e){if(version===generation.current)setError(String(e));}finally{if(version===generation.current)setBusy(false);}};
  return <details><summary>Training, product, jurisdiction and hold evidence</summary>
   <p class="muted">Compliance attestations are audit records, not independent carrier integration or permission to sell.</p>
-  <button type="button" class="btn" onClick={()=>void load()}>Load evidence</button>
+  <button type="button" class="btn" disabled={loading} onClick={()=>void load()}>{loading?'Loading evidence…':'Load evidence'}</button>
   <label>Evidence type<select value={kind} onChange={e=>setKind((e.target as HTMLSelectElement).value)}>
     {['training','product_scope','jurisdiction_scope','hold_clearance'].map(x=><option value={x}>{x}</option>)}
   </select></label>
