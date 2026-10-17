@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
 import type { Locale } from './types.ts';
 
 type Call = (method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', path: string, body?: unknown) => Promise<any>;
@@ -73,7 +74,7 @@ function Panel({module,load,go}:{module:Module;load:Load<any>;go:(page:string)=>
      <Metrics module={module} data={load.value}/>}
   </section>;
 }
-export function UnifiedWorkspace({call,go,locale,name}:{call:Call;go:(page:string)=>void;locale:Locale;name:string}) {
+export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:(page:string)=>void;locale:Locale;name:string;legacyHome?:ComponentChildren}) {
   const [context,setContext]=useState<Load<Context>>(pending());
   const [active,setActive]=useState('');
   const [loads,setLoads]=useState<Partial<Record<Module,Load<any>>>>({});
@@ -124,6 +125,7 @@ export function UnifiedWorkspace({call,go,locale,name}:{call:Call;go:(page:strin
     {visible.length?<div class="pii-workspace-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:"16px"}}>{visible.map(m=>
       <Panel key={m} module={m} load={loads[m]??pending()} go={go}/>)}</div>:
       <p>No summary modules are currently available for this role. Contact your administrator if access is expected.</p>}
+    {c.modules.crm && legacyHome}
     <p class="pii-workspace-footnote">Perspective changes do not elevate permissions. All records are authorized by the server.</p>
   </main>;
 }
