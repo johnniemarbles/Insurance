@@ -43,7 +43,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    const state=c.effectiveState??c.state;
    const query=search.trim().toLocaleLowerCase();
    return (statusFilter==='all'||(statusFilter==='attention'?['suspended','expired','correction_required'].includes(state)||(c.state==='active'&&!c.appointmentCurrentlyValid):state===statusFilter))
-     && (!query||[c.carrierName,c.jurisdiction,c.onboardingCaseId].some(value=>value.toLocaleLowerCase().includes(query)));
+     && (!query||[c.carrierName,c.jurisdiction,c.onboardingCaseId].some(value=>String(value??'').toLocaleLowerCase().includes(query)));
  });
  const refresh=async()=>{const request=++refreshSequence.current;setLoading(true);try{const r=await call('GET','/v1/compliance/carrier-contracts');if(request===refreshSequence.current){setContracts(r.contracts??[]);setError('');}}catch(e){if(request===refreshSequence.current){setContracts([]);setError(String(e));}}finally{if(request===refreshSequence.current)setLoading(false);}};
  useEffect(()=>{void refresh();return ()=>{refreshSequence.current++;};},[call]);
