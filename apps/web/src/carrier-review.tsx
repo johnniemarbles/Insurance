@@ -22,6 +22,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [busy,setBusy]=useState(false);
  const [reason,setReason]=useState('');
  const [activationProduct,setActivationProduct]=useState('');
+ const [preflight,setPreflight]=useState<Record<string,{missing:string[];eligibleForFurtherChecks:boolean}>>({});
  const [templateVersion,setTemplateVersion]=useState('');
  const [history,setHistory]=useState<Record<string,{toState:string;fromState:string|null;reason:string|null;recordedAt:string}[]>>({});
  const [eligibility,setEligibility]=useState<Record<string,{blocks:string[];authorized:boolean;evidence?:Record<string,boolean>}>>({});
@@ -30,6 +31,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  useEffect(()=>{void refresh();},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
+ const checkProduct=async(id:string)=>{try{const r=await call('GET',`/v1/carrier-contracts/${id}/products/${activationProduct}/preflight`);setPreflight(p=>({...p,[id]:r}));setError('');}catch(e){setError(String(e));}};
  const activate=async(id:string)=>{setBusy(true);try{const r=await call('POST',`/v1/compliance/carrier-contracts/${id}/activate`,{productCode:activationProduct});if(!r.activated)setError(`Activation blocked: ${(r.blocks??[]).join(', ')}`);else{setError('');await refresh();}}catch(e){setError(String(e));}finally{setBusy(false);}};
  const reconcile=async()=>{setBusy(true);try{const r=await call('POST','/v1/compliance/carrier-contracts/reconcile-expiry',{});await refresh();setError('');}catch(e){setError(String(e));}finally{setBusy(false);}};
  const move=async(id:string,state:string)=>{
@@ -56,6 +58,8 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        {c.state==='active'&&!c.appointmentCurrentlyValid&&<p role="alert" class="err">{fr?'Nomination non valide actuellement — vérification requise':'Appointment is not currently valid — review required'}</p>}
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
        <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
+       <button class="btn" type="button" disabled={!activationProduct.trim()} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
+       {preflight[c.id]&&<p class="muted" role="status">{preflight[c.id]!.eligibleForFurtherChecks?'Evidence present; final checks still required':`Missing or invalid: ${preflight[c.id]!.missing.join(', ')}`}</p>}
        {c.state==='appointment_verified'&&<button class="btn" type="button" disabled={busy||!activationProduct.trim()} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
        <button class="btn" type="button" onClick={()=>void showHistory(c.id)}>{fr?'Historique':'Review history'}</button>
        {history[c.id]&&<ol>{history[c.id]!.map((e,i)=><li key={i}>{e.fromState??'—'} → {e.toState} · {String(e.recordedAt).slice(0,19)}{e.reason?` · ${e.reason}`:''}</li>)}</ol>}
