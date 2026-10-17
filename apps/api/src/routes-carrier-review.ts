@@ -48,7 +48,7 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
       throw invalid('Evidence reference and independent source confirmation required');
     const effective = typeof b.effectiveOn === 'string' ? b.effectiveOn : '';
     const expiry = typeof b.expiresOn === 'string' ? b.expiresOn : '';
-    if (kind === 'appointment' && (!/^\d{4}-\d{2}-\d{2}$/.test(effective) || (expiry && !/^\d{4}-\d{2}-\d{2}$/.test(expiry))))
+    if (kind === 'appointment' && (!/^\d{4}-\d{2}-\d{2}$/.test(effective) || !/^\d{4}-\d{2}-\d{2}$/.test(expiry)))
       throw invalid('Valid appointment effective and expiry dates required');
     return withRequestTx(deps.appPool, ctx, async tx => {
       const c = (await tx.query<{tenant_id:string;node_id:string;state:CarrierContractState}>(
@@ -72,11 +72,11 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
       else {
         const valid = (await tx.query<{ok:boolean}>(
           'SELECT $1::date <= CURRENT_DATE AND ($2::date IS NULL OR $2::date >= CURRENT_DATE) AS ok',
-          [effective,expiry || null])).rows[0]?.ok;
+          [effective,expiry])).rows[0]?.ok;
         if (!valid) throw invalid('Appointment is not currently effective');
         await tx.query(
           'UPDATE carrier_contract_cases SET appointment_reference=$1,appointment_effective_on=$2,appointment_expires_on=$3,verified_by=$4,verified_at=now(),state=$5,updated_at=now() WHERE id=$6',
-          [reference,effective,expiry || null,ctx.userId,next,id]);
+          [reference,effective,expiry,ctx.userId,next,id]);
       }
       await tx.query(
         'INSERT INTO carrier_contract_events (tenant_id,contract_id,node_id,from_state,to_state,actor_id,reason) VALUES ($1,$2,$3,$4,$5,$6,$7)',
