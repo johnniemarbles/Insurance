@@ -1329,6 +1329,9 @@ test('workspace context: roles, country and authorized node names are scoped to 
   assert.equal(admin.json.version, 1);
   assert.equal(admin.json.modules.notifications, true);
   assert.equal(admin.json.modules.crm, true);
+  assert.equal(admin.json.modules.audit, true);
+  assert.equal(admin.json.modules.carriers, true);
+  assert.equal(admin.json.modules.learning, true);
 
   const partner = await call(P1U, 'GET', '/v1/workspace/context');
   assert.equal(partner.status, 200);
@@ -1336,6 +1339,8 @@ test('workspace context: roles, country and authorized node names are scoped to 
   assert.ok(!partner.json.activeNodeIds.includes(P2));
   assert.ok(partner.json.scopes.every((s: { id: string }) => partner.json.activeNodeIds.includes(s.id)));
   assert.equal(partner.json.scopeMode, 'server-authorized');
+  assert.equal(partner.json.modules.carriers, false);
+  assert.equal(partner.json.modules.compliance, false);
 
   const learner = await call(LRN, 'GET', '/v1/workspace/context');
   assert.equal(learner.status, 200);
