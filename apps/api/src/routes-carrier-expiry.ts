@@ -17,7 +17,7 @@ export function registerCarrierExpiryRoutes(app: FastifyInstance, deps: AppDeps)
       const rows = (await tx.query<{id:string;tenant_id:string;node_id:string;state:string}>(
         `SELECT id,tenant_id,node_id,state FROM carrier_contract_cases
          WHERE state IN ('active','appointment_verified')
-           AND appointment_expires_on < CURRENT_DATE
+           AND (appointment_expires_on IS NULL OR appointment_expires_on < CURRENT_DATE)
            AND app_is_compliance_at_or_above(tenant_id,node_id)
          ORDER BY id FOR UPDATE LIMIT 200`)).rows;
       for (const row of rows) {
