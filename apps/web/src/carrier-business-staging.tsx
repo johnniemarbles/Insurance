@@ -38,7 +38,8 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
       const latest = await call('GET', path);
       setEntries(latest.submissions ?? []);
     } catch (e) {
-      setError(String(e));
+      const description = String(e);
+      setError(description.includes('duplicate_external_reference') ? 'Reference already staged.' : description.includes('carrier_product_not_authorized') ? 'Carrier product authorization is not current.' : description);
     } finally {
       setBusy(false);
     }
