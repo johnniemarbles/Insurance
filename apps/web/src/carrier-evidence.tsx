@@ -22,13 +22,13 @@ export function CarrierEvidenceForm({call,id,state,onSaved}:{call:Call;id:string
    {kind==='appointment'&&<label class="fl">Appointment effective date
      <input type="date" required value={effectiveOn}
        onInput={e=>setEffectiveOn((e.target as HTMLInputElement).value)}/></label>}
-   {kind==='appointment'&&<label class="fl">Appointment expiry date (if specified)
-     <input type="date" value={expiresOn} min={effectiveOn || undefined}
+   {kind==='appointment'&&<label class="fl">Appointment expiry date (required for authorization)
+     <input type="date" required value={expiresOn} min={effectiveOn || undefined}
        onInput={e=>setExpiresOn((e.target as HTMLInputElement).value)}/></label>}
    <label><input type="checkbox" required checked={confirmed}
      onChange={e=>setConfirmed((e.target as HTMLInputElement).checked)}/>
      I independently verified this evidence with the source.</label>
    {error&&<p class="err" role="alert">{error}</p>}
-   <button class="btn" type="submit" disabled={busy||!confirmed||reference.trim().length<8}>Record verified {kind.replace('_',' ')}</button>
+   <button class="btn" type="submit" disabled={busy||!confirmed||reference.trim().length<8||(kind==='appointment'&&(!effectiveOn||!expiresOn||effectiveOn>expiresOn))}>Record verified {kind.replace('_',' ')}</button>
  </form>;
 }
