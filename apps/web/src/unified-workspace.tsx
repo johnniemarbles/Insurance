@@ -66,12 +66,12 @@ function Metrics({module,data}:{module:Module;data:any}) {
 function Panel({module,load,go}:{module:Module;load:Load<any>;go:(page:string)=>void}) {
   return <section class="pii-workspace-panel" style={{border:"1px solid #dfe5ed",borderRadius:"12px",padding:"20px"}} aria-label={title[module]}>
     <div class="pii-workspace-panel-head"><h2>{title[module]}</h2>
-      <button class="btn" onClick={()=>go(destinations[module])}>Open workspace</button></div>
+      {module!=='audit' && <button class="btn" onClick={()=>go(destinations[module])}>Open workspace</button>}</div>
     {load.state==='loading'?<p role="status">Loading…</p>:
      load.state==='forbidden'?<p>Access not granted for this workspace.</p>:
      load.state==='unavailable'?<p>Summary not connected yet. Open the specialist workspace.</p>:
      load.state==='error'?<p role="alert">Could not load this summary: {load.message}</p>:
-     <Metrics module={module} data={load.value}/>}
+     <><Metrics module={module} data={load.value}/>{module==='audit' && Array.isArray(load.value?.engagements) && <div><h3>Authorized engagements</h3>{load.value.engagements.length===0?<p>No audit engagements are currently visible.</p>:<ul>{load.value.engagements.slice(0,10).map((e:any)=><li key={e.id}>{String(e.name??e.title??'Engagement')} — {String(e.status??'unknown')}</li>)}</ul>}</div>}</>}
   </section>;
 }
 export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:(page:string)=>void;locale:Locale;name:string;legacyHome?:ComponentChildren}) {
