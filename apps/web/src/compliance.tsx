@@ -8,6 +8,7 @@ import type { HostOptions, Locale } from './types.ts';
 import { ExpiryBars, Funnel, needsOf, NeedsYou, titles, Trend, Widgets, type Insights, type NeedTab } from './hoinsights.tsx';
 import { ManagerProgressBoard, OnboardingDashboard, SectionHead } from './onboarding.tsx';
 import { PartnerOnboarding } from './onboarding-partner.tsx';
+import { CarrierReviewPanel } from './carrier-review.tsx';
 import { DeadlinesPanel } from './deadlines.tsx';
 import { CountrySwitchLink } from './overview.tsx';
 import { AssistantPanel } from './assistant-panel.tsx';
@@ -89,15 +90,15 @@ function save(name: string, mime: string, base64: string) {
 function Bar({ pct }: { pct: number }) { return <span class="cbar" role="img" aria-label={`${pct}%`}><i style={{ width: `${pct}%` }} /></span>; }
 
 const SEC = {
-  'en': { files: 'Files', onb: 'Onboarding', label: 'Compliance sections' },
-  'fr-CA': { files: 'Dossiers', onb: 'Intégration', label: 'Sections de conformité' },
+  'en': { files: 'Files', onb: 'Onboarding', carriers: 'Carrier contracting', label: 'Compliance sections' },
+  'fr-CA': { files: 'Dossiers', onb: 'Intégration', carriers: 'Contrats assureurs', label: 'Sections de conformité' },
 };
 
 export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions; openId?: string }) {
   const [open, setOpen] = useState<string | null>(openId ?? null);
   // Null while the account's role is loading. Compliance officers get the onboarding dashboard as a second section; partners see their own onboarding at the top.
   const [officer, setOfficer] = useState<boolean | null>(null);
-  const [section, setSection] = useState<'files' | 'onboarding'>('files');
+  const [section, setSection] = useState<'files' | 'onboarding' | 'carriers'>('files');
   // A branch manager sees its partners' onboarding progress (steps and status only) above the list.
   const [manager, setManager] = useState(false);
   // Assigned staff see the same board with analytics only (plan v7, section 6).
@@ -111,9 +112,11 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }:
     <div class="seg" role="tablist" aria-label={s.label}>
       <button role="tab" aria-selected={section === 'files'} onClick={() => { setSection('files'); setOpen(null); }}>{s.files}</button>
       <button role="tab" aria-selected={section === 'onboarding'} onClick={() => { setSection('onboarding'); setOpen(null); }}>{s.onb}</button>
+      <button role="tab" aria-selected={section === 'carriers'} onClick={() => { setSection('carriers'); setOpen(null); }}>{s.carriers}</button>
     </div>
   ) : undefined;
   if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
+  if (officer && section === 'carriers') return <div class="obwrap">{tabs}<CarrierReviewPanel call={call} locale={locale} /></div>;
   const own = officer === false ? <PartnerOnboarding call={call} locale={locale} embedded /> : null;
   const lead = officer === true ? <><AssistantPanel call={call} locale={locale} /><DeadlinesPanel call={call} locale={locale} /></> : undefined;
   const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} switchable={officer === true} openFile={setOpen} host={host} extra={panels} tabs={tabs} lead={lead} />;

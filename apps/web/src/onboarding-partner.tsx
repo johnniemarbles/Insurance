@@ -76,10 +76,24 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [consent, setConsent] = useState({ credit: false, background: false, carrier: false });
+  const [carrierChoice, setCarrierChoice] = useState({ carrierName: '', jurisdiction: 'CA-ON' });
+  const [contracts, setContracts] = useState<{ id: string; carrierName: string; jurisdiction: string; state: string }[]>([]);
+  const [contractsError, setContractsError] = useState('');
   const [packet, setPacket] = useState({ carrier: 'iA Financial Group', templateVersion: 'F11-92A' });
 
   const load = async () => {
-    try { setView(((await call('GET', '/v1/onboarding/mine')).onboarding ?? null) as View | null); setError(''); } catch (e) { setError(errText(e)); }
+    try {
+      const next = ((await call('GET', '/v1/onboarding/mine')).onboarding ?? null) as View | null;
+      setView(next);
+      setError('');
+      if (next) {
+        try {
+          const data = await call('GET', `/v1/onboarding/cases/${next.id}/carrier-contracts`);
+          setContracts((data.contracts ?? []) as typeof contracts);
+          setContractsError('');
+        } catch (e) { setContractsError(errText(e)); }
+      } else setContracts([]);
+    } catch (e) { setError(errText(e)); }
   };
   useEffect(() => { void load(); }, [call]);
 
@@ -120,6 +134,27 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
         {(view.expiries ?? []).length === 0 ? <p class="muted">{t.expiresNone}</p> : (
           <ul class="oblist">{(view.expiries ?? []).map((e) => <li key={e.id}>{e.label} · {t.expiryKind[e.kind]} · {e.expiresOn}<span class="muted">{t.expiryState[e.status]}</span></li>)}</ul>
         )}
+      </section>
+
+      <section class="obcard">
+        <h3>{lc === 'fr-CA' ? 'Choix des assureurs' : 'Carrier contracting'}</h3>
+        <p class="muted">{lc === 'fr-CA' ? 'Choisissez les assureurs pendant votre intégration. La demande ne permet pas encore de vendre.' : 'Select carriers during onboarding. A request does not authorize selling.'}</p>
+        {contractsError && <p class="err" role="alert">{contractsError}</p>}
+        {contracts.length === 0 ? <p class="muted">{lc === 'fr-CA' ? 'Aucun assureur sélectionné.' : 'No carriers selected.'}</p> :
+          <ul class="oblist">{contracts.map(c => <li key={c.id}>{c.carrierName} ({c.jurisdiction}) <span class="muted">{c.state}</span></li>)}</ul>}
+        <form class="obform" onSubmit={e => {
+          e.preventDefault();
+          void run(() => call('POST', `/v1/onboarding/cases/${view.id}/carrier-contracts`, carrierChoice));
+        }}>
+          <label class="fl">{t.carrier}<input required maxLength={120} value={carrierChoice.carrierName}
+            onInput={e => setCarrierChoice({ ...carrierChoice, carrierName: (e.target as HTMLInputElement).value })} /></label>
+          <label class="fl">{lc === 'fr-CA' ? 'Juridiction' : 'Jurisdiction'}
+            <input required maxLength={15} value={carrierChoice.jurisdiction}
+              onInput={e => setCarrierChoice({ ...carrierChoice, jurisdiction: (e.target as HTMLInputElement).value })} /></label>
+          <button class="btn" type="submit" disabled={busy || !carrierChoice.carrierName.trim()}>
+            {lc === 'fr-CA' ? 'Demander le contrat' : 'Request carrier contract'}
+          </button>
+        </form>
       </section>
 
       <SelfReportForm call={call} locale={locale} caseId={view.id} />

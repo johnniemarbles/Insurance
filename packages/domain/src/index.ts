@@ -19,3 +19,5 @@ export * from './vendors.ts';
 export * from './onboarding.ts';
 export * from './self-report.ts';
 export * from './audit-engagement.ts';
+
+export * from './carrier-contracting.ts';

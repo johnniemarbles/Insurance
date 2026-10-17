@@ -22,10 +22,50 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
+      - name: Install dependencies
+        run: |
+          set -o pipefail
+          npm ci 2>&1 | tee npm-install.log
+        shell: bash
+      - name: Typecheck
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck.log
+        shell: bash
+      - name: Node tests
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee node-tests.log
+        shell: bash
       - name: SQL isolation suite (real migrations)
         run: |
+          set -o pipefail
           pip install psycopg2-binary
-          npm run test:isolation
+          npm run test:isolation 2>&1 | tee isolation-tests.log
+        shell: bash
+      - name: Preserve failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-diagnostics
+          path: |
+            npm-install.log
+            typecheck.log
+            node-tests.log
+            isolation-tests.log
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: CI diagnostics summary
+        if: always()
+        run: |
+          echo '## CI diagnostic files' >> "$GITHUB_STEP_SUMMARY"
+          for file in npm-install.log typecheck.log node-tests.log isolation-tests.log; do
+            if [ -f "$file" ]; then
+              echo "- $file: $(wc -l < "$file") lines" >> "$GITHUB_STEP_SUMMARY"
+              echo '```text' >> "$GITHUB_STEP_SUMMARY"
+              tail -n 25 "$file" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- $file: step not reached" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
