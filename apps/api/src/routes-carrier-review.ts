@@ -11,9 +11,13 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
     const { ctx } = await deps.authenticate(req);
     const id = (req.params as { id: string }).id;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw invalid('Invalid ID');
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) throw invalid('JSON object body required');
     const input = (req.body ?? {}) as Record<string, unknown>;
-    const next = String(input.state ?? '') as CarrierContractState;
+    if (Object.keys(input).some(key => !['state','reason','templateVersion'].includes(key))) throw invalid('Unexpected review field');
+    const next = (typeof input.state === 'string' ? input.state : '') as CarrierContractState;
     const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+    if (reason.length > 500 || /[\u0000-\u001f\u007f]/.test(reason)) throw invalid('Invalid review reason');
+    if (input.templateVersion !== undefined && (typeof input.templateVersion !== 'string' || /[\u0000-\u001f\u007f]/.test(input.templateVersion))) throw invalid('Invalid agreement template version');
     return withRequestTx(deps.appPool, ctx, async tx => {
       const row = (await tx.query<{ tenant_id: string; node_id: string; state: CarrierContractState }>(
         'SELECT tenant_id,node_id,state FROM carrier_contract_cases WHERE id=$1 FOR UPDATE',[id])).rows[0];
@@ -42,14 +46,16 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
     const { ctx } = await deps.authenticate(req);
     const id = (req.params as { id: string }).id;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw invalid('Invalid ID');
-    const b = (req.body ?? {}) as Record<string, unknown>;
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) throw invalid('JSON object body required');
+    const b = req.body as Record<string, unknown>;
+    if (Object.keys(b).some(key => !['kind','reference','confirmedWithSource','effectiveOn','expiresOn'].includes(key))) throw invalid('Unexpected verification field');
     const kind = b.kind;
     const reference = typeof b.reference === 'string' ? b.reference.trim() : '';
-    if (!['signature','carrier_approval','appointment'].includes(String(kind)) || reference.length < 8 || reference.length > 500 || b.confirmedWithSource !== true)
+    if (!['signature','carrier_approval','appointment'].includes(String(kind)) || reference.length < 8 || reference.length > 500 || /[\u0000-\u001f\u007f]/.test(reference) || b.confirmedWithSource !== true)
       throw invalid('Evidence reference and independent source confirmation required');
     const effective = typeof b.effectiveOn === 'string' ? b.effectiveOn : '';
     const expiry = typeof b.expiresOn === 'string' ? b.expiresOn : '';
-    if (kind === 'appointment' && (!validDate(effective) || !validDate(expiry)))
+    if (kind === 'appointment' && (!validDate(effective) || !validDate(expiry) || effective > expiry))
       throw invalid('Valid appointment effective and expiry dates required');
     return withRequestTx(deps.appPool, ctx, async tx => {
       const c = (await tx.query<{tenant_id:string;node_id:string;state:CarrierContractState}>(
