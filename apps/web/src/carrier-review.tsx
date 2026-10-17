@@ -28,6 +28,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  useEffect(()=>{void refresh();},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
+ const reconcile=async()=>{setBusy(true);try{const r=await call('POST','/v1/compliance/carrier-contracts/reconcile-expiry',{});await refresh();setError('');}catch(e){setError(String(e));}finally{setBusy(false);}};
  const move=async(id:string,state:string)=>{
    setBusy(true);
    try{await call('POST',`/v1/compliance/carrier-contracts/${id}/review`,{state,reason,templateVersion});setReason('');await refresh();}
@@ -37,6 +38,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    <h3>{fr?'Contrats des assureurs':'Carrier contracting queue'}</h3>
    <p class="muted">{fr?'Les signatures et les nominations doivent être vérifiées séparément.':'Signatures and carrier appointments must be verified separately. No selling authorization is granted here.'}</p>
    {error&&<p role="alert" class="err">{error}</p>}
+   <button class="btn" type="button" disabled={busy} onClick={()=>void reconcile()}>{fr?'Rapprocher les nominations expirées':'Reconcile expired appointments'}</button>
    <label class="fl">{fr?'Motif de la décision':'Review reason'}
      <input value={reason} maxLength={500} onInput={e=>setReason((e.target as HTMLInputElement).value)}/></label>
    <label class="fl">{fr?'Version du modèle de contrat':'Carrier agreement template version'}
