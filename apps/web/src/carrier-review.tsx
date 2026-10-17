@@ -89,6 +89,9 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
        <CarrierHoldsPanel call={call} contractId={c.id}/>
        <h4>{fr?'3. Autorisation du produit':'3. Product authorization'}</h4>
+       <button class="btn" type="button" disabled={busy} onClick={()=>void loadGrants(c.id)}>{fr?'Charger les autorisations':'Load product grant ledger'}</button>
+       {grants[c.id]&&<ul>{grants[c.id]!.length===0?<li>{fr?'Aucune autorisation enregistrée.':'No product grants recorded.'}</li>:grants[c.id]!.map(g=><li key={g.id}>{g.productCode} · {g.revokedAt?'Revoked':'Grant recorded'} · {String(g.activatedAt).slice(0,10)}{g.revokedAt?` · revoked ${String(g.revokedAt).slice(0,10)}`:''}</li>)}</ul>}
+       <p class="muted">Recorded grants are not permission to submit business. Current standing, appointment, evidence and holds are checked at staging.</p>
        <button class="btn" type="button" disabled={busy||!validProduct(c.id)} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
        {preflight[c.id]&&<p class="muted" role="status">{preflight[c.id]!.eligibleForFurtherChecks?'Evidence present; final checks still required':`Missing or invalid: ${(preflight[c.id]!.blocks??preflight[c.id]!.missing).join(', ')}`}</p>}
        {(c.effectiveState??c.state)==='appointment_verified'||(c.effectiveState??c.state)==='active'?<button class="btn" type="button" disabled={busy||!validProduct(c.id)} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>:null}
