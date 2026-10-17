@@ -21,11 +21,12 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
         'SELECT app_is_compliance_at_or_above($1,$2) AS ok',[row.tenant_id,row.node_id])).rows[0]?.ok;
       if (!allowed) throw forbidden('Compliance authorization required');
       if (!canMoveCarrierContract(row.state,next)) throw invalid('Invalid transition');
+      if (next === 'documents_prepared' && (typeof input.templateVersion !== 'string' || !input.templateVersion.trim())) throw invalid('Agreement template version required');
       if (['broker_signed','appointment_verified','active','approved'].includes(next))
         throw invalid('Signature, appointment verification and activation require integrated evidence workflows');
       if (['declined','withdrawn','suspended','terminated','correction_required'].includes(next) && !reason)
         throw invalid('Reason required');
-      await tx.query('UPDATE carrier_contract_cases SET state=$1,updated_at=now() WHERE id=$2',[next,id]);
+      await tx.query('UPDATE carrier_contract_cases SET state=$1,template_version=CASE WHEN $1 = $3 THEN $4 ELSE template_version END,updated_at=now() WHERE id=$2',[next,id,'documents_prepared',typeof input.templateVersion === 'string' ? input.templateVersion.trim() : null]);
       await tx.query(
         'INSERT INTO carrier_contract_events (tenant_id,contract_id,node_id,from_state,to_state,actor_id,reason) VALUES ($1,$2,$3,$4,$5,$6,$7)',
         [row.tenant_id,id,row.node_id,row.state,next,ctx.userId,reason || null]);
