@@ -30,8 +30,9 @@ export function registerCarrierHoldRoutes(app:FastifyInstance,deps:AppDeps):void
    if(!c)throw notFound('Carrier contract not found');
    if(!(await tx.query<{ok:boolean}>('SELECT app_is_compliance_at_or_above($1,$2) AS ok',[c.tenant_id,c.node_id])).rows[0]?.ok)throw forbidden('Compliance authorization required');
    const hold=(await tx.query<{id:string}>('INSERT INTO carrier_compliance_holds(tenant_id,contract_id,node_id,reason,created_by) VALUES($1,$2,$3,$4,$5) RETURNING id',[c.tenant_id,id,c.node_id,reason,ctx.userId])).rows[0];
-   await audit(tx,ctx,'compliance.carrier_hold_created','carrier_contract_case',id,{holdId:hold?.id});
-   return {id:hold?.id,created:true};
+   if (!hold) throw notFound('Created hold not found');
+   await audit(tx,ctx,'compliance.carrier_hold_created','carrier_contract_case',id,{holdId:hold.id});
+   return {id:hold.id,created:true};
   });
  });
  app.post('/v1/compliance/carrier-contracts/:id/holds/:holdId/release',async req=>{
