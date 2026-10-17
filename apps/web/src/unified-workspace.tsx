@@ -79,6 +79,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
   const [active,setActive]=useState('');
   const [loads,setLoads]=useState<Partial<Record<Module,Load<any>>>>({});
   const [generation,setGeneration]=useState(0);
+  const [moduleGeneration,setModuleGeneration]=useState(0);
   useEffect(()=>{
     let cancelled=false;
     setContext(pending());setLoads({});
@@ -105,7 +106,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
       });
     }
     return ()=>{cancelled=true};
-  },[context,active,call]);
+  },[context,active,call,moduleGeneration]);
   if(context.state==='loading')return <div class="pii-workspace"><p role="status">Loading your workspace…</p></div>;
   if(context.state==='error')return <div class="pii-workspace"><p role="alert">{context.message}</p>
     <button class="btn" onClick={()=>setGeneration(x=>x+1)}>Retry</button></div>;
@@ -117,7 +118,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
       <div><small>{c.country} · {c.scopes.map(s=>s.name).join(', ')||'Authorized workspace'}</small>
         <h1>{locale==='fr-CA'?'Mon espace de travail':'My workspace'}{name?', '+name:''}</h1>
         <p>{workspaceNames[active]??'Personal'} overview · Data limited to your authorized access</p></div>
-      <button class="btn" onClick={()=>setGeneration(x=>x+1)}>Refresh</button>
+      <button class="btn" onClick={()=>{setGeneration(x=>x+1);setModuleGeneration(x=>x+1);}}>Refresh</button>
     </header>
     {c.roles.length>1&&<nav aria-label="Workspace perspective" class="pii-workspace-roles">
       {c.roles.map(r=><button key={r} class="btn" aria-pressed={r===active}
