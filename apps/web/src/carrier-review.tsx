@@ -95,7 +95,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <button class="btn" type="button" disabled={busy||!validProduct(c.id)} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
        {preflight[c.id]&&<p class="muted" role="status">{preflight[c.id]!.eligibleForFurtherChecks?'Evidence present; final checks still required':`Missing or invalid: ${(preflight[c.id]!.blocks??preflight[c.id]!.missing).join(', ')}`}</p>}
        {(c.effectiveState??c.state)==='appointment_verified'||(c.effectiveState??c.state)==='active'?<button class="btn" type="button" disabled={busy||!validProduct(c.id)} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>:null}
-       {(c.effectiveState??c.state)==='active'&&<button class="btn" type="button" disabled={busy||!validProduct(c.id)||(productRevocationReason[c.id]??'').trim().length<8} onClick={()=>void revokeProduct(c.id)}>Revoke product authorization</button>}
+       {(grants[c.id]??[]).some(g=>g.productCode===productFor(c.id)&&!g.revokedAt)&&<button class="btn" type="button" disabled={busy||!validProduct(c.id)||(productRevocationReason[c.id]??'').trim().length<8} onClick={()=>void revokeProduct(c.id)}>Revoke product authorization</button>}
        <h4>{fr?'4. Enregistrement interne':'4. Internal business staging'}</h4>
        <CarrierBusinessStagingPanel call={call} contractId={c.id}/>
        <h4>{fr?'5. Historique et suivi':'5. History and monitoring'}</h4>
