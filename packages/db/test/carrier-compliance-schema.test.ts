@@ -21,6 +21,12 @@ test('carrier compliance tables force tenant row-level security', async () => {
   assert.ok(view?.reloptions?.includes('security_invoker=true'),'carrier status view must use caller RLS');
   const definition=(await c.query<{definition:string}>("SELECT pg_get_viewdef('carrier_product_authorization_status'::regclass) AS definition")).rows[0]?.definition??'';
   assert.match(definition,/carrier_compliance_holds/);
+  const readPolicies=(await c.query<{tablename:string;policyname:string;qual:string}>("SELECT tablename,policyname,qual FROM pg_policies WHERE (tablename='carrier_business_submissions' AND policyname='carrier_submission_read') OR (tablename='carrier_product_activations' AND policyname='carrier_product_read')")).rows;
+  assert.equal(readPolicies.length,2);
+  for (const policy of readPolicies) {
+    assert.match(policy.qual,/app_is_compliance_at_or_above/);
+    assert.doesNotMatch(policy.qual,/user_node_roles/);
+  }
   const submissionFunctions=(await c.query<{proname:string}>("SELECT proname FROM pg_proc WHERE proname IN ('carrier_product_submission_authorized','carrier_product_submission_authorized_locked')")).rows.map(x=>x.proname);
   assert.ok(submissionFunctions.includes('carrier_product_submission_authorized'));
   assert.ok(submissionFunctions.includes('carrier_product_submission_authorized_locked'));
