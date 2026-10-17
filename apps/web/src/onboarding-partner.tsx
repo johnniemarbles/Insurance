@@ -79,7 +79,7 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
   const [carrierChoice, setCarrierChoice] = useState({ carrierName: '', jurisdiction: 'CA-ON' });
   const [contracts, setContracts] = useState<{ id: string; carrierName: string; jurisdiction: string; state: string }[]>([]);
   const [contractsError, setContractsError] = useState('');
-  const [packet, setPacket] = useState({ carrier: 'iA Financial Group', templateVersion: 'F11-92A' });
+  const [packet, setPacket] = useState({ carrier: '', templateVersion: '' });
 
   const load = async () => {
     try {
@@ -146,6 +146,7 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
           e.preventDefault();
           void run(() => call('POST', `/v1/onboarding/cases/${view.id}/carrier-contracts`, carrierChoice));
         }}>
+          <p class="muted">{lc === 'fr-CA' ? 'Saisissez le nom officiel de l’assureur. Ce dossier est interne : aucune connexion à l’assureur ni nomination n’est créée automatiquement.' : 'Enter the insurer’s official name. This creates an internal request only; no insurer connection, appointment or authorization is created automatically.'}</p>
           <label class="fl">{t.carrier}<input required maxLength={120} value={carrierChoice.carrierName}
             onInput={e => setCarrierChoice({ ...carrierChoice, carrierName: (e.target as HTMLInputElement).value })} /></label>
           <label class="fl">{lc === 'fr-CA' ? 'Juridiction' : 'Jurisdiction'}
