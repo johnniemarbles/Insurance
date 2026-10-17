@@ -46,7 +46,7 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
         setError(result.reason === 'duplicate_external_reference' ? 'Reference already staged.' : 'Carrier product authorization is not current.');
         return;
       }
-      if (activeContract.current !== requestedContract) return;
+      if (activeContract.current !== requestedContract || requestVersion.current !== version) return;
       setReference('');
       setMessage('Recorded in the internal staging ledger. Nothing has been sent to an insurer.');
       const latest = await call('GET', path);
@@ -56,7 +56,7 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
       const description = String(e);
       setError(description.includes('duplicate_external_reference') ? 'Reference already staged.' : description.includes('carrier_product_not_authorized') ? 'Carrier product authorization is not current.' : description);
     } finally {
-      if (activeContract.current === requestedContract) setBusy(false);
+      if (activeContract.current === requestedContract && requestVersion.current === version) setBusy(false);
     }
   };
 
