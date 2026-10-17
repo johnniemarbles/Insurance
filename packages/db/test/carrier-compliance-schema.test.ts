@@ -27,7 +27,7 @@ test('carrier compliance tables force tenant row-level security', async () => {
    `SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN
      ('carrier_contract_events'::regclass,'carrier_contract_cases'::regclass,
       'carrier_authorization_evidence'::regclass,'carrier_product_activations'::regclass,'carrier_compliance_holds'::regclass)`)).rows.map(r=>r.tgname);
-  for(const name of ['carrier_event_provenance','carrier_case_scope_guard','carrier_authorization_evidence_guard_trigger','carrier_product_scope_guard_trigger','carrier_product_revocation_immutable_trigger','carrier_evidence_revocation_effect_trigger','carrier_product_evidence_insert_guard_trigger','carrier_contract_state_revokes_grants_trigger','carrier_compliance_hold_guard_trigger'])
+  for(const name of ['carrier_event_provenance','carrier_case_scope_guard','carrier_authorization_evidence_guard_trigger','carrier_product_scope_guard_trigger','carrier_product_revocation_immutable_trigger','carrier_evidence_revocation_effect_trigger','carrier_product_evidence_insert_guard_trigger','carrier_contract_state_revokes_grants_trigger','carrier_compliance_hold_guard_trigger','carrier_hold_revokes_product_grants_trigger'])
    assert.ok(triggers.includes(name),name);
  }finally{await c.end();await db.drop();}
 });
