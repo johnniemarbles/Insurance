@@ -9,9 +9,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
     const roles = [...new Set(ctx.roles.map(r => r.role))];
     const admin = ctx.isTenantAdmin || roles.includes('admin');
     const training = admin || roles.includes('trainer') || roles.includes('manager');
-    const compliance = admin || roles.includes('compliance');
-    const audit = admin || roles.includes('auditor') || roles.includes('compliance');
-    const crm = Boolean(ctx.canUseCrm);
+    const compliance = ctx.isTenantAdmin || roles.includes('compliance');
+    const audit = admin || roles.includes('auditor') || roles.includes('compliance') || roles.length === 0;
+    const crm = Boolean(ctx.canUseCrm && (admin || roles.some(r => ['partner', 'manager', 'staff'].includes(r))));
     const modules = {
       crm, compliance, training, learning: true, audit,
       onboarding: compliance || crm,
