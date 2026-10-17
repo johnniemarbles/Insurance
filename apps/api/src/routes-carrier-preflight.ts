@@ -29,7 +29,9 @@ export function registerCarrierPreflightRoutes(app:FastifyInstance,deps:AppDeps)
    const kinds=new Set(evidence.map(x=>x.kind));
    const required=['training','product_scope','jurisdiction_scope','hold_clearance'];
    const missing=required.filter(x=>!kinds.has(x));
-   return {contractId:id,productCode,eligibleForFurtherChecks:c.valid===true&&missing.length===0,
+   const grant=(await tx.query<{ok:boolean}>("SELECT EXISTS(SELECT 1 FROM carrier_product_activations WHERE tenant_id=$1 AND node_id=$2 AND contract_id=$3 AND product_code=$4 AND revoked_at IS NULL) AS ok",[c.tenant_id,c.node_id,id,productCode])).rows[0]?.ok===true;
+   if(!grant) missing.push('product_not_activated');
+   return {contractId:id,productCode,eligibleForFurtherChecks:c.valid===true&&grant&&missing.length===0,
      missing,appointmentValid:c.valid===true,advisoryOnly:true,submissionAuthorized:false};
   });
  });
