@@ -6,7 +6,7 @@ const options: Record<string,string[]> = {
  documents_prepared:[],
  broker_signed:['submitted','correction_required','withdrawn'],
  submitted:['carrier_review','correction_required','declined'],
- carrier_review:['approved','correction_required','declined'],
+ carrier_review:['correction_required','declined'],
  correction_required:['documents_prepared','withdrawn'],
  approved:[],
  appointment_verified:[],
