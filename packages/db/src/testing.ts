@@ -25,8 +25,14 @@ export async function createTestDb(region: 'ca-qc' | 'us' = 'ca-qc'): Promise<Te
   await admin.connect();
   await admin.query(`CREATE DATABASE ${name}`);
   const ownerUrl = swapDb(ADMIN, name);
-  await migrate(ownerUrl);
-  await bootstrapDeployment(ownerUrl, { region, environment: 'dev' });
+  try {
+    await migrate(ownerUrl);
+    await bootstrapDeployment(ownerUrl, { region, environment: 'dev' });
+  } catch (error) {
+    try { await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`); }
+    finally { await admin.end(); }
+    throw error;
+  }
   // LOGIN + password for the two runtime roles (roles are cluster-wide; idempotent).
   await admin.query(`ALTER ROLE app_runtime LOGIN PASSWORD 'pw'`);
   await admin.query(`ALTER ROLE app_auth LOGIN PASSWORD 'pw'`);
