@@ -59,7 +59,7 @@ test('carrier mutation endpoints reject malformed and unexpected input before da
   ];
   try {
     for (const item of cases) {
-      const response = await app.inject({ method: 'POST', url: item.url, payload: item.payload });
+      const response = await app.inject({ method: 'POST', url: item.url, payload: JSON.stringify(item.payload), headers: { 'content-type': 'application/json' } });
       assert.equal(response.statusCode, 422, item.url + ': ' + response.body);
       assert.equal(response.json().code, 'invalid');
     }
