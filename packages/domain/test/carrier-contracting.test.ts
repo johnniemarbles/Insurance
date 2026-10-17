@@ -28,3 +28,30 @@ test('contract cannot jump from requested to active', () => {
   assert.equal(canMoveCarrierContract('approved', 'appointment_verified'), true);
   assert.equal(canMoveCarrierContract('approved', 'active'), false);
 });
+
+test('terminal carrier states cannot be reactivated', () => {
+  for (const state of ['declined','withdrawn','terminated'] as const) {
+    assert.equal(canMoveCarrierContract(state, 'active'), false);
+    assert.equal(canMoveCarrierContract(state, 'appointment_verified'), false);
+  }
+});
+test('suspension, expiry and termination always block business submission', () => {
+  for (const state of ['suspended','expired','terminated'] as const) {
+    assert.equal(maySubmitCarrierBusiness({ ...valid, carrierState: state }), false);
+    assert.ok(carrierAuthorizationBlocks({ ...valid, carrierState: state }).includes('carrier_not_active'));
+  }
+});
+test('each appointment and licensing failure independently blocks authorization', () => {
+  for (const patch of [
+    { appointmentEffective: false },
+    { appointmentNotExpired: false },
+    { licenceValid: false },
+    { eoValid: false },
+    { jurisdictionAllowed: false },
+    { productAllowed: false },
+    { agencyAgreementCountersigned: false },
+    { complianceHold: true },
+  ]) {
+    assert.equal(maySubmitCarrierBusiness({ ...valid, ...patch }), false);
+  }
+});
