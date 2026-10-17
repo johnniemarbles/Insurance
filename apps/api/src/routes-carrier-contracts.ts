@@ -30,7 +30,7 @@ export function registerCarrierContractRoutes(app: FastifyInstance, deps: AppDep
       const c = (await tx.query<{ node_id: string }>('SELECT node_id FROM onboarding_cases WHERE id = $1', [id])).rows[0];
       if (!c) throw notFound('Onboarding case not found');
       const permitted = (await tx.query<{ ok: boolean }>(
-        'SELECT org_node_at_or_below(app_tenant_id(), $1) AS ok', [c.node_id])).rows[0]?.ok;
+        'SELECT app_is_compliance_at_or_above(app_tenant_id(), $1) AS ok', [c.node_id])).rows[0]?.ok;
       if (!permitted) throw forbidden('Cannot access this onboarding case');
       const rows = (await tx.query(
         `SELECT id, carrier_name AS "carrierName", jurisdiction, state, template_version AS "templateVersion",
