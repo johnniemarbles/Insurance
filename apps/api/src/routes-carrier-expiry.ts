@@ -11,17 +11,15 @@ export function registerCarrierExpiryRoutes(app: FastifyInstance, deps: AppDeps)
   app.post('/v1/compliance/carrier-contracts/reconcile-expiry', async req => {
     const { ctx } = await deps.authenticate(req);
     return withRequestTx(deps.appPool, ctx, async tx => {
+      const authorized = (await tx.query<{ok:boolean}>(
+        'SELECT app_is_tenant_admin() OR app_is_compliance_role() AS ok')).rows[0]?.ok === true;
+      if (!authorized) throw forbidden('Compliance authorization required');
       const rows = (await tx.query<{id:string;tenant_id:string;node_id:string;state:string}>(
         `SELECT id,tenant_id,node_id,state FROM carrier_contract_cases
          WHERE state IN ('active','appointment_verified')
            AND appointment_expires_on < CURRENT_DATE
            AND app_is_compliance_at_or_above(tenant_id,node_id)
          ORDER BY id FOR UPDATE LIMIT 200`)).rows;
-      if (!rows.length) {
-        const permitted = (await tx.query<{ok:boolean}>(
-          'SELECT app_is_tenant_admin() OR app_is_compliance_role() AS ok')).rows[0]?.ok;
-        if (!permitted) throw forbidden('Compliance authorization required');
-      }
       for (const row of rows) {
         await tx.query("UPDATE carrier_contract_cases SET state='expired',updated_at=now() WHERE id=$1",[row.id]);
         await tx.query(
