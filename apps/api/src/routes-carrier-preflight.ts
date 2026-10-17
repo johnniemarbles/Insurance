@@ -48,7 +48,7 @@ export function registerCarrierPreflightRoutes(app:FastifyInstance,deps:AppDeps)
    });
    if(!grant) blocks.push('product_not_activated');
    return {contractId:id,productCode,eligibleForFurtherChecks:blocks.length===0,
-     missing,blocks,appointmentValid:c.valid===true,advisoryOnly:true,submissionAuthorized:false};
+     missing,blocks,appointmentValid:c.valid===true,advisoryOnly:true,submissionAuthorized:false,requiresTransactionalAuthorization:true};
   });
  });
 }
