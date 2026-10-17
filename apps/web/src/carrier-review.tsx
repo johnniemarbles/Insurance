@@ -19,9 +19,6 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
  const [reason,setReason]=useState('');
- const [evidence,setEvidence]=useState('');
- const [confirmed,setConfirmed]=useState(false);
- const [effectiveOn,setEffectiveOn]=useState('');
  const fr=locale==='fr-CA';
  const refresh=async()=>{try{const r=await call('GET','/v1/compliance/carrier-contracts');setContracts(r.contracts??[]);setError('');}catch(e){setError(String(e));}};
  useEffect(()=>{void refresh();},[call]);
