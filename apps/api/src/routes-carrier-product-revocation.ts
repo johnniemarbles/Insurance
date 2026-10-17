@@ -5,6 +5,23 @@ import { forbidden, invalid, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function registerCarrierProductRevocationRoutes(app:FastifyInstance,deps:AppDeps):void {
+ app.get('/v1/compliance/carrier-contracts/:id/products',async req=>{
+  const {ctx}=await deps.authenticate(req);
+  const id=(req.params as {id:string}).id;
+  if(!UUID.test(id)) throw invalid('Invalid contract ID');
+  return withRequestTx(deps.appPool,ctx,async tx=>{
+   const c=(await tx.query<{tenant_id:string;node_id:string}>(
+    'SELECT tenant_id,node_id FROM carrier_contract_cases WHERE id=$1',[id])).rows[0];
+   if(!c) throw notFound('Contract not found');
+   const allowed=(await tx.query<{ok:boolean}>(
+    'SELECT app_is_compliance_at_or_above($1,$2) AS ok',[c.tenant_id,c.node_id])).rows[0]?.ok===true;
+   if(!allowed) throw forbidden('Compliance authorization required');
+   const grants=(await tx.query(
+    'SELECT id,product_code AS "productCode",activated_at AS "activatedAt",revoked_at AS "revokedAt",reason FROM carrier_product_activations WHERE tenant_id=$1 AND node_id=$2 AND contract_id=$3 ORDER BY activated_at DESC LIMIT 200',
+    [c.tenant_id,c.node_id,id])).rows;
+   return {grants};
+  });
+ });
  app.post('/v1/compliance/carrier-contracts/:id/products/:productCode/revoke',async req=>{
   const {ctx}=await deps.authenticate(req);
   const {id,productCode:raw}=req.params as {id:string;productCode:string};
