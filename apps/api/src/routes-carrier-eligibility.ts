@@ -52,7 +52,7 @@ export function registerCarrierEligibilityRoutes(app: FastifyInstance, deps: App
         appointmentNotExpired: row.appointment_not_expired === true,
         complianceHold: true,
       });
-      return { id, authorized: false, blocks, requires: ['verified_training','jurisdiction_product_scope','compliance_hold_source'], advisoryOnly: true };
+      return { id, authorized: false, blocks, evidence: { brokerCleared: row.broker_cleared === true, agreementSigned: row.agency_signed === true, licenceValid: row.licence_valid === true, eoValid: row.eo_valid === true, appointmentEffective: row.appointment_effective === true, appointmentNotExpired: row.appointment_not_expired === true }, requires: ['verified_training','jurisdiction_product_scope','compliance_hold_source'], advisoryOnly: true };
     });
   });
 }
