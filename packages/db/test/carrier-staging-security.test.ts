@@ -15,6 +15,14 @@ test('carrier submission and staging security objects are installed', async () =
     assert.ok(constraints.includes('carrier_submission_product_canonical'));
     assert.ok(constraints.includes('carrier_submission_reference_no_controls'));
 
+    const referenceValidation = (await client.query<{ ordinary: boolean; newline: boolean; tab: boolean; delete_char: boolean }>(
+      `SELECT 'BROKER-123' !~ '[[:cntrl:]]' AS ordinary,
+              ('BROKER-' || chr(10) || '123') !~ '[[:cntrl:]]' AS newline,
+              ('BROKER-' || chr(9) || '123') !~ '[[:cntrl:]]' AS tab,
+              ('BROKER-' || chr(127) || '123') !~ '[[:cntrl:]]' AS delete_char`,
+    )).rows[0];
+    assert.deepEqual(referenceValidation, { ordinary: true, newline: false, tab: false, delete_char: false });
+
     const functions = (await client.query<{ proname: string; prosecdef: boolean }>(
       "SELECT proname,prosecdef FROM pg_proc WHERE proname IN ('carrier_product_submission_authorized','carrier_product_submission_authorized_locked')",
     )).rows;
