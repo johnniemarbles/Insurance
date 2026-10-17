@@ -9,6 +9,12 @@ CREATE TABLE carrier_contract_cases (
  state text NOT NULL DEFAULT 'requested' CHECK (state IN
  ('requested','documents_prepared','broker_signed','submitted','carrier_review','correction_required','approved','appointment_verified','active','declined','withdrawn','suspended','expired','terminated')),
  template_version text,
+ signature_evidence_ref text,
+ signature_verified_by uuid REFERENCES app_users(id),
+ signature_verified_at timestamptz,
+ carrier_approval_ref text,
+ carrier_approved_by uuid REFERENCES app_users(id),
+ carrier_approved_at timestamptz,
  appointment_reference text,
  appointment_effective_on date,
  appointment_expires_on date,
@@ -18,6 +24,10 @@ CREATE TABLE carrier_contract_cases (
  created_at timestamptz NOT NULL DEFAULT now(),
  updated_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE (onboarding_case_id, carrier_name, jurisdiction),
+ CHECK (state NOT IN ('broker_signed','submitted','carrier_review','approved','appointment_verified','active') OR
+ (signature_evidence_ref IS NOT NULL AND signature_verified_by IS NOT NULL AND signature_verified_at IS NOT NULL)),
+ CHECK (state NOT IN ('approved','appointment_verified','active') OR
+ (carrier_approval_ref IS NOT NULL AND carrier_approved_by IS NOT NULL AND carrier_approved_at IS NOT NULL)),
  CHECK (state NOT IN ('appointment_verified','active') OR
  (appointment_reference IS NOT NULL AND appointment_effective_on IS NOT NULL AND verified_by IS NOT NULL AND verified_at IS NOT NULL))
 );
