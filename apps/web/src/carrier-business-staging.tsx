@@ -52,7 +52,7 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
       const latest = await call('GET', path);
       if (activeContract.current === requestedContract && requestVersion.current === version) setEntries(latest.submissions ?? []);
     } catch (e) {
-      if (activeContract.current !== requestedContract) return;
+      if (activeContract.current !== requestedContract || requestVersion.current !== version) return;
       const description = String(e);
       setError(description.includes('duplicate_external_reference') ? 'Reference already staged.' : description.includes('carrier_product_not_authorized') ? 'Carrier product authorization is not current.' : description);
     } finally {
