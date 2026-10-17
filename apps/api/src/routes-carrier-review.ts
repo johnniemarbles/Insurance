@@ -9,7 +9,7 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
   app.post('/v1/compliance/carrier-contracts/:id/review', async req => {
     const { ctx } = await deps.authenticate(req);
     const id = (req.params as { id: string }).id;
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw invalid('Invalid ID');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw invalid('Invalid ID');
     const input = (req.body ?? {}) as Record<string, unknown>;
     const next = String(input.state ?? '') as CarrierContractState;
     const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
