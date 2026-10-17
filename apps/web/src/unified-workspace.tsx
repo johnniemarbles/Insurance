@@ -54,6 +54,7 @@ function Metrics({module,data}:{module:Module;data:any}) {
   if(module==='training' && data?.totals) entries=[
     ['Assigned',data.totals.assigned],['In progress',data.totals.inProgress],
     ['Completed',data.totals.completed],['Overdue',data.totals.overdue]];
+  if(!entries.length)return <p>No summary data is available. Open the workspace for details.</p>;
   return <div class="pii-workspace-metrics" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"12px"}}>{entries.map(([name,value])=>
     <div class="pii-workspace-metric" key={name} style={{padding:"12px",borderRadius:"8px",background:"rgba(125,140,165,.08)"}}><small>{name}</small><strong>{value}</strong></div>)}</div>;
 }
