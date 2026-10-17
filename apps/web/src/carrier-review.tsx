@@ -21,7 +21,6 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
  const [reason,setReason]=useState('');
- const [activationProduct,setActivationProduct]=useState('');
  const [contractProducts,setContractProducts]=useState<Record<string,string>>({});
  const [productRevocationReason,setProductRevocationReason]=useState('');
  const [preflight,setPreflight]=useState<Record<string,{missing:string[];blocks?:string[];eligibleForFurtherChecks:boolean}>>({});
@@ -33,7 +32,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  useEffect(()=>{void refresh();},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
- const productFor=(id:string)=>contractProducts[id]??activationProduct;
+ const productFor=(id:string)=>contractProducts[id]??'';
  const checkProduct=async(id:string)=>{try{const r=await call('GET',`/v1/carrier-contracts/${id}/products/${productFor(id)}/preflight`);setPreflight(p=>({...p,[id]:r}));setError('');}catch(e){setError(String(e));}};
  const activate=async(id:string)=>{setBusy(true);try{const r=await call('POST',`/v1/compliance/carrier-contracts/${id}/activate`,{productCode:productFor(id)});if(!r.activated)setError(`Activation blocked: ${(r.blocks??[]).join(', ')}`);else{setError('');await refresh();}}catch(e){setError(String(e));}finally{setBusy(false);}};
  const revokeProduct=async(id:string)=>{setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${id}/products/${productFor(id)}/revoke`,{reason:productRevocationReason});setProductRevocationReason('');setPreflight(p=>{const next={...p};delete next[id];return next;});setError('');await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
@@ -52,7 +51,6 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
      <input value={reason} maxLength={500} onInput={e=>setReason((e.target as HTMLInputElement).value)}/></label>
    <label class="fl">{fr?'Version du modèle de contrat':'Carrier agreement template version'}
      <input value={templateVersion} maxLength={120} onInput={e=>setTemplateVersion((e.target as HTMLInputElement).value)}/></label>
-   <label class="fl">Product code for activation<input value={activationProduct} maxLength={80} onInput={e=>setActivationProduct((e.target as HTMLInputElement).value.toUpperCase())}/></label>
    <label class="fl">Product revocation reason<input value={productRevocationReason} maxLength={500} onInput={e=>setProductRevocationReason((e.target as HTMLInputElement).value)}/></label>
    {contracts.length===0?<p class="muted">{fr?'Aucun contrat en attente.':'No carrier contracts found.'}</p>:
      <ul class="oblist">{contracts.map(c=><li key={c.id}>
@@ -61,7 +59,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        {c.templateVersion&&<p class="muted">{fr?'Modèle':'Template'}: {c.templateVersion}</p>}
        {c.appointmentEffectiveOn&&<p class="muted">{fr?'Nomination':'Appointment'}: {String(c.appointmentEffectiveOn).slice(0,10)} – {c.appointmentExpiresOn?String(c.appointmentExpiresOn).slice(0,10):(fr?'sans date de fin enregistrée':'no expiry recorded')}</p>}
        {c.state==='active'&&!c.appointmentCurrentlyValid&&<p role="alert" class="err">{fr?'Nomination non valide actuellement — vérification requise':'Appointment is not currently valid — review required'}</p>}
-       <label class="fl">Product code for this carrier<input maxLength={80} value={contractProducts[c.id]??activationProduct} onInput={e=>setContractProducts(p=>({...p,[c.id]:(e.target as HTMLInputElement).value.toUpperCase()}))}/></label>
+       <label class="fl">Product code for this carrier<input maxLength={80} value={contractProducts[c.id]??''} onInput={e=>setContractProducts(p=>({...p,[c.id]:(e.target as HTMLInputElement).value.toUpperCase()}))}/></label>
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
        <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
        <button class="btn" type="button" disabled={!productFor(c.id).trim()} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
