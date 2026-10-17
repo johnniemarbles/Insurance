@@ -49,6 +49,9 @@ test('carrier submission and staging security objects are installed', async () =
     )).rows.map(r => r.tgname);
     assert.ok(triggers.includes('carrier_business_submission_guard_trigger'));
     assert.ok(triggers.includes('carrier_business_submission_immutable_trigger'));
+    const stagingFunctions=(await client.query<{definition:string}>("SELECT pg_get_functiondef('carrier_business_submission_guard()'::regprocedure) AS definition")).rows[0]?.definition??'';
+    assert.match(stagingFunctions,/carrier_product_submission_authorized_locked/);
+    assert.match(stagingFunctions,/app_user_id/);
   } finally {
     await client.end();
     await db.drop();
