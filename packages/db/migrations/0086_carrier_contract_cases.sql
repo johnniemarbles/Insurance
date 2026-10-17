@@ -69,9 +69,7 @@ CREATE POLICY carrier_contract_update ON carrier_contract_cases FOR UPDATE USING
  app_can_write() AND app_is_compliance_at_or_above(tenant_id,node_id)
 ) WITH CHECK (app_can_write() AND app_is_compliance_at_or_above(tenant_id,node_id));
 CREATE POLICY carrier_events_read ON carrier_contract_events FOR SELECT USING (
- app_is_compliance_at_or_above(tenant_id,node_id) OR EXISTS (
- SELECT 1 FROM user_node_roles WHERE user_id = app_user_id() AND node_id = carrier_contract_events.node_id
- )
+ app_is_compliance_at_or_above(tenant_id,node_id)
 );
 CREATE POLICY carrier_events_insert ON carrier_contract_events FOR INSERT WITH CHECK
  (app_can_write() AND actor_id = app_user_id() AND (
