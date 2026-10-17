@@ -10,6 +10,15 @@ const uuid = (v: unknown) => {
   return v;
 };
 export function registerCarrierContractRoutes(app: FastifyInstance, deps: AppDeps): void {
+  // Read-only reference catalog. A listed carrier is not an active integration.
+  app.get('/v1/compliance/carriers', async req => {
+    const { ctx } = await deps.authenticate(req);
+    return withRequestTx(deps.appPool, ctx, async tx => ({
+      carriers: (await tx.query(`SELECT id, display_name AS "displayName", country,
+        connection_mode AS "connectionMode", connection_verified AS "connectionVerified"
+        FROM carrier_directory ORDER BY display_name`)).rows,
+    }));
+  });
   app.get('/v1/compliance/carrier-contracts', async (req) => {
     const { ctx } = await deps.authenticate(req);
     return withRequestTx(deps.appPool, ctx, async tx => {

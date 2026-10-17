@@ -9,6 +9,7 @@ import { ExpiryBars, Funnel, needsOf, NeedsYou, titles, Trend, Widgets, type Ins
 import { ManagerProgressBoard, OnboardingDashboard, SectionHead } from './onboarding.tsx';
 import { PartnerOnboarding } from './onboarding-partner.tsx';
 import { CarrierReviewPanel } from './carrier-review.tsx';
+import { ComplianceCommandCenter } from './compliance-command-center.tsx';
 import { DeadlinesPanel } from './deadlines.tsx';
 import { CountrySwitchLink } from './overview.tsx';
 import { AssistantPanel } from './assistant-panel.tsx';
@@ -98,7 +99,7 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }:
   const [open, setOpen] = useState<string | null>(openId ?? null);
   // Null while the account's role is loading. Compliance officers get the onboarding dashboard as a second section; partners see their own onboarding at the top.
   const [officer, setOfficer] = useState<boolean | null>(null);
-  const [section, setSection] = useState<'files' | 'onboarding' | 'carriers'>('files');
+  const [section, setSection] = useState<'dashboard' | 'files' | 'onboarding' | 'carriers'>('dashboard');
   // A branch manager sees its partners' onboarding progress (steps and status only) above the list.
   const [manager, setManager] = useState(false);
   // Assigned staff see the same board with analytics only (plan v7, section 6).
@@ -110,11 +111,13 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }:
   // The section switch sits in the page heading, so it lines up with the title on every screen.
   const tabs = officer ? (
     <div class="seg" role="tablist" aria-label={s.label}>
+      <button role="tab" aria-selected={section === 'dashboard'} onClick={() => { setSection('dashboard'); setOpen(null); }}>{locale === 'fr-CA' ? 'Tableau de bord' : 'Dashboard'}</button>
       <button role="tab" aria-selected={section === 'files'} onClick={() => { setSection('files'); setOpen(null); }}>{s.files}</button>
       <button role="tab" aria-selected={section === 'onboarding'} onClick={() => { setSection('onboarding'); setOpen(null); }}>{s.onb}</button>
       <button role="tab" aria-selected={section === 'carriers'} onClick={() => { setSection('carriers'); setOpen(null); }}>{s.carriers}</button>
     </div>
   ) : undefined;
+  if (officer && section === 'dashboard') return <div class="obwrap">{tabs}<ComplianceCommandCenter call={call} locale={locale} onNavigate={(target) => { setSection(target); setOpen(null); }} /></div>;
   if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
   if (officer && section === 'carriers') return <div class="obwrap">{tabs}<CarrierReviewPanel call={call} locale={locale} /></div>;
   const own = officer === false ? <PartnerOnboarding call={call} locale={locale} embedded /> : null;

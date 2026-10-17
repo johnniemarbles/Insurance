@@ -67,3 +67,48 @@ test('carrier mutation endpoints reject malformed and unexpected input before da
     await app.close();
   }
 });
+
+test('carrier directory endpoint requires authentication and returns carrier records', async () => {
+  const app = Fastify();
+  let authenticated = false;
+  const dummyCarriers = [
+    { id: 'ia-financial-group', displayName: 'iA Financial Group (Industrial Alliance)', country: 'CA', connectionMode: 'manual', connectionVerified: false },
+  ];
+  const ctx = { tenantId: id, userId: id, nodeIds: [], adminNodeIds: [], isTenantAdmin: false, canWrite: true };
+  const deps = {
+    authenticate: async () => {
+      if (!authenticated) throw new HttpError(401, 'unauthorized', 'Authentication required');
+      return { ctx };
+    },
+    appPool: {
+      connect: async () => ({
+        query: async (sql: string) => {
+          if (sql.includes('carrier_directory')) return { rows: dummyCarriers };
+          return { rows: [] };
+        },
+        release: () => {},
+      }),
+    },
+  } as unknown as AppDeps;
+  registerCarrierContractRoutes(app, deps);
+  app.setErrorHandler((error, _req, reply) => {
+    if (error instanceof HttpError) return reply.code(error.status).send({ code: error.code });
+    return reply.code(500).send({ code: 'unexpected' });
+  });
+
+  try {
+    // Unauthenticated request is rejected
+    const unauthResponse = await app.inject({ method: 'GET', url: '/v1/compliance/carriers' });
+    assert.equal(unauthResponse.statusCode, 401);
+    assert.equal(unauthResponse.json().code, 'unauthorized');
+
+    // Authenticated request returns carrier directory
+    authenticated = true;
+    const authResponse = await app.inject({ method: 'GET', url: '/v1/compliance/carriers' });
+    assert.equal(authResponse.statusCode, 200);
+    assert.deepEqual(authResponse.json().carriers, dummyCarriers);
+  } finally {
+    await app.close();
+  }
+});
+
