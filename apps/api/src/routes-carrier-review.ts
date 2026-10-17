@@ -21,6 +21,7 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
         'SELECT app_is_compliance_at_or_above($1,$2) AS ok',[row.tenant_id,row.node_id])).rows[0]?.ok;
       if (!allowed) throw forbidden('Compliance authorization required');
       if (!canMoveCarrierContract(row.state,next)) throw invalid('Invalid transition');
+      if (row.state === 'active' && next === 'expired') throw invalid('Expiry is established by appointment dates; use expiry reconciliation');
       if (next === 'documents_prepared' && (typeof input.templateVersion !== 'string' || !input.templateVersion.trim() || input.templateVersion.trim().length > 120)) throw invalid('Valid agreement template version required');
       if (['broker_signed','appointment_verified','active','approved'].includes(next))
         throw invalid('Signature, appointment verification and activation require integrated evidence workflows');
