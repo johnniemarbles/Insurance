@@ -11,8 +11,8 @@ const options: Record<string,string[]> = {
  correction_required:['documents_prepared','withdrawn'],
  approved:[],
  appointment_verified:[],
- active:['suspended','expired','terminated'],
- suspended:['expired','terminated'],
+ active:['suspended','terminated'],
+ suspended:['terminated'],
  expired:['terminated']
 };
 export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
