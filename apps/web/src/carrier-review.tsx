@@ -58,7 +58,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        {c.templateVersion&&<p class="muted">{fr?'Modèle':'Template'}: {c.templateVersion}</p>}
        {c.appointmentEffectiveOn&&<p class="muted">{fr?'Nomination':'Appointment'}: {String(c.appointmentEffectiveOn).slice(0,10)} – {c.appointmentExpiresOn?String(c.appointmentExpiresOn).slice(0,10):(fr?'sans date de fin enregistrée':'no expiry recorded')}</p>}
        {c.state==='active'&&!c.appointmentCurrentlyValid&&<p role="alert" class="err">{fr?'Nomination non valide actuellement — vérification requise':'Appointment is not currently valid — review required'}</p>}
-       <label class="fl">Product code for this carrier<input maxLength={80} value={contractProducts[c.id]??''} onInput={e=>setContractProducts(p=>({...p,[c.id]:(e.target as HTMLInputElement).value.toUpperCase()}))}/></label>
+       <label class="fl">Product code for this carrier<input maxLength={80} value={contractProducts[c.id]??''} onInput={e=>setContractProducts(p=>({...p,[c.id]:(e.target as HTMLInputElement).value.toUpperCase()}));setPreflight(p=>{const next={...p};delete next[c.id];return next;})}/></label>
        <label class="fl">Product revocation reason<input value={productRevocationReason[c.id]??''} maxLength={500} onInput={e=>setProductRevocationReason(p=>({...p,[c.id]:(e.target as HTMLInputElement).value}))}/></label>
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
        <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
