@@ -82,7 +82,18 @@ export function PartnerOnboarding({ call, locale, embedded = false }: { call: Ca
   const [packet, setPacket] = useState({ carrier: 'iA Financial Group', templateVersion: 'F11-92A' });
 
   const load = async () => {
-    try { setView(((await call('GET', '/v1/onboarding/mine')).onboarding ?? null) as View | null); setError(''); } catch (e) { setError(errText(e)); }
+    try {
+      const next = ((await call('GET', '/v1/onboarding/mine')).onboarding ?? null) as View | null;
+      setView(next);
+      setError('');
+      if (next) {
+        try {
+          const data = await call('GET', `/v1/onboarding/cases/${next.id}/carrier-contracts`);
+          setContracts((data.contracts ?? []) as typeof contracts);
+          setContractsError('');
+        } catch (e) { setContractsError(errText(e)); }
+      } else setContracts([]);
+    } catch (e) { setError(errText(e)); }
   };
   useEffect(() => { void load(); }, [call]);
 
