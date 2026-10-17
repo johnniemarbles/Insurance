@@ -33,6 +33,53 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
       return {id,state:next};
     });
   });
+  // Compliance may record independently checked insurer evidence. The reviewer's
+  // attestation is auditable; no carrier API verification is implied.
+  app.post('/v1/compliance/carrier-contracts/:id/verify', async req => {
+    const { ctx } = await deps.authenticate(req);
+    const id = (req.params as { id: string }).id;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw invalid('Invalid ID');
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const kind = b.kind;
+    const reference = typeof b.reference === 'string' ? b.reference.trim() : '';
+    if (!['signature','carrier_approval','appointment'].includes(String(kind)) || reference.length < 8 || reference.length > 500 || b.confirmedWithSource !== true)
+      throw invalid('Evidence reference and independent source confirmation required');
+    const effective = typeof b.effectiveOn === 'string' ? b.effectiveOn : '';
+    const expiry = typeof b.expiresOn === 'string' ? b.expiresOn : '';
+    if (kind === 'appointment' && (!/^\\d{4}-\\d{2}-\\d{2}$/.test(effective) || (expiry && !/^\\d{4}-\\d{2}-\\d{2}$/.test(expiry))))
+      throw invalid('Valid appointment effective and expiry dates required');
+    return withRequestTx(deps.appPool, ctx, async tx => {
+      const c = (await tx.query<{tenant_id:string;node_id:string;state:CarrierContractState}>(
+        'SELECT tenant_id,node_id,state FROM carrier_contract_cases WHERE id=$1 FOR UPDATE',[id])).rows[0];
+      if (!c) throw notFound('Carrier contract not found');
+      const ok = (await tx.query<{ok:boolean}>(
+        'SELECT app_is_compliance_at_or_above($1,$2) AS ok',[c.tenant_id,c.node_id])).rows[0]?.ok;
+      if (!ok) throw forbidden('Compliance authorization required');
+      const next: CarrierContractState = kind === 'signature' ? 'broker_signed' : kind === 'carrier_approval' ? 'approved' : 'appointment_verified';
+      if (!canMoveCarrierContract(c.state,next)) throw invalid('Invalid verification transition');
+      if (kind === 'signature') await tx.query(
+        'UPDATE carrier_contract_cases SET signature_evidence_ref=$1,signature_verified_by=$2,signature_verified_at=now(),state=$3,updated_at=now() WHERE id=$4',
+        [reference,ctx.userId,next,id]);
+      else if (kind === 'carrier_approval') await tx.query(
+        'UPDATE carrier_contract_cases SET carrier_approval_ref=$1,carrier_approved_by=$2,carrier_approved_at=now(),state=$3,updated_at=now() WHERE id=$4',
+        [reference,ctx.userId,next,id]);
+      else {
+        const valid = (await tx.query<{ok:boolean}>(
+          'SELECT $1::date <= CURRENT_DATE AND ($2::date IS NULL OR $2::date >= CURRENT_DATE) AS ok',
+          [effective,expiry || null])).rows[0]?.ok;
+        if (!valid) throw invalid('Appointment is not currently effective');
+        await tx.query(
+          'UPDATE carrier_contract_cases SET appointment_reference=$1,appointment_effective_on=$2,appointment_expires_on=$3,verified_by=$4,verified_at=now(),state=$5,updated_at=now() WHERE id=$6',
+          [reference,effective,expiry || null,ctx.userId,next,id]);
+      }
+      await tx.query(
+        'INSERT INTO carrier_contract_events (tenant_id,contract_id,node_id,from_state,to_state,actor_id,reason) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [c.tenant_id,id,c.node_id,c.state,next,ctx.userId,'Independent source confirmed: '+reference]);
+      await audit(tx,ctx,'compliance.carrier_evidence_verified','carrier_contract_case',id,{kind,reference,from:c.state,to:next});
+      return {id,state:next,authorizationGranted:false};
+    });
+  });
+
   app.post('/v1/compliance/carrier-contracts/:id/evidence', async req => {
     const { ctx } = await deps.authenticate(req);
     const id = (req.params as { id: string }).id;
