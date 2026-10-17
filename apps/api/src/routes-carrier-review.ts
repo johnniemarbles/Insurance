@@ -97,10 +97,12 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
     const { ctx } = await deps.authenticate(req);
     const id = (req.params as { id: string }).id;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw invalid('Invalid ID');
-    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) throw invalid('JSON object body required');
+    const body = req.body as Record<string, unknown>;
+    if (Object.keys(body).some(key => !['kind','reference'].includes(key))) throw invalid('Unexpected evidence reference field');
     const kind = body.kind;
     const ref = typeof body.reference === 'string' ? body.reference.trim() : '';
-    if (!['signature','carrier_approval','appointment'].includes(String(kind)) || ref.length < 8 || ref.length > 500)
+    if (!['signature','carrier_approval','appointment'].includes(String(kind)) || ref.length < 8 || ref.length > 500 || /[\u0000-\u001f\u007f]/.test(ref))
       throw invalid('Valid evidence kind and reference are required');
     // Evidence reference is an internal review record, not self-attested signing or insurer verification.
     return withRequestTx(deps.appPool, ctx, async tx => {
