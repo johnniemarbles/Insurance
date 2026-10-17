@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
 
 type Call = (method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', path: string, body?: unknown) => Promise<any>;
-type Module = 'crm'|'compliance'|'training'|'audit'|'onboarding'|'carriers'|'notifications';
+type Module = 'crm'|'compliance'|'training'|'learning'|'audit'|'onboarding'|'carriers'|'notifications';
 interface Context {
   version: number; tenantId: string; country: 'CA'|'US'; roles: string[];
   activeNodeIds: string[]; isTenantAdmin: boolean;
@@ -21,8 +21,8 @@ const priorities:Record<string,Module[]> = {
   compliance:['compliance','onboarding','carriers','notifications'],
   auditor:['audit','notifications'],
   trainer:['training','notifications'],
-  learner:['notifications'],
-  staff:['crm','notifications'],
+  learner:['learning','notifications'],
+  staff:['crm','learning','notifications'],
 };
 const endpoints:Partial<Record<Module,string>> = {
   crm:'/v1/dashboard?days=30',
@@ -32,15 +32,16 @@ const endpoints:Partial<Record<Module,string>> = {
   compliance:'/v1/onboarding/dashboard',
   onboarding:'/v1/onboarding/dashboard',
   training:'/v1/training/dashboard',
+  learning:'/v1/my/learning',
 };
 const title:Record<Module,string> = {
   crm:'Pipeline performance',compliance:'Compliance alerts',onboarding:'Onboarding',
-  carriers:'Carrier authorizations',training:'Training and CE',audit:'Audit engagements',
+  carriers:'Carrier authorizations',learning:'My learning',training:'Training and CE',audit:'Audit engagements',
   notifications:'Notifications'
 };
 const destinations:Record<Module,string> = {
   crm:'pipelines',compliance:'compliance',onboarding:'compliance',
-  carriers:'compliance',training:'training',audit:'compliance',notifications:'notifications'
+  carriers:'compliance',learning:'training',training:'training',audit:'compliance',notifications:'notifications'
 };
 function Metrics({module,data}:{module:Module;data:any}) {
   let entries:[string,string|number][]=[];
@@ -53,6 +54,7 @@ function Metrics({module,data}:{module:Module;data:any}) {
   if(module==='carriers' && Array.isArray(data?.contracts)) entries=[['Contract cases (max 200)',data.contracts.length],['Expired appointments',data.contracts.filter((x:any)=>x.effectiveState==='expired').length],['Valid appointment dates — not authorization',data.contracts.filter((x:any)=>x.appointmentCurrentlyValid===true).length]];
   if(module==='audit' && Array.isArray(data?.engagements)) entries=[['Active',data.engagements.filter((e:any)=>e.status==='active').length],['Visible',data.engagements.length]];
   if(module==='notifications' && Array.isArray(data?.notifications)) entries=[['Unread',data.unread??0],['Recent',data.notifications.length]];
+  if(module==='learning' && Array.isArray(data?.enrollments)) entries=[['Assigned',data.enrollments.length],['In progress',data.enrollments.filter((e:any)=>e.status==='in_progress').length],['Completed',data.enrollments.filter((e:any)=>e.status==='completed').length]];
   if(module==='training' && data?.totals) entries=[
     ['Assigned',data.totals.assigned],['In progress',data.totals.inProgress],
     ['Completed',data.totals.completed],['Overdue',data.totals.overdue]];
@@ -90,7 +92,7 @@ export function UnifiedWorkspace({call,go,locale,name}:{call:Call;go:(page:strin
   useEffect(()=>{
     if(context.state!=='ready')return;
     let cancelled=false;
-    const allowed=(priorities[active]??[]).filter(m=>context.value.modules[m]);
+    const allowed=(priorities[active]??[]).filter(m=>(m==='learning'||context.value.modules[m]));
     setLoads(Object.fromEntries(allowed.map(m=>[m,pending()])));
     for(const m of allowed){
       const path=endpoints[m];
@@ -108,7 +110,7 @@ export function UnifiedWorkspace({call,go,locale,name}:{call:Call;go:(page:strin
     <button class="btn" onClick={()=>setGeneration(x=>x+1)}>Retry</button></div>;
   if(context.state!=='ready')return null;
   const c=context.value;
-  const visible=(priorities[active]??[]).filter(m=>c.modules[m]);
+  const visible=(priorities[active]??[]).filter(m=>(m==='learning'||c.modules[m]));
   return <main class="pii-workspace" style={{padding:"24px",maxWidth:"1400px",margin:"0 auto"}}>
     <header class="pii-workspace-header">
       <div><small>{c.country} · {c.scopes.map(s=>s.name).join(', ')||'Authorized workspace'}</small>
