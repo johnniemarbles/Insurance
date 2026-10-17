@@ -22,7 +22,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [reason,setReason]=useState('');
  const [templateVersion,setTemplateVersion]=useState('');
  const [history,setHistory]=useState<Record<string,{toState:string;fromState:string|null;reason:string|null;recordedAt:string}[]>>({});
- const [eligibility,setEligibility]=useState<Record<string,{blocks:string[];authorized:boolean}>>({});
+ const [eligibility,setEligibility]=useState<Record<string,{blocks:string[];authorized:boolean;evidence?:Record<string,boolean>}>>({});
  const fr=locale==='fr-CA';
  const refresh=async()=>{try{const r=await call('GET','/v1/compliance/carrier-contracts');setContracts(r.contracts??[]);setError('');}catch(e){setError(String(e));}};
  useEffect(()=>{void refresh();},[call]);
@@ -54,7 +54,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <button class="btn" type="button" onClick={()=>void showHistory(c.id)}>{fr?'Historique':'Review history'}</button>
        {history[c.id]&&<ol>{history[c.id]!.map((e,i)=><li key={i}>{e.fromState??'—'} → {e.toState} · {String(e.recordedAt).slice(0,19)}{e.reason?` · ${e.reason}`:''}</li>)}</ol>}
        <button class="btn" type="button" onClick={()=>void checkEligibility(c.id)}>{fr?'Vérifier les conditions':'Check eligibility'}</button>
-       {eligibility[c.id]&&<p class="muted" role="status">{fr?'Autorisation bloquée':'Authorization blocked'}: {eligibility[c.id]!.blocks.join(', ')}</p>}
+       {eligibility[c.id]&&<div role="status"><p class="muted">{fr?'Autorisation bloquée':'Authorization blocked'}: {eligibility[c.id]!.blocks.join(', ')}</p>{eligibility[c.id]!.evidence&&<ul>{Object.entries(eligibility[c.id]!.evidence!).map(([name,ok])=><li key={name}>{name}: {ok?'✓':'✗'}</li>)}</ul>}</div>}
        <div>{(options[c.effectiveState??c.state]??[]).map(next=><button class="btn" type="button" disabled={busy || (next==='documents_prepared'&&!templateVersion.trim()) ||
          (['declined','withdrawn','suspended','terminated','correction_required'].includes(next)&&!reason.trim())}
          onClick={()=>void move(c.id,next)}>{next.replaceAll('_',' ')}</button>)}</div>
