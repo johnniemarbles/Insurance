@@ -15,3 +15,8 @@ INSERT INTO carrier_directory (id,display_name,country) VALUES
  ('canada-life','Canada Life','CA')
 ON CONFLICT (id) DO NOTHING;
 COMMENT ON TABLE carrier_directory IS 'Public reference names, not a representation of carrier affiliation, appointment, or API access.';
+
+REVOKE ALL ON carrier_directory FROM PUBLIC;
+GRANT SELECT ON carrier_directory TO app_runtime;
+REVOKE INSERT, UPDATE, DELETE ON carrier_directory FROM app_runtime;
+REVOKE ALL ON carrier_directory FROM app_auth;
