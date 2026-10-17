@@ -21,7 +21,7 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
         'SELECT app_is_compliance_at_or_above($1,$2) AS ok',[row.tenant_id,row.node_id])).rows[0]?.ok;
       if (!allowed) throw forbidden('Compliance authorization required');
       if (!canMoveCarrierContract(row.state,next)) throw invalid('Invalid transition');
-      if (['broker_signed','appointment_verified','active'].includes(next))
+      if (['broker_signed','appointment_verified','active','approved'].includes(next))
         throw invalid('Signature, appointment verification and activation require integrated evidence workflows');
       if (['declined','withdrawn','suspended','terminated','correction_required'].includes(next) && !reason)
         throw invalid('Reason required');
