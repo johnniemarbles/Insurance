@@ -15,7 +15,11 @@ export function registerCarrierContractRoutes(app: FastifyInstance, deps: AppDep
     return withRequestTx(deps.appPool, ctx, async tx => {
       const rows = (await tx.query(
         `SELECT cc.id, cc.onboarding_case_id AS "onboardingCaseId", cc.node_id AS "nodeId",
-                cc.carrier_name AS "carrierName", cc.jurisdiction, cc.state, cc.template_version AS "templateVersion",
+                cc.carrier_name AS "carrierName", cc.jurisdiction, cc.state,
+                CASE WHEN cc.state IN ('active','appointment_verified')
+                           AND cc.appointment_expires_on < CURRENT_DATE THEN 'expired'
+                     ELSE cc.state END AS "effectiveState",
+                cc.template_version AS "templateVersion",
                 cc.appointment_effective_on AS "appointmentEffectiveOn", cc.appointment_expires_on AS "appointmentExpiresOn",
                 CASE WHEN cc.state = 'active' AND cc.appointment_effective_on <= CURRENT_DATE AND
                     (cc.appointment_expires_on IS NULL OR cc.appointment_expires_on >= CURRENT_DATE)
@@ -39,6 +43,9 @@ export function registerCarrierContractRoutes(app: FastifyInstance, deps: AppDep
       const rows = (await tx.query(
         `SELECT id, carrier_name AS "carrierName", jurisdiction, state, template_version AS "templateVersion",
                 appointment_effective_on AS "appointmentEffectiveOn", appointment_expires_on AS "appointmentExpiresOn",
+                CASE WHEN state IN ('active','appointment_verified')
+                           AND appointment_expires_on < CURRENT_DATE THEN 'expired'
+                     ELSE state END AS "effectiveState",
                 created_at AS "createdAt" FROM carrier_contract_cases
            WHERE onboarding_case_id = $1 ORDER BY created_at`, [id])).rows;
       return { contracts: rows };
