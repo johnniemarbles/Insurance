@@ -1320,3 +1320,25 @@ test('public API: read-only keys act as their maker, work only on /v1/public, an
   await o.query(`UPDATE app_users SET status = 'active' WHERE email = $1`, [P2U]);
   await o.end();
 });
+
+
+test('workspace context: roles, country and authorized node names are scoped to the viewer', async () => {
+  const admin = await call(ADMIN, 'GET', '/v1/workspace/context');
+  assert.equal(admin.status, 200);
+  assert.equal(admin.json.country, 'CA');
+  assert.equal(admin.json.version, 1);
+  assert.equal(admin.json.modules.notifications, true);
+  assert.equal(admin.json.modules.crm, true);
+
+  const partner = await call(P1U, 'GET', '/v1/workspace/context');
+  assert.equal(partner.status, 200);
+  assert.ok(partner.json.activeNodeIds.includes(P1));
+  assert.ok(!partner.json.activeNodeIds.includes(P2));
+  assert.ok(partner.json.scopes.every((s: { id: string }) => partner.json.activeNodeIds.includes(s.id)));
+  assert.equal(partner.json.scopeMode, 'server-authorized');
+
+  const learner = await call(LRN, 'GET', '/v1/workspace/context');
+  assert.equal(learner.status, 200);
+  assert.ok(learner.json.roles.includes('learner'));
+  assert.equal(learner.json.modules.notifications, true);
+});
