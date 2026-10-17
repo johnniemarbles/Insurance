@@ -17,6 +17,7 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
   useEffect(() => {
     let active = true;
     setEntries([]);
+    setBusy(false);
     setProduct('');
     setReference('');
     setError('');
@@ -34,6 +35,7 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
     setMessage('');
     try {
       const result = await call('POST', path, { productCode: product.trim().toUpperCase(), externalReference: reference.trim() });
+      if (activeContract.current !== requestedContract) return;
       if (!result.staged) {
         setError(result.reason === 'duplicate_external_reference' ? 'Reference already staged.' : 'Carrier product authorization is not current.');
         return;
