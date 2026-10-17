@@ -7,11 +7,11 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
   app.get('/v1/workspace/context', async (req) => {
     const { ctx } = await deps.authenticate(req);
     const roles = [...new Set(ctx.roles.map(r => r.role))];
-    const admin = ctx.isTenantAdmin || roles.includes('admin');
-    const training = admin || roles.includes('trainer') || roles.includes('manager');
-    const compliance = admin || roles.includes('compliance');
-    const audit = admin || roles.includes('auditor') || roles.includes('compliance') || roles.length === 0;
-    const crm = Boolean(ctx.canUseCrm);
+    const isTenantAdmin = Boolean(ctx.isTenantAdmin);
+    const compliance = isTenantAdmin || roles.includes('compliance');
+    const training = isTenantAdmin || roles.includes('trainer') || roles.includes('manager');
+    const audit = isTenantAdmin || roles.includes('auditor') || roles.includes('compliance') || roles.length === 0;
+    const crm = Boolean(ctx.canUseCrm) && (isTenantAdmin || roles.some(r => r === 'admin' || r === 'manager' || r === 'partner' || r === 'staff'));
     const modules = {
       crm, compliance, training, learning: true, audit,
       onboarding: compliance || crm,
