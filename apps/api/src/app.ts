@@ -60,6 +60,7 @@ import { registerForecastRoutes } from './routes-forecast.ts';
 import { registerDuplicateRoutes } from './routes-duplicates.ts';
 import { registerPublicApiRoutes } from './routes-publicapi.ts';
 import { registerDashboardRoutes } from './routes-dashboard.ts';
+import { registerWorkspaceRoutes } from './routes-workspace.ts';
 import { registerNotificationRoutes } from './routes-notifications.ts';
 import { registerPrivacyRoutes } from './routes-privacy.ts';
 import { registerActivityRoutes } from './routes-activity.ts';
@@ -168,6 +169,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerLmsRoutes(app, deps);
   registerInsightRoutes(app, deps);
   registerDashboardRoutes(app, deps);
+  registerWorkspaceRoutes(app, deps);
   registerPublicApiRoutes(app, deps);
   registerAutomationRoutes(app, deps);
   registerAliasRoutes(app, deps);

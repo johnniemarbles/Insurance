@@ -32,7 +32,8 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const order = layout.order.filter((id) => (NAV_ITEMS as readonly string[]).includes(id));
       for (const id of NAV_ITEMS) if (!order.includes(id)) order.push(id); // items added since the layout was saved
       const lms = process.env.LMS_ENABLED !== '0'; // on by default; set LMS_ENABLED=0 to switch the learning side off
-      const ids = order.filter((id) => !hidden.has(id) && (id !== 'compliance' || ctx.canUseCrm) && (id !== 'training' || lms)); // Training holds courses and each licensee's CE file, so every signed-in person gets it
+      const canCompliance = Boolean(ctx.canUseCrm || ctx.isTenantAdmin || ctx.roles.some((r) => r.role === 'compliance' || r.role === 'auditor' || r.role === 'admin'));
+      const ids = order.filter((id) => !hidden.has(id) && (id !== 'compliance' || canCompliance) && (id !== 'training' || lms)); // Training holds courses and each licensee's CE file, so every signed-in person gets it
       if (!ids.includes('settings')) ids.push('settings'); // there is always a way back to Settings
       let tasksDue = 0;
       let pipelines: { id: string; name: string; count: number; views: { id: string; name: string }[] }[] = [];
@@ -56,7 +57,11 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/v1/home', async (req) => {
     const { ctx } = await deps.authenticate(req);
-    requireCrm(ctx);
+    const roles = ctx.roles.map((r) => r.role);
+    const canUseCrm = Boolean(ctx.canUseCrm && (ctx.isTenantAdmin || roles.includes('admin') || roles.some((r) => ['partner', 'manager', 'staff'].includes(r))));
+    if (!canUseCrm) {
+      return { week: null, renewals: [], tasks: [], upcoming: [], risks: [], merges: [], recent: [], trending: [], pins: [], views: [], defaultPipeline: '', capabilities: { crm: false } };
+    }
     return withRequestTx(deps.appPool, ctx, async (tx) => {
       const tasks = (await tx.query(
         `SELECT t.id, t.title, t.due_at AS "dueAt", t.box_id AS "boxId", b.name AS "boxName", b.pipeline_id AS "pipelineId"
@@ -97,7 +102,7 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const done = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM tasks WHERE assignee_id = $1 AND done_at >= date_trunc('week', now())`, [ctx.userId])).rows[0]!.n;
       const week = { ring: st['ui.goalRing']?.value !== false, goal: Number(st['ui.weeklyGoal']?.value ?? 10), done };
       const renewals = (await listRenewals(tx, { daysAhead: 45, daysBack: 14, limit: 6 })).items;
-      return { week, renewals, tasks, upcoming, risks, merges, recent, trending, pins, views, defaultPipeline };
+      return { week, renewals, tasks, upcoming, risks, merges, recent, trending, pins, views, defaultPipeline, capabilities: { crm: true } };
     });
   });
 
