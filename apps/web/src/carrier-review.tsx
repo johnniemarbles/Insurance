@@ -35,6 +35,14 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const activeCount=contracts.filter(c=>c.effectiveState==='active'||c.state==='active').length;
  const attentionCount=contracts.filter(c=>['suspended','expired','correction_required'].includes(c.effectiveState??c.state)||(c.state==='active'&&!c.appointmentCurrentlyValid)).length;
  const [expanded,setExpanded]=useState<Record<string,boolean>>({});
+ const [search,setSearch]=useState('');
+ const [statusFilter,setStatusFilter]=useState('all');
+ const visibleContracts=contracts.filter(c=>{
+   const state=c.effectiveState??c.state;
+   const query=search.trim().toLocaleLowerCase();
+   return (statusFilter==='all'||(statusFilter==='attention'?['suspended','expired','correction_required'].includes(state)||(c.state==='active'&&!c.appointmentCurrentlyValid):state===statusFilter))
+     && (!query||[c.carrierName,c.jurisdiction,c.onboardingCaseId].some(value=>value.toLocaleLowerCase().includes(query)));
+ });
  const refresh=async()=>{try{const r=await call('GET','/v1/compliance/carrier-contracts');setContracts(r.contracts??[]);setError('');}catch(e){setError(String(e));}finally{setLoading(false);}};
  useEffect(()=>{void refresh();},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
@@ -56,8 +64,9 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    <div class="obcard" role="status"><strong>{fr?'Vue d’ensemble des contrats':'Contract overview'}</strong><p>{contracts.length} {fr?'contrats':'contracts'} · {activeCount} {fr?'actifs':'active'} · {attentionCount} {fr?'à examiner':'requiring attention'}</p></div>
    <button class="btn" type="button" disabled={busy} onClick={()=>void reconcile()}>{fr?'Rapprocher les nominations expirées':'Reconcile expired appointments'}</button>
 
+   <div class="obcard"><label class="fl">{fr?'Rechercher un assureur ou une juridiction':'Search carrier or jurisdiction'}<input type="search" value={search} onInput={e=>setSearch((e.target as HTMLInputElement).value)}/></label><label class="fl">{fr?'Filtrer les contrats':'Filter contracts'}<select value={statusFilter} onChange={e=>setStatusFilter((e.target as HTMLSelectElement).value)}><option value="all">{fr?'Tous':'All'}</option><option value="attention">{fr?'À examiner':'Needs attention'}</option><option value="active">{fr?'Actifs':'Active'}</option><option value="appointment_verified">{fr?'Nominations vérifiées':'Appointment verified'}</option><option value="requested">{fr?'Demandés':'Requested'}</option><option value="suspended">{fr?'Suspendus':'Suspended'}</option><option value="expired">{fr?'Expirés':'Expired'}</option></select></label></div>
    {loading?<p role="status" class="muted">{fr?'Chargement des contrats…':'Loading carrier contracts…'}</p>:contracts.length===0?<p class="muted">{error?(fr?'Impossible de charger les contrats.':'Unable to load contracts.'):(fr?'Aucun contrat en attente.':'No carrier contracts found.')}</p>:
-     <ul class="oblist">{contracts.map(c=><li key={c.id}>
+     <ul class="oblist">{visibleContracts.length===0?<li class="muted">{fr?'Aucun contrat ne correspond aux filtres.':'No contracts match these filters.'}</li>:visibleContracts.map(c=><li key={c.id}>
        <div><strong>{c.carrierName}</strong> · {c.jurisdiction} · {c.effectiveState??c.state}
          <small class="muted"> · {c.onboardingCaseId}</small></div>
        {c.templateVersion&&<p class="muted">{fr?'Modèle':'Template'}: {c.templateVersion}</p>}
