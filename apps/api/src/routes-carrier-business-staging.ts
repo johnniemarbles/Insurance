@@ -8,6 +8,19 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Stage business internally; this route never contacts a carrier. */
 export function registerCarrierBusinessStagingRoutes(app: FastifyInstance, deps: AppDeps): void {
+  app.get('/v1/compliance/carrier-contracts/:id/business-staging', async req => {
+    const { ctx } = await deps.authenticate(req);
+    const id = (req.params as { id: string }).id;
+    if (!UUID.test(id)) throw invalid('Invalid contract ID');
+    return withRequestTx(deps.appPool, ctx, async tx => {
+      const c = (await tx.query<{ tenant_id: string; node_id: string }>('SELECT tenant_id,node_id FROM carrier_contract_cases WHERE id=$1', [id])).rows[0];
+      if (!c) throw notFound('Carrier contract not found');
+      const allowed = (await tx.query<{ ok: boolean }>('SELECT app_is_compliance_at_or_above($1,$2) AS ok', [c.tenant_id,c.node_id])).rows[0]?.ok === true;
+      if (!allowed) throw forbidden('Compliance authorization required');
+      const submissions = (await tx.query('SELECT id,product_code,external_reference,status,created_by,created_at FROM carrier_business_submissions WHERE tenant_id=$1 AND node_id=$2 AND contract_id=$3 ORDER BY created_at DESC LIMIT 100', [c.tenant_id,c.node_id,id])).rows;
+      return { submissions };
+    });
+  });
   app.post('/v1/compliance/carrier-contracts/:id/business-staging', async (req, reply) => {
     const { ctx } = await deps.authenticate(req);
     const id = (req.params as { id: string }).id;
