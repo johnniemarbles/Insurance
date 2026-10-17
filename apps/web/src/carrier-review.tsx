@@ -49,7 +49,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
        <button class="btn" type="button" onClick={()=>void checkEligibility(c.id)}>{fr?'Vérifier les conditions':'Check eligibility'}</button>
        {eligibility[c.id]&&<p class="muted" role="status">{fr?'Autorisation bloquée':'Authorization blocked'}: {eligibility[c.id]!.blocks.join(', ')}</p>}
-       <div>{(options[c.state]??[]).map(next=><button class="btn" type="button" disabled={busy || (next==='documents_prepared'&&!templateVersion.trim()) ||
+       <div>{(options[c.effectiveState??c.state]??[]).map(next=><button class="btn" type="button" disabled={busy || (next==='documents_prepared'&&!templateVersion.trim()) ||
          (['declined','withdrawn','suspended','terminated','correction_required'].includes(next)&&!reason.trim())}
          onClick={()=>void move(c.id,next)}>{next.replaceAll('_',' ')}</button>)}</div>
      </li>)}</ul>}
