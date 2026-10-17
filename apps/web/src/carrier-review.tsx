@@ -47,7 +47,8 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  useEffect(()=>{void refresh();},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
- const productFor=(id:string)=>contractProducts[id]??'';
+ const productFor=(id:string)=>(contractProducts[id]??'').trim().toUpperCase();
+ const validProduct=(id:string)=>/^[A-Z0-9_-]{1,80}$/.test(productFor(id));
  const checkProduct=async(id:string)=>{const selected=productFor(id);try{const r=await call('GET',`/v1/carrier-contracts/${id}/products/${selected}/preflight`);if(latestProducts.current[id]===selected){setPreflight(p=>({...p,[id]:r}));setError('');}}catch(e){setError(String(e));}};
  const activate=async(id:string)=>{setBusy(true);try{const r=await call('POST',`/v1/compliance/carrier-contracts/${id}/activate`,{productCode:productFor(id)});if(!r.activated)setError(`Activation blocked: ${(r.blocks??[]).join(', ')}`);else{setError('');await refresh();}}catch(e){setError(String(e));}finally{setBusy(false);}};
  const revokeProduct=async(id:string)=>{setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${id}/products/${productFor(id)}/revoke`,{reason:productRevocationReason[id]??''});setProductRevocationReason(p=>({...p,[id]:''}));setPreflight(p=>{const next={...p};delete next[id];return next;});setError('');await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
@@ -78,16 +79,17 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <label class="fl">{fr?'Motif de la décision':'Review reason'}<input value={reasons[c.id]??''} maxLength={500} onInput={e=>setReasons(p=>({...p,[c.id]:(e.target as HTMLInputElement).value}))}/></label>
        <label class="fl">{fr?'Version du modèle de contrat':'Carrier agreement template version'}<input value={templateVersions[c.id]??''} maxLength={120} onInput={e=>setTemplateVersions(p=>({...p,[c.id]:(e.target as HTMLInputElement).value}))}/></label>
        <label class="fl">Product code for this carrier<input maxLength={80} value={contractProducts[c.id]??''} onInput={e=>{latestProducts.current[c.id]=(e.target as HTMLInputElement).value.toUpperCase();setContractProducts(p=>({...p,[c.id]:latestProducts.current[c.id]}));setPreflight(p=>{const next={...p};delete next[c.id];return next;});}}/></label>
+       {!validProduct(c.id)&&productFor(c.id).length>0&&<p class="err" role="alert">{fr?'Utilisez 1 à 80 caractères : A–Z, 0–9, _ ou -.':'Use 1–80 characters: A–Z, 0–9, _ or -.'}</p>}
        <label class="fl">Product revocation reason<input value={productRevocationReason[c.id]??''} maxLength={500} onInput={e=>setProductRevocationReason(p=>({...p,[c.id]:(e.target as HTMLInputElement).value}))}/></label>
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
        <h4>{fr?'2. Vérification de conformité':'2. Compliance verification'}</h4>
        <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
        <CarrierHoldsPanel call={call} contractId={c.id}/>
        <h4>{fr?'3. Autorisation du produit':'3. Product authorization'}</h4>
-       <button class="btn" type="button" disabled={!productFor(c.id).trim()} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
+       <button class="btn" type="button" disabled={busy||!validProduct(c.id)} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
        {preflight[c.id]&&<p class="muted" role="status">{preflight[c.id]!.eligibleForFurtherChecks?'Evidence present; final checks still required':`Missing or invalid: ${(preflight[c.id]!.blocks??preflight[c.id]!.missing).join(', ')}`}</p>}
-       {(c.state==='appointment_verified'||c.state==='active')&&<button class="btn" type="button" disabled={busy||!productFor(c.id).trim()} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
-       {c.state==='active'&&<button class="btn" type="button" disabled={busy||!productFor(c.id).trim()||(productRevocationReason[c.id]??'').trim().length<8} onClick={()=>void revokeProduct(c.id)}>Revoke product authorization</button>}
+       {(c.state==='appointment_verified'||c.state==='active')&&<button class="btn" type="button" disabled={busy||!validProduct(c.id)} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
+       {c.state==='active'&&<button class="btn" type="button" disabled={busy||!validProduct(c.id)||(productRevocationReason[c.id]??'').trim().length<8} onClick={()=>void revokeProduct(c.id)}>Revoke product authorization</button>}
        <h4>{fr?'4. Enregistrement interne':'4. Internal business staging'}</h4>
        <CarrierBusinessStagingPanel call={call} contractId={c.id}/>
        <h4>{fr?'5. Historique et suivi':'5. History and monitoring'}</h4>
