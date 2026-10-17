@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import Fastify from 'fastify';
+import { registerCarrierReviewRoutes } from '../src/routes-carrier-review.ts';
 import { registerCarrierActivationRoutes } from '../src/routes-carrier-activation.ts';
 import { registerCarrierAuthorizationEvidenceRoutes } from '../src/routes-carrier-authorization-evidence.ts';
 import { registerCarrierHoldRoutes } from '../src/routes-carrier-holds.ts';
@@ -17,6 +18,7 @@ test('carrier mutation endpoints reject malformed and unexpected input before da
     authenticate: async () => ({ ctx: { userId: id, tenantId: id } }),
     appPool: undefined,
   } as unknown as AppDeps;
+  registerCarrierReviewRoutes(app, deps);
   registerCarrierActivationRoutes(app, deps);
   registerCarrierAuthorizationEvidenceRoutes(app, deps);
   registerCarrierHoldRoutes(app, deps);
@@ -27,6 +29,12 @@ test('carrier mutation endpoints reject malformed and unexpected input before da
     return reply.code(500).send({ code: 'unexpected' });
   });
   const cases: Array<{ url: string; payload: unknown }> = [
+    { url: base + '/review', payload: [] },
+    { url: base + '/review', payload: { state: 'submitted', unexpected: true } },
+    { url: base + '/review', payload: { state: 'submitted', reason: 'bad\nreason' } },
+    { url: base + '/verify', payload: [] },
+    { url: base + '/verify', payload: { kind: 'signature', reference: 'REFERENCE-123', confirmedWithSource: true, unexpected: true } },
+    { url: base + '/verify', payload: { kind: 'appointment', reference: 'REFERENCE-123', confirmedWithSource: true, effectiveOn: '2026-10-18', expiresOn: '2026-10-17' } },
     { url: base + '/activate', payload: [] },
     { url: base + '/activate', payload: { productCode: 'AUTO', isAdmin: true } },
     { url: base + '/authorization-evidence', payload: [] },
