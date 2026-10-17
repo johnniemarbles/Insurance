@@ -24,6 +24,8 @@ CREATE TABLE carrier_contract_cases (
  created_at timestamptz NOT NULL DEFAULT now(),
  updated_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE (onboarding_case_id, carrier_name, jurisdiction),
+ CHECK (state NOT IN ('documents_prepared','broker_signed','submitted','carrier_review','approved','appointment_verified','active') OR template_version IS NOT NULL),
+ CHECK (appointment_expires_on IS NULL OR appointment_effective_on IS NOT NULL AND appointment_expires_on >= appointment_effective_on),
  CHECK (state NOT IN ('broker_signed','submitted','carrier_review','approved','appointment_verified','active') OR
  (signature_evidence_ref IS NOT NULL AND signature_verified_by IS NOT NULL AND signature_verified_at IS NOT NULL)),
  CHECK (state NOT IN ('approved','appointment_verified','active') OR
