@@ -26,6 +26,8 @@ const priorities:Record<string,Module[]> = {
 };
 const endpoints:Partial<Record<Module,string>> = {
   crm:'/v1/dashboard?days=30',
+  audit:'/v1/audit/me',
+  notifications:'/v1/notifications?limit=20',
   compliance:'/v1/onboarding/dashboard',
   onboarding:'/v1/onboarding/dashboard',
   training:'/v1/training/dashboard',
@@ -47,6 +49,8 @@ function Metrics({module,data}:{module:Module;data:any}) {
   if((module==='compliance'||module==='onboarding') && data) entries=[
     ['Expired',data.expiry?.expired??'—'],['Expiring soon',data.expiry?.expiringSoon??'—'],
     ['Overdue reports',data.selfReports?.overdue??'—'],['Rechecks overdue',data.rechecks?.overdue??'—']];
+  if(module==='audit' && Array.isArray(data?.engagements)) entries=[['Active',data.engagements.filter((e:any)=>e.status==='active').length],['Visible',data.engagements.length]];
+  if(module==='notifications' && Array.isArray(data?.notifications)) entries=[['Unread',data.unread??0],['Recent',data.notifications.length]];
   if(module==='training' && data?.totals) entries=[
     ['Assigned',data.totals.assigned],['In progress',data.totals.inProgress],
     ['Completed',data.totals.completed],['Overdue',data.totals.overdue]];
