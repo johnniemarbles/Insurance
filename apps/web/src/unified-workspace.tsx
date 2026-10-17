@@ -79,6 +79,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
   const [active,setActive]=useState('');
   const [loads,setLoads]=useState<Partial<Record<Module,Load<any>>>>({});
   const [generation,setGeneration]=useState(0);
+  const [homeRevision,setHomeRevision]=useState(0);
   useEffect(()=>{
     let cancelled=false;
     setContext(pending());setLoads({});
@@ -117,7 +118,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
       <div><small>{c.country} · {c.scopes.map(s=>s.name).join(', ')||'Authorized workspace'}</small>
         <h1>{locale==='fr-CA'?'Mon espace de travail':'My workspace'}{name?', '+name:''}</h1>
         <p>{workspaceNames[active]??'Personal'} overview · Data limited to your authorized access</p></div>
-      <button class="btn" onClick={()=>setGeneration(x=>x+1)}>Refresh</button>
+      <button class="btn" onClick={()=>{setGeneration(x=>x+1);setHomeRevision(x=>x+1);}}>Refresh</button>
     </header>
     {c.roles.length>1&&<nav aria-label="Workspace perspective" class="pii-workspace-roles">
       {c.roles.map(r=><button key={r} class="btn" aria-pressed={r===active}
@@ -125,7 +126,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
     {visible.length?<div class="pii-workspace-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:"16px"}}>{visible.map(m=>
       <Panel key={m} module={m} load={loads[m]??pending()} go={go}/>)}</div>:
       <p>No summary modules are currently available for this role. Contact your administrator if access is expected.</p>}
-    {c.roles.includes(active) && c.modules.crm && (priorities[active]??[]).includes('crm') && legacyHome}
+    {c.roles.includes(active) && c.modules.crm && (priorities[active]??[]).includes('crm') && <div key={homeRevision}>{legacyHome}</div>}
     <p class="pii-workspace-footnote">Perspective changes do not elevate permissions. All records are authorized by the server.</p>
   </main>;
 }
