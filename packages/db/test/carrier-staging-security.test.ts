@@ -13,6 +13,7 @@ test('carrier submission and staging security objects are installed', async () =
     )).rows.map(r => r.conname);
     assert.ok(constraints.includes('carrier_submission_reference_canonical'));
     assert.ok(constraints.includes('carrier_submission_product_canonical'));
+    assert.ok(constraints.includes('carrier_submission_reference_no_controls'));
 
     const functions = (await client.query<{ proname: string; prosecdef: boolean }>(
       "SELECT proname,prosecdef FROM pg_proc WHERE proname IN ('carrier_product_submission_authorized','carrier_product_submission_authorized_locked')",
