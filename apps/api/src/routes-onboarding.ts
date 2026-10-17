@@ -609,7 +609,7 @@ export function registerOnboardingRoutes(app: FastifyInstance, deps: AppDeps): v
         if (await managesBranchAbove(tx, ctx.userId, c.nodeId)) return { ...view, staff: await assignedStaff(tx, c.id), candidates: await staffCandidates(tx, c) };
         return view;
       }));
-      return { cases: cases.map((v, i) => ({ ...v, profile: profiles.get(rows[i]!.nodeId) ?? null })) };
+      return { cases: cases.map((v, i) => rows[i]!.full ? { ...v, profile: profiles.get(rows[i]!.nodeId) ?? null } : v) };
     });
   });
 
