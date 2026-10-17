@@ -23,6 +23,12 @@ test('carrier submission and staging security objects are installed', async () =
     )).rows[0];
     assert.deepEqual(referenceValidation, { ordinary: true, newline: false, tab: false, delete_char: false });
 
+    const uniqueReference = (await client.query<{ indexdef: string }>(
+      "SELECT indexdef FROM pg_indexes WHERE tablename='carrier_business_submissions' AND indexname='carrier_business_submissions_tenant_id_contract_id_external_reference_key'",
+    )).rows[0]?.indexdef ?? '';
+    assert.match(uniqueReference, /UNIQUE INDEX/);
+    assert.match(uniqueReference, /tenant_id.*contract_id.*external_reference/);
+
     const functions = (await client.query<{ proname: string; prosecdef: boolean }>(
       "SELECT proname,prosecdef FROM pg_proc WHERE proname IN ('carrier_product_submission_authorized','carrier_product_submission_authorized_locked')",
     )).rows;
