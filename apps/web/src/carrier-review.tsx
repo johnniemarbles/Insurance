@@ -21,9 +21,11 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [busy,setBusy]=useState(false);
  const [reason,setReason]=useState('');
  const [templateVersion,setTemplateVersion]=useState('');
+ const [eligibility,setEligibility]=useState<Record<string,{blocks:string[];authorized:boolean}>>({});
  const fr=locale==='fr-CA';
  const refresh=async()=>{try{const r=await call('GET','/v1/compliance/carrier-contracts');setContracts(r.contracts??[]);setError('');}catch(e){setError(String(e));}};
  useEffect(()=>{void refresh();},[call]);
+ const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const move=async(id:string,state:string)=>{
    setBusy(true);
    try{await call('POST',`/v1/compliance/carrier-contracts/${id}/review`,{state,reason,templateVersion});setReason('');await refresh();}
@@ -45,6 +47,8 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        {c.appointmentEffectiveOn&&<p class="muted">{fr?'Nomination':'Appointment'}: {String(c.appointmentEffectiveOn).slice(0,10)} – {c.appointmentExpiresOn?String(c.appointmentExpiresOn).slice(0,10):(fr?'sans date de fin enregistrée':'no expiry recorded')}</p>}
        {c.state==='active'&&!c.appointmentCurrentlyValid&&<p role="alert" class="err">{fr?'Nomination non valide actuellement — vérification requise':'Appointment is not currently valid — review required'}</p>}
        <CarrierEvidenceForm call={call} id={c.id} state={c.state} onSaved={refresh}/>
+       <button class="btn" type="button" onClick={()=>void checkEligibility(c.id)}>{fr?'Vérifier les conditions':'Check eligibility'}</button>
+       {eligibility[c.id]&&<p class="muted" role="status">{fr?'Autorisation bloquée':'Authorization blocked'}: {eligibility[c.id]!.blocks.join(', ')}</p>}
        <div>{(options[c.state]??[]).map(next=><button class="btn" type="button" disabled={busy || (next==='documents_prepared'&&!templateVersion.trim()) ||
          (['declined','withdrawn','suspended','terminated','correction_required'].includes(next)&&!reason.trim())}
          onClick={()=>void move(c.id,next)}>{next.replaceAll('_',' ')}</button>)}</div>
