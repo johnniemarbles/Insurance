@@ -56,7 +56,9 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/v1/home', async (req) => {
     const { ctx } = await deps.authenticate(req);
-    requireCrm(ctx);
+    if (!ctx.canUseCrm) {
+      return { week: null, renewals: [], tasks: [], upcoming: [], risks: [], merges: [], recent: [], trending: [], pins: [], views: [], defaultPipeline: '', capabilities: { crm: false } };
+    }
     return withRequestTx(deps.appPool, ctx, async (tx) => {
       const tasks = (await tx.query(
         `SELECT t.id, t.title, t.due_at AS "dueAt", t.box_id AS "boxId", b.name AS "boxName", b.pipeline_id AS "pipelineId"
@@ -97,7 +99,7 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const done = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM tasks WHERE assignee_id = $1 AND done_at >= date_trunc('week', now())`, [ctx.userId])).rows[0]!.n;
       const week = { ring: st['ui.goalRing']?.value !== false, goal: Number(st['ui.weeklyGoal']?.value ?? 10), done };
       const renewals = (await listRenewals(tx, { daysAhead: 45, daysBack: 14, limit: 6 })).items;
-      return { week, renewals, tasks, upcoming, risks, merges, recent, trending, pins, views, defaultPipeline };
+      return { week, renewals, tasks, upcoming, risks, merges, recent, trending, pins, views, defaultPipeline, capabilities: { crm: true } };
     });
   });
 
