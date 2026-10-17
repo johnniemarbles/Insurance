@@ -61,3 +61,18 @@ test('unrecognized carrier states fail closed rather than crash', () => {
   assert.equal(canMoveCarrierContract('requested', 'unknown' as never), false);
   assert.equal(maySubmitCarrierBusiness({ ...valid, carrierState: 'unknown' as never }), false);
 });
+
+test('all pre-activation states deny submission, including unknown states', () => {
+  for (const state of ['requested','documents_prepared','broker_signed','submitted','carrier_review',
+    'correction_required','approved','appointment_verified','declined','withdrawn',
+    'suspended','expired','terminated','unexpected'] as const) {
+    assert.equal(maySubmitCarrierBusiness({ ...valid, carrierState: state as never }), false, state);
+  }
+});
+test('reactivation requires a permitted transition and never bypasses live eligibility', () => {
+  assert.equal(canMoveCarrierContract('suspended','active'), true);
+  assert.equal(canMoveCarrierContract('expired','active'), false);
+  assert.equal(maySubmitCarrierBusiness({ ...valid, carrierState:'active', appointmentNotExpired:false }), false);
+  assert.equal(maySubmitCarrierBusiness({ ...valid, carrierState:'active', complianceHold:true }), false);
+  assert.equal(maySubmitCarrierBusiness({ ...valid, carrierState:'active', trainingCurrent:false }), false);
+});
