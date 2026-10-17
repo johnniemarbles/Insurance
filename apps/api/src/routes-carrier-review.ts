@@ -53,7 +53,7 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
       if (kind === 'signature' && c.state !== 'documents_prepared') throw invalid('Contract is not ready for signing review');
       if (kind === 'carrier_approval' && c.state !== 'carrier_review') throw invalid('Carrier review is not in progress');
       if (kind === 'appointment' && c.state !== 'approved') throw invalid('Carrier approval required before appointment');
-      // Store references for independent verification; no state or authorization change occurs here.
+      // A reference is only a review note; independent source verification remains mandatory.
       await audit(tx,ctx,'compliance.carrier_evidence_reference','carrier_contract_case',id,{kind,reference:ref});
       return { id, recorded: true, state: c.state, authorizationGranted: false };
     });
