@@ -10,6 +10,19 @@ const uuid = (v: unknown) => {
   return v;
 };
 export function registerCarrierContractRoutes(app: FastifyInstance, deps: AppDeps): void {
+  app.get('/v1/compliance/carrier-contracts', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    return withRequestTx(deps.appPool, ctx, async tx => {
+      const rows = (await tx.query(
+        `SELECT cc.id, cc.onboarding_case_id AS "onboardingCaseId", cc.node_id AS "nodeId",
+                cc.carrier_name AS "carrierName", cc.jurisdiction, cc.state,
+                cc.created_at AS "createdAt", cc.updated_at AS "updatedAt"
+           FROM carrier_contract_cases cc
+          WHERE app_is_compliance_at_or_above(cc.tenant_id, cc.node_id)
+          ORDER BY cc.updated_at DESC LIMIT 200`)).rows;
+      return { contracts: rows };
+    });
+  });
   app.get('/v1/onboarding/cases/:id/carrier-contracts', async (req) => {
     const { ctx } = await deps.authenticate(req);
     const id = uuid((req.params as { id: string }).id);
