@@ -9,13 +9,18 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
   const activeContract = useRef(contractId);
-  activeContract.current = contractId;
+  const requestVersion = useRef(0);
+  if (activeContract.current !== contractId) {
+    activeContract.current = contractId;
+    requestVersion.current += 1;
+  }
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const path = `/v1/compliance/carrier-contracts/${contractId}/business-staging`;
 
   useEffect(() => {
     let active = true;
+    const version = ++requestVersion.current;
     setEntries([]);
     setBusy(false);
     setProduct('');
@@ -23,19 +28,20 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
     setError('');
     setMessage('');
     void call('GET', path).then(result => {
-      if (active) setEntries(result.submissions ?? []);
-    }).catch(e => { if (active) setError(String(e)); });
+      if (active && requestVersion.current === version) setEntries(result.submissions ?? []);
+    }).catch(e => { if (active && requestVersion.current === version) setError(String(e)); });
     return () => { active = false; };
   }, [call, contractId]);
 
   const stage = async () => {
     const requestedContract = contractId;
+    const version = requestVersion.current;
     setBusy(true);
     setError('');
     setMessage('');
     try {
       const result = await call('POST', path, { productCode: product.trim().toUpperCase(), externalReference: reference.trim() });
-      if (activeContract.current !== requestedContract) return;
+      if (activeContract.current !== requestedContract || requestVersion.current !== version) return;
       if (!result.staged) {
         setError(result.reason === 'duplicate_external_reference' ? 'Reference already staged.' : 'Carrier product authorization is not current.');
         return;
@@ -44,7 +50,7 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
       setReference('');
       setMessage('Recorded in the internal staging ledger. Nothing has been sent to an insurer.');
       const latest = await call('GET', path);
-      if (activeContract.current === requestedContract) setEntries(latest.submissions ?? []);
+      if (activeContract.current === requestedContract && requestVersion.current === version) setEntries(latest.submissions ?? []);
     } catch (e) {
       if (activeContract.current !== requestedContract) return;
       const description = String(e);
