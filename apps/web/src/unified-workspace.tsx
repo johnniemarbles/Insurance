@@ -92,7 +92,7 @@ export function UnifiedWorkspace({call,go,locale,name}:{call:Call;go:(page:strin
   useEffect(()=>{
     if(context.state!=='ready')return;
     let cancelled=false;
-    const allowed=(priorities[active]??[]).filter(m=>(m==='learning'||context.value.modules[m]));
+    const allowed=(priorities[active]??[]).filter(m=>context.value.modules[m]);
     setLoads(Object.fromEntries(allowed.map(m=>[m,pending()])));
     for(const m of allowed){
       const path=endpoints[m];
@@ -110,7 +110,7 @@ export function UnifiedWorkspace({call,go,locale,name}:{call:Call;go:(page:strin
     <button class="btn" onClick={()=>setGeneration(x=>x+1)}>Retry</button></div>;
   if(context.state!=='ready')return null;
   const c=context.value;
-  const visible=(priorities[active]??[]).filter(m=>(m==='learning'||c.modules[m]));
+  const visible=(priorities[active]??[]).filter(m=>c.modules[m]);
   return <main class="pii-workspace" style={{padding:"24px",maxWidth:"1400px",margin:"0 auto"}}>
     <header class="pii-workspace-header">
       <div><small>{c.country} · {c.scopes.map(s=>s.name).join(', ')||'Authorized workspace'}</small>
