@@ -16,7 +16,7 @@ export function CarrierHoldsPanel({call,contractId}:{call:Call;contractId:string
   <h4>Carrier compliance holds</h4>
   {error&&<p role="alert">{error}</p>}
   <label>Hold reason<input value={reason} maxLength={500} onInput={e=>setReason((e.target as HTMLInputElement).value)}/></label>
-  <button type="button" disabled={busy||reason.trim().length<8} onClick={()=>void create()}>Place hold</button>
-  {holds.map(h=><div key={h.id}><p>{h.released_at?'Released':'Open'}: {h.reason} · opened {String(h.created_at).slice(0,10)}{h.released_at?' · released '+String(h.released_at).slice(0,10)+' ('+(h.release_reason??'')+')':''}</p>{!h.released_at&&<><label>Release reason<input maxLength={500} value={releaseReasons[h.id]??''} onInput={e=>setReleaseReasons(p=>({...p,[h.id]:(e.target as HTMLInputElement).value}))}/></label><button type="button" disabled={busy||(releaseReasons[h.id]??'').trim().length<8} onClick={()=>void release(h.id)}>Release hold</button></>}</div>)}
+  <button type="button" disabled={busy||reason.trim().length<8||reason.trim().length>500} onClick={()=>void create()}>Place hold</button>
+  {holds.map(h=><div key={h.id}><p>{h.released_at?'Released':'Open'}: {h.reason} · opened {String(h.created_at).slice(0,10)}{h.released_at?' · released '+String(h.released_at).slice(0,10)+' ('+(h.release_reason??'')+')':''}</p>{!h.released_at&&<><label>Release reason<input maxLength={500} value={releaseReasons[h.id]??''} onInput={e=>setReleaseReasons(p=>({...p,[h.id]:(e.target as HTMLInputElement).value}))}/></label><button type="button" disabled={busy||(releaseReasons[h.id]??'').trim().length<8||(releaseReasons[h.id]??'').trim().length>500} onClick={()=>void release(h.id)}>Release hold</button></>}</div>)}
  </section>;
 }
