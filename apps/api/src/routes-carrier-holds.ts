@@ -20,8 +20,11 @@ export function registerCarrierHoldRoutes(app:FastifyInstance,deps:AppDeps):void
  app.post('/v1/compliance/carrier-contracts/:id/holds',async req=>{
   const {ctx}=await deps.authenticate(req);
   const id=(req.params as {id:string}).id;
-  const reason=typeof (req.body as {reason?:unknown}|null)?.reason==='string'?(req.body as {reason:string}).reason.trim():'';
-  if(!UUID.test(id)||reason.length<8||reason.length>500)throw invalid('Contract and hold reason required');
+  if (!req.body || typeof req.body!=='object' || Array.isArray(req.body)) throw invalid('JSON object body required');
+  const input=req.body as Record<string,unknown>;
+  if (Object.keys(input).some(k=>k!=='reason')) throw invalid('Only reason is accepted');
+  const reason=typeof input.reason==='string'?input.reason.trim():'';
+  if(!UUID.test(id)||reason.length<8||reason.length>500||/[\u0000-\u001f\u007f]/.test(reason))throw invalid('Contract and hold reason required');
   return withRequestTx(deps.appPool,ctx,async tx=>{
    const c=(await tx.query<{tenant_id:string;node_id:string}>('SELECT tenant_id,node_id FROM carrier_contract_cases WHERE id=$1 FOR UPDATE',[id])).rows[0];
    if(!c)throw notFound('Carrier contract not found');
@@ -34,7 +37,9 @@ export function registerCarrierHoldRoutes(app:FastifyInstance,deps:AppDeps):void
  app.post('/v1/compliance/carrier-contracts/:id/holds/:holdId/release',async req=>{
   const {ctx}=await deps.authenticate(req);
   const {id,holdId}=req.params as {id:string;holdId:string};
-  const body=(req.body??{}) as Record<string,unknown>;
+  if (!req.body || typeof req.body!=='object' || Array.isArray(req.body)) throw invalid('JSON object body required');
+  const body=req.body as Record<string,unknown>;
+  if (Object.keys(body).some(k=>k!=='reason')) throw invalid('Only reason is accepted');
   const reason=typeof body.reason==='string'?body.reason.trim():'';
   if(!UUID.test(id)||!UUID.test(holdId)||reason.length<8||reason.length>500)throw invalid('Valid hold ID and release reason required');
   return withRequestTx(deps.appPool,ctx,async tx=>{
