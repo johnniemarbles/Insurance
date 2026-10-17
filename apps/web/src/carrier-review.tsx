@@ -22,6 +22,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [contracts,setContracts]=useState<Contract[]>([]);
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
+ const [loading,setLoading]=useState(true);
  const [reasons,setReasons]=useState<Record<string,string>>({});
  const [contractProducts,setContractProducts]=useState<Record<string,string>>({});
  const latestProducts=useRef<Record<string,string>>({});
@@ -34,7 +35,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const activeCount=contracts.filter(c=>c.effectiveState==='active'||c.state==='active').length;
  const attentionCount=contracts.filter(c=>['suspended','expired','correction_required'].includes(c.effectiveState??c.state)||(c.state==='active'&&!c.appointmentCurrentlyValid)).length;
  const [expanded,setExpanded]=useState<Record<string,boolean>>({});
- const refresh=async()=>{try{const r=await call('GET','/v1/compliance/carrier-contracts');setContracts(r.contracts??[]);setError('');}catch(e){setError(String(e));}};
+ const refresh=async()=>{try{const r=await call('GET','/v1/compliance/carrier-contracts');setContracts(r.contracts??[]);setError('');}catch(e){setError(String(e));}finally{setLoading(false);}};
  useEffect(()=>{void refresh();},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
@@ -55,7 +56,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    <div class="obcard" role="status"><strong>{fr?'Vue d’ensemble des contrats':'Contract overview'}</strong><p>{contracts.length} {fr?'contrats':'contracts'} · {activeCount} {fr?'actifs':'active'} · {attentionCount} {fr?'à examiner':'requiring attention'}</p></div>
    <button class="btn" type="button" disabled={busy} onClick={()=>void reconcile()}>{fr?'Rapprocher les nominations expirées':'Reconcile expired appointments'}</button>
 
-   {contracts.length===0?<p class="muted">{fr?'Aucun contrat en attente.':'No carrier contracts found.'}</p>:
+   {loading?<p role="status" class="muted">{fr?'Chargement des contrats…':'Loading carrier contracts…'}</p>:contracts.length===0?<p class="muted">{error?(fr?'Impossible de charger les contrats.':'Unable to load contracts.'):(fr?'Aucun contrat en attente.':'No carrier contracts found.')}</p>:
      <ul class="oblist">{contracts.map(c=><li key={c.id}>
        <div><strong>{c.carrierName}</strong> · {c.jurisdiction} · {c.effectiveState??c.state}
          <small class="muted"> · {c.onboardingCaseId}</small></div>
