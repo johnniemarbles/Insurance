@@ -49,7 +49,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  useEffect(()=>{void refresh();return ()=>{refreshSequence.current++;};},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
- const loadGrants=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/products`);setGrants(p=>({...p,[id]:r.grants??[]}));setError('');}catch(e){setError(String(e));}};
+ const loadGrants=async(id:string)=>{setGrants(p=>{const next={...p};delete next[id];return next;});try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/products`);setGrants(p=>({...p,[id]:r.grants??[]}));setError('');}catch(e){setError(String(e));}};
  const productFor=(id:string)=>(contractProducts[id]??'').trim().toUpperCase();
  const validProduct=(id:string)=>/^[A-Z0-9_-]{1,80}$/.test(productFor(id));
  const checkProduct=async(id:string)=>{const selected=productFor(id);try{const r=await call('GET',`/v1/carrier-contracts/${id}/products/${encodeURIComponent(selected)}/preflight`);if((latestProducts.current[id]??'').trim().toUpperCase()===selected){setPreflight(p=>({...p,[id]:r}));setError('');}}catch(e){if((latestProducts.current[id]??'').trim().toUpperCase()===selected)setError(String(e));}};
