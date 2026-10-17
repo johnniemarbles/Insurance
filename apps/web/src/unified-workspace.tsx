@@ -15,12 +15,12 @@ const workspaceNames:Record<string,string> = {
   auditor:'Audit',trainer:'Training',learner:'Learning',staff:'Operations'
 };
 const priorities:Record<string,Module[]> = {
-  admin:['crm','compliance','onboarding','training','notifications'],
-  manager:['crm','onboarding','training','notifications'],
-  partner:['crm','onboarding','notifications'],
+  admin:['crm','compliance','onboarding','training','learning','notifications'],
+  manager:['crm','onboarding','training','learning','notifications'],
+  partner:['crm','onboarding','learning','notifications'],
   compliance:['compliance','onboarding','carriers','notifications'],
   auditor:['audit','notifications'],
-  trainer:['training','notifications'],
+  trainer:['training','learning','notifications'],
   learner:['learning','notifications'],
   staff:['crm','learning','notifications'],
 };
