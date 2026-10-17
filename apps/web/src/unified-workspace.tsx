@@ -97,7 +97,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
     setLoads(Object.fromEntries(allowed.map(m=>[m,pending()])));
     for(const m of allowed){
       const path=endpoints[m];
-      if(!path){setLoads(old=>({...old,[m]:{state:'unavailable'}}));continue;}
+      if(!path){setLoads(old=>cancelled?old:({...old,[m]:{state:'unavailable'}}));continue;}
       call('GET',path).then(value=>{
         if(!cancelled)setLoads(old=>({...old,[m]:{state:'ready',value}}));
       },(e:Error & {status?:number})=>{
