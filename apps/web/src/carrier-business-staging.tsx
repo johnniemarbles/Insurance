@@ -71,7 +71,7 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
     <label class="fl">External business reference
       <input maxLength={120} value={reference} onInput={e => setReference((e.target as HTMLInputElement).value)}/>
     </label>
-    <button class="btn" type="button" disabled={busy || !/^[A-Z0-9_-]{1,80}$/.test(product.trim()) || !reference.trim() || reference.trim().length > 120} onClick={() => void stage()}>
+    <button class="btn" type="button" disabled={busy || !/^[A-Z0-9_-]{1,80}$/.test(product.trim()) || !reference.trim() || reference.trim().length > 120 || /[\u0000-\u001f\u007f]/.test(reference)} onClick={() => void stage()}>
       {busy ? 'Recording…' : 'Stage internally'}
     </button>
     {entries.length === 0 ? <p class="muted">No staged business records.</p> :
