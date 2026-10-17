@@ -24,7 +24,7 @@ const transitions: Record<CarrierContractState, readonly CarrierContractState[]>
   terminated: [],
 };
 export function canMoveCarrierContract(from: CarrierContractState, to: CarrierContractState): boolean {
-  return transitions[from].includes(to);
+  return Array.isArray(transitions[from]) && transitions[from].includes(to);
 }
 export interface CarrierAuthorization {
   brokerCleared: boolean;
