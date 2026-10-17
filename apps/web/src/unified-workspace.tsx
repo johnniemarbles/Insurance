@@ -125,7 +125,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
     {visible.length?<div class="pii-workspace-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:"16px"}}>{visible.map(m=>
       <Panel key={m} module={m} load={loads[m]??pending()} go={go}/>)}</div>:
       <p>No summary modules are currently available for this role. Contact your administrator if access is expected.</p>}
-    {c.modules.crm && legacyHome}
+    {c.modules.crm && (priorities[active]??[]).includes('crm') && legacyHome}
     <p class="pii-workspace-footnote">Perspective changes do not elevate permissions. All records are authorized by the server.</p>
   </main>;
 }
