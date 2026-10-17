@@ -48,6 +48,7 @@ export function registerCarrierPreflightRoutes(app:FastifyInstance,deps:AppDeps)
     complianceHold:activeHold||!kinds.has('hold_clearance')
    });
    if(!grant) blocks.push('product_not_activated');
+   if(activeHold) blocks.push('carrier_compliance_hold_open');
    return {contractId:id,productCode,eligibleForFurtherChecks:blocks.length===0,
      missing,blocks,appointmentValid:c.valid===true,advisoryOnly:true,submissionAuthorized:false,requiresTransactionalAuthorization:true};
   });
