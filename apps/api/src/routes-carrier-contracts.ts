@@ -54,10 +54,12 @@ export function registerCarrierContractRoutes(app: FastifyInstance, deps: AppDep
   app.post('/v1/onboarding/cases/:id/carrier-contracts', async (req, reply) => {
     const { ctx } = await deps.authenticate(req);
     const id = uuid((req.params as { id: string }).id);
-    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) throw invalid('JSON object body required');
+    const body = req.body as Record<string, unknown>;
+    if (Object.keys(body).some(key => !['carrierName','jurisdiction'].includes(key))) throw invalid('Unexpected carrier contract field');
     const carrierName = typeof body.carrierName === 'string' ? body.carrierName.trim() : '';
     const jurisdiction = typeof body.jurisdiction === 'string' ? body.jurisdiction.trim().toUpperCase() : '';
-    if (!carrierName || carrierName.length > 120 || !/^[A-Z]{2}(?:-[A-Z0-9]{2,10})?$/.test(jurisdiction))
+    if (!carrierName || carrierName.length > 120 || /[\u0000-\u001f\u007f]/.test(carrierName) || !/^[A-Z]{2}(?:-[A-Z0-9]{2,10})?$/.test(jurisdiction))
       throw invalid('Carrier and jurisdiction are required');
     const result = await withRequestTx(deps.appPool, ctx, async tx => {
       const c = (await tx.query<{ tenant_id: string; node_id: string }>(
