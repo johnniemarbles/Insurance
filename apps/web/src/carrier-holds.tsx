@@ -8,7 +8,7 @@ export function CarrierHoldsPanel({call,contractId}:{call:Call;contractId:string
  const [busy,setBusy]=useState(false);
  const [releaseReasons,setReleaseReasons]=useState<Record<string,string>>({});
  const url='/v1/compliance/carrier-contracts/'+contractId+'/holds';
- const refresh=async()=>{try{const r=await call('GET',url);setHolds(r.holds??[]);}catch(e){setError(String(e));}};
+ const refresh=async()=>{try{const r=await call('GET',url);setHolds(r.holds??[]);setError('');}catch(e){setError(String(e));}};
  useEffect(()=>{void refresh();},[call,contractId]);
  const create=async()=>{setBusy(true);try{await call('POST',url,{reason});setReason('');await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
  const release=async(id:string)=>{setBusy(true);try{await call('POST',url+'/'+id+'/release',{reason:(releaseReasons[id]??'').trim()});setReleaseReasons(p=>({...p,[id]:''}));await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
