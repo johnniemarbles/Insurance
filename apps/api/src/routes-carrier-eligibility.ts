@@ -32,7 +32,7 @@ export function registerCarrierEligibilityRoutes(app: FastifyInstance, deps: App
                      WHERE i.node_id = cc.node_id AND i.tenant_id = cc.tenant_id AND i.kind = 'eo'
                        AND i.expires_on IS NOT NULL AND i.expires_on >= CURRENT_DATE) AS eo_valid,
            (cc.appointment_effective_on IS NOT NULL AND cc.appointment_effective_on <= CURRENT_DATE) AS appointment_effective,
-           (cc.appointment_expires_on IS NULL OR cc.appointment_expires_on >= CURRENT_DATE) AS appointment_not_expired
+           (cc.appointment_expires_on IS NOT NULL AND cc.appointment_expires_on >= CURRENT_DATE) AS appointment_not_expired
          FROM carrier_contract_cases cc JOIN onboarding_cases oc ON oc.id = cc.onboarding_case_id AND oc.tenant_id = cc.tenant_id AND oc.node_id = cc.node_id
          WHERE cc.id = $1`, [id])).rows[0];
       if (!row) throw notFound('Carrier contract not found');
