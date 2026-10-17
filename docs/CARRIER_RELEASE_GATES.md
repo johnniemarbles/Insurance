@@ -29,3 +29,6 @@ Migration 0121 creates `carrier_business_submissions` with tenant RLS, contract 
 
 ## Staging integrity acceptance
 The internal staging ledger is append-only (migration 0123), requires canonical identifiers (0124), and its POST endpoint accepts only `productCode` and `externalReference`. Verify attempted UPDATE/DELETE is rejected, invalid product or reference is rejected, tenant-crossing reads are denied, and a hold created before staging prevents the insert. Test duplicate external references and confirm they never produce a second staged record. This ledger is not an insurer dispatch queue.
+
+## Duplicate staging reference behavior
+The API checks for a previously staged `externalReference` after locking the carrier contract. If it exists, it returns HTTP 409 with `duplicate_external_reference` and creates no additional record. The database unique constraint remains authoritative under concurrent requests. This is duplicate rejection, not replay of the original result; callers must not interpret a 409 as a newly staged record.
