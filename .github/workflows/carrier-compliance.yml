@@ -1,0 +1,52 @@
+name: carrier-compliance
+on:
+  push:
+    branches:
+      - feature/unified-broker-carrier-compliance
+  pull_request:
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: pw
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-retries 20
+    env:
+      TEST_ADMIN_URL: postgres://postgres:pw@127.0.0.1:5432/postgres
+      PGPASSWORD: pw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Carrier schema and security tests
+        run: node --test --test-concurrency=1 packages/db/test/carrier-compliance-schema.test.ts packages/db/test/carrier-reapproval-schema.test.ts packages/db/test/carrier-staging-security.test.ts packages/db/test/carrier-staging-permissions.test.ts packages/db/test/carrier-staging-fail-closed.test.ts
+  domain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --test packages/domain/test/carrier-contracting.test.ts
