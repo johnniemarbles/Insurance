@@ -26,13 +26,15 @@ export function registerCarrierAuthorizationEvidenceRoutes(app:FastifyInstance,d
     const {ctx}=await deps.authenticate(req);
     const id=(req.params as {id:string}).id;
     if(!UUID.test(id)) throw invalid('Invalid contract ID');
-    const b=(req.body??{}) as Record<string,unknown>;
+    if (!req.body || typeof req.body!=='object' || Array.isArray(req.body)) throw invalid('JSON object body required');
+    const b=req.body as Record<string,unknown>;
+    if (Object.keys(b).some(k=>!['kind','productCode','evidenceRef','effectiveOn','expiresOn','confirmedWithSource'].includes(k))) throw invalid('Unexpected evidence field');
     const kind=String(b.kind??'');
     const productCode=typeof b.productCode==='string'?b.productCode.trim().toUpperCase():'';
     const evidenceRef=typeof b.evidenceRef==='string'?b.evidenceRef.trim():'';
     const effectiveOn=typeof b.effectiveOn==='string'?b.effectiveOn:'';
     const expiresOn=typeof b.expiresOn==='string'?b.expiresOn:'';
-    if(!kinds.includes(kind)||!/^[A-Z0-9_-]{1,80}$/.test(productCode)||evidenceRef.length<8||evidenceRef.length>500||
+    if(!kinds.includes(kind)||!/^[A-Z0-9_-]{1,80}$/.test(productCode)||evidenceRef.length<8||evidenceRef.length>500||/[\u0000-\u001f\u007f]/.test(evidenceRef)||
        !validDate(effectiveOn)||!validDate(expiresOn)||b.confirmedWithSource!==true)
       throw invalid('Verified evidence, product and validity dates required');
     return withRequestTx(deps.appPool,ctx,async tx=>{
@@ -53,8 +55,9 @@ export function registerCarrierAuthorizationEvidenceRoutes(app:FastifyInstance,d
     const {ctx}=await deps.authenticate(req);
     const id=(req.params as {id:string}).id;
     const b=(req.body??{}) as Record<string,unknown>;
+    if (Object.keys(b).some(k=>k!=='reason')) throw invalid('Only reason is accepted');
     const reason=typeof b.reason==='string'?b.reason.trim():'';
-    if(!UUID.test(id)||reason.length<8||reason.length>500) throw invalid('Valid evidence ID and revocation reason required');
+    if(!UUID.test(id)||reason.length<8||reason.length>500||/[\u0000-\u001f\u007f]/.test(reason)) throw invalid('Valid evidence ID and revocation reason required');
     return withRequestTx(deps.appPool,ctx,async tx=>{
       const e=(await tx.query<{tenant_id:string;node_id:string;contract_id:string;revoked_at:string|null}>(
         'SELECT tenant_id,node_id,contract_id,revoked_at FROM carrier_authorization_evidence WHERE id=$1',[id])).rows[0];
