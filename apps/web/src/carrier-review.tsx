@@ -26,6 +26,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [reasons,setReasons]=useState<Record<string,string>>({});
  const [contractProducts,setContractProducts]=useState<Record<string,string>>({});
  const latestProducts=useRef<Record<string,string>>({});
+ const refreshSequence=useRef(0);
  const [productRevocationReason,setProductRevocationReason]=useState<Record<string,string>>({});
  const [preflight,setPreflight]=useState<Record<string,{missing:string[];blocks?:string[];eligibleForFurtherChecks:boolean}>>({});
  const [templateVersions,setTemplateVersions]=useState<Record<string,string>>({});
@@ -43,8 +44,8 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    return (statusFilter==='all'||(statusFilter==='attention'?['suspended','expired','correction_required'].includes(state)||(c.state==='active'&&!c.appointmentCurrentlyValid):state===statusFilter))
      && (!query||[c.carrierName,c.jurisdiction,c.onboardingCaseId].some(value=>value.toLocaleLowerCase().includes(query)));
  });
- const refresh=async()=>{try{const r=await call('GET','/v1/compliance/carrier-contracts');setContracts(r.contracts??[]);setError('');}catch(e){setContracts([]);setError(String(e));}finally{setLoading(false);}};
- useEffect(()=>{void refresh();},[call]);
+ const refresh=async()=>{const request=++refreshSequence.current;setLoading(true);try{const r=await call('GET','/v1/compliance/carrier-contracts');if(request===refreshSequence.current){setContracts(r.contracts??[]);setError('');}}catch(e){if(request===refreshSequence.current){setContracts([]);setError(String(e));}}finally{if(request===refreshSequence.current)setLoading(false);}};
+ useEffect(()=>{void refresh();return ()=>{refreshSequence.current++;};},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
  const productFor=(id:string)=>(contractProducts[id]??'').trim().toUpperCase();
@@ -96,7 +97,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <button class="btn" type="button" onClick={()=>void showHistory(c.id)}>{fr?'Historique':'Review history'}</button>
        {history[c.id]&&<ol>{history[c.id]!.map((e,i)=><li key={i}>{e.fromState??'—'} → {e.toState} · {String(e.recordedAt).slice(0,19)}{e.reason?` · ${e.reason}`:''}</li>)}</ol>}
        <button class="btn" type="button" onClick={()=>void checkEligibility(c.id)}>{fr?'Vérifier les conditions':'Check eligibility'}</button>
-       {eligibility[c.id]&&<div role="status"><p class="muted">{fr?'Autorisation bloquée':'Authorization blocked'}: {eligibility[c.id]!.blocks.join(', ')}</p>{eligibility[c.id]!.evidence&&<ul>{Object.entries(eligibility[c.id]!.evidence!).map(([name,ok])=><li key={name}>{name}: {ok?'✓':'✗'}</li>)}</ul>}</div>}
+       {eligibility[c.id]&&<div role="status"><p class="muted">{eligibility[c.id]!.authorized?(fr?'Conditions satisfaites':'Eligibility confirmed'):(fr?'Autorisation bloquée':'Authorization blocked')}: {eligibility[c.id]!.blocks.length?eligibility[c.id]!.blocks.join(', '):(fr?'Aucun blocage signalé':'No blocks reported')}</p>{eligibility[c.id]!.evidence&&<ul>{Object.entries(eligibility[c.id]!.evidence!).map(([name,ok])=><li key={name}>{name}: {ok?'✓':'✗'}</li>)}</ul>}</div>}
        <div>{(options[c.effectiveState??c.state]??[]).map(next=><button class="btn" type="button" disabled={busy || (next==='documents_prepared'&&!(templateVersions[c.id]??'').trim()) ||
          (['declined','withdrawn','suspended','terminated','correction_required'].includes(next)&&!(reasons[c.id]??'').trim())}
          onClick={()=>void move(c.id,next)}>{next.replaceAll('_',' ')}</button>)}</div>
