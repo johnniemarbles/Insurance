@@ -15,7 +15,11 @@ export function registerCarrierContractRoutes(app: FastifyInstance, deps: AppDep
     return withRequestTx(deps.appPool, ctx, async tx => {
       const rows = (await tx.query(
         `SELECT cc.id, cc.onboarding_case_id AS "onboardingCaseId", cc.node_id AS "nodeId",
-                cc.carrier_name AS "carrierName", cc.jurisdiction, cc.state,
+                cc.carrier_name AS "carrierName", cc.jurisdiction, cc.state, cc.template_version AS "templateVersion",
+                cc.appointment_effective_on AS "appointmentEffectiveOn", cc.appointment_expires_on AS "appointmentExpiresOn",
+                CASE WHEN cc.state = 'active' AND cc.appointment_effective_on <= CURRENT_DATE AND
+                    (cc.appointment_expires_on IS NULL OR cc.appointment_expires_on >= CURRENT_DATE)
+                    THEN true ELSE false END AS "appointmentCurrentlyValid",
                 cc.created_at AS "createdAt", cc.updated_at AS "updatedAt"
            FROM carrier_contract_cases cc
           WHERE app_is_compliance_at_or_above(cc.tenant_id, cc.node_id)
