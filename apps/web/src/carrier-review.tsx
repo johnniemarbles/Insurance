@@ -32,7 +32,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [history,setHistory]=useState<Record<string,{toState:string;fromState:string|null;reason:string|null;recordedAt:string}[]>>({});
  const [eligibility,setEligibility]=useState<Record<string,{blocks:string[];authorized:boolean;evidence?:Record<string,boolean>}>>({});
  const fr=locale==='fr-CA';
- const activeCount=contracts.filter(c=>c.effectiveState==='active'||c.state==='active').length;
+ const activeCount=contracts.filter(c=>(c.effectiveState??c.state)==='active'&&c.appointmentCurrentlyValid).length;
  const attentionCount=contracts.filter(c=>['suspended','expired','correction_required'].includes(c.effectiveState??c.state)||(c.state==='active'&&!c.appointmentCurrentlyValid)).length;
  const [expanded,setExpanded]=useState<Record<string,boolean>>({});
  const [search,setSearch]=useState('');
@@ -88,8 +88,8 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <h4>{fr?'3. Autorisation du produit':'3. Product authorization'}</h4>
        <button class="btn" type="button" disabled={busy||!validProduct(c.id)} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
        {preflight[c.id]&&<p class="muted" role="status">{preflight[c.id]!.eligibleForFurtherChecks?'Evidence present; final checks still required':`Missing or invalid: ${(preflight[c.id]!.blocks??preflight[c.id]!.missing).join(', ')}`}</p>}
-       {(c.state==='appointment_verified'||c.state==='active')&&<button class="btn" type="button" disabled={busy||!validProduct(c.id)} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
-       {c.state==='active'&&<button class="btn" type="button" disabled={busy||!validProduct(c.id)||(productRevocationReason[c.id]??'').trim().length<8} onClick={()=>void revokeProduct(c.id)}>Revoke product authorization</button>}
+       {(c.effectiveState??c.state)==='appointment_verified'||(c.effectiveState??c.state)==='active'?<button class="btn" type="button" disabled={busy||!validProduct(c.id)} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>:null}
+       {(c.effectiveState??c.state)==='active'&&<button class="btn" type="button" disabled={busy||!validProduct(c.id)||(productRevocationReason[c.id]??'').trim().length<8} onClick={()=>void revokeProduct(c.id)}>Revoke product authorization</button>}
        <h4>{fr?'4. Enregistrement interne':'4. Internal business staging'}</h4>
        <CarrierBusinessStagingPanel call={call} contractId={c.id}/>
        <h4>{fr?'5. Historique et suivi':'5. History and monitoring'}</h4>
