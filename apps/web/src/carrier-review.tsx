@@ -60,7 +60,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
        <button class="btn" type="button" disabled={!activationProduct.trim()} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
        {preflight[c.id]&&<p class="muted" role="status">{preflight[c.id]!.eligibleForFurtherChecks?'Evidence present; final checks still required':`Missing or invalid: ${(preflight[c.id]!.blocks??preflight[c.id]!.missing).join(', ')}`}</p>}
-       {c.state==='appointment_verified'&&<button class="btn" type="button" disabled={busy||!activationProduct.trim()} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
+       {(c.state==='appointment_verified'||c.state==='active')&&<button class="btn" type="button" disabled={busy||!activationProduct.trim()} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
        <button class="btn" type="button" onClick={()=>void showHistory(c.id)}>{fr?'Historique':'Review history'}</button>
        {history[c.id]&&<ol>{history[c.id]!.map((e,i)=><li key={i}>{e.fromState??'—'} → {e.toState} · {String(e.recordedAt).slice(0,19)}{e.reason?` · ${e.reason}`:''}</li>)}</ol>}
        <button class="btn" type="button" onClick={()=>void checkEligibility(c.id)}>{fr?'Vérifier les conditions':'Check eligibility'}</button>
