@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { CarrierEvidenceForm } from './carrier-evidence.tsx';
+import { CarrierAuthorizationEvidencePanel } from './carrier-authorization-evidence.tsx';
 type Call = (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<any>;
 type Contract = { id: string; carrierName: string; jurisdiction: string; state: string; effectiveState?: string; onboardingCaseId: string; updatedAt: string; templateVersion: string | null; appointmentEffectiveOn: string | null; appointmentExpiresOn: string | null; appointmentCurrentlyValid: boolean };
 const options: Record<string,string[]> = {
@@ -51,6 +52,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        {c.appointmentEffectiveOn&&<p class="muted">{fr?'Nomination':'Appointment'}: {String(c.appointmentEffectiveOn).slice(0,10)} – {c.appointmentExpiresOn?String(c.appointmentExpiresOn).slice(0,10):(fr?'sans date de fin enregistrée':'no expiry recorded')}</p>}
        {c.state==='active'&&!c.appointmentCurrentlyValid&&<p role="alert" class="err">{fr?'Nomination non valide actuellement — vérification requise':'Appointment is not currently valid — review required'}</p>}
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
+       <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
        <button class="btn" type="button" onClick={()=>void showHistory(c.id)}>{fr?'Historique':'Review history'}</button>
        {history[c.id]&&<ol>{history[c.id]!.map((e,i)=><li key={i}>{e.fromState??'—'} → {e.toState} · {String(e.recordedAt).slice(0,19)}{e.reason?` · ${e.reason}`:''}</li>)}</ol>}
        <button class="btn" type="button" onClick={()=>void checkEligibility(c.id)}>{fr?'Vérifier les conditions':'Check eligibility'}</button>
