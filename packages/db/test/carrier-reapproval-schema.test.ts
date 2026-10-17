@@ -17,6 +17,16 @@ test('carrier product reapproval preserves revoked history and limits live grant
       "SELECT 1 FROM pg_constraint WHERE conname='carrier_product_activations_contract_id_product_code_key'",
     )).rowCount;
     assert.equal(obsolete, 0);
+    const lockTrigger = (await client.query<{ tgname: string }>(
+      "SELECT tgname FROM pg_trigger WHERE tgrelid='carrier_compliance_holds'::regclass AND NOT tgisinternal AND tgname='carrier_hold_contract_lock_trigger'",
+    )).rows;
+    assert.equal(lockTrigger.length, 1);
+    const triggerFunction = (await client.query<{ definition: string }>(
+      "SELECT pg_get_functiondef('carrier_hold_contract_lock()'::regprocedure) AS definition",
+    )).rows[0]?.definition ?? '';
+    assert.match(triggerFunction, /FOR UPDATE/);
+    assert.match(triggerFunction, /tenant_id/);
+    assert.match(triggerFunction, /node_id/);
   } finally {
     await client.end();
     await db.drop();
