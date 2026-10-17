@@ -4,6 +4,8 @@ type Hold={id:string;reason:string;created_by:string;created_at:string;released_
 export function CarrierHoldsPanel({call,contractId}:{call:Call;contractId:string}){
  const [holds,setHolds]=useState<Hold[]>([]);
  const generation=useRef(0);
+ const selectedContract=useRef(contractId);
+ if(selectedContract.current!==contractId){selectedContract.current=contractId;generation.current++;}
  const [reason,setReason]=useState('');
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
