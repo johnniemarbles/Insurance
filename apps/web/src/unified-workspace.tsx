@@ -19,9 +19,9 @@ const priorities:Record<string,Module[]> = {
   manager:['crm','onboarding','training','notifications'],
   partner:['crm','onboarding','notifications'],
   compliance:['compliance','onboarding','carriers','notifications'],
-  auditor:['audit','compliance','notifications'],
+  auditor:['audit','notifications'],
   trainer:['training','notifications'],
-  learner:['training','notifications'],
+  learner:['notifications'],
   staff:['crm','notifications'],
 };
 const endpoints:Partial<Record<Module,string>> = {
@@ -50,7 +50,7 @@ function Metrics({module,data}:{module:Module;data:any}) {
   if((module==='compliance'||module==='onboarding') && data) entries=[
     ['Expired',data.expiry?.expired??'—'],['Expiring soon',data.expiry?.expiringSoon??'—'],
     ['Overdue reports',data.selfReports?.overdue??'—'],['Rechecks overdue',data.rechecks?.overdue??'—']];
-  if(module==='carriers' && Array.isArray(data?.contracts)) entries=[['Contract cases',data.contracts.length],['Expired appointments',data.contracts.filter((x:any)=>x.effectiveState==='expired').length],['Valid appointment dates',data.contracts.filter((x:any)=>x.appointmentCurrentlyValid===true).length]];
+  if(module==='carriers' && Array.isArray(data?.contracts)) entries=[['Contract cases (max 200)',data.contracts.length],['Expired appointments',data.contracts.filter((x:any)=>x.effectiveState==='expired').length],['Valid appointment dates — not authorization',data.contracts.filter((x:any)=>x.appointmentCurrentlyValid===true).length]];
   if(module==='audit' && Array.isArray(data?.engagements)) entries=[['Active',data.engagements.filter((e:any)=>e.status==='active').length],['Visible',data.engagements.length]];
   if(module==='notifications' && Array.isArray(data?.notifications)) entries=[['Unread',data.unread??0],['Recent',data.notifications.length]];
   if(module==='training' && data?.totals) entries=[
