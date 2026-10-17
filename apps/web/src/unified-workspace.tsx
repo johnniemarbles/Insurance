@@ -91,7 +91,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
     return ()=>{cancelled=true};
   },[call,generation]);
   useEffect(()=>{
-    if(context.state!=='ready')return;
+    if(context.state!=='ready' || !active || !context.value.roles.includes(active))return;
     let cancelled=false;
     const allowed=(priorities[active]??[]).filter(m=>context.value.modules[m]);
     setLoads(Object.fromEntries(allowed.map(m=>[m,pending()])));
@@ -111,7 +111,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
     <button class="btn" onClick={()=>setGeneration(x=>x+1)}>Retry</button></div>;
   if(context.state!=='ready')return null;
   const c=context.value;
-  const visible=(priorities[active]??[]).filter(m=>c.modules[m]);
+  const visible=c.roles.includes(active)?(priorities[active]??[]).filter(m=>c.modules[m]):[];
   return <main class="pii-workspace" style={{padding:"24px",maxWidth:"1400px",margin:"0 auto"}}>
     <header class="pii-workspace-header">
       <div><small>{c.country} · {c.scopes.map(s=>s.name).join(', ')||'Authorized workspace'}</small>
@@ -125,7 +125,7 @@ export function UnifiedWorkspace({call,go,locale,name,legacyHome}:{call:Call;go:
     {visible.length?<div class="pii-workspace-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:"16px"}}>{visible.map(m=>
       <Panel key={m} module={m} load={loads[m]??pending()} go={go}/>)}</div>:
       <p>No summary modules are currently available for this role. Contact your administrator if access is expected.</p>}
-    {c.modules.crm && (priorities[active]??[]).includes('crm') && legacyHome}
+    {c.roles.includes(active) && c.modules.crm && (priorities[active]??[]).includes('crm') && legacyHome}
     <p class="pii-workspace-footnote">Perspective changes do not elevate permissions. All records are authorized by the server.</p>
   </main>;
 }
