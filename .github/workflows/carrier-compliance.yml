@@ -17,8 +17,8 @@ jobs:
       - run: npm run typecheck
       - name: Build web workspace
         run: npm run build --workspace @pii/web
-      - name: Carrier request validation
-        run: node --test apps/api/test/carrier-input-validation.test.ts
+      - name: Carrier request validation and migration order
+        run: node --test apps/api/test/carrier-input-validation.test.ts packages/db/test/carrier-migration-order.test.ts
   database:
     runs-on: ubuntu-latest
     services:
