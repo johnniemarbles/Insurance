@@ -13,9 +13,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
     const audit = admin || roles.includes('auditor') || roles.includes('compliance') || roles.length === 0;
     const crm = Boolean(ctx.canUseCrm);
     const modules = {
-      crm, compliance, training, audit,
+      crm, compliance, training, learning: true, audit,
       onboarding: compliance || crm,
-      carriers: compliance || crm,
+      carriers: compliance,
       notifications: true,
     };
     // Node names are returned only if visible through the caller's RLS context.
