@@ -5,6 +5,7 @@ import { audit } from './audit.ts';
 import { forbidden, invalid, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 
+const validDate=(value:string):boolean=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const d=new Date(value+'T00:00:00.000Z');return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===value;};
 export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/v1/compliance/carrier-contracts/:id/review', async req => {
     const { ctx } = await deps.authenticate(req);
@@ -48,7 +49,7 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
       throw invalid('Evidence reference and independent source confirmation required');
     const effective = typeof b.effectiveOn === 'string' ? b.effectiveOn : '';
     const expiry = typeof b.expiresOn === 'string' ? b.expiresOn : '';
-    if (kind === 'appointment' && (!/^\d{4}-\d{2}-\d{2}$/.test(effective) || !/^\d{4}-\d{2}-\d{2}$/.test(expiry)))
+    if (kind === 'appointment' && (!validDate(effective) || !validDate(expiry)))
       throw invalid('Valid appointment effective and expiry dates required');
     return withRequestTx(deps.appPool, ctx, async tx => {
       const c = (await tx.query<{tenant_id:string;node_id:string;state:CarrierContractState}>(
