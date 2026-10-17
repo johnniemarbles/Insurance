@@ -20,6 +20,7 @@ const options: Record<string,string[]> = {
 };
 export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [contracts,setContracts]=useState<Contract[]>([]);
+ const [carrierDirectory,setCarrierDirectory]=useState<{id:string;displayName:string;connectionMode:string;connectionVerified:boolean}[]>([]);
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
  const [loading,setLoading]=useState(true);
@@ -47,6 +48,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  });
  const refresh=async()=>{const request=++refreshSequence.current;setLoading(true);try{const r=await call('GET','/v1/compliance/carrier-contracts');if(request===refreshSequence.current){setContracts(r.contracts??[]);setError('');}}catch(e){if(request===refreshSequence.current){setContracts([]);setError(String(e));}}finally{if(request===refreshSequence.current)setLoading(false);}};
  useEffect(()=>{void refresh();return ()=>{refreshSequence.current++;};},[call]);
+ useEffect(()=>{let active=true;void call('GET','/v1/compliance/carriers').then(r=>{if(active)setCarrierDirectory(r.carriers??[]);}).catch(()=>{});return()=>{active=false;};},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
  const loadGrants=async(id:string)=>{setGrants(p=>{const next={...p};delete next[id];return next;});try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/products`);setGrants(p=>({...p,[id]:r.grants??[]}));setError('');}catch(e){setError(String(e));}};
@@ -66,6 +68,11 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    <p class="muted">{fr?'Les signatures et les nominations doivent être vérifiées séparément.':'Signatures and carrier appointments must be verified separately. No selling authorization is granted here.'}</p>
    {error&&<p role="alert" class="err">{error}</p>}
    <div class="obcard" role="status"><strong>{fr?'Vue d’ensemble des contrats':'Contract overview'}</strong><p>{contracts.length} {fr?'contrats':'contracts'} · {activeCount} {fr?'actifs':'active'} · {attentionCount} {fr?'à examiner':'requiring attention'}</p></div>
+   <div class="obcard" aria-label="Carrier directory">
+     <strong>{fr?'Répertoire des assureurs':'Carrier directory'}</strong>
+     <p class="muted">{fr?'Répertoire indicatif, sans affiliation ni connexion directe confirmée.':'Reference directory only; listing does not establish affiliation, appointment, or live connectivity.'}</p>
+     {carrierDirectory.length===0?<p class="muted">{fr?'Aucun assureur disponible dans le répertoire.':'No carrier directory entries available.'}</p>:<ul class="oblist">{carrierDirectory.map(c=><li key={c.id}><strong>{c.displayName}</strong> · {c.connectionVerified?c.connectionMode:(fr?'Soumission manuelle — non connecté':'Manual workflow — not connected')}</li>)}</ul>}
+   </div>
    <div class="obcard" aria-label="Carrier integration readiness">
      <strong>{fr?'Intégrations avec les assureurs':'Carrier integration readiness'}</strong>
      <p class="muted">{fr?'Ce module suit les dossiers internes. Il ne transmet pas de demandes aux assureurs et ne confirme pas les nominations auprès de leurs systèmes.':'This workspace manages internal contracting and compliance records. It does not submit applications to insurer systems or verify appointments directly with carriers.'}</p>
