@@ -31,6 +31,9 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [history,setHistory]=useState<Record<string,{toState:string;fromState:string|null;reason:string|null;recordedAt:string}[]>>({});
  const [eligibility,setEligibility]=useState<Record<string,{blocks:string[];authorized:boolean;evidence?:Record<string,boolean>}>>({});
  const fr=locale==='fr-CA';
+ const activeCount=contracts.filter(c=>c.effectiveState==='active'||c.state==='active').length;
+ const attentionCount=contracts.filter(c=>['suspended','expired','correction_required'].includes(c.effectiveState??c.state)||(c.state==='active'&&!c.appointmentCurrentlyValid)).length;
+ const [expanded,setExpanded]=useState<Record<string,boolean>>({});
  const refresh=async()=>{try{const r=await call('GET','/v1/compliance/carrier-contracts');setContracts(r.contracts??[]);setError('');}catch(e){setError(String(e));}};
  useEffect(()=>{void refresh();},[call]);
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
@@ -49,6 +52,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    <h3>{fr?'Contrats des assureurs':'Carrier contracting queue'}</h3>
    <p class="muted">{fr?'Les signatures et les nominations doivent être vérifiées séparément.':'Signatures and carrier appointments must be verified separately. No selling authorization is granted here.'}</p>
    {error&&<p role="alert" class="err">{error}</p>}
+   <div class="obcard" role="status"><strong>{fr?'Vue d’ensemble des contrats':'Contract overview'}</strong><p>{contracts.length} {fr?'contrats':'contracts'} · {activeCount} {fr?'actifs':'active'} · {attentionCount} {fr?'à examiner':'requiring attention'}</p></div>
    <button class="btn" type="button" disabled={busy} onClick={()=>void reconcile()}>{fr?'Rapprocher les nominations expirées':'Reconcile expired appointments'}</button>
    <label class="fl">{fr?'Motif de la décision':'Review reason'}
      <input value={reason} maxLength={500} onInput={e=>setReason((e.target as HTMLInputElement).value)}/></label>
@@ -61,16 +65,23 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        {c.templateVersion&&<p class="muted">{fr?'Modèle':'Template'}: {c.templateVersion}</p>}
        {c.appointmentEffectiveOn&&<p class="muted">{fr?'Nomination':'Appointment'}: {String(c.appointmentEffectiveOn).slice(0,10)} – {c.appointmentExpiresOn?String(c.appointmentExpiresOn).slice(0,10):(fr?'sans date de fin enregistrée':'no expiry recorded')}</p>}
        {c.state==='active'&&!c.appointmentCurrentlyValid&&<p role="alert" class="err">{fr?'Nomination non valide actuellement — vérification requise':'Appointment is not currently valid — review required'}</p>}
+       <button type="button" class="btn" aria-expanded={expanded[c.id]===true} onClick={()=>setExpanded(p=>({...p,[c.id]:!p[c.id]}))}>{expanded[c.id]?(fr?'Masquer le flux de travail':'Hide workflow'):(fr?'Ouvrir le flux de travail':'Open workflow')}</button>
+       {expanded[c.id]&&<div>
+       <h4>{fr?'1. Contrat et preuve de nomination':'1. Contract and appointment evidence'}</h4>
        <label class="fl">Product code for this carrier<input maxLength={80} value={contractProducts[c.id]??''} onInput={e=>{latestProducts.current[c.id]=(e.target as HTMLInputElement).value.toUpperCase();setContractProducts(p=>({...p,[c.id]:latestProducts.current[c.id]}));setPreflight(p=>{const next={...p};delete next[c.id];return next;});}}/></label>
        <label class="fl">Product revocation reason<input value={productRevocationReason[c.id]??''} maxLength={500} onInput={e=>setProductRevocationReason(p=>({...p,[c.id]:(e.target as HTMLInputElement).value}))}/></label>
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
+       <h4>{fr?'2. Vérification de conformité':'2. Compliance verification'}</h4>
        <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
        <CarrierHoldsPanel call={call} contractId={c.id}/>
-       <CarrierBusinessStagingPanel call={call} contractId={c.id}/>
+       <h4>{fr?'3. Autorisation du produit':'3. Product authorization'}</h4>
        <button class="btn" type="button" disabled={!productFor(c.id).trim()} onClick={()=>void checkProduct(c.id)}>Check product evidence</button>
        {preflight[c.id]&&<p class="muted" role="status">{preflight[c.id]!.eligibleForFurtherChecks?'Evidence present; final checks still required':`Missing or invalid: ${(preflight[c.id]!.blocks??preflight[c.id]!.missing).join(', ')}`}</p>}
        {(c.state==='appointment_verified'||c.state==='active')&&<button class="btn" type="button" disabled={busy||!productFor(c.id).trim()} onClick={()=>void activate(c.id)}>Activate after eligibility checks</button>}
        {c.state==='active'&&<button class="btn" type="button" disabled={busy||!productFor(c.id).trim()||(productRevocationReason[c.id]??'').trim().length<8} onClick={()=>void revokeProduct(c.id)}>Revoke product authorization</button>}
+       <h4>{fr?'4. Enregistrement interne':'4. Internal business staging'}</h4>
+       <CarrierBusinessStagingPanel call={call} contractId={c.id}/>
+       <h4>{fr?'5. Historique et suivi':'5. History and monitoring'}</h4>
        <button class="btn" type="button" onClick={()=>void showHistory(c.id)}>{fr?'Historique':'Review history'}</button>
        {history[c.id]&&<ol>{history[c.id]!.map((e,i)=><li key={i}>{e.fromState??'—'} → {e.toState} · {String(e.recordedAt).slice(0,19)}{e.reason?` · ${e.reason}`:''}</li>)}</ol>}
        <button class="btn" type="button" onClick={()=>void checkEligibility(c.id)}>{fr?'Vérifier les conditions':'Check eligibility'}</button>
@@ -78,6 +89,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <div>{(options[c.effectiveState??c.state]??[]).map(next=><button class="btn" type="button" disabled={busy || (next==='documents_prepared'&&!templateVersion.trim()) ||
          (['declined','withdrawn','suspended','terminated','correction_required'].includes(next)&&!reason.trim())}
          onClick={()=>void move(c.id,next)}>{next.replaceAll('_',' ')}</button>)}</div>
+       </div>}
      </li>)}</ul>}
  </section>;
 }
