@@ -1350,5 +1350,6 @@ test('workspace context: roles, country and authorized node names are scoped to 
   assert.equal(learner.json.modules.training, false);
   assert.equal(learner.json.modules.carriers, false);
   assert.equal(learner.json.modules.crm, false);
+  assert.equal(learner.json.modules.audit, false);
   assert.equal(partner.json.modules.carriers, false);
 });
