@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 type Call = (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<any>;
 type Staged = { id: string; product_code: string; external_reference: string; status: string; created_at: string };
@@ -8,6 +8,8 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
   const [product, setProduct] = useState('');
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
+  const activeContract = useRef(contractId);
+  activeContract.current = contractId;
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const path = `/v1/compliance/carrier-contracts/${contractId}/business-staging`;
@@ -15,6 +17,8 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
   useEffect(() => {
     let active = true;
     setEntries([]);
+    setProduct('');
+    setReference('');
     setError('');
     setMessage('');
     void call('GET', path).then(result => {
@@ -24,6 +28,7 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
   }, [call, contractId]);
 
   const stage = async () => {
+    const requestedContract = contractId;
     setBusy(true);
     setError('');
     setMessage('');
@@ -33,15 +38,17 @@ export function CarrierBusinessStagingPanel({ call, contractId }: { call: Call; 
         setError(result.reason === 'duplicate_external_reference' ? 'Reference already staged.' : 'Carrier product authorization is not current.');
         return;
       }
+      if (activeContract.current !== requestedContract) return;
       setReference('');
       setMessage('Recorded in the internal staging ledger. Nothing has been sent to an insurer.');
       const latest = await call('GET', path);
-      setEntries(latest.submissions ?? []);
+      if (activeContract.current === requestedContract) setEntries(latest.submissions ?? []);
     } catch (e) {
+      if (activeContract.current !== requestedContract) return;
       const description = String(e);
       setError(description.includes('duplicate_external_reference') ? 'Reference already staged.' : description.includes('carrier_product_not_authorized') ? 'Carrier product authorization is not current.' : description);
     } finally {
-      setBusy(false);
+      if (activeContract.current === requestedContract) setBusy(false);
     }
   };
 
