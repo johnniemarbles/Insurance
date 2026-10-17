@@ -1,6 +1,6 @@
 -- Keep authorization grants invalid after appointment dates lapse.
 -- This is a read-only inspection view, not a sales authorization grant.
-CREATE VIEW carrier_product_authorization_status AS
+CREATE VIEW carrier_product_authorization_status WITH (security_invoker=true) AS
  SELECT g.tenant_id,g.node_id,g.contract_id,g.product_code,g.id AS grant_id,
         (g.revoked_at IS NULL AND c.state='active'
          AND c.appointment_effective_on<=CURRENT_DATE
