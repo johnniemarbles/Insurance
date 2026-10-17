@@ -22,12 +22,12 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [contracts,setContracts]=useState<Contract[]>([]);
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
- const [reason,setReason]=useState('');
+ const [reasons,setReasons]=useState<Record<string,string>>({});
  const [contractProducts,setContractProducts]=useState<Record<string,string>>({});
  const latestProducts=useRef<Record<string,string>>({});
  const [productRevocationReason,setProductRevocationReason]=useState<Record<string,string>>({});
  const [preflight,setPreflight]=useState<Record<string,{missing:string[];blocks?:string[];eligibleForFurtherChecks:boolean}>>({});
- const [templateVersion,setTemplateVersion]=useState('');
+ const [templateVersions,setTemplateVersions]=useState<Record<string,string>>({});
  const [history,setHistory]=useState<Record<string,{toState:string;fromState:string|null;reason:string|null;recordedAt:string}[]>>({});
  const [eligibility,setEligibility]=useState<Record<string,{blocks:string[];authorized:boolean;evidence?:Record<string,boolean>}>>({});
  const fr=locale==='fr-CA';
@@ -45,7 +45,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const reconcile=async()=>{setBusy(true);try{const r=await call('POST','/v1/compliance/carrier-contracts/reconcile-expiry',{});await refresh();setError('');}catch(e){setError(String(e));}finally{setBusy(false);}};
  const move=async(id:string,state:string)=>{
    setBusy(true);
-   try{await call('POST',`/v1/compliance/carrier-contracts/${id}/review`,{state,reason,templateVersion});setReason('');await refresh();}
+   try{await call('POST',`/v1/compliance/carrier-contracts/${id}/review`,{state,reason:reasons[id]??'',templateVersion:templateVersions[id]??''});setReasons(p=>({...p,[id]:''}));await refresh();}
    catch(e){setError(String(e));}finally{setBusy(false);}
  };
  return <section class="obcard">
@@ -54,10 +54,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    {error&&<p role="alert" class="err">{error}</p>}
    <div class="obcard" role="status"><strong>{fr?'Vue d’ensemble des contrats':'Contract overview'}</strong><p>{contracts.length} {fr?'contrats':'contracts'} · {activeCount} {fr?'actifs':'active'} · {attentionCount} {fr?'à examiner':'requiring attention'}</p></div>
    <button class="btn" type="button" disabled={busy} onClick={()=>void reconcile()}>{fr?'Rapprocher les nominations expirées':'Reconcile expired appointments'}</button>
-   <label class="fl">{fr?'Motif de la décision':'Review reason'}
-     <input value={reason} maxLength={500} onInput={e=>setReason((e.target as HTMLInputElement).value)}/></label>
-   <label class="fl">{fr?'Version du modèle de contrat':'Carrier agreement template version'}
-     <input value={templateVersion} maxLength={120} onInput={e=>setTemplateVersion((e.target as HTMLInputElement).value)}/></label>
+
    {contracts.length===0?<p class="muted">{fr?'Aucun contrat en attente.':'No carrier contracts found.'}</p>:
      <ul class="oblist">{contracts.map(c=><li key={c.id}>
        <div><strong>{c.carrierName}</strong> · {c.jurisdiction} · {c.effectiveState??c.state}
@@ -68,6 +65,8 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        <button type="button" class="btn" aria-expanded={expanded[c.id]===true} onClick={()=>setExpanded(p=>({...p,[c.id]:!p[c.id]}))}>{expanded[c.id]?(fr?'Masquer le flux de travail':'Hide workflow'):(fr?'Ouvrir le flux de travail':'Open workflow')}</button>
        {expanded[c.id]&&<div>
        <h4>{fr?'1. Contrat et preuve de nomination':'1. Contract and appointment evidence'}</h4>
+       <label class="fl">{fr?'Motif de la décision':'Review reason'}<input value={reasons[c.id]??''} maxLength={500} onInput={e=>setReasons(p=>({...p,[c.id]:(e.target as HTMLInputElement).value}))}/></label>
+       <label class="fl">{fr?'Version du modèle de contrat':'Carrier agreement template version'}<input value={templateVersions[c.id]??''} maxLength={120} onInput={e=>setTemplateVersions(p=>({...p,[c.id]:(e.target as HTMLInputElement).value}))}/></label>
        <label class="fl">Product code for this carrier<input maxLength={80} value={contractProducts[c.id]??''} onInput={e=>{latestProducts.current[c.id]=(e.target as HTMLInputElement).value.toUpperCase();setContractProducts(p=>({...p,[c.id]:latestProducts.current[c.id]}));setPreflight(p=>{const next={...p};delete next[c.id];return next;});}}/></label>
        <label class="fl">Product revocation reason<input value={productRevocationReason[c.id]??''} maxLength={500} onInput={e=>setProductRevocationReason(p=>({...p,[c.id]:(e.target as HTMLInputElement).value}))}/></label>
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
@@ -86,8 +85,8 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        {history[c.id]&&<ol>{history[c.id]!.map((e,i)=><li key={i}>{e.fromState??'—'} → {e.toState} · {String(e.recordedAt).slice(0,19)}{e.reason?` · ${e.reason}`:''}</li>)}</ol>}
        <button class="btn" type="button" onClick={()=>void checkEligibility(c.id)}>{fr?'Vérifier les conditions':'Check eligibility'}</button>
        {eligibility[c.id]&&<div role="status"><p class="muted">{fr?'Autorisation bloquée':'Authorization blocked'}: {eligibility[c.id]!.blocks.join(', ')}</p>{eligibility[c.id]!.evidence&&<ul>{Object.entries(eligibility[c.id]!.evidence!).map(([name,ok])=><li key={name}>{name}: {ok?'✓':'✗'}</li>)}</ul>}</div>}
-       <div>{(options[c.effectiveState??c.state]??[]).map(next=><button class="btn" type="button" disabled={busy || (next==='documents_prepared'&&!templateVersion.trim()) ||
-         (['declined','withdrawn','suspended','terminated','correction_required'].includes(next)&&!reason.trim())}
+       <div>{(options[c.effectiveState??c.state]??[]).map(next=><button class="btn" type="button" disabled={busy || (next==='documents_prepared'&&!(templateVersions[c.id]??'').trim()) ||
+         (['declined','withdrawn','suspended','terminated','correction_required'].includes(next)&&!(reasons[c.id]??'').trim())}
          onClick={()=>void move(c.id,next)}>{next.replaceAll('_',' ')}</button>)}</div>
        </div>}
      </li>)}</ul>}
