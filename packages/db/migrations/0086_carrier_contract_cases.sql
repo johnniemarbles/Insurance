@@ -8,7 +8,7 @@ CREATE TABLE carrier_contract_cases (
  jurisdiction text NOT NULL CHECK (char_length(btrim(jurisdiction)) BETWEEN 2 AND 40),
  state text NOT NULL DEFAULT 'requested' CHECK (state IN
  ('requested','documents_prepared','broker_signed','submitted','carrier_review','correction_required','approved','appointment_verified','active','declined','withdrawn','suspended','expired','terminated')),
- template_version text,
+ template_version text CHECK (template_version IS NULL OR char_length(btrim(template_version)) BETWEEN 1 AND 120),
  signature_evidence_ref text,
  signature_verified_by uuid REFERENCES app_users(id),
  signature_verified_at timestamptz,
