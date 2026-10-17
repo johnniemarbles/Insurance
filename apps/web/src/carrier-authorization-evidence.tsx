@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 type Call=(method:'GET'|'POST',path:string,body?:unknown)=>Promise<any>;
 type Evidence={id:string;kind:string;productCode:string;evidenceRef:string;effectiveOn:string;expiresOn:string;revokedAt:string|null};
 export function CarrierAuthorizationEvidencePanel({call,contractId}:{call:Call;contractId:string}) {
@@ -12,9 +12,11 @@ export function CarrierAuthorizationEvidencePanel({call,contractId}:{call:Call;c
  const [reason,setReason]=useState('');
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
- const load=async()=>{const r=await call('GET',`/v1/compliance/carrier-contracts/${contractId}/authorization-evidence`);setItems(r.evidence??[]);};
- const save=async()=>{setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${contractId}/authorization-evidence`,{kind,productCode,evidenceRef,effectiveOn,expiresOn,confirmedWithSource:confirmed});setEvidenceRef('');setConfirmed(false);await load();setError('');}catch(e){setError(String(e));}finally{setBusy(false);}};
- const revoke=async(id:string)=>{setBusy(true);try{await call('POST',`/v1/compliance/carrier-authorization-evidence/${id}/revoke`,{reason});await load();setReason('');setError('');}catch(e){setError(String(e));}finally{setBusy(false);}};
+ const generation=useRef(0);
+ useEffect(()=>{generation.current++;setItems([]);setError('');setBusy(false);setReason('');setEvidenceRef('');setProductCode('');setConfirmed(false);return ()=>{generation.current++;};},[contractId]);
+ const load=async()=>{const version=generation.current;const r=await call('GET',`/v1/compliance/carrier-contracts/${contractId}/authorization-evidence`);if(version===generation.current)setItems(r.evidence??[]);};
+ const save=async()=>{const version=generation.current;setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${contractId}/authorization-evidence`,{kind,productCode,evidenceRef,effectiveOn,expiresOn,confirmedWithSource:confirmed});if(version!==generation.current)return;setEvidenceRef('');setConfirmed(false);await load();if(version===generation.current)setError('');}catch(e){if(version===generation.current)setError(String(e));}finally{if(version===generation.current)setBusy(false);}};
+ const revoke=async(id:string)=>{const version=generation.current;setBusy(true);try{await call('POST',`/v1/compliance/carrier-authorization-evidence/${id}/revoke`,{reason});if(version!==generation.current)return;await load();if(version===generation.current){setReason('');setError('');}}catch(e){if(version===generation.current)setError(String(e));}finally{if(version===generation.current)setBusy(false);}};
  return <details><summary>Training, product, jurisdiction and hold evidence</summary>
   <p class="muted">Compliance attestations are audit records, not independent carrier integration or permission to sell.</p>
   <button type="button" class="btn" onClick={()=>void load()}>Load evidence</button>
