@@ -64,16 +64,15 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const appOrigin = env.APP_ORIGIN ?? 'https://app.punjabinsurance.co';
   // Privacy and support live on the country's own website: .ca for Canada, .com for the USA.
   const site = region === 'us' ? 'punjabinsurance.com' : 'punjabinsurance.ca';
-  // Residency country follows the deployment region. An explicit DATA_COUNTRY may only match the region
-  // (staging/prod refuse a mismatch so notices cannot claim the wrong country).
-  const dataCountryFromRegion: 'US' | 'CA' = region === 'us' ? 'US' : 'CA';
-  let dataCountry = dataCountryFromRegion;
-  if (env.DATA_COUNTRY === 'CA' || env.DATA_COUNTRY === 'US') {
-    dataCountry = env.DATA_COUNTRY;
-    if (dataCountry !== dataCountryFromRegion && (appEnv === 'prod' || appEnv === 'staging')) {
-      throw new Error(`DATA_COUNTRY=${dataCountry} conflicts with REGION=${region} (expected ${dataCountryFromRegion})`);
-    }
-  }
+  // Physical hosting country and logical tenant region are distinct.
+  const host = env.HOSTED_IN;
+  if (host && host !== 'ca' && host !== 'us') throw new Error('Invalid HOSTED_IN');
+  const physicalCountry = host === 'us' ? 'US' : host === 'ca' ? 'CA' : undefined;
+  const declaredCountry = env.DATA_COUNTRY;
+  if (declaredCountry && declaredCountry !== 'US' && declaredCountry !== 'CA') throw new Error('Invalid DATA_COUNTRY');
+  if (physicalCountry && declaredCountry && physicalCountry !== declaredCountry) throw new Error('DATA_COUNTRY conflicts with HOSTED_IN');
+  if (!physicalCountry && !declaredCountry && (appEnv === 'prod' || appEnv === 'staging')) throw new Error('Hosting country must be configured');
+  const dataCountry: 'US' | 'CA' = physicalCountry ?? (declaredCountry as 'US' | 'CA' | undefined) ?? (region === 'us' ? 'US' : 'CA');
   return {
     extensionOrigins: (env.EXTENSION_ORIGINS ?? '').split(',').map((x) => x.trim()).filter(Boolean),
     googleClientId,
