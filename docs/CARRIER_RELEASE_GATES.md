@@ -20,3 +20,6 @@ Release only after database migration validation, tenant-isolation tests, end-to
 - Verify the contract row lock serializes hold creation against activation, and exercise concurrent hold/activation tests against PostgreSQL.
 - The actual insurer submission endpoint must perform its own transactional authorization check. Preflight remains advisory.
 - CI must pass migration application, tenant RLS, actor provenance, and concurrent lifecycle tests before rollout.
+
+## Submission authorization integration contract
+The database now exposes `carrier_product_submission_authorized_locked(contract_id, product_code)`. A business-submission writer must call this function in the **same transaction** as the submission record write and reject a false result before any submission side effect. It must not call preflight and then submit in a later transaction. External carrier dispatch should use a transactional outbox committed with the authorized submission, with worker revalidation immediately before dispatch. A separate integration test must prove that hold creation, expiry, or revocation between request and dispatch prevents dispatch. No live insurer submission endpoint is claimed by this change.
