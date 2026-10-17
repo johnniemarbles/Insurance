@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { CarrierEvidenceForm } from './carrier-evidence.tsx';
 type Call = (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<any>;
-type Contract = { id: string; carrierName: string; jurisdiction: string; state: string; onboardingCaseId: string; updatedAt: string };
+type Contract = { id: string; carrierName: string; jurisdiction: string; state: string; onboardingCaseId: string; updatedAt: string; templateVersion: string | null; appointmentEffectiveOn: string | null; appointmentExpiresOn: string | null; appointmentCurrentlyValid: boolean };
 const options: Record<string,string[]> = {
  requested:['documents_prepared','withdrawn'],
  documents_prepared:[],
@@ -41,6 +41,9 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
      <ul class="oblist">{contracts.map(c=><li key={c.id}>
        <div><strong>{c.carrierName}</strong> · {c.jurisdiction} · {c.state}
          <small class="muted"> · {c.onboardingCaseId}</small></div>
+       {c.templateVersion&&<p class="muted">{fr?'Modèle':'Template'}: {c.templateVersion}</p>}
+       {c.appointmentEffectiveOn&&<p class="muted">{fr?'Nomination':'Appointment'}: {String(c.appointmentEffectiveOn).slice(0,10)} – {c.appointmentExpiresOn?String(c.appointmentExpiresOn).slice(0,10):(fr?'sans date de fin enregistrée':'no expiry recorded')}</p>}
+       {c.state==='active'&&!c.appointmentCurrentlyValid&&<p role="alert" class="err">{fr?'Nomination non valide actuellement — vérification requise':'Appointment is not currently valid — review required'}</p>}
        <CarrierEvidenceForm call={call} id={c.id} state={c.state} onSaved={refresh}/>
        <div>{(options[c.state]??[]).map(next=><button class="btn" type="button" disabled={busy || (next==='documents_prepared'&&!templateVersion.trim()) ||
          (['declined','withdrawn','suspended','terminated','correction_required'].includes(next)&&!reason.trim())}
