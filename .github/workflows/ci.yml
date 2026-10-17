@@ -22,7 +22,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci 2>&1 | tee npm-install.log
+        shell: bash
       - name: Typecheck
         run: npm run typecheck 2>&1 | tee typecheck.log
         shell: bash
@@ -40,8 +42,23 @@ jobs:
         with:
           name: ci-diagnostics
           path: |
+            npm-install.log
             typecheck.log
             node-tests.log
             isolation-tests.log
           if-no-files-found: ignore
           retention-days: 7
+      - name: CI diagnostics summary
+        if: always()
+        run: |
+          echo '## CI diagnostic files' >> "$GITHUB_STEP_SUMMARY"
+          for file in npm-install.log typecheck.log node-tests.log isolation-tests.log; do
+            if [ -f "$file" ]; then
+              echo "- $file: $(wc -l < "$file") lines" >> "$GITHUB_STEP_SUMMARY"
+              echo '```text' >> "$GITHUB_STEP_SUMMARY"
+              tail -n 25 "$file" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- $file: step not reached" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
