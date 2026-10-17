@@ -41,7 +41,7 @@ export function registerCarrierHoldRoutes(app:FastifyInstance,deps:AppDeps):void
   const body=req.body as Record<string,unknown>;
   if (Object.keys(body).some(k=>k!=='reason')) throw invalid('Only reason is accepted');
   const reason=typeof body.reason==='string'?body.reason.trim():'';
-  if(!UUID.test(id)||!UUID.test(holdId)||reason.length<8||reason.length>500)throw invalid('Valid hold ID and release reason required');
+  if(!UUID.test(id)||!UUID.test(holdId)||reason.length<8||reason.length>500||/[\u0000-\u001f\u007f]/.test(reason))throw invalid('Valid hold ID and release reason required');
   return withRequestTx(deps.appPool,ctx,async tx=>{
    const c=(await tx.query<{tenant_id:string;node_id:string}>('SELECT tenant_id,node_id FROM carrier_contract_cases WHERE id=$1 FOR UPDATE',[id])).rows[0];
    if(!c)throw notFound('Carrier contract not found');
