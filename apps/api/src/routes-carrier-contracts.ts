@@ -22,7 +22,7 @@ export function registerCarrierContractRoutes(app: FastifyInstance, deps: AppDep
                 cc.template_version AS "templateVersion",
                 cc.appointment_effective_on AS "appointmentEffectiveOn", cc.appointment_expires_on AS "appointmentExpiresOn",
                 CASE WHEN cc.state = 'active' AND cc.appointment_effective_on <= CURRENT_DATE AND
-                    (cc.appointment_expires_on IS NULL OR cc.appointment_expires_on >= CURRENT_DATE)
+                    (cc.appointment_expires_on IS NOT NULL AND cc.appointment_expires_on >= CURRENT_DATE)
                     THEN true ELSE false END AS "appointmentCurrentlyValid",
                 cc.created_at AS "createdAt", cc.updated_at AS "updatedAt"
            FROM carrier_contract_cases cc
