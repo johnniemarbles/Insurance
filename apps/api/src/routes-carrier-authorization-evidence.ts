@@ -5,6 +5,7 @@ import { forbidden, invalid, notFound } from './errors.ts';
 import type { AppDeps } from './app.ts';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const kinds=['training','product_scope','jurisdiction_scope','hold_clearance'];
+const validDate=(value:string):boolean=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const date=new Date(value+'T00:00:00.000Z');return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value;};
 export function registerCarrierAuthorizationEvidenceRoutes(app:FastifyInstance,deps:AppDeps):void {
   app.get('/v1/compliance/carrier-contracts/:id/authorization-evidence',async req=>{
     const {ctx}=await deps.authenticate(req);
