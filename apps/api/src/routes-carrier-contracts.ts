@@ -64,6 +64,9 @@ export function registerCarrierContractRoutes(app: FastifyInstance, deps: AppDep
          ON CONFLICT (onboarding_case_id,carrier_name,jurisdiction) DO NOTHING RETURNING id`,
         [c.tenant_id,id,c.node_id,carrierName,jurisdiction,ctx.userId])).rows[0];
       if (!created) throw invalid('Carrier already selected for this jurisdiction');
+      await tx.query(
+        'INSERT INTO carrier_contract_events (tenant_id,contract_id,node_id,to_state,actor_id) VALUES ($1,$2,$3,$4,$5)',
+        [c.tenant_id,created.id,c.node_id,'requested',ctx.userId]);
       await audit(tx,ctx,'onboarding.carrier_requested','carrier_contract_case',created.id,{carrierName,jurisdiction});
       return { id: created.id, state: 'requested' as const };
     });
