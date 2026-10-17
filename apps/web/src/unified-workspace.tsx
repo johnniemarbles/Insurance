@@ -50,11 +50,11 @@ function Metrics({module,data}:{module:Module;data:any}) {
   if(module==='training' && data?.totals) entries=[
     ['Assigned',data.totals.assigned],['In progress',data.totals.inProgress],
     ['Completed',data.totals.completed],['Overdue',data.totals.overdue]];
-  return <div class="pii-workspace-metrics">{entries.map(([name,value])=>
-    <div class="pii-workspace-metric" key={name}><small>{name}</small><strong>{value}</strong></div>)}</div>;
+  return <div class="pii-workspace-metrics" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:"12px"}}>{entries.map(([name,value])=>
+    <div class="pii-workspace-metric" key={name} style={{padding:"12px",borderRadius:"8px",background:"rgba(125,140,165,.08)"}}><small>{name}</small><strong>{value}</strong></div>)}</div>;
 }
 function Panel({module,load,go}:{module:Module;load:Load<any>;go:(page:string)=>void}) {
-  return <section class="pii-workspace-panel" aria-label={title[module]}>
+  return <section class="pii-workspace-panel" style={{border:"1px solid #dfe5ed",borderRadius:"12px",padding:"20px"}} aria-label={title[module]}>
     <div class="pii-workspace-panel-head"><h2>{title[module]}</h2>
       <button class="btn" onClick={()=>go(destinations[module])}>Open workspace</button></div>
     {load.state==='loading'?<p role="status">Loading…</p>:
@@ -102,7 +102,7 @@ export function UnifiedWorkspace({call,go,locale,name}:{call:Call;go:(page:strin
   if(context.state!=='ready')return null;
   const c=context.value;
   const visible=(priorities[active]??[]).filter(m=>c.modules[m]);
-  return <main class="pii-workspace">
+  return <main class="pii-workspace" style={{padding:"24px",maxWidth:"1400px",margin:"0 auto"}}>
     <header class="pii-workspace-header">
       <div><small>{c.country} · {c.scopes.map(s=>s.name).join(', ')||'Authorized workspace'}</small>
         <h1>{locale==='fr-CA'?'Mon espace de travail':'My workspace'}{name?', '+name:''}</h1>
@@ -112,7 +112,7 @@ export function UnifiedWorkspace({call,go,locale,name}:{call:Call;go:(page:strin
     {c.roles.length>1&&<nav aria-label="Workspace perspective" class="pii-workspace-roles">
       {c.roles.map(r=><button key={r} class="btn" aria-pressed={r===active}
         onClick={()=>setActive(r)}>{workspaceNames[r]??r}</button>)}</nav>}
-    {visible.length?<div class="pii-workspace-grid">{visible.map(m=>
+    {visible.length?<div class="pii-workspace-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:"16px"}}>{visible.map(m=>
       <Panel key={m} module={m} load={loads[m]??pending()} go={go}/>)}</div>:
       <p>No summary modules are currently available for this role. Contact your administrator if access is expected.</p>}
     <p class="pii-workspace-footnote">Perspective changes do not elevate permissions. All records are authorized by the server.</p>
