@@ -1,17 +1,18 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 type Call=(method:'GET'|'POST',path:string,body?:unknown)=>Promise<any>;
 type Hold={id:string;reason:string;created_by:string;created_at:string;released_by:string|null;released_at:string|null;release_reason:string|null};
 export function CarrierHoldsPanel({call,contractId}:{call:Call;contractId:string}){
  const [holds,setHolds]=useState<Hold[]>([]);
+ const generation=useRef(0);
  const [reason,setReason]=useState('');
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
  const [releaseReasons,setReleaseReasons]=useState<Record<string,string>>({});
  const url='/v1/compliance/carrier-contracts/'+contractId+'/holds';
- const refresh=async()=>{try{const r=await call('GET',url);setHolds(r.holds??[]);setError('');}catch(e){setError(String(e));}};
- useEffect(()=>{void refresh();},[call,contractId]);
- const create=async()=>{setBusy(true);try{await call('POST',url,{reason});setReason('');await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
- const release=async(id:string)=>{setBusy(true);try{await call('POST',url+'/'+id+'/release',{reason:(releaseReasons[id]??'').trim()});setReleaseReasons(p=>({...p,[id]:''}));await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
+ const refresh=async(version:number)=>{try{const r=await call('GET',url);if(generation.current!==version)return;setHolds(r.holds??[]);setError('');}catch(e){if(generation.current===version)setError(String(e));}};
+ useEffect(()=>{const version=++generation.current;setHolds([]);setReason('');setReleaseReasons({});setError('');setBusy(false);void refresh(version);return ()=>{generation.current++;};},[call,contractId]);
+ const create=async()=>{const version=generation.current;setBusy(true);try{await call('POST',url,{reason});if(generation.current!==version)return;setReason('');await refresh(version);}catch(e){if(generation.current===version)setError(String(e));}finally{if(generation.current===version)setBusy(false);}};
+ const release=async(id:string)=>{const version=generation.current;setBusy(true);try{await call('POST',url+'/'+id+'/release',{reason:(releaseReasons[id]??'').trim()});if(generation.current!==version)return;setReleaseReasons(p=>({...p,[id]:''}));await refresh(version);}catch(e){if(generation.current===version)setError(String(e));}finally{if(generation.current===version)setBusy(false);}};
  return <section class="obcard">
   <h4>Carrier compliance holds</h4>
   {error&&<p role="alert">{error}</p>}
