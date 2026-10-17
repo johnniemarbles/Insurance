@@ -71,7 +71,7 @@ export function registerCarrierReviewRoutes(app: FastifyInstance, deps: AppDeps)
         [reference,ctx.userId,next,id]);
       else {
         const valid = (await tx.query<{ok:boolean}>(
-          'SELECT $1::date <= CURRENT_DATE AND ($2::date IS NULL OR $2::date >= CURRENT_DATE) AS ok',
+          'SELECT $1::date <= CURRENT_DATE AND $2::date >= CURRENT_DATE AND $2::date >= $1::date AS ok',
           [effective,expiry])).rows[0]?.ok;
         if (!valid) throw invalid('Appointment is not currently effective');
         await tx.query(
