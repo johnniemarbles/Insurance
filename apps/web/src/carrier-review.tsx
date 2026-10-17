@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { CarrierEvidenceForm } from './carrier-evidence.tsx';
 import { CarrierAuthorizationEvidencePanel } from './carrier-authorization-evidence.tsx';
 type Call = (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<any>;
@@ -22,6 +22,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const [busy,setBusy]=useState(false);
  const [reason,setReason]=useState('');
  const [contractProducts,setContractProducts]=useState<Record<string,string>>({});
+ const latestProducts=useRef<Record<string,string>>({});
  const [productRevocationReason,setProductRevocationReason]=useState<Record<string,string>>({});
  const [preflight,setPreflight]=useState<Record<string,{missing:string[];blocks?:string[];eligibleForFurtherChecks:boolean}>>({});
  const [templateVersion,setTemplateVersion]=useState('');
@@ -33,7 +34,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
  const checkEligibility=async(id:string)=>{try{const result=await call('GET',`/v1/compliance/carrier-contracts/${id}/eligibility`);setEligibility(previous=>({...previous,[id]:result}));}catch(e){setError(String(e));}};
  const showHistory=async(id:string)=>{try{const r=await call('GET',`/v1/compliance/carrier-contracts/${id}/history`);setHistory(p=>({...p,[id]:r.events??[]}));}catch(e){setError(String(e));}};
  const productFor=(id:string)=>contractProducts[id]??'';
- const checkProduct=async(id:string)=>{const selected=productFor(id);try{const r=await call('GET',`/v1/carrier-contracts/${id}/products/${selected}/preflight`);setPreflight(p=>({...p,[id]:r}));setError('');}catch(e){setError(String(e));}};
+ const checkProduct=async(id:string)=>{const selected=productFor(id);try{const r=await call('GET',`/v1/carrier-contracts/${id}/products/${selected}/preflight`);if(latestProducts.current[id]===selected)setPreflight(p=>({...p,[id]:r}));setError('');}catch(e){setError(String(e));}};
  const activate=async(id:string)=>{setBusy(true);try{const r=await call('POST',`/v1/compliance/carrier-contracts/${id}/activate`,{productCode:productFor(id)});if(!r.activated)setError(`Activation blocked: ${(r.blocks??[]).join(', ')}`);else{setError('');await refresh();}}catch(e){setError(String(e));}finally{setBusy(false);}};
  const revokeProduct=async(id:string)=>{setBusy(true);try{await call('POST',`/v1/compliance/carrier-contracts/${id}/products/${productFor(id)}/revoke`,{reason:productRevocationReason[id]??''});setProductRevocationReason(p=>({...p,[id]:''}));setPreflight(p=>{const next={...p};delete next[id];return next;});setError('');await refresh();}catch(e){setError(String(e));}finally{setBusy(false);}};
  const reconcile=async()=>{setBusy(true);try{const r=await call('POST','/v1/compliance/carrier-contracts/reconcile-expiry',{});await refresh();setError('');}catch(e){setError(String(e));}finally{setBusy(false);}};
@@ -58,7 +59,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
        {c.templateVersion&&<p class="muted">{fr?'Modèle':'Template'}: {c.templateVersion}</p>}
        {c.appointmentEffectiveOn&&<p class="muted">{fr?'Nomination':'Appointment'}: {String(c.appointmentEffectiveOn).slice(0,10)} – {c.appointmentExpiresOn?String(c.appointmentExpiresOn).slice(0,10):(fr?'sans date de fin enregistrée':'no expiry recorded')}</p>}
        {c.state==='active'&&!c.appointmentCurrentlyValid&&<p role="alert" class="err">{fr?'Nomination non valide actuellement — vérification requise':'Appointment is not currently valid — review required'}</p>}
-       <label class="fl">Product code for this carrier<input maxLength={80} value={contractProducts[c.id]??''} onInput={e=>{setContractProducts(p=>({...p,[c.id]:(e.target as HTMLInputElement).value.toUpperCase()}));setPreflight(p=>{const next={...p};delete next[c.id];return next;});}}/></label>
+       <label class="fl">Product code for this carrier<input maxLength={80} value={contractProducts[c.id]??''} onInput={e=>{latestProducts.current[c.id]=(e.target as HTMLInputElement).value.toUpperCase();setContractProducts(p=>({...p,[c.id]:latestProducts.current[c.id]}));setPreflight(p=>{const next={...p};delete next[c.id];return next;});}}/></label>
        <label class="fl">Product revocation reason<input value={productRevocationReason[c.id]??''} maxLength={500} onInput={e=>setProductRevocationReason(p=>({...p,[c.id]:(e.target as HTMLInputElement).value}))}/></label>
        <CarrierEvidenceForm call={call} id={c.id} state={c.effectiveState??c.state} onSaved={refresh}/>
        <CarrierAuthorizationEvidencePanel call={call} contractId={c.id}/>
