@@ -96,9 +96,9 @@ interface ChecklistItem {
 
 type TabKey = 'directory' | 'applications' | 'actions' | 'submissions' | 'appointments' | 'audit';
 
-export function CarrierReviewPanel({ call, locale }: { call: Call; locale: string }) {
+export function CarrierReviewPanel({ call, locale, partnerNodeId }: { call: Call; locale: string; partnerNodeId?: string }) {
   const fr = locale === 'fr-CA';
-  const [activeTab, setActiveTab] = useState<TabKey>('directory');
+  const [activeTab, setActiveTab] = useState<TabKey>(partnerNodeId ? 'applications' : 'directory');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -130,6 +130,8 @@ export function CarrierReviewPanel({ call, locale }: { call: Call; locale: strin
   const [newDocTitle, setNewDocTitle] = useState('');
   const [newDocFileName, setNewDocFileName] = useState('');
   const [newDocHash, setNewDocHash] = useState('');
+  const [signerName, setSignerName] = useState('');
+  const [consentConfirmed, setConsentConfirmed] = useState(false);
 
   // Submission & Appointment states
   const [submissionNotes, setSubmissionNotes] = useState('');
@@ -147,12 +149,26 @@ export function CarrierReviewPanel({ call, locale }: { call: Call; locale: strin
     setLoading(true);
     try {
       const data = await call('GET', '/v1/compliance/carrier-dashboard');
-      setDirectory(data.directory ?? []);
-      setCases(data.cases ?? []);
-      setSubmissions(data.submissions ?? []);
-      setActions(data.actionRequired ?? []);
-      setAuditEvents(data.auditEvents ?? []);
-      setSummary(data.summary ?? {
+      setDirectory(partnerNodeId ? [] : (data.directory ?? []));
+      const scopedCases: ContractCase[] = (data.cases ?? []).filter((item: ContractCase) => !partnerNodeId || item.nodeId === partnerNodeId);
+      const caseIds = new Set(scopedCases.map(item => item.id));
+      const scopedSubmissions: SubmissionRecord[] = (data.submissions ?? []).filter((item: SubmissionRecord) => !partnerNodeId || caseIds.has(item.contractId));
+      const scopedActions: ActionItem[] = (data.actionRequired ?? []).filter((item: ActionItem) => !partnerNodeId || caseIds.has(item.contractId));
+      const scopedAudit: AuditRecord[] = (data.auditEvents ?? []).filter((item: AuditRecord) => !partnerNodeId || caseIds.has(item.contractId));
+      setCases(scopedCases);
+      setSubmissions(scopedSubmissions);
+      setActions(scopedActions);
+      setAuditEvents(scopedAudit);
+      setSummary(partnerNodeId ? {
+        total: scopedCases.length,
+        draft: scopedCases.filter(item => item.state === 'requested').length,
+        pendingSignature: scopedCases.filter(item => item.state === 'documents_prepared').length,
+        complianceReview: scopedCases.filter(item => item.state === 'broker_signed').length,
+        submitted: scopedCases.filter(item => ['submitted','carrier_review'].includes(item.state)).length,
+        approved: scopedCases.filter(item => ['approved','appointment_verified','active'].includes(item.state)).length,
+        activeAppointments: scopedCases.filter(item => item.effectiveState === 'active').length,
+        attentionRequired: scopedActions.length,
+      } : data.summary ?? {
         total: 0, draft: 0, pendingSignature: 0, complianceReview: 0,
         submitted: 0, approved: 0, activeAppointments: 0, attentionRequired: 0,
       });
@@ -166,7 +182,7 @@ export function CarrierReviewPanel({ call, locale }: { call: Call; locale: strin
 
   useEffect(() => {
     void refreshDashboard();
-  }, [call]);
+  }, [call, partnerNodeId]);
 
   const loadCaseDocs = async (id: string) => {
     setDocLoading(true);
@@ -183,12 +199,35 @@ export function CarrierReviewPanel({ call, locale }: { call: Call; locale: strin
     }
   };
 
+  const handleFileSelect = async (e: Event) => {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    setNewDocFileName(file.name);
+    if (!newDocTitle.trim()) {
+      setNewDocTitle(file.name.replace(/\.[^/.]+$/, ''));
+    }
+    try {
+      const buffer = await file.arrayBuffer();
+      const digest = await crypto.subtle.digest('SHA-256', buffer);
+      const hashArray = Array.from(new Uint8Array(digest));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      setNewDocHash(hashHex);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to compute SHA-256 hash');
+    }
+  };
+
   const handleAttachDoc = async (id: string) => {
     if (!newDocTitle.trim() || !newDocFileName.trim()) {
       setError(fr ? 'Titre et nom de fichier requis.' : 'Title and file name are required.');
       return;
     }
-    const hash = newDocHash.trim() || Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    const hash = newDocHash.trim();
+    if (!/^[a-f0-9]{64}$/i.test(hash)) {
+      setError(fr ? 'Empreinte SHA-256 valide (64 caractères hexadécimaux) requise.' : 'Valid 64-character SHA-256 content hash required.');
+      return;
+    }
     setBusy(true);
     try {
       await call('POST', `/v1/compliance/carrier-contracts/${id}/documents`, {
@@ -225,12 +264,18 @@ export function CarrierReviewPanel({ call, locale }: { call: Call; locale: strin
   };
 
   const handleSignPacket = async (id: string) => {
+    if (!consentConfirmed) {
+      setError(fr ? 'Le consentement exprès du courtier doit être confirmé.' : 'Broker express consent must be confirmed.');
+      return;
+    }
     setBusy(true);
     try {
       await call('POST', `/v1/compliance/carrier-contracts/${id}/sign-packet`, {
-        signerName: 'Broker Principal',
+        signerName: signerName.trim() || undefined,
         consentRecorded: true,
       });
+      setConsentConfirmed(false);
+      setSignerName('');
       await refreshDashboard();
       await loadCaseDocs(id);
     } catch (err) {
@@ -365,14 +410,14 @@ export function CarrierReviewPanel({ call, locale }: { call: Call; locale: strin
 
       {/* 2. Navigation Tabs */}
       <div class="carrier-dash-tabs" role="tablist">
-        <button
+        {!partnerNodeId && <button
           role="tab"
           class={`carrier-dash-tab ${activeTab === 'directory' ? 'active' : ''}`}
           aria-selected={activeTab === 'directory'}
           onClick={() => setActiveTab('directory')}
         >
           {fr ? 'Répertoire des assureurs' : 'Carrier Directory'}
-        </button>
+        </button>}
         <button
           role="tab"
           class={`carrier-dash-tab ${activeTab === 'applications' ? 'active' : ''}`}
@@ -615,12 +660,29 @@ export function CarrierReviewPanel({ call, locale }: { call: Call; locale: strin
                                 onInput={e => setNewDocFileName((e.target as HTMLInputElement).value)}
                               />
                             </label>
+                            <label style={{ fontSize: '12px' }}>
+                              {fr ? 'Fichier source :' : 'Source File:'}
+                              <input
+                                type="file"
+                                style={{ width: '100%', padding: '4px', borderRadius: '6px', border: '1px solid var(--line2)', fontSize: '11px' }}
+                                onChange={handleFileSelect}
+                              />
+                            </label>
+                            <label style={{ fontSize: '12px' }}>
+                              SHA-256:
+                              <input
+                                style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid var(--line2)', fontFamily: 'monospace', fontSize: '11px' }}
+                                placeholder="64-char hex hash"
+                                value={newDocHash}
+                                onInput={e => setNewDocHash((e.target as HTMLInputElement).value)}
+                              />
+                            </label>
                           </div>
                           <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
                             <button
                               class="btn"
                               style={{ padding: '6px 14px', fontSize: '12px' }}
-                              disabled={busy || !newDocTitle || !newDocFileName}
+                              disabled={busy || !newDocTitle || !newDocFileName || !/^[a-f0-9]{64}$/i.test(newDocHash.trim())}
                               onClick={() => void handleAttachDoc(c.id)}
                             >
                               {busy ? 'Attaching…' : 'Attach Document'}
@@ -664,13 +726,32 @@ export function CarrierReviewPanel({ call, locale }: { call: Call; locale: strin
                           )}
 
                           {c.state === 'documents_prepared' && (
-                            <button
-                              class="btn primary"
-                              disabled={busy}
-                              onClick={() => void handleSignPacket(c.id)}
-                            >
-                              {fr ? 'Enregistrer la signature électronique du courtier' : 'Record Broker E-Signature'}
-                            </button>
+                            <div style={{ display: 'grid', gap: '8px', padding: '10px', background: 'var(--tint2)', borderRadius: '8px', width: '100%' }}>
+                              <label style={{ fontSize: '12px' }}>
+                                {fr ? 'Nom complet du signataire autorisé :' : 'Authorized Broker Full Legal Name:'}
+                                <input
+                                  style={{ width: '100%', padding: '6px', borderRadius: '6px', border: '1px solid var(--line2)' }}
+                                  placeholder={fr ? 'Nom complet du courtier' : 'Broker full legal name'}
+                                  value={signerName}
+                                  onInput={e => setSignerName((e.target as HTMLInputElement).value)}
+                                />
+                              </label>
+                              <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={consentConfirmed}
+                                  onChange={e => setConsentConfirmed((e.target as HTMLInputElement).checked)}
+                                />
+                                <span>{fr ? 'Le courtier a examiné et consenti formellement à cette soumission.' : 'Broker has reviewed and explicitly consented to this contracting submission.'}</span>
+                              </label>
+                              <button
+                                class="btn primary"
+                                disabled={busy || !consentConfirmed}
+                                onClick={() => void handleSignPacket(c.id)}
+                              >
+                                {fr ? 'Enregistrer la signature électronique du courtier' : 'Record Broker E-Signature'}
+                              </button>
+                            </div>
                           )}
 
                           {c.signatureEvidenceRef && (

@@ -446,10 +446,6 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
     const id = uuid((req.params as { id: string }).id);
     const b = (req.body ?? {}) as Record<string, unknown>;
 
-    const signatureHash = typeof b.signatureHash === 'string' && b.signatureHash.trim()
-      ? b.signatureHash.trim()
-      : createHash('sha256').update(`${id}:${ctx.userId}:${Date.now()}`).digest('hex');
-
     return withRequestTx(deps.appPool, ctx, async tx => {
       const c = (await tx.query<{
         tenant_id: string;
@@ -458,6 +454,17 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
         template_version: string | null;
       }>('SELECT tenant_id, node_id, state, template_version FROM carrier_contract_cases WHERE id = $1 FOR UPDATE', [id])).rows[0];
       if (!c) throw notFound('Carrier contract not found');
+
+      const permitted = (await tx.query<{ ok: boolean }>(
+        `SELECT app_is_compliance_at_or_above(app_tenant_id(), $1) OR EXISTS
+           (SELECT 1 FROM user_node_roles WHERE node_id = $1 AND user_id = app_user_id()) AS ok`,
+        [c.node_id]
+      )).rows[0]?.ok;
+      if (!permitted) throw forbidden('Access denied: caller is not authorized to sign for this partner node');
+
+      if (b.consentRecorded !== true) {
+        throw invalid('Broker consent must be explicitly confirmed before recording e-signature');
+      }
 
       if (c.state !== 'documents_prepared') {
         throw invalid(`Contract must be in documents_prepared state to sign (current: ${c.state})`);
@@ -475,6 +482,20 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
         throw invalid('At least one supporting application document must be attached before signing');
       }
 
+      const userRow = (await tx.query<{ email: string; displayName: string | null }>(
+        `SELECT email, display_name AS "displayName" FROM app_users WHERE id = $1 AND tenant_id = app_tenant_id()`,
+        [ctx.userId]
+      )).rows[0];
+      const signerName = typeof b.signerName === 'string' && b.signerName.trim()
+        ? b.signerName.trim()
+        : (userRow?.displayName ?? 'Authorized Signer');
+      const signerEmail = userRow?.email ?? '';
+      const signerIdentity = signerEmail ? `${signerName} <${signerEmail}>` : signerName;
+
+      const signatureHash = typeof b.signatureHash === 'string' && /^[a-f0-9]{64}$/i.test(b.signatureHash.trim())
+        ? b.signatureHash.trim().toLowerCase()
+        : createHash('sha256').update(`${id}:${c.tenant_id}:${c.node_id}:${ctx.userId}:${signerEmail}:${c.template_version}:${Date.now()}`).digest('hex');
+
       await tx.query(
         `UPDATE carrier_contract_cases
             SET state = 'broker_signed',
@@ -488,11 +509,11 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
 
       await tx.query(
         'INSERT INTO carrier_contract_events (tenant_id, contract_id, node_id, from_state, to_state, actor_id, reason) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-        [c.tenant_id, id, c.node_id, c.state, 'broker_signed', ctx.userId, `Broker e-signed package: ${signatureHash.slice(0, 16)}...`]
+        [c.tenant_id, id, c.node_id, c.state, 'broker_signed', ctx.userId, `Broker e-signed package by ${signerIdentity}: ${signatureHash.slice(0, 16)}...`]
       );
 
-      await audit(tx, ctx, 'carrier.broker_signed', 'carrier_contract_case', id, { signatureHash });
-      return { id, state: 'broker_signed', signatureHash };
+      await audit(tx, ctx, 'carrier.broker_signed', 'carrier_contract_case', id, { signatureHash, signerIdentity });
+      return { id, state: 'broker_signed', signatureHash, signerIdentity };
     });
   });
 
