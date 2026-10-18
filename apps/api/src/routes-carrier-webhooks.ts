@@ -242,11 +242,18 @@ export function registerCarrierWebhookRoutes(app: FastifyInstance, deps: AppDeps
 
       if (!receipt) throw notFound('Receipt not found');
 
+      if (receipt.status !== 'quarantined') {
+        throw forbidden('Receipt has already been adjudicated');
+      }
       if (contractId) {
-        const cExists = (
-          await tx.query('SELECT 1 FROM carrier_contract_cases WHERE id = $1 AND tenant_id = app_tenant_id()', [contractId])
-        ).rowCount! > 0;
-        if (!cExists) throw notFound('Associated carrier contract case not found');
+        const contract = (await tx.query<{ carrier_id: string | null }>(
+          'SELECT carrier_id FROM carrier_contract_cases WHERE id = $1 AND tenant_id = app_tenant_id()',
+          [contractId]
+        )).rows[0];
+        if (!contract) throw notFound('Associated carrier contract case not found');
+        if (!contract.carrier_id || contract.carrier_id !== receipt.carrier_id) {
+          throw forbidden('Receipt carrier does not match the contract carrier');
+        }
       }
 
       await tx.query(
