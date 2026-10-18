@@ -21,8 +21,8 @@ const X = {
   },
 };
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
+function initials(name?: string | null): string {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
   return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1]![0] : '')).toUpperCase() || '?';
 }
 
@@ -63,11 +63,13 @@ function Companies({ call, locale, headOffice, go }: { call: Call; locale: Local
     return () => { active = false; };
   }, [call, base, headOffice]);
   const shown = useMemo(() => (rows ?? []).filter(p => {
-    const matches = !q || `${p.name} ${p.parent ?? ''}`.toLowerCase().includes(q.toLowerCase());
+    const partnerName = String(p.name ?? '');
+    const parentName = String(p.parent ?? '');
+    const matches = !q || `${partnerName} ${parentName}`.toLowerCase().includes(q.toLowerCase());
     return matches && (status === 'all' || (status === 'attention'
       ? p.status !== 'complete' && p.status !== 'approved'
       : p.status === status));
-  }).sort((a, b) => String(a.name).localeCompare(String(b.name))), [rows, q, status]);
+  }).sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''))), [rows, q, status]);
   const total = rows?.length ?? 0;
   const complete = rows?.filter(p => p.status === 'complete' || p.status === 'approved').length ?? 0;
   const perPage = 12;
@@ -78,9 +80,11 @@ function Companies({ call, locale, headOffice, go }: { call: Call; locale: Local
   const card = (p: any, compact = false) => {
     const steps = (p.steps ?? []) as { done: boolean }[];
     const done = steps.filter(s => s.done).length;
-    return <button key={p.id} type="button" class={compact ? 'pd-card pd-featured' : 'pd-card'} onClick={() => go('compliance', p.id)} aria-label={`${p.name}: ${x.open}`}>
-      <span class="pd-card-top"><span class="pd-avatar" aria-hidden="true">{initials(p.name)}</span><span class={`pt-pill ${p.status === 'complete' || p.status === 'approved' ? 'ok' : ''}`}>{x.status[p.status] ?? p.status}</span></span>
-      <span class="pd-name">{p.name}</span>
+    const partnerName = p.name || (locale === 'fr-CA' ? 'Partenaire sans nom' : 'Unnamed Partner');
+    const statusLabel = x.status[p.status ?? ''] ?? p.status ?? '—';
+    return <button key={p.id} type="button" class={compact ? 'pd-card pd-featured' : 'pd-card'} onClick={() => go('compliance', p.id)} aria-label={`${partnerName}: ${x.open}`}>
+      <span class="pd-card-top"><span class="pd-avatar" aria-hidden="true">{initials(partnerName)}</span><span class={`pt-pill ${p.status === 'complete' || p.status === 'approved' ? 'ok' : ''}`}>{statusLabel}</span></span>
+      <span class="pd-name">{partnerName}</span>
       <span class="pd-parent">{p.parent || (locale === 'fr-CA' ? 'Partenaire' : 'Partner')}</span>
       <span class="pd-bottom"><small>{steps.length ? `${done}/${steps.length} ${x.steps}` : (locale === 'fr-CA' ? 'Dossier du partenaire' : 'Partner profile')}</small><span aria-hidden="true">↗</span></span>
     </button>;
