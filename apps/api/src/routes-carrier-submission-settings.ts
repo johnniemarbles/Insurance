@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx } from '@pii/db';
-import { forbidden, invalid } from './errors.ts';
+import { forbidden, invalid, conflict } from './errors.ts';
+import { audit } from './audit.ts';
 import type { AppDeps } from './app.ts';
 
 const EMAIL = /^[^\s@<>\u0000-\u001f]+@[^\s@<>\u0000-\u001f]+\.[^\s@<>\u0000-\u001f]+$/;
@@ -34,7 +35,8 @@ export function registerCarrierSubmissionSettingsRoutes(app: FastifyInstance, de
     const b = req.body;
     if (!b || typeof b !== 'object' || Array.isArray(b)) throw invalid('Object required');
     const x = b as Record<string, unknown>;
-    const fields = ['mode','recipientTo','recipientCc','replyTo','subjectTemplate','bodyTemplate'];
+    const fields = ['mode','recipientTo','recipientCc','replyTo','subjectTemplate','bodyTemplate','expectedRevision'];
+    if (!Number.isInteger(x.expectedRevision) || (x.expectedRevision as number) < 0) throw invalid('Expected revision required');
     if (Object.keys(x).some(k => !fields.includes(k)) || fields.some(k => !(k in x))) throw invalid('Unexpected or missing fields');
     if (x.mode !== 'manual' && x.mode !== 'semi_automated') throw invalid('Invalid mode');
     const to = email(x.recipientTo, true);
@@ -47,6 +49,9 @@ export function registerCarrierSubmissionSettingsRoutes(app: FastifyInstance, de
     if (typeof x.bodyTemplate !== 'string' || !x.bodyTemplate.trim() || x.bodyTemplate.length > 10000)
       throw invalid('Invalid email template');
     return withRequestTx(deps.appPool, ctx, async tx => {
+      const existing = (await tx.query<{ revision: number }>(
+        'SELECT revision FROM carrier_submission_settings WHERE tenant_id = app_tenant_id() AND carrier_id = $1 FOR UPDATE', [CARRIER])).rows[0];
+      if ((existing?.revision ?? 0) !== x.expectedRevision) throw conflict('Carrier settings changed; reload before saving');
       const result = await tx.query(
         `INSERT INTO carrier_submission_settings
          (tenant_id,carrier_id,mode,recipient_to,recipient_cc,reply_to,subject_template,body_template,updated_by)
@@ -59,6 +64,7 @@ export function registerCarrierSubmissionSettingsRoutes(app: FastifyInstance, de
           updated_by=EXCLUDED.updated_by,updated_at=now()
          RETURNING revision,updated_at AS "updatedAt",sending_enabled AS "sendingEnabled"`,
         [CARRIER,x.mode,to,cc,replyTo,x.subjectTemplate,x.bodyTemplate,ctx.userId]);
+      await audit(tx, ctx, 'carrier.submission_settings_updated', 'carrier', CARRIER, { revision: result.rows[0].revision, mode: x.mode, recipientChanged: true });
       return { settings: result.rows[0], recipientVerified: false };
     });
   });
