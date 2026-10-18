@@ -37,7 +37,6 @@ export function getCarrierWebhookSecrets(
   const candidates = [
     env[`${prefix}_PRIMARY`],
     env[`${prefix}_SECONDARY`],
-    env[prefix],
   ];
 
   return candidates.filter(
