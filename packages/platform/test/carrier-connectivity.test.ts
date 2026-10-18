@@ -27,3 +27,44 @@ test('verified matching adapter returns real adapter receipt', async () => {
   registry.register('ia', { channel: 'api', async dispatch() { return { externalReference: 'external-1', acknowledgedAt: '2026-10-18T00:00:00Z', channel: 'api' }; } });
   assert.equal((await registry.dispatch(connection, request)).externalReference, 'external-1');
 });
+
+test('revalidateOutboxDispatch: rejects if compliance hold active', async () => {
+  const { revalidateOutboxDispatch } = await import('../src/carrier-connectivity.ts');
+  const validContext = { contractState: 'submitted', holdingClearance: true, licenceValid: true, eoValid: true, connection };
+  assert.throws(
+    () => revalidateOutboxDispatch(request, { ...validContext, holdingClearance: false }),
+    /Active compliance hold/,
+  );
+});
+
+test('revalidateOutboxDispatch: rejects if licence or E&O invalid', async () => {
+  const { revalidateOutboxDispatch } = await import('../src/carrier-connectivity.ts');
+  const validContext = { contractState: 'submitted', holdingClearance: true, licenceValid: true, eoValid: true, connection };
+  assert.throws(
+    () => revalidateOutboxDispatch(request, { ...validContext, licenceValid: false }),
+    /Valid licence required/,
+  );
+  assert.throws(
+    () => revalidateOutboxDispatch(request, { ...validContext, eoValid: false }),
+    /Current E&O coverage required/,
+  );
+});
+
+test('revalidateOutboxDispatch: rejects if contract state invalid for operation', async () => {
+  const { revalidateOutboxDispatch } = await import('../src/carrier-connectivity.ts');
+  const validContext = { contractState: 'requested', holdingClearance: true, licenceValid: true, eoValid: true, connection };
+  assert.throws(
+    () => revalidateOutboxDispatch(request, validContext),
+    /Contract must be signed or submitted/,
+  );
+  assert.throws(
+    () => revalidateOutboxDispatch({ ...request, operation: 'business_submission' }, { ...validContext, contractState: 'submitted' }),
+    /Contract must be active for business submission/,
+  );
+});
+
+test('revalidateOutboxDispatch: succeeds with valid context and connection', async () => {
+  const { revalidateOutboxDispatch } = await import('../src/carrier-connectivity.ts');
+  const validContext = { contractState: 'submitted', holdingClearance: true, licenceValid: true, eoValid: true, connection };
+  assert.doesNotThrow(() => revalidateOutboxDispatch(request, validContext));
+});

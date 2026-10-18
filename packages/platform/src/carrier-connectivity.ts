@@ -69,3 +69,70 @@ export class CarrierTransportRegistry {
     return transport.dispatch(request);
   }
 }
+
+export type OutboxStatus = 'queued' | 'processing' | 'dispatched' | 'failed' | 'dead_letter';
+
+export interface OutboxRecord {
+  id: string;
+  tenantId: string;
+  contractId: string;
+  carrierId: string;
+  operation: CarrierOperation;
+  jurisdiction: string;
+  idempotencyKey: string;
+  evidenceReference: string;
+  payload: Record<string, unknown>;
+  status: OutboxStatus;
+  retryCount: number;
+  maxRetries: number;
+  lastError: string | null;
+  receipt: CarrierDispatchReceipt | null;
+  dispatchedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RevalidationContext {
+  contractState: string;
+  holdingClearance: boolean;
+  licenceValid: boolean;
+  eoValid: boolean;
+  connection: CarrierConnection | null;
+}
+
+/**
+ * Revalidate contract state, compliance holds, licensing, E&O, and connection
+ * before any outbound carrier dispatch is attempted.
+ */
+export function revalidateOutboxDispatch(
+  record: Pick<OutboxRecord, 'tenantId' | 'contractId' | 'carrierId' | 'operation' | 'jurisdiction' | 'idempotencyKey' | 'evidenceReference'>,
+  context: RevalidationContext,
+): void {
+  if (record.operation === 'contract_packet') {
+    if (!['broker_signed', 'submitted'].includes(context.contractState)) {
+      throw new CarrierConnectionUnavailable(`Contract must be signed or submitted (current: ${context.contractState})`);
+    }
+  } else if (record.operation === 'business_submission') {
+    if (context.contractState !== 'active') {
+      throw new CarrierConnectionUnavailable(`Contract must be active for business submission (current: ${context.contractState})`);
+    }
+  }
+  if (!context.holdingClearance) {
+    throw new CarrierConnectionUnavailable('Active compliance hold prevents carrier dispatch');
+  }
+  if (!context.licenceValid) {
+    throw new CarrierConnectionUnavailable('Valid licence required for carrier dispatch in this jurisdiction');
+  }
+  if (!context.eoValid) {
+    throw new CarrierConnectionUnavailable('Current E&O coverage required for carrier dispatch');
+  }
+  assertCarrierConnection(context.connection, {
+    tenantId: record.tenantId,
+    carrierId: record.carrierId,
+    contractId: record.contractId,
+    operation: record.operation,
+    jurisdiction: record.jurisdiction,
+    idempotencyKey: record.idempotencyKey,
+    evidenceReference: record.evidenceReference,
+  });
+}
