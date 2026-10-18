@@ -96,7 +96,7 @@ interface ChecklistItem {
 
 type TabKey = 'directory' | 'applications' | 'actions' | 'submissions' | 'appointments' | 'audit';
 
-export function CarrierReviewPanel({ call, locale }: { call: Call; locale: string }) {
+export function CarrierReviewPanel({ call, locale, partnerNodeId }: { call: Call; locale: string; partnerNodeId?: string }) {
   const fr = locale === 'fr-CA';
   const [activeTab, setActiveTab] = useState<TabKey>('directory');
   const [loading, setLoading] = useState(true);
@@ -148,11 +148,25 @@ export function CarrierReviewPanel({ call, locale }: { call: Call; locale: strin
     try {
       const data = await call('GET', '/v1/compliance/carrier-dashboard');
       setDirectory(data.directory ?? []);
-      setCases(data.cases ?? []);
-      setSubmissions(data.submissions ?? []);
-      setActions(data.actionRequired ?? []);
-      setAuditEvents(data.auditEvents ?? []);
-      setSummary(data.summary ?? {
+      const scopedCases: ContractCase[] = (data.cases ?? []).filter((item: ContractCase) => !partnerNodeId || item.nodeId === partnerNodeId);
+      const caseIds = new Set(scopedCases.map(item => item.id));
+      const scopedSubmissions: SubmissionRecord[] = (data.submissions ?? []).filter((item: SubmissionRecord) => !partnerNodeId || caseIds.has(item.contractId));
+      const scopedActions: ActionItem[] = (data.actionRequired ?? []).filter((item: ActionItem) => !partnerNodeId || caseIds.has(item.contractId));
+      const scopedAudit: AuditRecord[] = (data.auditEvents ?? []).filter((item: AuditRecord) => !partnerNodeId || caseIds.has(item.contractId));
+      setCases(scopedCases);
+      setSubmissions(scopedSubmissions);
+      setActions(scopedActions);
+      setAuditEvents(scopedAudit);
+      setSummary(partnerNodeId ? {
+        total: scopedCases.length,
+        draft: scopedCases.filter(item => item.state === 'requested').length,
+        pendingSignature: scopedCases.filter(item => item.state === 'documents_prepared').length,
+        complianceReview: scopedCases.filter(item => item.state === 'broker_signed').length,
+        submitted: scopedCases.filter(item => ['submitted','carrier_review'].includes(item.state)).length,
+        approved: scopedCases.filter(item => ['approved','appointment_verified','active'].includes(item.state)).length,
+        activeAppointments: scopedCases.filter(item => item.effectiveState === 'active').length,
+        attentionRequired: scopedActions.length,
+      } : data.summary ?? {
         total: 0, draft: 0, pendingSignature: 0, complianceReview: 0,
         submitted: 0, approved: 0, activeAppointments: 0, attentionRequired: 0,
       });
@@ -166,7 +180,7 @@ export function CarrierReviewPanel({ call, locale }: { call: Call; locale: strin
 
   useEffect(() => {
     void refreshDashboard();
-  }, [call]);
+  }, [call, partnerNodeId]);
 
   const loadCaseDocs = async (id: string) => {
     setDocLoading(true);
