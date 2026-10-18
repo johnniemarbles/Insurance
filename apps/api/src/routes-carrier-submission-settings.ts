@@ -64,7 +64,7 @@ export function registerCarrierSubmissionSettingsRoutes(app: FastifyInstance, de
           updated_by=EXCLUDED.updated_by,updated_at=now()
          RETURNING revision,updated_at AS "updatedAt",sending_enabled AS "sendingEnabled"`,
         [CARRIER,x.mode,to,cc,replyTo,x.subjectTemplate,x.bodyTemplate,ctx.userId]);
-      await audit(tx, ctx, 'carrier.submission_settings_updated', 'carrier', CARRIER, { revision: result.rows[0].revision, mode: x.mode, recipientChanged: true });
+      await audit(tx, ctx, 'carrier.submission_settings_updated', 'carrier', null, { carrierId: CARRIER, revision: result.rows[0].revision, mode: x.mode, recipientChanged: true });
       return { settings: result.rows[0], recipientVerified: false };
     });
   });
