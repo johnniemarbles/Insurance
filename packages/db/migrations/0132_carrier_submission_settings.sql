@@ -23,13 +23,9 @@ CREATE TABLE carrier_submission_settings (
 );
 ALTER TABLE carrier_submission_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE carrier_submission_settings FORCE ROW LEVEL SECURITY;
-CREATE POLICY carrier_submission_settings_tenant_read ON carrier_submission_settings
- FOR SELECT TO app_runtime USING (tenant_id = app_tenant_id());
-CREATE POLICY carrier_submission_settings_tenant_insert ON carrier_submission_settings
- FOR INSERT TO app_runtime WITH CHECK (tenant_id = app_tenant_id());
-CREATE POLICY carrier_submission_settings_tenant_update ON carrier_submission_settings
- FOR UPDATE TO app_runtime USING (tenant_id = app_tenant_id())
- WITH CHECK (tenant_id = app_tenant_id());
+CREATE POLICY tenant_wall ON carrier_submission_settings
+  FOR ALL TO app_runtime USING (tenant_id = app_tenant_id())
+  WITH CHECK (tenant_id = app_tenant_id());
 GRANT SELECT,INSERT,UPDATE ON carrier_submission_settings TO app_runtime;
 REVOKE ALL ON carrier_submission_settings FROM PUBLIC,app_auth;
 COMMENT ON TABLE carrier_submission_settings IS 'Editable tenant carrier recipient settings; verified recipient is separate from carrier appointment or API integration. No email sending is implemented by this table.';
