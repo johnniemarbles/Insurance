@@ -1,4 +1,5 @@
 import { PrivacyTab } from './privacy.tsx';
+import { IaContractingSettings } from './ia-contracting-settings.tsx';
 import { PeopleHub } from './people.tsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { LMS } from './features.ts';
@@ -969,6 +970,11 @@ export function SettingsPage({
                 x={x}
                 renderRow={(d) => renderSettingRow(d, true)}
               />
+            )}
+            {tab === 'companyRules' && who?.isTenantAdmin && (
+              <IaContractingSettings call={call} locale={locale} editable={Boolean(who.isTenantAdmin)} />
+            )}
+            {false && (
             )}
 
             {/* 6. RECORDS AND SIGNATURES */}
