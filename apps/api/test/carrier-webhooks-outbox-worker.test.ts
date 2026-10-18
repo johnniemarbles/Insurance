@@ -331,6 +331,39 @@ test('carrier webhooks: compliance console listing and quarantine adjudication',
   assert.equal(reviewRes.json.status, 'reviewed');
 });
 
+test('carrier reconciliation refuses quarantined and cross-carrier evidence', async () => {
+  const receiptIds = await owner(async c => {
+    const result = await c.query<{ id: string; carrier_id: string }>(
+      `INSERT INTO carrier_webhook_receipts
+        (tenant_id, carrier_id, external_event_id, payload, payload_digest, status)
+       VALUES ($1, 'ia-financial-group', 'test-quarantined-guard', '{}'::jsonb, $2, 'quarantined'),
+              ($1, 'manulife', 'test-cross-carrier-guard', '{}'::jsonb, $2, 'reviewed')
+       RETURNING id, carrier_id`,
+      [co1.tenantId, 'a'.repeat(64)]
+    );
+    return result.rows;
+  });
+  const quarantinedId = receiptIds.find(r => r.carrier_id === 'ia-financial-group')!.id;
+  const wrongCarrierId = receiptIds.find(r => r.carrier_id === 'manulife')!.id;
+  const url = `/v1/compliance/carrier-contracts/${contractCaseId}/reconcile-appointment`;
+  for (const receiptId of [quarantinedId, wrongCarrierId]) {
+    const res = await call(COMPLIANCE, 'POST', url, {
+      appointmentReference: 'IA-QC-2026-9988',
+      verifiedWithCarrierOn: '2026-10-18',
+      receiptId,
+    });
+    assert.equal(res.status, 403);
+  }
+  const crossReview = await call(COMPLIANCE, 'POST',
+    `/v1/compliance/carrier-webhook-receipts/${quarantinedId}/review`,
+    { decision: 'reviewed', contractId: contractCaseId });
+  assert.equal(crossReview.status, 200);
+  const repeatReview = await call(COMPLIANCE, 'POST',
+    `/v1/compliance/carrier-webhook-receipts/${quarantinedId}/review`,
+    { decision: 'rejected' });
+  assert.equal(repeatReview.status, 403);
+});
+
 test('carrier appointment reconciliation: links external evidence and updates contract', async () => {
   // 1. Broker cannot reconcile appointment
   const forbiddenReconcile = await call(
