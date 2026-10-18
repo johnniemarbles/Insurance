@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
+import { CarrierReviewPanel } from './carrier-review.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 type Contract = { id: string; nodeId: string; carrierName: string; jurisdiction: string; state: string; effectiveState?: string; appointmentReference?: string | null; appointmentEffectiveOn?: string | null; appointmentExpiresOn?: string | null; updatedAt?: string };
@@ -25,6 +26,7 @@ export function PartnerCarrierOperations({ call, locale, partnerId, openCarrierD
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [manageInline, setManageInline] = useState(false);
   const refresh = () => {
     setLoading(true); setError('');
     void call('GET', '/v1/compliance/carrier-dashboard').then(r => {
@@ -66,7 +68,9 @@ export function PartnerCarrierOperations({ call, locale, partnerId, openCarrierD
           </div>}
         </article>)}
       <p class="muted">{fr ? 'La signature, la soumission et la vérification restent soumises aux autorisations et contrôles du tableau de bord assureurs.' : 'Signing, submission and appointment verification remain subject to carrier dashboard authorization and evidence controls.'}</p>
-      <button type="button" class="btn primary" onClick={openCarrierDashboard}>{fr ? 'Ouvrir le centre de conformité' : 'Open compliance dashboard'} ↗</button>
+      <button type="button" class="btn primary" onClick={() => setManageInline(v => !v)} aria-expanded={manageInline}>{manageInline ? (fr ? 'Fermer le flux de travail' : 'Close workflow') : (fr ? 'Gérer les contrats ici' : 'Manage contracts here')}</button>
+      {manageInline && <CarrierReviewPanel call={call} locale={locale} partnerNodeId={partnerId} />}
+      <button type="button" class="btn" onClick={openCarrierDashboard}>{fr ? 'Ouvrir le centre de conformité' : 'Open compliance dashboard'} ↗</button>
     </>}
   </section>;
 }
