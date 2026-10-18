@@ -797,5 +797,8 @@ select{background-color:#fff;border:1px solid var(--line2);border-radius:10px;pa
 .ui-stat-lbl{font-size:12px;line-height:1.35;color:var(--mute);font-weight:500;display:block}
 .pii[data-theme=dark] .ui-card{background:var(--tint);border-color:var(--line2)}
 .pii[data-theme=dark] .ui-stat-tile{background:var(--bg);border-color:var(--line2)}
+#s-ia-contracting label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:500;color:var(--ink)}
+#s-ia-contracting input,#s-ia-contracting select,#s-ia-contracting textarea{padding:8px 10px;border:1px solid var(--line2);border-radius:8px;font:inherit;color:var(--ink);background:var(--bg);max-width:100%}
+#s-ia-contracting input:focus,#s-ia-contracting select:focus,#s-ia-contracting textarea:focus{outline:2px solid var(--pri);outline-offset:1px}
 `;
 
