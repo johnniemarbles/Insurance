@@ -478,7 +478,7 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 /* Design system (indigo): soft lit cards, pill controls, pastel tints. Amber stays for overdue and expired. */
 :host{--pri:#6355F6;--pri-h:#5246E0;--pri-soft:#EEEBFF;--navy:#191C32;--ink:#1E2238;--mute:#6B7280;--faint:#9CA3AF;--line:#EEF1F6;--line2:#E5E7EB;--tint:#F9FAFB;--tint2:#F3F1FF;--shadow-soft:0 1px 2px rgba(16,24,40,.04),0 10px 28px rgba(16,24,40,.07)}
 .pii{background:#F2F4F8}
-.hcard,.obcard,.vpanel,.obtile,.pg .hcard,.pg .obcard,.pg .vpanel,.pg .obtile{border-radius:20px;border-color:#EEF1F6;box-shadow:var(--shadow-soft)}
+.hcard,.obcard,.vpanel,.obtile,.hstat,.contacts-card,.pg .hcard,.pg .obcard,.pg .vpanel,.pg .obtile,.pg .hstat{border-radius:20px;border-color:#EEF1F6;box-shadow:var(--shadow-soft)}
 .btn{border-radius:999px;font-weight:600}
 .tag{border-radius:999px;background:var(--pri-soft);color:var(--pri-h)}
 .search,input[type=search]{border-radius:999px;padding-left:16px;padding-right:16px;background:#fff;border-color:#E5E7EB}
@@ -496,7 +496,7 @@ td.ed{cursor:default}td.ed:hover{box-shadow:inset 0 0 0 1px var(--pri-line)}
 .asst-list{margin:0;padding:0;list-style:none;display:grid;gap:8px}
 .asst-list li{border:1px solid var(--line);border-radius:14px;padding:10px 14px;font-size:13px;color:var(--ink);background:#fff}
 .asst-off{margin:0;font-size:12px;color:var(--faint)}
-.ktile,.rstat,.rstats .rstat,.dl-glass{border-radius:20px}
+.ktile,.rstat,.rstats .rstat,.hstat,.hstats .hstat,.ml-stats div,.dl-glass{border-radius:20px}
 .ktile{border-color:#EEF1F6;box-shadow:var(--shadow-soft)}
 .asst-answer{margin:0;font-size:14px;line-height:1.5;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px 14px;white-space:pre-wrap}
 .asst-ask{display:grid;gap:6px}

@@ -129,7 +129,7 @@ const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewa
 const TOP_PAGES: { p: PageId; text: (l: Locale) => string }[] = [
   { p: 'home', text: (l) => (l === 'fr-CA' ? 'Tableau de bord' : 'Dashboard') },
   { p: 'partners', text: (l) => (l === 'fr-CA' ? 'Partenaires' : 'Partners') },
-  { p: 'renewals', text: (l) => (l === 'fr-CA' ? 'Rapports' : 'Reports') },
+  { p: 'renewals', text: (l) => (l === 'fr-CA' ? 'Renouvellements' : 'Renewals') },
 ];
 const pageOf = (v: string | undefined): PageId => (PAGES.includes(v as PageId) ? (v as PageId) : 'pipelines');
 
