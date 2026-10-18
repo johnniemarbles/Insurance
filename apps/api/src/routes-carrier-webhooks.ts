@@ -331,11 +331,35 @@ export function registerCarrierWebhookRoutes(app: FastifyInstance, deps: AppDeps
       }
 
       if (receiptId) {
+        // A receipt is evidence only after independent compliance adjudication.
+        // Never promote a quarantined/rejected event to reviewed during reconciliation.
+        const receipt = (await tx.query<{
+          id: string; carrier_id: string; status: string; contract_id: string | null;
+        }>(
+          `SELECT id, carrier_id, status, contract_id
+             FROM carrier_webhook_receipts
+            WHERE id = $1 AND tenant_id = app_tenant_id()
+            FOR UPDATE`,
+          [receiptId]
+        )).rows[0];
+        if (!receipt) throw notFound('Carrier webhook receipt not found');
+        if (receipt.status !== 'reviewed') throw forbidden('Receipt requires prior compliance review');
+        if (receipt.contract_id && receipt.contract_id !== id) {
+          throw forbidden('Receipt is already linked to another contract');
+        }
+        const contractCarrier = (await tx.query<{ carrier_id: string | null }>(
+          `SELECT carrier_id FROM carrier_contract_cases
+            WHERE id = $1 AND tenant_id = app_tenant_id()`,
+          [id]
+        )).rows[0]?.carrier_id;
+        if (!contractCarrier || contractCarrier !== receipt.carrier_id) {
+          throw forbidden('Receipt carrier does not match the contract carrier');
+        }
         await tx.query(
-          `UPDATE carrier_webhook_receipts
-              SET contract_id = $1, status = 'reviewed', reviewed_by = $2, reviewed_at = now()
-            WHERE id = $3 AND tenant_id = app_tenant_id()`,
-          [id, ctx.userId, receiptId]
+          `UPDATE carrier_webhook_receipts SET contract_id = $1
+            WHERE id = $2 AND tenant_id = app_tenant_id()
+              AND status = 'reviewed' AND (contract_id IS NULL OR contract_id = $1)`,
+          [id, receiptId]
         );
       }
 
