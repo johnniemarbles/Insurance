@@ -162,3 +162,40 @@ test('partner directory: 5. Branch presence /v1/partners/branch returns presence
   assert.equal(r.status, 200);
   assert.ok(Array.isArray(r.json.members), 'branch members must be returned as array');
 });
+
+test('partner profile 360: 6. Admin retrieves complete partner 360 detail file', async () => {
+  const r = await call(ADMIN1, 'GET', `/v1/compliance/partners/${brokerNode1}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.node?.id, brokerNode1);
+  assert.equal(r.json.node?.name, 'Alpha Financial Services');
+  assert.equal(r.json.country, 'CA');
+  assert.ok(r.json.checklist, 'checklist must be present');
+  assert.ok(Array.isArray(r.json.items), 'items must be an array');
+  assert.ok(Array.isArray(r.json.documents), 'documents must be an array');
+  assert.ok(Array.isArray(r.json.appointments), 'appointments must be an array');
+});
+
+test('partner profile 360: 7. Branch compliance officer retrieves partner in own branch', async () => {
+  const r = await call(OFFICER1, 'GET', `/v1/compliance/partners/${brokerNode1}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.node?.id, brokerNode1);
+});
+
+test('partner profile 360: 8. Branch compliance officer cannot access partner in sibling branch (404)', async () => {
+  const r = await call(OFFICER1, 'GET', `/v1/compliance/partners/${brokerNode2}`);
+  assert.equal(r.status, 404);
+});
+
+test('partner profile 360: 9. Multi-tenant isolation: Tenant 2 cannot access Tenant 1 partner profile (404)', async () => {
+  const r = await call(ADMIN2, 'GET', `/v1/compliance/partners/${brokerNode1}`);
+  assert.equal(r.status, 404);
+});
+
+test('partner profile 360: 10. Head Office compliance officer retrieves partner 360 file via /v1/ho/partners/:id', async () => {
+  const r = await call(HO_OFFICER, 'GET', `/v1/ho/partners/${brokerNode1}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.node?.id, brokerNode1);
+  assert.ok(r.json.company, 'company name must be provided in HO view');
+  assert.ok(Array.isArray(r.json.appointments));
+});
+

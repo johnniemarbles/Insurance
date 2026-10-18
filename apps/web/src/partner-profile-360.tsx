@@ -72,10 +72,10 @@ export function PartnerProfile360({ call, locale, partnerId, headOffice, back, o
         {tab === 'carriers' && <>
           <h3>{fr ? 'Nominations auprès des assureurs' : 'Carrier appointments'}</h3>
           {carriers.map(name => {
-            const a = appts.find(x => x.carrier.toLowerCase().includes(name.toLowerCase()) || (name.includes('iA') && /industrial alliance|ia financial/i.test(x.carrier)));
+            const a = appts.find(x => (x.carrier || '').toLowerCase().includes(name.toLowerCase()) || (name.includes('iA') && /industrial alliance|ia financial/i.test(x.carrier || '')));
             return <div class="pd-profile-line" key={name}><span>{name}</span><strong>{a?.status || (fr ? 'Non enregistré' : 'Not recorded')}</strong></div>;
           })}
-          {appts.filter(a => !carriers.some(name => a.carrier.toLowerCase().includes(name.toLowerCase()))).map(a => <div class="pd-profile-line" key={a.id}><span>{a.carrier}</span><strong>{a.status}</strong></div>)}
+          {appts.filter(a => !carriers.some(name => (a.carrier || '').toLowerCase().includes(name.toLowerCase()))).map(a => <div class="pd-profile-line" key={a.id}><span>{a.carrier || '—'}</span><strong>{a.status || '—'}</strong></div>)}
           <p class="muted">{fr ? 'Une nomination n’est active qu’après vérification officielle.' : 'An appointment is active only after authoritative carrier verification.'}</p>
         </>}
         {tab === 'agreements' && <>
