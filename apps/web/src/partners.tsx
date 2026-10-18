@@ -91,7 +91,7 @@ function Companies({ call, locale, headOffice, go }: { call: Call; locale: Local
       <span class="pd-bottom"><small>{steps.length ? `${done}/${steps.length} ${x.steps}` : (locale === 'fr-CA' ? 'Dossier du partenaire' : 'Partner profile')}</small><span aria-hidden="true">↗</span></span>
     </button>;
   };
-  if (selectedPartner) return <PartnerProfile360 call={call} locale={locale} partnerId={selectedPartner} headOffice={headOffice} back={() => setSelectedPartner(null)} openCompliance={() => go('compliance', selectedPartner)} />;
+  if (selectedPartner) return <PartnerProfile360 call={call} locale={locale} partnerId={selectedPartner} headOffice={headOffice} back={() => setSelectedPartner(null)} openCompliance={() => go('compliance', selectedPartner)} openCarrierDashboard={() => go('compliance')} />;
   return <div class="home pd-directory">
     <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{x.title}</h2><span class="muted">{x.companies}</span></div></div>
     <div class="pd-stats" aria-label={locale === 'fr-CA' ? 'Résumé du réseau' : 'Network summary'}>
