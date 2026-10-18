@@ -39,8 +39,11 @@ test('carrier workflow routes: static contract invariants and safety gates', asy
   assert.match(routeCode, /effectiveOn > expiresOn/, 'Rejects expiry date before effective date');
   assert.match(routeCode, /appointment reference required/i, 'Mandates authoritative appointment reference');
 
-  // 5. Document requirement before broker signature
+  // 5. Document requirement and consent before broker signature
   assert.match(routeCode, /supporting application document must be attached before signing/, 'Blocks signature without attached documents');
+  assert.match(routeCode, /Broker consent must be explicitly confirmed/, 'Enforces explicit broker consent before signing');
+  assert.match(routeCode, /not authorized to sign for this partner node/, 'Enforces partner node authorization for signer');
+  assert.match(routeCode, /signerIdentity/, 'Tracks authenticated signer identity in audit events');
 });
 
 test('carrier contracting database migration: schema and RLS invariants', async () => {
