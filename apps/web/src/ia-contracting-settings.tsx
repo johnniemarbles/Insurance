@@ -29,12 +29,12 @@ export function IaContractingSettings({ call, locale, editable }: { call: Call; 
     setBusy(true); setMessage('');
     try {
       const recipientCc = ccText.split(',').map(x => x.trim()).filter(Boolean);
-      const result = await call('PUT', '/v1/compliance/carrier-submission-settings/ia', { ...draft, recipientCc });
+      const result = await call('PUT', '/v1/compliance/carrier-submission-settings/ia', { ...draft, recipientCc, expectedRevision: revision });
       setDraft(v => ({ ...v, recipientCc }));
       setRevision(result.settings.revision);
       setMessage(fr ? 'Enregistré. La vérification du destinataire est requise avant tout envoi.' : 'Saved. Recipient verification is required before any sending.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err));
+      setMessage((err instanceof Error ? err.message : String(err)) + (fr ? ' Actualisez la page avant de réessayer.' : ' Reload before retrying.'));
     } finally { setBusy(false); }
   };
   return <section class="hcard" id="s-ia-contracting">
