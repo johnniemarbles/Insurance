@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
+import { PartnerCarrierOperations } from './partner-carrier-operations.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 type PartnerFile = {
@@ -19,9 +20,9 @@ const tabs: { id: Tab; en: string; fr: string }[] = [
   { id: 'documents', en: 'Documents', fr: 'Documents' },
 ];
 const carriers = ['Industrial Alliance (iA)', 'Manulife', 'Sun Life', 'Canada Life'];
-export function PartnerProfile360({ call, locale, partnerId, headOffice, back, openCompliance }: {
+export function PartnerProfile360({ call, locale, partnerId, headOffice, back, openCompliance, openCarrierDashboard }: {
   call: Call; locale: Locale; partnerId: string; headOffice: boolean;
-  back: () => void; openCompliance: () => void;
+  back: () => void; openCompliance: () => void; openCarrierDashboard: () => void;
 }) {
   const fr = locale === 'fr-CA';
   const [file, setFile] = useState<PartnerFile | null>(null);
@@ -77,6 +78,8 @@ export function PartnerProfile360({ call, locale, partnerId, headOffice, back, o
           })}
           {appts.filter(a => !carriers.some(name => (a.carrier || '').toLowerCase().includes(name.toLowerCase()))).map(a => <div class="pd-profile-line" key={a.id}><span>{a.carrier || '—'}</span><strong>{a.status || '—'}</strong></div>)}
           <p class="muted">{fr ? 'Une nomination n’est active qu’après vérification officielle.' : 'An appointment is active only after authoritative carrier verification.'}</p>
+          {!headOffice && <PartnerCarrierOperations call={call} locale={locale} partnerId={partnerId} openCarrierDashboard={openCarrierDashboard} />}
+          {headOffice && <p class="muted">{fr ? 'Les opérations contractuelles sont disponibles dans le contexte autorisé de l’agence.' : 'Contract operations are available in the authorized agency context.'}</p>}
         </>}
         {tab === 'agreements' && <>
           <h3>{fr ? 'Contrats' : 'Agreements'}</h3>
