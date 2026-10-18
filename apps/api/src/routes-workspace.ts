@@ -228,7 +228,10 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
           await tx.query<{ n: number }>(
             `SELECT (
               (SELECT count(*)::int FROM compliance_items WHERE expires_on IS NOT NULL AND expires_on <= current_date + interval '30 days') +
-              (SELECT count(*)::int FROM broker_self_reports WHERE acknowledged_at IS NULL AND due_on < current_date)
+              (SELECT count(*)::int FROM broker_self_reports WHERE acknowledged_at IS NULL AND due_on < current_date) +
+              (SELECT count(*)::int FROM legal_holds WHERE released_at IS NULL) +
+              (SELECT count(*)::int FROM screening_results WHERE result = 'hit') +
+              (SELECT count(*)::int FROM cash_transactions WHERE report_required AND reported_at IS NULL AND occurred_on < current_date - 15)
             ) AS n`
           )
         ).rows[0]?.n ?? 0;
@@ -303,7 +306,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
             role: 'Manager',
             priority: 'high',
             target: { page: 'compliance', routeId: 'carriers' },
-            actionLabel: 'Approve Contract',
+            actionLabel: 'Review for Approval',
           });
         }
       }
