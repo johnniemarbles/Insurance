@@ -39,7 +39,11 @@ export function MyLearning({ call, locale, onOpen, canAuthor = false }: { call: 
         <div><b>{open.length}</b><span>{fr ? 'À suivre' : 'To do'}</span></div>
         <div class={due.some((e) => new Date(e.dueAt!).getTime() < now) ? 'bad' : ''}><b>{due.length}</b><span>{fr ? 'Échéance proche' : 'Due soon'}</span></div>
         <div><b>{done.length}</b><span>{fr ? 'Terminés' : 'Completed'}</span></div>
-        {hours > 0 && <div><b>{hours}</b><span>{fr ? 'Heures de FC' : 'CE hours'}</span></div>}
+        {hours > 0 ? (
+          <div><b>{hours}</b><span>{fr ? 'Heures de FC' : 'CE hours'}</span></div>
+        ) : (
+          <div><b>{all.length}</b><span>{fr ? 'Total des cours' : 'Total enrolled'}</span></div>
+        )}
       </div>
       {all.length === 0 && <p class="muted">{fr ? 'Vous n’êtes inscrit à aucun cours. Ouvrez l’onglet Cours pour en choisir un.' : 'You are not enrolled in any course yet. Open the Courses tab to pick one.'}</p>}
       <Paths call={call} locale={locale} canAuthor={canAuthor} onOpen={onOpen} />
