@@ -2,26 +2,16 @@ import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
 import type { RequestContext } from '@pii/domain';
-import {
-  verifyCarrierWebhook,
-  CarrierWebhookRejected,
-  type CarrierWebhookEnvelope,
-} from '@pii/platform';
 import { invalid, notFound, forbidden, unauthorized } from './errors.ts';
 import { audit } from './audit.ts';
 import type { AppDeps } from './app.ts';
+import {
+  getCarrierWebhookSecrets,
+  verifyCarrierWebhookSignature,
+} from './carrier-webhook-security.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SUPPORTED_CARRIERS = ['ia-financial-group', 'manulife', 'sun-life', 'canada-life'];
-
-function getWebhookSecret(deps: AppDeps, carrierId: string, reqHeaderSecret?: string): string | null {
-  // Allow explicit non-production header override for testing and verification
-  if (reqHeaderSecret && deps.config.appEnv !== 'prod' && reqHeaderSecret.length >= 32) {
-    return reqHeaderSecret;
-  }
-  const envKey = `CARRIER_WEBHOOK_SECRET_${carrierId.toUpperCase().replace(/-/g, '_')}`;
-  return process.env[envKey] || process.env.CARRIER_WEBHOOK_SECRET || null;
-}
 
 function systemTenantCtx(tenantId: string): RequestContext {
   return {
@@ -37,118 +27,171 @@ function systemTenantCtx(tenantId: string): RequestContext {
 }
 
 export function registerCarrierWebhookRoutes(app: FastifyInstance, deps: AppDeps): void {
-  // 1. Authorized Inbound Carrier Webhook
-  app.post('/v1/webhooks/carrier/:carrierId', async (req, reply) => {
-    const params = req.params as { carrierId?: string };
-    const carrierId = (params.carrierId ?? '').trim().toLowerCase();
-    if (!SUPPORTED_CARRIERS.includes(carrierId)) {
-      throw notFound(`Unsupported carrier: ${carrierId}`);
-    }
+  // Use an encapsulated plugin so the custom parser
+  // applies only to carrier webhook ingestion.
+  app.register(async webhookScope => {
+    webhookScope.removeContentTypeParser('application/json');
 
-    const headers = req.headers as Record<string, string | undefined>;
-    const bodyObj = (req.body ?? {}) as Record<string, unknown>;
-
-    // Resolve tenant ID
-    const rawTenantId = headers['x-tenant-id'] || (typeof bodyObj.tenantId === 'string' ? bodyObj.tenantId : '');
-    if (!rawTenantId || !UUID_RE.test(rawTenantId)) {
-      throw invalid('Valid x-tenant-id header or tenantId body parameter required');
-    }
-    const tenantId = rawTenantId.toLowerCase();
-
-    // Verify tenant exists
-    const tenantExists = (
-      await deps.authPool.query('SELECT 1 FROM tenants WHERE id = $1', [tenantId])
-    ).rowCount! > 0;
-    if (!tenantExists) throw notFound('Tenant not found');
-
-    // Retrieve signing secret
-    const secret = getWebhookSecret(deps, carrierId, headers['x-carrier-secret']);
-    if (!secret || secret.length < 32) {
-      throw forbidden('Carrier webhook signing secret not configured');
-    }
-
-    // Build envelope
-    const eventId = (headers['x-carrier-event-id'] || (typeof bodyObj.eventId === 'string' ? bodyObj.eventId : '')).trim();
-    const timestampStr = headers['x-carrier-timestamp'] || (bodyObj.timestamp !== undefined ? String(bodyObj.timestamp) : '');
-    const timestamp = parseInt(timestampStr, 10);
-    const signature = (headers['x-carrier-signature'] || (typeof bodyObj.signature === 'string' ? bodyObj.signature : '')).trim();
-    const bodyStr = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-
-    const envelope: CarrierWebhookEnvelope = {
-      carrierId,
-      eventId,
-      timestamp,
-      body: bodyStr,
-      signature,
-    };
-
-    try {
-      verifyCarrierWebhook(envelope, secret);
-    } catch (err) {
-      if (err instanceof CarrierWebhookRejected) {
-        throw unauthorized(err.message);
+    webhookScope.addContentTypeParser(
+      'application/json',
+      { parseAs: 'buffer', bodyLimit: 1024 * 1024 },
+      (_request, body, done) => {
+        done(null, body);
       }
-      throw err;
-    }
+    );
 
-    const payloadDigest = createHash('sha256').update(bodyStr).digest('hex');
+    webhookScope.post('/v1/webhooks/carrier/:carrierId', async (req, reply) => {
+      const params = req.params as { carrierId?: string };
+      const carrierId = (params.carrierId ?? '').trim().toLowerCase();
+      if (!SUPPORTED_CARRIERS.includes(carrierId)) {
+        throw notFound(`Unsupported carrier: ${carrierId}`);
+      }
 
-    // Record into carrier_webhook_receipts within tenant context
-    const out = await withRequestTx(deps.appPool, systemTenantCtx(tenantId), async (tx: Tx) => {
-      const inserted = (
-        await tx.query<{ id: string; status: string; received_at: string }>(
-          `INSERT INTO carrier_webhook_receipts
-             (tenant_id, carrier_id, external_event_id, payload, payload_digest, status)
-           VALUES ($1, $2, $3, $4, $5, 'quarantined')
-           ON CONFLICT (tenant_id, carrier_id, external_event_id) DO NOTHING
-           RETURNING id, status, received_at AS "receivedAt"`,
-          [tenantId, carrierId, eventId, JSON.stringify(bodyObj), payloadDigest]
-        )
-      ).rows[0];
+      const headers = req.headers as Record<string, string | undefined>;
 
-      if (!inserted) {
-        // Replay detected
-        const existing = (
+      // Resolve tenant ID from header
+      const rawTenantId = headers['x-tenant-id'];
+      if (!rawTenantId || !UUID_RE.test(rawTenantId)) {
+        throw invalid('Valid x-tenant-id header required');
+      }
+      const tenantId = rawTenantId.toLowerCase();
+
+      // Verify tenant exists
+      const tenantExists = (
+        await deps.authPool.query('SELECT 1 FROM tenants WHERE id = $1', [tenantId])
+      ).rowCount! > 0;
+      if (!tenantExists) throw notFound('Tenant not found');
+
+      const secrets = getCarrierWebhookSecrets(
+        tenantId,
+        carrierId
+      );
+
+      if (secrets.length === 0) {
+        throw forbidden(
+          'Carrier webhook signing secret not configured'
+        );
+      }
+
+      const rawBody = req.body;
+
+      if (!Buffer.isBuffer(rawBody)) {
+        throw invalid('Raw webhook body required');
+      }
+
+      const eventId = headers['x-carrier-event-id'];
+      const timestampText = headers['x-carrier-timestamp'];
+      const signature = headers['x-carrier-signature'];
+
+      if (
+        typeof eventId !== 'string' ||
+        typeof timestampText !== 'string' ||
+        typeof signature !== 'string' ||
+        !/^\d{13}$/.test(timestampText)
+      ) {
+        throw unauthorized('Invalid webhook authentication');
+      }
+
+      const timestamp = Number(timestampText);
+
+      const valid = verifyCarrierWebhookSignature(
+        {
+          tenantId,
+          carrierId,
+          eventId,
+          timestamp,
+          signature,
+          rawBody,
+        },
+        secrets
+      );
+
+      if (!valid) {
+        throw unauthorized('Invalid webhook authentication');
+      }
+
+      // Parse only after successful signature verification.
+      let bodyObj: Record<string, unknown>;
+
+      try {
+        const parsed: unknown = JSON.parse(
+          rawBody.toString('utf8')
+        );
+
+        if (
+          parsed === null ||
+          typeof parsed !== 'object' ||
+          Array.isArray(parsed)
+        ) {
+          throw new Error('Expected JSON object');
+        }
+
+        bodyObj = parsed as Record<string, unknown>;
+      } catch {
+        throw invalid('Invalid webhook JSON payload');
+      }
+
+      const payloadDigest = createHash('sha256')
+        .update(rawBody)
+        .digest('hex');
+
+      // Record into carrier_webhook_receipts within tenant context
+      const out = await withRequestTx(deps.appPool, systemTenantCtx(tenantId), async (tx: Tx) => {
+        const inserted = (
           await tx.query<{ id: string; status: string; received_at: string }>(
-            `SELECT id, status, received_at AS "receivedAt"
-               FROM carrier_webhook_receipts
-              WHERE tenant_id = $1 AND carrier_id = $2 AND external_event_id = $3`,
-            [tenantId, carrierId, eventId]
+            `INSERT INTO carrier_webhook_receipts
+               (tenant_id, carrier_id, external_event_id, payload, payload_digest, status)
+             VALUES ($1, $2, $3, $4, $5, 'quarantined')
+             ON CONFLICT (tenant_id, carrier_id, external_event_id) DO NOTHING
+             RETURNING id, status, received_at AS "receivedAt"`,
+            [tenantId, carrierId, eventId, JSON.stringify(bodyObj), payloadDigest]
           )
         ).rows[0];
 
+        if (!inserted) {
+          // Replay detected
+          const existing = (
+            await tx.query<{ id: string; status: string; received_at: string }>(
+              `SELECT id, status, received_at AS "receivedAt"
+                 FROM carrier_webhook_receipts
+                WHERE tenant_id = $1 AND carrier_id = $2 AND external_event_id = $3`,
+              [tenantId, carrierId, eventId]
+            )
+          ).rows[0];
+
+          return {
+            id: existing?.id,
+            status: existing?.status ?? 'quarantined',
+            duplicate: true,
+          };
+        }
+
         return {
-          id: existing?.id,
-          status: existing?.status ?? 'quarantined',
-          duplicate: true,
+          id: inserted.id,
+          status: inserted.status,
+          duplicate: false,
         };
+      });
+
+      if (out.duplicate) {
+        return reply.code(200).send({
+          ok: true,
+          id: out.id,
+          status: out.status,
+          duplicate: true,
+          message: 'Duplicate event already received and quarantined',
+        });
       }
 
-      return {
-        id: inserted.id,
-        status: inserted.status,
-        duplicate: false,
-      };
-    });
-
-    if (out.duplicate) {
-      return reply.code(200).send({
+      return reply.code(201).send({
         ok: true,
         id: out.id,
+        carrierId,
+        eventId,
         status: out.status,
-        duplicate: true,
-        message: 'Duplicate event already received and quarantined',
+        quarantined: true,
+        message: 'Event quarantined pending compliance review',
       });
-    }
-
-    return reply.code(201).send({
-      ok: true,
-      id: out.id,
-      carrierId,
-      eventId,
-      status: out.status,
-      quarantined: true,
-      message: 'Event quarantined pending compliance review',
     });
   });
 

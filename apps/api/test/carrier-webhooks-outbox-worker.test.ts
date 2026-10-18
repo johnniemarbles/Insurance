@@ -58,6 +58,20 @@ const T2_ADMIN = 'admin@beacon-webhook.test';
 
 const TEST_SECRET = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
+const tenantSecretKey = (
+  tenantId: string,
+  carrierId: string,
+  suffix?: string
+) =>
+  `CARRIER_WEBHOOK_SECRET_${tenantId
+    .replace(/-/g, '_')
+    .toUpperCase()}_${carrierId
+    .replace(/-/g, '_')
+    .toUpperCase()}${suffix ? `_${suffix}` : ''}`;
+
+const TENANT_B_SECRET =
+  'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+
 let agencyNodeId = '';
 let onboardingCaseId = '';
 let contractCaseId = '';
@@ -178,11 +192,34 @@ before(async () => {
 
   await call(COMPLIANCE, 'POST', '/v1/consent/first-login');
   await call(BROKER, 'POST', '/v1/consent/first-login');
+
+  // Configure independent tenant-scoped carrier webhook secrets
+  process.env[tenantSecretKey(
+    co1.tenantId,
+    'ia-financial-group',
+    'PRIMARY'
+  )] = TEST_SECRET;
+
+  process.env[tenantSecretKey(
+    co2.tenantId,
+    'ia-financial-group',
+    'PRIMARY'
+  )] = TENANT_B_SECRET;
 });
 
 after(async () => {
+  if (co1?.tenantId) {
+    delete process.env[tenantSecretKey(co1.tenantId, 'ia-financial-group')];
+    delete process.env[tenantSecretKey(co1.tenantId, 'ia-financial-group', 'PRIMARY')];
+    delete process.env[tenantSecretKey(co1.tenantId, 'ia-financial-group', 'SECONDARY')];
+  }
+  if (co2?.tenantId) {
+    delete process.env[tenantSecretKey(co2.tenantId, 'ia-financial-group')];
+    delete process.env[tenantSecretKey(co2.tenantId, 'ia-financial-group', 'PRIMARY')];
+    delete process.env[tenantSecretKey(co2.tenantId, 'ia-financial-group', 'SECONDARY')];
+  }
   if (app) await app.close();
-  if (pools?.length) await Promise.all(pools.map((p) => p.end()));
+  if (pools?.length) await Promise.all((pools ?? []).map((p) => p.end()));
   if (db) await db.drop();
 });
 
@@ -205,6 +242,31 @@ test('carrier webhooks: rejects request missing tenant identifier with 422', asy
   assert.equal(res.statusCode, 422);
 });
 
+test('webhook rejects missing tenant-carrier secret', async () => {
+  const primaryKey = tenantSecretKey(co1.tenantId, 'ia-financial-group', 'PRIMARY');
+  const baseKey = tenantSecretKey(co1.tenantId, 'ia-financial-group');
+  const savedPrimary = process.env[primaryKey];
+  const savedBase = process.env[baseKey];
+  delete process.env[primaryKey];
+  delete process.env[baseKey];
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/carrier/ia-financial-group',
+      headers: {
+        'x-tenant-id': co1.tenantId,
+        'x-carrier-secret': TEST_SECRET,
+      },
+      payload: { eventId: 'untrusted-secret-test' },
+    });
+
+    assert.equal(response.statusCode, 403);
+  } finally {
+    if (savedPrimary) process.env[primaryKey] = savedPrimary;
+    if (savedBase) process.env[baseKey] = savedBase;
+  }
+});
+
 test('carrier webhooks: rejects invalid HMAC signature or expired timestamp with 401', async () => {
   const now = Date.now();
   const body = { eventType: 'appointment_acknowledged', brokerId: 'brk-100' };
@@ -216,7 +278,6 @@ test('carrier webhooks: rejects invalid HMAC signature or expired timestamp with
     url: '/v1/webhooks/carrier/ia-financial-group',
     headers: {
       'x-tenant-id': co1.tenantId,
-      'x-carrier-secret': TEST_SECRET,
       'x-carrier-event-id': 'evt-bad-sig',
       'x-carrier-timestamp': String(now),
       'x-carrier-signature': '0000000000000000000000000000000000000000000000000000000000000000',
@@ -233,7 +294,6 @@ test('carrier webhooks: rejects invalid HMAC signature or expired timestamp with
     url: '/v1/webhooks/carrier/ia-financial-group',
     headers: {
       'x-tenant-id': co1.tenantId,
-      'x-carrier-secret': TEST_SECRET,
       'x-carrier-event-id': 'evt-expired',
       'x-carrier-timestamp': String(expiredTime),
       'x-carrier-signature': expiredSig,
@@ -263,7 +323,6 @@ test('carrier webhooks: accepts signed event, quarantines it, and enforces repla
     url: '/v1/webhooks/carrier/ia-financial-group',
     headers: {
       'x-tenant-id': co1.tenantId,
-      'x-carrier-secret': TEST_SECRET,
       'x-carrier-event-id': eventId,
       'x-carrier-timestamp': String(now),
       'x-carrier-signature': sig,
@@ -285,7 +344,6 @@ test('carrier webhooks: accepts signed event, quarantines it, and enforces repla
     url: '/v1/webhooks/carrier/ia-financial-group',
     headers: {
       'x-tenant-id': co1.tenantId,
-      'x-carrier-secret': TEST_SECRET,
       'x-carrier-event-id': eventId,
       'x-carrier-timestamp': String(now),
       'x-carrier-signature': sig,
@@ -299,6 +357,113 @@ test('carrier webhooks: accepts signed event, quarantines it, and enforces repla
   assert.equal(j2.duplicate, true);
   assert.equal(j2.id, recordedReceiptId);
   assert.equal(j2.status, 'quarantined');
+});
+
+test('webhook rejects a signature from another tenant', async () => {
+  const timestamp = Date.now();
+  const eventId = 'cross-tenant-rejection';
+  const payload = { eventType: 'appointment.confirmed' };
+
+  const signature = computeSignature(
+    TEST_SECRET,
+    timestamp,
+    eventId,
+    JSON.stringify(payload)
+  );
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/webhooks/carrier/ia-financial-group',
+    headers: {
+      'x-tenant-id': co2.tenantId,
+      'x-carrier-event-id': eventId,
+      'x-carrier-timestamp': String(timestamp),
+      'x-carrier-signature': signature,
+    },
+    payload,
+  });
+
+  assert.equal(response.statusCode, 401);
+});
+
+test('webhook verifies with secondary rotation key', async () => {
+  const secKey = tenantSecretKey(co1.tenantId, 'ia-financial-group', 'SECONDARY');
+  const SECONDARY_SECRET = 'c'.repeat(64);
+  process.env[secKey] = SECONDARY_SECRET;
+
+  try {
+    const timestamp = Date.now();
+    const eventId = `secondary-rotation-${timestamp}`;
+    const payload = { eventType: 'appointment.confirmed', source: 'rotation-test' };
+    const payloadStr = JSON.stringify(payload);
+    const signature = computeSignature(SECONDARY_SECRET, timestamp, eventId, payloadStr);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/carrier/ia-financial-group',
+      headers: {
+        'x-tenant-id': co1.tenantId,
+        'x-carrier-event-id': eventId,
+        'x-carrier-timestamp': String(timestamp),
+        'x-carrier-signature': signature,
+      },
+      payload,
+    });
+
+    assert.equal(response.statusCode, 201);
+    const json = JSON.parse(response.body);
+    assert.equal(json.ok, true);
+    assert.equal(json.status, 'quarantined');
+  } finally {
+    delete process.env[secKey];
+  }
+});
+
+test('webhook rejects raw-body whitespace tampering with 401', async () => {
+  const timestamp = Date.now();
+  const eventId = `tamper-test-${timestamp}`;
+  const signedStr = '{"eventType":"appointment.confirmed","tampered":false}';
+  const tamperedStr = '{"eventType": "appointment.confirmed",  "tampered": false}';
+
+  const signature = computeSignature(TEST_SECRET, timestamp, eventId, signedStr);
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/webhooks/carrier/ia-financial-group',
+    headers: {
+      'content-type': 'application/json',
+      'x-tenant-id': co1.tenantId,
+      'x-carrier-event-id': eventId,
+      'x-carrier-timestamp': String(timestamp),
+      'x-carrier-signature': signature,
+    },
+    payload: tamperedStr,
+  });
+
+  assert.equal(response.statusCode, 401);
+});
+
+test('webhook rejects malformed JSON with 422', async () => {
+  const timestamp = Date.now();
+  const eventId = `malformed-test-${timestamp}`;
+  const malformedStr = 'not a valid json body at all';
+
+  const signature = computeSignature(TEST_SECRET, timestamp, eventId, malformedStr);
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/v1/webhooks/carrier/ia-financial-group',
+    headers: {
+      'content-type': 'application/json',
+      'x-tenant-id': co1.tenantId,
+      'x-carrier-event-id': eventId,
+      'x-carrier-timestamp': String(timestamp),
+      'x-carrier-signature': signature,
+    },
+    payload: malformedStr,
+  });
+
+  assert.equal(response.statusCode, 422);
 });
 
 test('carrier webhooks: compliance console listing and quarantine adjudication', async () => {

@@ -132,8 +132,9 @@ before(async () => {
       );
     }
 
-    // Set carrier webhook secret
-    process.env.CARRIER_WEBHOOK_SECRET_IA_FINANCIAL_GROUP = TEST_SECRET;
+    // Set carrier webhook secret scoped to tenant and carrier
+    const co1IaEnvKey = `CARRIER_WEBHOOK_SECRET_${co1TenantId.replace(/-/g, '_').toUpperCase()}_IA_FINANCIAL_GROUP_PRIMARY`;
+    process.env[co1IaEnvKey] = TEST_SECRET;
 
   });
 
@@ -146,6 +147,9 @@ before(async () => {
 });
 
 after(async () => {
+  const co1IaEnvKey = `CARRIER_WEBHOOK_SECRET_${co1TenantId.replace(/-/g, '_').toUpperCase()}_IA_FINANCIAL_GROUP_PRIMARY`;
+  delete process.env[co1IaEnvKey];
+  delete process.env[`CARRIER_WEBHOOK_SECRET_${co1TenantId.replace(/-/g, '_').toUpperCase()}_IA_FINANCIAL_GROUP`];
   if (app) await app.close();
   if (pools?.length) await Promise.all(pools.map(p => p.end()));
   if (db) await db.drop();
@@ -339,7 +343,6 @@ test('P1 Lifecycle: Complete Carrier Contracting, E-Signature, Outbox, Quarantin
     headers: {
       'content-type': 'application/json',
       'x-tenant-id': co1TenantId,
-      'x-carrier-secret': TEST_SECRET,
       'x-carrier-event-id': eventId,
       'x-carrier-timestamp': String(timestamp),
       'x-carrier-signature': sig,
