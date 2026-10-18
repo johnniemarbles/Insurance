@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
 import { Face } from './presence.tsx';
+import { PartnerProfile360 } from './partner-profile-360.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 
@@ -51,6 +52,7 @@ function Companies({ call, locale, headOffice, go }: { call: Call; locale: Local
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [page, setPage] = useState(0);
   const [featured, setFeatured] = useState(0);
+  const [selectedPartner, setSelectedPartner] = useState<string | null>(null);
   const base = headOffice ? '/v1/ho' : '/v1/compliance';
   useEffect(() => {
     let active = true;
@@ -82,13 +84,14 @@ function Companies({ call, locale, headOffice, go }: { call: Call; locale: Local
     const done = steps.filter(s => s.done).length;
     const partnerName = p.name || (locale === 'fr-CA' ? 'Partenaire sans nom' : 'Unnamed Partner');
     const statusLabel = x.status[p.status ?? ''] ?? p.status ?? '—';
-    return <button key={p.id} type="button" class={compact ? 'pd-card pd-featured' : 'pd-card'} onClick={() => go('compliance', p.id)} aria-label={`${partnerName}: ${x.open}`}>
+    return <button key={p.id} type="button" class={compact ? 'pd-card pd-featured' : 'pd-card'} onClick={() => setSelectedPartner(p.id)} aria-label={`${partnerName}: ${x.open}`}>
       <span class="pd-card-top"><span class="pd-avatar" aria-hidden="true">{initials(partnerName)}</span><span class={`pt-pill ${p.status === 'complete' || p.status === 'approved' ? 'ok' : ''}`}>{statusLabel}</span></span>
       <span class="pd-name">{partnerName}</span>
       <span class="pd-parent">{p.parent || (locale === 'fr-CA' ? 'Partenaire' : 'Partner')}</span>
       <span class="pd-bottom"><small>{steps.length ? `${done}/${steps.length} ${x.steps}` : (locale === 'fr-CA' ? 'Dossier du partenaire' : 'Partner profile')}</small><span aria-hidden="true">↗</span></span>
     </button>;
   };
+  if (selectedPartner) return <PartnerProfile360 call={call} locale={locale} partnerId={selectedPartner} headOffice={headOffice} back={() => setSelectedPartner(null)} openCompliance={() => go('compliance', selectedPartner)} />;
   return <div class="home pd-directory">
     <div class="hwelcome"><div><h2 style={{ margin: 0 }}>{x.title}</h2><span class="muted">{x.companies}</span></div></div>
     <div class="pd-stats" aria-label={locale === 'fr-CA' ? 'Résumé du réseau' : 'Network summary'}>
