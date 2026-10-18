@@ -199,3 +199,22 @@ test('partner profile 360: 10. Head Office compliance officer retrieves partner 
   assert.ok(Array.isArray(r.json.appointments));
 });
 
+test('carrier operations: 11. Admin and branch officer can access carrier dashboard', async () => {
+  const rAdmin = await call(ADMIN1, 'GET', '/v1/compliance/carrier-dashboard');
+  assert.equal(rAdmin.status, 200);
+  assert.ok(Array.isArray(rAdmin.json.directory));
+  assert.ok(Array.isArray(rAdmin.json.cases));
+  assert.ok(Array.isArray(rAdmin.json.submissions));
+  assert.ok(Array.isArray(rAdmin.json.auditEvents));
+
+  const rOfficer = await call(OFFICER1, 'GET', '/v1/compliance/carrier-dashboard');
+  assert.equal(rOfficer.status, 200);
+  assert.ok(Array.isArray(rOfficer.json.cases));
+});
+
+test('carrier operations: 12. Non-compliance user (broker) is denied carrier dashboard with 403', async () => {
+  const rBroker = await call(BROKER1, 'GET', '/v1/compliance/carrier-dashboard');
+  assert.equal(rBroker.status, 403);
+});
+
+
