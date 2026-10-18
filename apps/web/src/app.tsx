@@ -583,7 +583,14 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
         {view === 'board' ? (
           <div class="wrap"><Board pipeline={pipeline!} boxes={boxes} summary={summary} t={t} locale={locale} onOpen={setOpenId} onMove={move} /></div>
         ) : (
-        <div class="wrap" ref={wrapEl}>
+          <>
+          <form class="quick" onSubmit={(e) => { e.preventDefault(); void quickAdd(quickStageId, quickName); }}>
+            <input aria-label={t.quickAdd} placeholder={t.quickAdd} maxLength={200} value={quickName} disabled={quickBusy} onInput={(e) => setQuickName((e.target as HTMLInputElement).value)} />
+            <select aria-label={t.stage} value={quickStageId} onChange={(e) => setQuickStage((e.target as HTMLSelectElement).value)}>{stages.map((s) => <option value={s.id}>{s.name}</option>)}</select>
+            {quickLocs.length > 1 && <select aria-label={t.location} value={quickLoc} onChange={(e) => setQuickLoc((e.target as HTMLSelectElement).value)}><option value="">{t.chooseLocation}</option>{quickLocs.map((l) => <option value={l.id}>{l.name}</option>)}</select>}
+            <button class="btn" disabled={quickBusy || !quickName.trim() || (quickLocs.length > 1 && !quickLoc)}>{t.addHere}</button>
+          </form>
+          <div class="wrap" ref={wrapEl}>
           {viz !== 'none' && (viz === 'line'
             ? (weekly ? <WeeklyLine weekly={weekly} t={t} /> : null)
             : <StageChart mode={viz} t={t} locale={locale} currency={cur} data={stages.map((s) => ({ name: s.name, color: stageById.get(s.id)!.color, count: summary[s.id]?.count ?? 0, value: summary[s.id]?.value ?? 0 }))} />)}
@@ -596,12 +603,6 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
               <button class="link" onClick={() => { setHideStart(true); onStartTipsOff(); }}>{t.gsDone}</button>
             </div>
           )}
-          <form class="quick" onSubmit={(e) => { e.preventDefault(); void quickAdd(quickStageId, quickName); }}>
-            <input aria-label={t.quickAdd} placeholder={t.quickAdd} maxLength={200} value={quickName} disabled={quickBusy} onInput={(e) => setQuickName((e.target as HTMLInputElement).value)} />
-            <select aria-label={t.stage} value={quickStageId} onChange={(e) => setQuickStage((e.target as HTMLSelectElement).value)}>{stages.map((s) => <option value={s.id}>{s.name}</option>)}</select>
-            {quickLocs.length > 1 && <select aria-label={t.location} value={quickLoc} onChange={(e) => setQuickLoc((e.target as HTMLSelectElement).value)}><option value="">{t.chooseLocation}</option>{quickLocs.map((l) => <option value={l.id}>{l.name}</option>)}</select>}
-            <button class="btn" disabled={quickBusy || !quickName.trim() || (quickLocs.length > 1 && !quickLoc)}>{t.addHere}</button>
-          </form>
           {boxes.length === 0 ? (!showStart && <div class="msg">{t.empty}</div>) : narrow ? (
             <ul class="cards">
               {boxes.map((b) => (
@@ -644,7 +645,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
                               <i style={{ background: gColor }} />{collapsed.has(gk) ? '▸' : '▾'} <b>{gName}</b>
                               <span class="muted"> {g ? t.rows(g.count) : ''}{g && g.value > 0 ? ` · ${money(g.value, cur, locale)}` : ''}</span>
                             </button>
-                            {groupBy === 'stage' && <button class="gadd" aria-label={t.addToGroup(gName)} onClick={(e) => { setQuickStage(gk); ((e.currentTarget as HTMLElement).closest('.wrap')?.querySelector('.quick input') as HTMLInputElement | null)?.focus(); }}>+ {t.addHere}</button>}
+                            {groupBy === 'stage' && <button class="gadd" aria-label={t.addToGroup(gName)} onClick={(e) => { setQuickStage(gk); ((e.currentTarget as HTMLElement).closest('.root')?.querySelector('.quick input') as HTMLInputElement | null)?.focus(); }}>+ {t.addHere}</button>}
                           </td>
                         </tr>
                       )}
@@ -663,6 +664,7 @@ function PipelineView({ call, t, locale, meEmail, compose, initialPid, prefs, op
           )}
           {boxes.length < total && <div class="msg"><button class="btn quiet" onClick={loadMore}>{t.loadMore}</button></div>}
         </div>
+        </>
         )}
         {dupOpen && pipeline && <DuplicatesDialog call={call} locale={locale} pipelineId={pipeline.id} onClose={() => setDupOpen(false)} onChanged={refresh} />}
         {opened && pipeline && <RecordPanel key={opened.id} box={opened} pipeline={pipeline} call={call} t={t} locale={locale} people={people} onClose={() => setOpenId('')} onChanged={refresh} />}
