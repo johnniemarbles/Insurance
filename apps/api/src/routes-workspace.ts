@@ -48,6 +48,26 @@ export interface DashboardCard {
   allowedActions: string[];
 }
 
+export interface ExecutiveSummary {
+  activeCarrierContracts: number;
+  pendingApprovals: number;
+  complianceAlerts: number;
+  carrierReceipts: number;
+  quarantinedReceipts: number;
+}
+
+export interface WorkQueueItem {
+  id: string;
+  category: 'webhook_review' | 'contract_approval' | 'audit_exception' | 'compliance_alert' | 'onboarding_review' | 'task' | 'coursework';
+  title: string;
+  subtitle?: string;
+  role: string;
+  priority: 'high' | 'medium' | 'normal';
+  date?: string;
+  target: { page: string; routeId?: string };
+  actionLabel?: string;
+}
+
 export interface UnifiedDashboardResponse {
   version: number;
   tenantId: string;
@@ -57,6 +77,8 @@ export interface UnifiedDashboardResponse {
   activeNodeIds: string[];
   isTenantAdmin: boolean;
   isHeadOffice: boolean;
+  summary?: ExecutiveSummary;
+  workQueue: WorkQueueItem[];
   cards: DashboardCard[];
 }
 
@@ -181,6 +203,243 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
       const activeModules = PERSPECTIVE_MODULES[activePerspective] ?? ['learning', 'notifications'];
       const cards: DashboardCard[] = [];
 
+      let summary: ExecutiveSummary | undefined;
+
+      if (['admin', 'ho', 'compliance'].includes(activePerspective) && (admin || isHeadOffice || compliance)) {
+        const activeContractCount = (
+          await tx.query<{ n: number }>(
+            `SELECT count(*)::int AS n
+               FROM carrier_contract_cases
+              WHERE state IN ('active', 'appointment_verified')
+                AND (appointment_expires_on IS NULL OR appointment_expires_on >= CURRENT_DATE)`
+          )
+        ).rows[0]?.n ?? 0;
+
+        const pendingApprCount = (
+          await tx.query<{ n: number }>(
+            `SELECT (
+              (SELECT count(*)::int FROM carrier_contract_cases WHERE state IN ('submitted', 'carrier_review')) +
+              (SELECT count(*)::int FROM onboarding_cases WHERE standing = 'review_required' OR stage = 'review')
+            ) AS n`
+          )
+        ).rows[0]?.n ?? 0;
+
+        const alertCount = (
+          await tx.query<{ n: number }>(
+            `SELECT (
+              (SELECT count(*)::int FROM compliance_items WHERE expires_on IS NOT NULL AND expires_on <= current_date + interval '30 days') +
+              (SELECT count(*)::int FROM broker_self_reports WHERE acknowledged_at IS NULL AND due_on < current_date)
+            ) AS n`
+          )
+        ).rows[0]?.n ?? 0;
+
+        const receiptsTotal = (
+          await tx.query<{ n: number }>(
+            `SELECT count(*)::int AS n FROM carrier_webhook_receipts`
+          )
+        ).rows[0]?.n ?? 0;
+
+        const receiptsQuarantined = (
+          await tx.query<{ n: number }>(
+            `SELECT count(*)::int AS n FROM carrier_webhook_receipts WHERE status = 'quarantined'`
+          )
+        ).rows[0]?.n ?? 0;
+
+        summary = {
+          activeCarrierContracts: activeContractCount,
+          pendingApprovals: pendingApprCount,
+          complianceAlerts: alertCount,
+          carrierReceipts: receiptsTotal,
+          quarantinedReceipts: receiptsQuarantined,
+        };
+      }
+
+      const workQueue: WorkQueueItem[] = [];
+
+      // 1. Compliance queue: Carrier webhook reviews
+      if ((admin || compliance) && ['admin', 'ho', 'compliance'].includes(activePerspective)) {
+        const quarantinedRows = (
+          await tx.query<{ id: string; carrierId: string; eventId: string; receivedAt: string }>(
+            `SELECT id, carrier_id AS "carrierId", external_event_id AS "eventId", received_at::text AS "receivedAt"
+               FROM carrier_webhook_receipts
+              WHERE status = 'quarantined'
+              ORDER BY received_at DESC LIMIT 5`
+          )
+        ).rows;
+
+        for (const qr of quarantinedRows) {
+          workQueue.push({
+            id: `wq-cwr-${qr.id}`,
+            category: 'webhook_review',
+            title: `Carrier webhook receipt: ${qr.carrierId}`,
+            subtitle: `Event ${qr.eventId} awaiting quarantine review`,
+            role: 'Compliance',
+            priority: 'high',
+            date: qr.receivedAt,
+            target: { page: 'compliance', routeId: 'carriers' },
+            actionLabel: 'Review Receipt',
+          });
+        }
+      }
+
+      // 2. Manager & Admin queue: Contract approvals & signature requests
+      if ((admin || roles.includes('manager')) && ['admin', 'ho', 'manager'].includes(activePerspective)) {
+        const pendingContracts = (
+          await tx.query<{ id: string; carrierName: string; jurisdiction: string; state: string; partnerName: string }>(
+            `SELECT cc.id, cc.carrier_name AS "carrierName", cc.jurisdiction, cc.state, n.name AS "partnerName"
+               FROM carrier_contract_cases cc
+               JOIN org_nodes n ON n.id = cc.node_id
+              WHERE cc.state IN ('submitted', 'carrier_review')
+              ORDER BY cc.updated_at DESC LIMIT 5`
+          )
+        ).rows;
+
+        for (const pc of pendingContracts) {
+          workQueue.push({
+            id: `wq-cc-${pc.id}`,
+            category: 'contract_approval',
+            title: `${pc.partnerName} · ${pc.carrierName} (${pc.jurisdiction})`,
+            subtitle: `Contract case in state: ${pc.state}`,
+            role: 'Manager',
+            priority: 'high',
+            target: { page: 'compliance', routeId: 'carriers' },
+            actionLabel: 'Approve Contract',
+          });
+        }
+      }
+
+      // 3. Auditor queue: Active audit engagements
+      if (isAuditor && ['admin', 'ho', 'auditor'].includes(activePerspective)) {
+        const auditEngs = (
+          await tx.query<{ id: string; title: string; startsOn: string; endsOn: string }>(
+            `SELECT a.id, a.title, a.starts_on::text AS "startsOn", a.ends_on::text AS "endsOn"
+               FROM audit_engagements a
+              WHERE (a.ends_on >= CURRENT_DATE AND a.ended_at IS NULL)
+                AND (a.auditor_user_id = app_user_id() OR app_is_tenant_admin() OR EXISTS (SELECT 1 FROM user_node_roles WHERE user_id = app_user_id() AND role = 'compliance'))
+              ORDER BY a.starts_on DESC LIMIT 5`
+          )
+        ).rows;
+
+        for (const ae of auditEngs) {
+          workQueue.push({
+            id: `wq-ae-${ae.id}`,
+            category: 'audit_exception',
+            title: ae.title,
+            subtitle: `Active sampling window: ${ae.startsOn} to ${ae.endsOn}`,
+            role: 'Auditor',
+            priority: 'normal',
+            target: { page: 'compliance', routeId: 'files' },
+            actionLabel: 'Sample Audit',
+          });
+        }
+      }
+
+      // 4. Partner queue: Broker contract requests & credential renewals
+      if ((admin || roles.includes('partner')) && activePerspective === 'partner') {
+        const brokerCases = (
+          await tx.query<{ id: string; carrierName: string; jurisdiction: string; state: string }>(
+            `SELECT cc.id, cc.carrier_name AS "carrierName", cc.jurisdiction, cc.state
+               FROM carrier_contract_cases cc
+              WHERE cc.state IN ('requested', 'submitted')
+                AND EXISTS (SELECT 1 FROM user_node_roles WHERE node_id = cc.node_id AND user_id = app_user_id())
+              ORDER BY cc.updated_at DESC LIMIT 5`
+          )
+        ).rows;
+
+        for (const bc of brokerCases) {
+          workQueue.push({
+            id: `wq-bc-${bc.id}`,
+            category: 'contract_approval',
+            title: `Carrier Contract: ${bc.carrierName} (${bc.jurisdiction})`,
+            subtitle: `Status: ${bc.state}`,
+            role: 'Broker',
+            priority: 'high',
+            target: { page: 'compliance', routeId: 'carriers' },
+            actionLabel: 'View Case',
+          });
+        }
+      }
+
+      // 5. Compliance Alerts: Expired credentials
+      if ((admin || compliance) && ['admin', 'ho', 'compliance'].includes(activePerspective)) {
+        const expiredItems = (
+          await tx.query<{ id: string; label: string; partnerName: string; expiresOn: string }>(
+            `SELECT i.id, i.label, n.name AS "partnerName", i.expires_on::text AS "expiresOn"
+               FROM compliance_items i
+               JOIN org_nodes n ON n.id = i.node_id
+              WHERE i.expires_on < CURRENT_DATE
+              ORDER BY i.expires_on LIMIT 5`
+          )
+        ).rows;
+
+        for (const ei of expiredItems) {
+          workQueue.push({
+            id: `wq-ci-${ei.id}`,
+            category: 'compliance_alert',
+            title: `${ei.partnerName} · ${ei.label}`,
+            subtitle: `Expired on ${ei.expiresOn}`,
+            role: 'Compliance',
+            priority: 'high',
+            date: ei.expiresOn,
+            target: { page: 'compliance', routeId: 'files' },
+            actionLabel: 'Verify Document',
+          });
+        }
+      }
+
+      // 6. Coursework: Learner & Trainer queues
+      if (['learner', 'trainer', 'partner', 'staff'].includes(activePerspective)) {
+        const pendingCourses = (
+          await tx.query<{ id: string; title: string; dueAt: string | null }>(
+            `SELECT e.id, coalesce(l.title, 'Course') AS title, e.due_at::text AS "dueAt"
+               FROM enrollments e
+          LEFT JOIN course_locales l ON l.course_id = e.course_id AND l.locale = 'en'
+              WHERE e.user_id = app_user_id() AND e.status <> 'completed'
+              ORDER BY e.due_at NULLS LAST LIMIT 3`
+          )
+        ).rows;
+
+        for (const pc of pendingCourses) {
+          workQueue.push({
+            id: `wq-en-${pc.id}`,
+            category: 'coursework',
+            title: pc.title,
+            subtitle: pc.dueAt ? `Due by ${pc.dueAt.slice(0, 10)}` : 'Incomplete course assignment',
+            role: activePerspective === 'trainer' ? 'Trainer' : 'Learner',
+            priority: 'normal',
+            target: { page: 'training' },
+            actionLabel: 'Resume Course',
+          });
+        }
+      }
+
+      // 7. Operations Staff: Due CRM Tasks
+      if (crmAllowed && ['admin', 'ho', 'manager', 'staff'].includes(activePerspective)) {
+        const dueTasksList = (
+          await tx.query<{ id: string; title: string; boxName: string; boxId: string; pipelineId: string; dueAt: string }>(
+            `SELECT t.id, t.title, b.name AS "boxName", b.id AS "boxId", b.pipeline_id AS "pipelineId", t.due_at::text AS "dueAt"
+               FROM tasks t
+               JOIN boxes b ON b.id = t.box_id
+              WHERE t.done_at IS NULL AND t.due_at <= now()
+              ORDER BY t.due_at LIMIT 5`
+          )
+        ).rows;
+
+        for (const dt of dueTasksList) {
+          workQueue.push({
+            id: `wq-tsk-${dt.id}`,
+            category: 'task',
+            title: dt.title,
+            subtitle: `Record: ${dt.boxName} · Due ${dt.dueAt.slice(0, 10)}`,
+            role: 'Operations',
+            priority: 'high',
+            date: dt.dueAt,
+            target: { page: 'pipelines', routeId: `${dt.pipelineId}::open=${dt.boxId}` },
+            actionLabel: 'Complete Task',
+          });
+        }
+      }
+
       for (const mod of activeModules) {
         if (mod === 'crm') {
           if (!crmAllowed) continue;
@@ -271,18 +530,24 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
 
           const expiredCount = expiries.filter(e => e.status === 'expired').length;
           const expiringSoon = expiries.filter(e => e.status === 'expiring').length;
+          const quarantinedCount = (
+            await tx.query<{ n: number }>(
+              `SELECT count(*)::int AS n FROM carrier_webhook_receipts WHERE status = 'quarantined'`
+            )
+          ).rows[0]?.n ?? 0;
 
           cards.push({
             id: 'card-compliance',
             module: 'compliance',
             title: 'Compliance alerts',
             description: 'Credential expiries, self-reports, and operational compliance holds.',
-            status: expiries.length === 0 && overdueReports === 0 ? 'empty' : 'ready',
+            status: expiries.length === 0 && overdueReports === 0 && quarantinedCount === 0 ? 'empty' : 'ready',
             metrics: [
               { id: 'expired', label: 'Expired items', value: expiredCount, tone: expiredCount > 0 ? 'bad' : 'good' },
               { id: 'expiring', label: 'Expiring in 30d', value: expiringSoon, tone: expiringSoon > 0 ? 'warn' : 'good' },
               { id: 'overdueReports', label: 'Overdue reports', value: overdueReports, tone: overdueReports > 0 ? 'warn' : 'good' },
               { id: 'frozen', label: 'Frozen nodes', value: frozenNodes, tone: frozenNodes > 0 ? 'bad' : 'good' },
+              { id: 'quarantined', label: 'Quarantined receipts', value: quarantinedCount, tone: quarantinedCount > 0 ? 'warn' : 'good' },
             ],
             items: expiries.slice(0, 5).map(e => ({
               id: e.id,
@@ -318,19 +583,25 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
           const verified = cases.filter(c => c.state === 'appointment_verified').length;
           const active = cases.filter(c => c.state === 'active').length;
           const expired = cases.filter(c => c.effectiveState === 'expired').length;
+          const quarantinedReceipts = (
+            await tx.query<{ n: number }>(
+              `SELECT count(*)::int AS n FROM carrier_webhook_receipts WHERE status = 'quarantined'`
+            )
+          ).rows[0]?.n ?? 0;
 
           cards.push({
             id: 'card-carriers',
             module: 'carriers',
             title: 'Carrier contracting cases',
             description: 'Direct insurer contracting workflows, submissions, and appointments.',
-            status: cases.length === 0 ? 'empty' : 'ready',
+            status: cases.length === 0 && quarantinedReceipts === 0 ? 'empty' : 'ready',
             metrics: [
               { id: 'total', label: 'Contract cases', value: cases.length },
               { id: 'inReview', label: 'In carrier review', value: inReview, tone: 'neutral' },
               { id: 'verified', label: 'Verified appointments', value: verified, tone: 'good' },
               { id: 'active', label: 'Active authorized', value: active, tone: 'good' },
               { id: 'expired', label: 'Expired', value: expired, tone: expired > 0 ? 'warn' : 'neutral' },
+              { id: 'quarantined', label: 'Quarantined webhooks', value: quarantinedReceipts, tone: quarantinedReceipts > 0 ? 'warn' : 'neutral' },
             ],
             items: cases.slice(0, 5).map(c => ({
               id: c.id,
@@ -513,6 +784,8 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
         activeNodeIds: ctx.nodeIds,
         isTenantAdmin,
         isHeadOffice,
+        summary,
+        workQueue,
         cards,
       };
 

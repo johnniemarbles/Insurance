@@ -13,6 +13,7 @@ const SOURCES = [
   { key: 'retention', path: '/v1/compliance/retention' },
   { key: 'audit', path: '/v1/audit/engagements' },
   { key: 'notifications', path: '/v1/notifications' },
+  { key: 'webhooks', path: '/v1/compliance/carrier-webhook-receipts?status=quarantined' },
 ] as const;
 
 type Key = typeof SOURCES[number]['key'];
@@ -89,10 +90,12 @@ export function ComplianceCommandCenter({
   const retention = results.retention;
   const audit = results.audit;
   const notifications = results.notifications;
+  const webhooks = results.webhooks;
 
   const amlItems: AmlItem[] = Array.isArray(risk.value?.aml) ? risk.value.aml : [];
   const holdItems: HoldItem[] = Array.isArray(retention.value?.holds) ? retention.value.holds : [];
   const auditItems: EngagementItem[] = Array.isArray(audit.value?.engagements) ? audit.value.engagements : [];
+  const quarantinedReceipts: any[] = Array.isArray(webhooks.value?.receipts) ? webhooks.value.receipts : [];
   const notifAlerts = Array.isArray(notifications.value?.notifications)
     ? notifications.value.notifications.filter((n: any) => n.kind?.includes('alert') || n.kind?.includes('aml'))
     : [];
@@ -189,6 +192,12 @@ export function ComplianceCommandCenter({
           key: 'carriers',
           label: fr ? 'Dossiers assureurs' : 'Carrier contract cases',
           count: Array.isArray(carriers.value) ? carriers.value.length : carriers.value?.contracts?.length,
+          section: 'carriers',
+        },
+        {
+          key: 'webhooks',
+          label: fr ? 'Webhooks en quarantaine' : 'Quarantined webhooks',
+          count: quarantinedReceipts.length,
           section: 'carriers',
         },
         {
@@ -298,6 +307,51 @@ export function ComplianceCommandCenter({
                 </div>
                 <button class="btn" type="button" onClick={() => onNavigate('files')} style={{ padding: '4px 10px', fontSize: '12px' }}>
                   {fr ? 'Voir dossier' : 'Open file'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {quarantinedReceipts.length > 0 && (
+        <div class="obcard" style={{ marginTop: '16px', borderLeft: '4px solid #b3261e' }}>
+          <div class="obrow">
+            <div>
+              <h3 style={{ color: '#b3261e' }}>
+                {fr ? 'Reçus de webhook en quarantaine nécessitant révision' : 'Quarantined Carrier Webhooks Requiring Review'} ({quarantinedReceipts.length})
+              </h3>
+              <p class="muted">
+                {fr
+                  ? 'Événements assureurs reçus et placés en quarantaine. L’adjudication et l’examen de conformité sont requis avant toute réconciliation.'
+                  : 'Insurer events quarantined upon receipt. Independent compliance review and adjudication required before carrier reconciliation.'}
+              </p>
+            </div>
+            <button class="btn" type="button" onClick={() => onNavigate('carriers')}>
+              {fr ? 'Traiter la quarantaine' : 'Review in carrier workspace'}
+            </button>
+          </div>
+          <div style={{ marginTop: '12px' }}>
+            {quarantinedReceipts.slice(0, 5).map((qr: any) => (
+              <div
+                class="ev"
+                key={qr.id}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}
+              >
+                <div>
+                  <strong>{qr.carrierId} · Event {qr.externalEventId}</strong>
+                  <div class="muted" style={{ fontSize: '12px' }}>
+                    {fr ? 'Reçu le' : 'Received'}: {new Date(qr.receivedAt).toLocaleString(fr ? 'fr-CA' : 'en-CA')}
+                    {qr.notes ? ` · ${qr.notes}` : ''}
+                  </div>
+                </div>
+                <button
+                  class="btn"
+                  type="button"
+                  onClick={() => onNavigate('carriers')}
+                  style={{ padding: '4px 10px', fontSize: '12px' }}
+                >
+                  {fr ? 'Examiner' : 'Review'}
                 </button>
               </div>
             ))}
