@@ -10,10 +10,16 @@ const email = (value: unknown, optional = false): string | null => {
   if (typeof value !== 'string' || value.length > 254 || !EMAIL.test(value)) throw invalid('Invalid contracting email address');
   return value;
 };
-const CARRIER = 'ia-financial-group';
+const CARRIERS = new Set(['ia-financial-group', 'manulife', 'sun-life', 'canada-life']);
+const carrierFrom = (req: { params: unknown }): string => {
+  const id = (req.params as { carrierId?: string }).carrierId;
+  if (!id || !CARRIERS.has(id)) throw invalid('Unsupported carrier');
+  return id;
+};
 export function registerCarrierSubmissionSettingsRoutes(app: FastifyInstance, deps: AppDeps): void {
-  app.get('/v1/compliance/carrier-submission-settings/ia', async req => {
+  app.get('/v1/compliance/carrier-submission-settings/:carrierId', async req => {
     const { ctx } = await deps.authenticate(req);
+    const carrierId = carrierFrom(req);
     if (!ctx.isTenantAdmin && !ctx.roles.some(r => r.role === 'compliance')) throw forbidden('Compliance access required');
     return withRequestTx(deps.appPool, ctx, async tx => {
       const row = (await tx.query(
@@ -22,15 +28,16 @@ export function registerCarrierSubmissionSettingsRoutes(app: FastifyInstance, de
           subject_template AS "subjectTemplate", body_template AS "bodyTemplate",
           recipient_verified_at AS "recipientVerifiedAt", sending_enabled AS "sendingEnabled",
           revision, updated_at AS "updatedAt"
-          FROM carrier_submission_settings WHERE tenant_id = app_tenant_id() AND carrier_id = $1`, [CARRIER])).rows[0];
-      return { settings: row ?? { carrierId: CARRIER, mode: 'manual', recipientTo: null,
+          FROM carrier_submission_settings WHERE tenant_id = app_tenant_id() AND carrier_id = $1`, [carrierId])).rows[0];
+      return { settings: row ?? { carrierId, mode: 'manual', recipientTo: null,
         recipientCc: [], replyTo: null, subjectTemplate: 'Carrier contracting application — {{caseReference}}',
         bodyTemplate: 'Please review the attached contracting application.',
         recipientVerifiedAt: null, sendingEnabled: false, revision: 0 } };
     });
   });
-  app.put('/v1/compliance/carrier-submission-settings/ia', async req => {
+  app.put('/v1/compliance/carrier-submission-settings/:carrierId', async req => {
     const { ctx } = await deps.authenticate(req);
+    const carrierId = carrierFrom(req);
     if (!ctx.isTenantAdmin || !ctx.canWrite) throw forbidden('Tenant administrator required');
     const b = req.body;
     if (!b || typeof b !== 'object' || Array.isArray(b)) throw invalid('Object required');
@@ -50,7 +57,7 @@ export function registerCarrierSubmissionSettingsRoutes(app: FastifyInstance, de
       throw invalid('Invalid email template');
     return withRequestTx(deps.appPool, ctx, async tx => {
       const existing = (await tx.query<{ revision: number }>(
-        'SELECT revision FROM carrier_submission_settings WHERE tenant_id = app_tenant_id() AND carrier_id = $1 FOR UPDATE', [CARRIER])).rows[0];
+        'SELECT revision FROM carrier_submission_settings WHERE tenant_id = app_tenant_id() AND carrier_id = $1 FOR UPDATE', [carrierId])).rows[0];
       if ((existing?.revision ?? 0) !== x.expectedRevision) throw conflict('Carrier settings changed; reload before saving');
       const result = await tx.query(
         `INSERT INTO carrier_submission_settings
@@ -63,8 +70,8 @@ export function registerCarrierSubmissionSettingsRoutes(app: FastifyInstance, de
           sending_enabled=false,revision=carrier_submission_settings.revision+1,
           updated_by=EXCLUDED.updated_by,updated_at=now()
          RETURNING revision,updated_at AS "updatedAt",sending_enabled AS "sendingEnabled"`,
-        [CARRIER,x.mode,to,cc,replyTo,x.subjectTemplate,x.bodyTemplate,ctx.userId]);
-      await audit(tx, ctx, 'carrier.submission_settings_updated', 'carrier', null, { carrierId: CARRIER, revision: result.rows[0].revision, mode: x.mode, recipientChanged: true });
+        [carrierId,x.mode,to,cc,replyTo,x.subjectTemplate,x.bodyTemplate,ctx.userId]);
+      await audit(tx, ctx, 'carrier.submission_settings_updated', 'carrier', null, { carrierId, revision: result.rows[0].revision, mode: x.mode, recipientChanged: true });
       return { settings: result.rows[0], recipientVerified: false };
     });
   });
