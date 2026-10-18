@@ -782,5 +782,20 @@ select{background-color:#fff;border:1px solid var(--line2);border-radius:10px;pa
 .contacts-card{border:1px solid var(--line);border-radius:16px;background:var(--bg);box-shadow:0 1px 3px rgba(15,23,42,.04);overflow:hidden;margin-top:14px;margin-bottom:48px}
 .pii[data-theme=dark] .carrier-dir-row{background:var(--tint);border-color:var(--line2)}
 .pii[data-theme=dark] .contacts-card{background:var(--tint);border-color:var(--line2)}
+
+/* Reusable Design System Primitives */
+.ui-card{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow-soft);display:flex;flex-direction:column}
+.ui-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.ui-card-title{font-size:16px;font-weight:700;color:var(--navy);margin:0;letter-spacing:-.01em}
+.ui-action-link{display:inline-flex;align-items:center;gap:6px;border:0;background:var(--pri-soft);color:var(--pri);font-size:12px;font-weight:600;padding:5px 12px;border-radius:999px;transition:background .12s,color .12s;cursor:pointer;white-space:nowrap;text-decoration:none}
+.ui-action-link:hover{background:var(--pri-soft2);color:var(--pri-h)}
+.ui-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.ui-stat-tile{all:unset;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:12px 14px;border-radius:12px;background:var(--tint);border:1px solid #edf0f5;min-height:72px;transition:all .15s ease;cursor:default}
+.ui-stat-tile[role=button],.ui-stat-tile:has(button),button.ui-stat-tile{cursor:pointer}
+.ui-stat-tile:hover{background:#f3f6fa;border-color:var(--pri-line)}
+.ui-stat-val{font-size:24px;line-height:1.15;font-weight:700;color:var(--navy);display:block;margin-bottom:3px;letter-spacing:-.02em}
+.ui-stat-lbl{font-size:12px;line-height:1.35;color:var(--mute);font-weight:500;display:block}
+.pii[data-theme=dark] .ui-card{background:var(--tint);border-color:var(--line2)}
+.pii[data-theme=dark] .ui-stat-tile{background:var(--bg);border-color:var(--line2)}
 `;
 
