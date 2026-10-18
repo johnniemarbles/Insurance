@@ -9,6 +9,7 @@ import {
 } from '@pii/platform';
 import { forbidden, invalid, notFound } from './errors.ts';
 import { audit } from './audit.ts';
+import { sweepCarrierOutbox } from './carrier-outbox-worker.ts';
 import type { AppDeps } from './app.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -903,7 +904,17 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
     });
   });
 
-  // 10. Outbox Retry with Transactional Revalidation
+  // 10. Outbox Batch Worker Processing (Immediate Drain)
+  app.post('/v1/compliance/carrier-outbox/process-batch', async req => {
+    const { ctx } = await deps.authenticate(req);
+    const isOfficer = ctx.isTenantAdmin || ctx.roles.some(r => r.role === 'compliance');
+    if (!isOfficer) throw forbidden('Compliance authorization required');
+
+    const result = await sweepCarrierOutbox(deps, 25, ctx.tenantId);
+    return { ok: true, ...result };
+  });
+
+  // 11. Outbox Retry with Transactional Revalidation
   app.post('/v1/compliance/carrier-outbox/:id/retry', async req => {
     const { ctx } = await deps.authenticate(req);
     const isOfficer = ctx.isTenantAdmin || ctx.roles.some(r => r.role === 'compliance');

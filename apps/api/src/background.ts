@@ -11,6 +11,7 @@ import { sweepEsign } from './routes-esign.ts';
 import { sweepPartnerInviteReminders } from './partner-invite.ts';
 import { archiveSigned } from './vault.ts';
 import { sweepComplianceAlerts } from './compliance-alerts.ts';
+import { sweepCarrierOutbox } from './carrier-outbox-worker.ts';
 import { emitEventNow } from './webhooks.ts';
 import type { AppDeps } from './app.ts';
 
@@ -101,6 +102,7 @@ async function runSweeps(deps: AppDeps): Promise<void> {
   await sweepSnapshots(deps);
   await sweepEsign(deps);
   await archiveSigned(deps);
+  await sweepCarrierOutbox(deps);
 }
 
 /**
