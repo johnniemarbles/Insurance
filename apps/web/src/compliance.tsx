@@ -111,7 +111,7 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }:
   // The section switch sits in the page heading, so it lines up with the title on every screen.
   const tabs = officer ? (
     <div class="seg" role="tablist" aria-label={s.label}>
-      <button role="tab" aria-selected={section === 'dashboard'} onClick={() => { setSection('dashboard'); setOpen(null); }}>{locale === 'fr-CA' ? 'Tableau de bord' : 'Dashboard'}</button>
+      <button role="tab" aria-selected={section === 'dashboard'} onClick={() => { setSection('dashboard'); setOpen(null); }}>{locale === 'fr-CA' ? 'Vue d’ensemble' : 'Overview'}</button>
       <button role="tab" aria-selected={section === 'files'} onClick={() => { setSection('files'); setOpen(null); }}>{s.files}</button>
       <button role="tab" aria-selected={section === 'onboarding'} onClick={() => { setSection('onboarding'); setOpen(null); }}>{s.onb}</button>
       <button role="tab" aria-selected={section === 'carriers'} onClick={() => { setSection('carriers'); setOpen(null); }}>{s.carriers}</button>

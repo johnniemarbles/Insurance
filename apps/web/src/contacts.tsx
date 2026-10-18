@@ -17,18 +17,54 @@ export function ContactsView({ call, t }: { call: Call; t: Strings }) {
     return () => { live = false; };
   }, [call, dq]);
   return (
-    <div class="tpad">
-      <div class="bar" style={{ padding: 0, border: 0 }}>
-        <h1>{t.contacts}</h1>
-        <input class="search" type="search" placeholder={t.search} aria-label={t.search} value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+    <div class="tpad" style={{ maxWidth: '1200px' }}>
+      <div class="bar" style={{ padding: '0 0 16px 0', border: 0, justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--navy)', margin: 0 }}>{t.contacts}</h1>
+        <div style={{ position: 'relative', width: '280px' }}>
+          <input
+            class="search"
+            style={{ width: '100%', maxWidth: 'none', paddingLeft: '34px', height: '38px', borderRadius: '10px' }}
+            type="search"
+            placeholder={t.search}
+            aria-label={t.search}
+            value={q}
+            onInput={(e) => setQ((e.target as HTMLInputElement).value)}
+          />
+          <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', width: '15px', height: '15px', stroke: 'var(--mute)', fill: 'none', strokeWidth: 2, pointerEvents: 'none' }} viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </div>
       </div>
       {err && <ErrorBar msg={err} retry={t.retry} />}
-      {!rows ? (err ? null : <div class="msg">{t.loading}</div>) : rows.length === 0 ? <div class="msg">{t.empty}</div> : (
-        <table>
-          <caption class="sr">{t.contacts}</caption>
-          <thead><tr><th>{t.name}</th><th>Email</th><th>{t.phone}</th><th>{t.jobTitle}</th></tr></thead>
-          <tbody>{rows.map((r) => <tr key={r.id}><td class="name">{r.fullName ?? ''}</td><td>{r.email ?? ''}</td><td>{r.phone ?? ''}</td><td>{r.custom?.title ?? ''}</td></tr>)}</tbody>
-        </table>
+      {!rows ? (
+        err ? null : <div class="msg">{t.loading}</div>
+      ) : rows.length === 0 ? (
+        <div class="contacts-card" style={{ padding: '32px', textAlign: 'center', color: 'var(--mute)' }}>{t.empty}</div>
+      ) : (
+        <div class="contacts-card">
+          <table>
+            <caption class="sr">{t.contacts}</caption>
+            <thead>
+              <tr>
+                <th style={{ padding: '12px 18px' }}>{t.name}</th>
+                <th style={{ padding: '12px 18px' }}>Email</th>
+                <th style={{ padding: '12px 18px' }}>{t.phone}</th>
+                <th style={{ padding: '12px 18px' }}>{t.jobTitle}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} class="row">
+                  <td class="name" style={{ padding: '12px 18px', fontWeight: 600, color: 'var(--navy)' }}>{r.fullName || '—'}</td>
+                  <td style={{ padding: '12px 18px', color: 'var(--ink)' }}>{r.email ? <a href={`mailto:${r.email}`} style={{ color: 'var(--pri)', textDecoration: 'none' }}>{r.email}</a> : '—'}</td>
+                  <td style={{ padding: '12px 18px', color: 'var(--mute)' }}>{r.phone || '—'}</td>
+                  <td style={{ padding: '12px 18px', color: 'var(--mute)' }}>{r.custom?.title || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

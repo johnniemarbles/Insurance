@@ -63,15 +63,28 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    try{await call('POST',`/v1/compliance/carrier-contracts/${id}/review`,{state,reason:reasons[id]??'',templateVersion:templateVersions[id]??''});setReasons(p=>({...p,[id]:''}));await refresh();}
    catch(e){setError(String(e));}finally{setBusy(false);}
  };
- return <section class="obcard">
-   <h3>{fr?'Contrats des assureurs':'Carrier contracting queue'}</h3>
-   <p class="muted">{fr?'Les signatures et les nominations doivent être vérifiées séparément.':'Signatures and carrier appointments must be verified separately. No selling authorization is granted here.'}</p>
+ return <section class="carrier-review-wrap" style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '36px' }}>
+   <div class="obcard">
+     <h3 style={{ margin: '0 0 6px', fontSize: '18px', color: 'var(--navy)' }}>{fr?'Contrats des assureurs':'Carrier contracting queue'}</h3>
+     <p class="muted" style={{ margin: 0 }}>{fr?'Les signatures et les nominations doivent être vérifiées séparément.':'Signatures and carrier appointments must be verified separately. No selling authorization is granted here.'}</p>
+   </div>
    {error&&<p role="alert" class="err">{error}</p>}
-   <div class="obcard" role="status"><strong>{fr?'Vue d’ensemble des contrats':'Contract overview'}</strong><p>{contracts.length} {fr?'contrats':'contracts'} · {activeCount} {fr?'actifs':'active'} · {attentionCount} {fr?'à examiner':'requiring attention'}</p></div>
+   <div class="obcard" role="status"><strong style={{ fontSize: '15px', color: 'var(--navy)' }}>{fr?'Vue d’ensemble des contrats':'Contract overview'}</strong><p style={{ margin: '6px 0 0', color: 'var(--mute)' }}>{contracts.length} {fr?'contrats':'contracts'} · {activeCount} {fr?'actifs':'active'} · {attentionCount} {fr?'à examiner':'requiring attention'}</p></div>
    <div class="obcard" aria-label="Carrier directory">
-     <strong>{fr?'Répertoire des assureurs':'Carrier directory'}</strong>
-     <p class="muted">{fr?'Répertoire indicatif, sans affiliation ni connexion directe confirmée.':'Reference directory only; listing does not establish affiliation, appointment, or live connectivity.'}</p>
-     {carrierDirectory.length===0?<p class="muted">{fr?'Aucun assureur disponible dans le répertoire.':'No carrier directory entries available.'}</p>:<ul class="oblist">{carrierDirectory.map(c=><li key={c.id}><strong>{c.displayName}</strong> · {c.connectionVerified?c.connectionMode:(fr?'Soumission manuelle — non connecté':'Manual workflow — not connected')}</li>)}</ul>}
+     <h4 style={{ margin: '0 0 4px', fontSize: '15px', color: 'var(--navy)' }}>{fr?'Répertoire des assureurs':'Carrier directory'}</h4>
+     <p class="muted" style={{ margin: '0 0 12px' }}>{fr?'Répertoire indicatif, sans affiliation ni connexion directe confirmée.':'Reference directory only; listing does not establish affiliation, appointment, or live connectivity.'}</p>
+     {carrierDirectory.length===0?<p class="muted">{fr?'Aucun assureur disponible dans le répertoire.':'No carrier directory entries available.'}</p>:
+       <div class="carrier-dir-list">
+         {carrierDirectory.map(c=>(
+           <div key={c.id} class="carrier-dir-row">
+             <span class="carrier-dir-name">{c.displayName}</span>
+             <span class={`carrier-dir-status ${c.connectionVerified ? 'verified' : 'manual'}`}>
+               {c.connectionVerified ? c.connectionMode : (fr ? 'Soumission manuelle — non connecté' : 'Manual workflow — not connected')}
+             </span>
+           </div>
+         ))}
+       </div>
+     }
    </div>
    <div class="obcard" aria-label="Carrier integration readiness">
      <strong>{fr?'Intégrations avec les assureurs':'Carrier integration readiness'}</strong>
