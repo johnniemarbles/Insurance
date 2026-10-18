@@ -98,7 +98,7 @@ type TabKey = 'directory' | 'applications' | 'actions' | 'submissions' | 'appoin
 
 export function CarrierReviewPanel({ call, locale, partnerNodeId }: { call: Call; locale: string; partnerNodeId?: string }) {
   const fr = locale === 'fr-CA';
-  const [activeTab, setActiveTab] = useState<TabKey>('directory');
+  const [activeTab, setActiveTab] = useState<TabKey>(partnerNodeId ? 'applications' : 'directory');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -147,7 +147,7 @@ export function CarrierReviewPanel({ call, locale, partnerNodeId }: { call: Call
     setLoading(true);
     try {
       const data = await call('GET', '/v1/compliance/carrier-dashboard');
-      setDirectory(data.directory ?? []);
+      setDirectory(partnerNodeId ? [] : (data.directory ?? []));
       const scopedCases: ContractCase[] = (data.cases ?? []).filter((item: ContractCase) => !partnerNodeId || item.nodeId === partnerNodeId);
       const caseIds = new Set(scopedCases.map(item => item.id));
       const scopedSubmissions: SubmissionRecord[] = (data.submissions ?? []).filter((item: SubmissionRecord) => !partnerNodeId || caseIds.has(item.contractId));
@@ -379,14 +379,14 @@ export function CarrierReviewPanel({ call, locale, partnerNodeId }: { call: Call
 
       {/* 2. Navigation Tabs */}
       <div class="carrier-dash-tabs" role="tablist">
-        <button
+        {!partnerNodeId && <button
           role="tab"
           class={`carrier-dash-tab ${activeTab === 'directory' ? 'active' : ''}`}
           aria-selected={activeTab === 'directory'}
           onClick={() => setActiveTab('directory')}
         >
           {fr ? 'Répertoire des assureurs' : 'Carrier Directory'}
-        </button>
+        </button>}
         <button
           role="tab"
           class={`carrier-dash-tab ${activeTab === 'applications' ? 'active' : ''}`}
