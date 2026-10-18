@@ -56,7 +56,7 @@ export function PartnerCarrierOperations({ call, locale, partnerId, openCarrierD
           </div>}
         </article>)}
       <p class="muted">{fr ? 'La signature, la soumission et la vérification restent soumises aux autorisations et contrôles du tableau de bord assureurs.' : 'Signing, submission and appointment verification remain subject to carrier dashboard authorization and evidence controls.'}</p>
-      <button type="button" class="btn primary" onClick={openCarrierDashboard}>{fr ? 'Ouvrir les opérations assureurs' : 'Open carrier operations'} ↗</button>
+      <button type="button" class="btn primary" onClick={openCarrierDashboard}>{fr ? 'Ouvrir le centre de conformité' : 'Open compliance dashboard'} ↗</button>
     </>}
   </section>;
 }
