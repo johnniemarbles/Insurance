@@ -138,9 +138,10 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
                 cc.appointment_effective_on AS "appointmentEffectiveOn",
                 cc.appointment_expires_on AS "appointmentExpiresOn",
                 cc.created_at AS "createdAt", cc.updated_at AS "updatedAt"
-           FROM carrier_contract_cases cc
-          WHERE app_is_compliance_at_or_above(cc.tenant_id, cc.node_id)
-          ORDER BY cc.updated_at DESC LIMIT 300`
+            FROM carrier_contract_cases cc
+           WHERE app_is_compliance_at_or_above(cc.tenant_id, cc.node_id)
+              OR EXISTS (SELECT 1 FROM user_node_roles WHERE node_id = cc.node_id AND user_id = app_user_id())
+           ORDER BY cc.updated_at DESC LIMIT 300`
       )).rows;
 
       // 3. Submissions
@@ -164,9 +165,12 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
                 cs.status, cs.response_reference AS "responseReference",
                 cs.submitted_at AS "submittedAt", u.display_name AS "submittedByName"
            FROM carrier_contract_submissions cs
+           JOIN carrier_contract_cases cc ON cc.id = cs.contract_id
            JOIN carrier_directory cd ON cd.id = cs.carrier_id
       LEFT JOIN app_users u ON u.id = cs.submitted_by
           WHERE cs.tenant_id = app_tenant_id()
+            AND (app_is_compliance_at_or_above(cs.tenant_id, cc.node_id)
+                 OR EXISTS (SELECT 1 FROM user_node_roles WHERE node_id = cc.node_id AND user_id = app_user_id()))
           ORDER BY cs.submitted_at DESC LIMIT 50`
       )).rows;
 
@@ -246,6 +250,8 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
            JOIN carrier_contract_cases cc ON cc.id = ce.contract_id
       LEFT JOIN app_users u ON u.id = ce.actor_id
           WHERE ce.tenant_id = app_tenant_id()
+            AND (app_is_compliance_at_or_above(ce.tenant_id, cc.node_id)
+                 OR EXISTS (SELECT 1 FROM user_node_roles WHERE node_id = cc.node_id AND user_id = app_user_id()))
           ORDER BY ce.recorded_at DESC LIMIT 40`
       )).rows;
 

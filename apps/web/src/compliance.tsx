@@ -95,16 +95,33 @@ const SEC = {
   'fr-CA': { files: 'Dossiers', onb: 'Intégration', carriers: 'Contrats assureurs', label: 'Sections de conformité' },
 };
 
+const isSection = (id?: string): id is 'dashboard' | 'files' | 'onboarding' | 'carriers' =>
+  id === 'dashboard' || id === 'files' || id === 'onboarding' || id === 'carriers';
+
 export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions; openId?: string }) {
-  const [open, setOpen] = useState<string | null>(openId ?? null);
+  const [open, setOpen] = useState<string | null>(isSection(openId) ? null : (openId ?? null));
   // Null while the account's role is loading. Compliance officers get the onboarding dashboard as a second section; partners see their own onboarding at the top.
   const [officer, setOfficer] = useState<boolean | null>(null);
-  const [section, setSection] = useState<'dashboard' | 'files' | 'onboarding' | 'carriers'>('dashboard');
+  const [section, setSection] = useState<'dashboard' | 'files' | 'onboarding' | 'carriers'>(
+    isSection(openId) ? openId : 'dashboard'
+  );
   // A branch manager sees its partners' onboarding progress (steps and status only) above the list.
   const [manager, setManager] = useState(false);
   // Assigned staff see the same board with analytics only (plan v7, section 6).
   const [staff, setStaff] = useState(false);
   useEffect(() => { void call('GET', '/v1/onboarding/mine').then((r) => { setOfficer(r.officer === true); setManager(r.branchManager === true); setStaff(r.staff === true); }, () => setOfficer(false)); }, [call]);
+  useEffect(() => {
+    if (isSection(openId)) {
+      setSection(openId);
+      setOpen(null);
+    } else if (openId) {
+      setOpen(openId);
+      setSection('files');
+    }
+  }, [openId]);
+
+  if (officer === null) return <div class="pii"><div class="msg"><p>{locale === 'fr-CA' ? 'Chargement…' : 'Loading…'}</p></div></div>;
+
   const s = SEC[locale === 'fr-CA' ? 'fr-CA' : 'en'];
   // The panels live inside the scrolling page so they share its padding; head office gets the two company settings too.
   const panels = <>{!isHeadOffice && <><Overview call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}<VaultPanel call={call} locale={locale} /></>;
