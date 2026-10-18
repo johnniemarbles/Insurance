@@ -859,6 +859,9 @@ select{background-color:#fff;border:1px solid var(--line2);border-radius:10px;pa
 .pd-profile-facts strong{overflow-wrap:anywhere}
 .pd-profile-line{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
 .pd-profile-line strong,.pd-profile-line small{text-align:right}
+.pd-carrier-ops{margin-top:24px;padding-top:20px;border-top:1px solid var(--line);display:grid;gap:14px}
+.pd-ops-case{border:1px solid var(--line2);border-radius:12px;padding:14px 16px;background:var(--tint);display:grid;gap:10px}
+.pd-ops-case h4{margin:10px 0 4px;font-size:13px;color:var(--mute)}
 @media(max-width:600px){.pd-profile-hero .btn{margin-left:0;width:100%}.pd-profile-facts{grid-template-columns:1fr}}
 
 `;
