@@ -22,3 +22,8 @@ test('iA recipient settings: tenant RLS and default disabled sending', () => {
   assert.match(migration, /tenant_id = app_tenant_id\(\)/);
   assert.match(migration, /sending_enabled boolean NOT NULL DEFAULT false/);
 });
+
+test('carrier settings: only supported Canadian carrier IDs accepted', () => {
+  for (const id of ['ia-financial-group', 'manulife', 'sun-life', 'canada-life']) assert.ok(route.includes(id));
+  assert.match(route, /Unsupported carrier/);
+});
