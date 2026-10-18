@@ -974,8 +974,7 @@ export function SettingsPage({
             {tab === 'companyRules' && who?.isTenantAdmin && (
               <IaContractingSettings call={call} locale={locale} editable={Boolean(who.isTenantAdmin)} />
             )}
-            {false && (
-            )}
+            
 
             {/* 6. RECORDS AND SIGNATURES */}
             {tab === 'recordsSignatures' && canSeeRecordsSignatures && (
