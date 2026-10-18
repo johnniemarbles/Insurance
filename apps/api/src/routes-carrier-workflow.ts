@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx } from '@pii/db';
 import { createHash, randomUUID } from 'node:crypto';
+import {
+  type CarrierChannel,
+  type CarrierConnection,
+  type CarrierOperation,
+  revalidateOutboxDispatch,
+} from '@pii/platform';
 import { forbidden, invalid, notFound } from './errors.ts';
 import { audit } from './audit.ts';
 import type { AppDeps } from './app.ts';
@@ -625,6 +631,28 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
         [id]
       );
 
+      // Record outbox dispatch queue record within the same transaction
+      const outboxStatus = mode === 'manual' ? 'dispatched' : 'queued';
+      const outboxReceipt = mode === 'manual' ? { manualExport: true, exportedAt: new Date().toISOString() } : null;
+      await tx.query(
+        `INSERT INTO carrier_dispatch_outbox
+           (tenant_id, contract_id, carrier_id, operation, jurisdiction, idempotency_key, evidence_reference, payload, status, receipt, dispatched_at)
+         VALUES ($1, $2, $3, 'contract_packet', $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (idempotency_key) DO NOTHING`,
+        [
+          c.tenant_id,
+          id,
+          carrierKey,
+          c.jurisdiction,
+          idempotencyKey,
+          `sha256:${packageHash}`,
+          JSON.stringify({ mode, subject, documentCount: docs.length, packageHash }),
+          outboxStatus,
+          outboxReceipt ? JSON.stringify(outboxReceipt) : null,
+          mode === 'manual' ? new Date().toISOString() : null,
+        ]
+      );
+
       await tx.query(
         'INSERT INTO carrier_contract_events (tenant_id, contract_id, node_id, from_state, to_state, actor_id, reason) VALUES ($1,$2,$3,$4,$5,$6,$7)',
         [c.tenant_id, id, c.node_id, c.state, 'submitted', ctx.userId, `Submitted via ${mode} (${mode === 'email' ? settings.recipient_to : 'portal upload'})`]
@@ -755,7 +783,48 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
         throw invalid(`Contract must be approved by carrier before appointment verification (current state: ${c.state})`);
       }
 
-      const nextState = activateNow ? 'active' : 'appointment_verified';
+      let nextState = 'appointment_verified';
+      let activated = false;
+      const blocks: string[] = [];
+
+      if (activateNow) {
+        // Enforce transactional live eligibility gates before setting state to active
+        const gate = (await tx.query<{
+          broker_cleared: boolean;
+          agency_signed: boolean;
+          licence_valid: boolean;
+          eo_valid: boolean;
+          active_hold: boolean;
+        }>(
+          `SELECT
+             (oc.stage = 'active' AND oc.standing = 'good_standing') AS broker_cleared,
+             EXISTS(SELECT 1 FROM onboarding_agreements a WHERE a.case_id = cc.onboarding_case_id AND a.tenant_id = cc.tenant_id AND a.officer_signed_at IS NOT NULL) AS agency_signed,
+             EXISTS(SELECT 1 FROM compliance_items i WHERE i.node_id = cc.node_id AND i.tenant_id = cc.tenant_id AND i.kind = 'licence' AND i.expires_on >= CURRENT_DATE AND upper(i.jurisdiction) = upper(cc.jurisdiction)) AS licence_valid,
+             EXISTS(SELECT 1 FROM compliance_items i WHERE i.node_id = cc.node_id AND i.tenant_id = cc.tenant_id AND i.kind = 'eo' AND i.expires_on >= CURRENT_DATE) AS eo_valid,
+             EXISTS(SELECT 1 FROM carrier_compliance_holds h WHERE h.tenant_id = cc.tenant_id AND h.node_id = cc.node_id AND h.contract_id = cc.id AND h.released_at IS NULL) AS active_hold
+           FROM carrier_contract_cases cc
+           JOIN onboarding_cases oc ON oc.id = cc.onboarding_case_id AND oc.tenant_id = cc.tenant_id AND oc.node_id = cc.node_id
+          WHERE cc.id = $1`,
+          [id]
+        )).rows[0];
+
+        const today = new Date().toISOString().slice(0, 10);
+        const effective = effectiveOn <= today;
+        const notExpired = expiresOn >= today;
+
+        if (!gate?.broker_cleared) blocks.push('broker_not_cleared');
+        if (!gate?.agency_signed) blocks.push('agency_agreement_not_countersigned');
+        if (!gate?.licence_valid) blocks.push('licence_invalid');
+        if (!gate?.eo_valid) blocks.push('eo_invalid');
+        if (!effective) blocks.push('appointment_not_effective');
+        if (!notExpired) blocks.push('appointment_expired');
+        if (gate?.active_hold) blocks.push('compliance_hold');
+
+        if (blocks.length === 0) {
+          nextState = 'active';
+          activated = true;
+        }
+      }
 
       await tx.query(
         `UPDATE carrier_contract_cases
@@ -780,9 +849,186 @@ export function registerCarrierWorkflowRoutes(app: FastifyInstance, deps: AppDep
         effectiveOn,
         expiresOn,
         state: nextState,
+        activated,
+        blocks: blocks.length ? blocks : undefined,
       });
 
-      return { id, state: nextState, appointmentReference: ref, effectiveOn, expiresOn };
+      return {
+        id,
+        state: nextState,
+        appointmentReference: ref,
+        effectiveOn,
+        expiresOn,
+        activated,
+        blocks: blocks.length ? blocks : undefined,
+      };
+    });
+  });
+
+  // 9. Carrier Dispatch Outbox Management
+  app.get('/v1/compliance/carrier-outbox', async req => {
+    const { ctx } = await deps.authenticate(req);
+    const isOfficer = ctx.isTenantAdmin || ctx.roles.some(r => r.role === 'compliance');
+    if (!isOfficer) throw forbidden('Compliance authorization required');
+
+    return withRequestTx(deps.appPool, ctx, async tx => {
+      const items = (await tx.query<{
+        id: string;
+        contractId: string;
+        carrierId: string;
+        operation: string;
+        jurisdiction: string;
+        idempotencyKey: string;
+        evidenceReference: string;
+        status: string;
+        retryCount: number;
+        maxRetries: number;
+        lastError: string | null;
+        receipt: unknown;
+        dispatchedAt: string | null;
+        createdAt: string;
+        updatedAt: string;
+      }>(
+        `SELECT id, contract_id AS "contractId", carrier_id AS "carrierId",
+                operation, jurisdiction, idempotency_key AS "idempotencyKey",
+                evidence_reference AS "evidenceReference", status,
+                retry_count AS "retryCount", max_retries AS "maxRetries",
+                last_error AS "lastError", receipt, dispatched_at AS "dispatchedAt",
+                created_at AS "createdAt", updated_at AS "updatedAt"
+           FROM carrier_dispatch_outbox
+          WHERE tenant_id = app_tenant_id()
+          ORDER BY created_at DESC LIMIT 100`
+      )).rows;
+      return { outbox: items };
+    });
+  });
+
+  // 10. Outbox Retry with Transactional Revalidation
+  app.post('/v1/compliance/carrier-outbox/:id/retry', async req => {
+    const { ctx } = await deps.authenticate(req);
+    const isOfficer = ctx.isTenantAdmin || ctx.roles.some(r => r.role === 'compliance');
+    if (!isOfficer) throw forbidden('Compliance authorization required');
+    const id = uuid((req.params as { id: string }).id);
+
+    return withRequestTx(deps.appPool, ctx, async tx => {
+      const row = (await tx.query<{
+        id: string;
+        contract_id: string;
+        carrier_id: string;
+        operation: CarrierOperation;
+        jurisdiction: string;
+        idempotency_key: string;
+        evidence_reference: string;
+        status: string;
+        retry_count: number;
+        max_retries: number;
+      }>(
+        `SELECT id, contract_id, carrier_id, operation, jurisdiction,
+                idempotency_key, evidence_reference, status, retry_count, max_retries
+           FROM carrier_dispatch_outbox
+          WHERE id = $1 AND tenant_id = app_tenant_id()
+          FOR UPDATE`,
+        [id]
+      )).rows[0];
+
+      if (!row) throw notFound('Outbox entry not found');
+
+      // Check contract state and live compliance context
+      const c = (await tx.query<{
+        state: string;
+        holding_clearance: boolean;
+        licence_valid: boolean;
+        eo_valid: boolean;
+      }>(
+        `SELECT cc.state,
+                NOT EXISTS(SELECT 1 FROM carrier_compliance_holds h WHERE h.contract_id = cc.id AND h.tenant_id = cc.tenant_id AND h.released_at IS NULL) AS holding_clearance,
+                EXISTS(SELECT 1 FROM compliance_items i WHERE i.node_id = cc.node_id AND i.tenant_id = cc.tenant_id AND i.kind = 'licence' AND i.expires_on >= CURRENT_DATE AND upper(i.jurisdiction) = upper(cc.jurisdiction)) AS licence_valid,
+                EXISTS(SELECT 1 FROM compliance_items i WHERE i.node_id = cc.node_id AND i.tenant_id = cc.tenant_id AND i.kind = 'eo' AND i.expires_on >= CURRENT_DATE) AS eo_valid
+           FROM carrier_contract_cases cc
+          WHERE cc.id = $1 AND cc.tenant_id = app_tenant_id()`,
+        [row.contract_id]
+      )).rows[0];
+
+      if (!c) throw notFound('Associated carrier contract not found');
+
+      // Query carrier connection settings
+      const settings = (await tx.query<{
+        mode: string;
+        sending_enabled: boolean;
+        recipient_verified_at: string | null;
+      }>(
+        `SELECT mode, sending_enabled, recipient_verified_at
+           FROM carrier_submission_settings
+          WHERE tenant_id = app_tenant_id() AND carrier_id = $1`,
+        [row.carrier_id]
+      )).rows[0];
+
+      const connection: CarrierConnection = {
+        tenantId: ctx.tenantId,
+        carrierId: row.carrier_id,
+        channel: (settings?.mode === 'semi_automated' ? 'secure_email' : 'none') as CarrierChannel,
+        enabled: Boolean(settings?.sending_enabled),
+        verified: Boolean(settings?.recipient_verified_at),
+        approvedOperations: [row.operation],
+        approvedJurisdictions: [row.jurisdiction],
+        destinationVerifiedAt: settings?.recipient_verified_at ?? null,
+      };
+
+      try {
+        revalidateOutboxDispatch(
+          {
+            tenantId: ctx.tenantId,
+            carrierId: row.carrier_id,
+            contractId: row.contract_id,
+            operation: row.operation,
+            jurisdiction: row.jurisdiction,
+            idempotencyKey: row.idempotency_key,
+            evidenceReference: row.evidence_reference,
+          },
+          {
+            contractState: c.state,
+            holdingClearance: c.holding_clearance,
+            licenceValid: c.licence_valid,
+            eoValid: c.eo_valid,
+            connection,
+          }
+        );
+
+        // In the absence of live insurer technical endpoint, fails closed safely.
+        await tx.query(
+          `UPDATE carrier_dispatch_outbox
+              SET status = 'failed',
+                  retry_count = retry_count + 1,
+                  last_error = 'No approved insurer transport channel active; dispatch blocked fail-closed',
+                  updated_at = now()
+            WHERE id = $1`,
+          [id]
+        );
+        return {
+          id,
+          dispatched: false,
+          status: 'failed',
+          reason: 'No approved insurer transport channel active; dispatch blocked fail-closed',
+        };
+      } catch (err: any) {
+        const nextRetry = row.retry_count + 1;
+        const newStatus = nextRetry >= row.max_retries ? 'dead_letter' : 'failed';
+        await tx.query(
+          `UPDATE carrier_dispatch_outbox
+              SET status = $1,
+                  retry_count = $2,
+                  last_error = $3,
+                  updated_at = now()
+            WHERE id = $4`,
+          [newStatus, nextRetry, err.message, id]
+        );
+        return {
+          id,
+          dispatched: false,
+          status: newStatus,
+          reason: err.message,
+        };
+      }
     });
   });
 }

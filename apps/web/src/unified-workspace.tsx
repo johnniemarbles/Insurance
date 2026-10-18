@@ -4,45 +4,95 @@ import type { Locale } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 type Module = 'crm' | 'compliance' | 'training' | 'learning' | 'audit' | 'onboarding' | 'carriers' | 'notifications';
+
 interface Context {
-  version: number; tenantId: string; country: 'CA' | 'US'; roles: string[];
-  activeNodeIds: string[]; isTenantAdmin: boolean;
-  modules: Record<Module, boolean>; scopes: { id: string; name: string }[];
+  version: number;
+  tenantId: string;
+  country: 'CA' | 'US';
+  roles: string[];
+  activeNodeIds: string[];
+  isTenantAdmin: boolean;
+  modules: Record<Module, boolean>;
+  scopes: { id: string; name: string }[];
 }
-type Load<T> = { state: 'loading' } | { state: 'ready'; value: T } | { state: 'error'; message: string } | { state: 'forbidden' } | { state: 'unavailable' };
+
+export interface DashboardMetric {
+  id: string;
+  label: string;
+  value: string | number;
+  sub?: string;
+  tone?: 'good' | 'warn' | 'bad' | 'neutral';
+}
+
+export interface DashboardItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  status?: string;
+  date?: string;
+  target?: { page: string; routeId?: string };
+}
+
+export interface DashboardCard {
+  id: string;
+  module: Module;
+  title: string;
+  description?: string;
+  status: 'ready' | 'empty' | 'forbidden' | 'unavailable';
+  metrics: DashboardMetric[];
+  items?: DashboardItem[];
+  drilldown: {
+    page: string;
+    routeId?: string;
+    label: string;
+  };
+  allowedActions: string[];
+}
+
+interface UnifiedDashboardResponse {
+  version: number;
+  tenantId: string;
+  country: 'CA' | 'US';
+  perspective: string;
+  roles: string[];
+  activeNodeIds: string[];
+  isTenantAdmin: boolean;
+  isHeadOffice: boolean;
+  cards: DashboardCard[];
+}
+
+type Load<T> =
+  | { state: 'loading' }
+  | { state: 'ready'; value: T }
+  | { state: 'error'; message: string }
+  | { state: 'forbidden' }
+  | { state: 'unavailable' };
+
 const pending = <T,>(): Load<T> => ({ state: 'loading' });
 
 const workspaceNames: Record<Locale, Record<string, string>> = {
   en: {
-    admin: 'Executive', manager: 'Manager', partner: 'Broker', compliance: 'Compliance',
-    auditor: 'Audit', trainer: 'Training', learner: 'Learning', staff: 'Operations',
+    admin: 'Executive',
+    ho: 'Head Office',
+    manager: 'Manager',
+    partner: 'Broker',
+    compliance: 'Compliance',
+    auditor: 'Audit',
+    trainer: 'Training',
+    learner: 'Learning',
+    staff: 'Operations',
   },
   'fr-CA': {
-    admin: 'Direction', manager: 'Gestionnaire', partner: 'Courtier', compliance: 'Conformité',
-    auditor: 'Vérification', trainer: 'Formation', learner: 'Apprenant', staff: 'Opérations',
+    admin: 'Direction',
+    ho: 'Siège social',
+    manager: 'Gestionnaire',
+    partner: 'Courtier',
+    compliance: 'Conformité',
+    auditor: 'Vérification',
+    trainer: 'Formation',
+    learner: 'Apprenant',
+    staff: 'Opérations',
   },
-};
-
-const priorities: Record<string, Module[]> = {
-  admin: ['crm', 'compliance', 'onboarding', 'carriers', 'training', 'learning', 'audit', 'notifications'],
-  manager: ['crm', 'onboarding', 'training', 'learning', 'notifications'],
-  partner: ['crm', 'onboarding', 'learning', 'notifications'],
-  compliance: ['compliance', 'onboarding', 'carriers', 'audit', 'notifications'],
-  auditor: ['audit', 'notifications'],
-  trainer: ['training', 'learning', 'notifications'],
-  learner: ['learning', 'notifications'],
-  staff: ['crm', 'learning', 'notifications'],
-};
-
-const endpoints: Partial<Record<Module, string>> = {
-  crm: '/v1/dashboard?days=30',
-  audit: '/v1/audit/me',
-  notifications: '/v1/notifications?limit=20',
-  carriers: '/v1/compliance/carrier-contracts',
-  compliance: '/v1/onboarding/dashboard',
-  onboarding: '/v1/onboarding/dashboard',
-  training: '/v1/training/dashboard',
-  learning: '/v1/my/learning',
 };
 
 const titles: Record<Locale, Record<Module, string>> = {
@@ -50,8 +100,8 @@ const titles: Record<Locale, Record<Module, string>> = {
     crm: 'Pipeline performance',
     compliance: 'Compliance alerts',
     onboarding: 'Onboarding',
-    carriers: 'Carrier contract cases',
-    learning: 'My learning',
+    carriers: 'Carrier contracting cases',
+    learning: 'My coursework',
     training: 'Training and CE',
     audit: 'Audit engagements',
     notifications: 'Notifications',
@@ -68,116 +118,89 @@ const titles: Record<Locale, Record<Module, string>> = {
   },
 };
 
-const destinations: Record<Module, string> = {
-  crm: 'pipelines',
-  compliance: 'compliance',
-  onboarding: 'compliance',
-  carriers: 'compliance',
-  learning: 'training',
-  training: 'training',
-  audit: 'home',
-  notifications: 'notifications',
-};
+function CardPanel({
+  card,
+  go,
+  fr,
+}: {
+  card: DashboardCard;
+  go: (page: string, id?: string) => void;
+  fr: boolean;
+}) {
+  const localizedTitle = (fr ? titles['fr-CA'] : titles.en)[card.module] || card.title;
+  const drillLabel = fr ? 'Ouvrir l’espace' : card.drilldown.label || 'Open workspace';
 
-function Metrics({ module, data, fr }: { module: Module; data: any; fr: boolean }) {
-  let entries: [string, string | number][] = [];
-  if (module === 'crm' && data?.totals) entries = [
-    [fr ? 'Dossiers ouverts' : 'Open records', data.totals.openCount],
-    [fr ? 'Gagnés (30 j)' : 'Won (30 days)', data.totals.won],
-    [fr ? 'Taux de succès' : 'Win rate', data.totals.winRate == null ? '—' : Math.round(data.totals.winRate * 100) + '%'],
-  ];
-  if ((module === 'compliance' || module === 'onboarding') && data) entries = [
-    [fr ? 'Expirés' : 'Expired', data.expiry?.expired ?? '—'],
-    [fr ? 'Expirant bientôt' : 'Expiring soon', data.expiry?.expiringSoon ?? '—'],
-    [fr ? 'Rapports en retard' : 'Overdue reports', data.selfReports?.overdue ?? '—'],
-    [fr ? 'Réévaluations en retard' : 'Rechecks overdue', data.rechecks?.overdue ?? '—'],
-  ];
-  if (module === 'carriers' && Array.isArray(data?.contracts)) entries = [
-    [fr ? 'Dossiers contrats (max 200)' : 'Contract cases (max 200)', data.contracts.length],
-    [fr ? 'Désignations expirées' : 'Expired appointments', data.contracts.filter((x: any) => x.effectiveState === 'expired').length],
-    [fr ? 'Dates de désignation valides — non autorisation' : 'Valid appointment dates — not authorization', data.contracts.filter((x: any) => x.appointmentCurrentlyValid === true).length],
-  ];
-  if (module === 'audit' && Array.isArray(data?.engagements)) entries = [
-    [fr ? 'Actives' : 'Active', data.engagements.filter((e: any) => e.status === 'active').length],
-    [fr ? 'Visibles' : 'Visible', data.engagements.length],
-  ];
-  if (module === 'notifications' && Array.isArray(data?.notifications)) entries = [
-    [fr ? 'Non lues' : 'Unread', data.unread ?? 0],
-    [fr ? 'Récentes' : 'Recent', data.notifications.length],
-  ];
-  if (module === 'learning' && Array.isArray(data?.enrollments)) entries = [
-    [fr ? 'Inscrits' : 'Enrolled', data.enrollments.length],
-    [fr ? 'À faire' : 'To do', data.enrollments.filter((e: any) => e.status === 'assigned' || e.status === 'in_progress').length],
-    [fr ? 'Complétés' : 'Completed', data.enrollments.filter((e: any) => e.status === 'completed').length],
-    [fr ? 'Échéance proche ou en retard' : 'Due soon or overdue', data.enrollments.filter((e: any) => (e.status === 'assigned' || e.status === 'in_progress') && e.dueAt && new Date(e.dueAt).getTime() < Date.now() + 7 * 86400000).length],
-  ];
-  if (module === 'training' && data?.totals) entries = [
-    [fr ? 'Assignés' : 'Assigned', data.totals.assigned],
-    [fr ? 'En cours' : 'In progress', data.totals.inProgress],
-    [fr ? 'Complétés' : 'Completed', data.totals.completed],
-    [fr ? 'En retard' : 'Overdue', data.totals.overdue],
-  ];
-  if (!entries.length) return <p class="pii-workspace-state">{fr ? 'Aucune donnée récapitulative disponible. Ouvrez l’espace pour plus de détails.' : 'No summary data is available. Open the workspace for details.'}</p>;
   return (
-    <div class="pii-workspace-metrics">
-      {entries.map(([name, value]) => (
-        <div class="pii-workspace-metric" key={name}>
-          <strong class="pii-workspace-metric-val">{value}</strong>
-          <small class="pii-workspace-metric-lbl">{name}</small>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Panel({ module, load, go, fr }: { module: Module; load: Load<any>; go: (page: string) => void; fr: boolean }) {
-  const panelTitle = (fr ? titles['fr-CA'] : titles.en)[module];
-  return (
-    <section class="pii-workspace-panel" aria-label={panelTitle}>
+    <section class="pii-workspace-panel" aria-label={localizedTitle}>
       <div class="pii-workspace-panel-head">
-        <h2 class="pii-workspace-panel-title">{panelTitle}</h2>
-        {module !== 'audit' && (
-          <button class="pii-workspace-action-link" type="button" onClick={() => go(destinations[module])}>
-            <span>{fr ? 'Ouvrir l’espace' : 'Open workspace'}</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+        <h2 class="pii-workspace-panel-title">{localizedTitle}</h2>
+        {card.module !== 'audit' && (
+          <button
+            class="pii-workspace-action-link"
+            type="button"
+            onClick={() => go(card.drilldown.page, card.drilldown.routeId)}
+          >
+            <span>{drillLabel}</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
           </button>
         )}
       </div>
-      {load.state === 'loading' ? (
-        <div class="pii-workspace-state" role="status">
-          <span>{fr ? 'Chargement…' : 'Loading…'}</span>
-        </div>
-      ) : load.state === 'forbidden' ? (
+
+      {card.status === 'forbidden' ? (
         <div class="pii-workspace-state">
           <span>{fr ? 'Accès non accordé pour cet espace de travail.' : 'Access not granted for this workspace.'}</span>
         </div>
-      ) : load.state === 'unavailable' ? (
+      ) : card.status === 'unavailable' ? (
         <div class="pii-workspace-state">
           <span>{fr ? 'Sommaire non connecté pour le moment. Ouvrez l’espace spécialisé.' : 'Summary not connected yet. Open the specialist workspace.'}</span>
         </div>
-      ) : load.state === 'error' ? (
-        <div class="pii-workspace-state err" role="alert">
-          <span>{fr ? `Impossible de charger ce sommaire : ${load.message}` : `Could not load this summary: ${load.message}`}</span>
-        </div>
       ) : (
         <>
-          <Metrics module={module} data={load.value} fr={fr} />
-          {module === 'audit' && Array.isArray(load.value?.engagements) && (
-            <div class="pii-workspace-audit-list">
-              <h4>{fr ? 'Missions autorisées' : 'Authorized engagements'}</h4>
-              {load.value.engagements.length === 0 ? (
-                <p class="pii-workspace-state">{fr ? 'Aucune mission d’audit n’est actuellement visible.' : 'No audit engagements are currently visible.'}</p>
-              ) : (
-                <ul class="pii-workspace-audit-items">
-                  {load.value.engagements.slice(0, 10).map((e: any) => (
-                    <li key={e.id} class="pii-workspace-audit-item">
-                      <span class="pii-workspace-audit-name">{String(e.name ?? e.title ?? (fr ? 'Mission' : 'Engagement'))}</span>
-                      <span class={`pii-workspace-audit-status ${e.status === 'active' ? 'active' : ''}`}>{String(e.status ?? 'unknown')}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+          {card.metrics.length > 0 && (
+            <div class="pii-workspace-metrics">
+              {card.metrics.map(m => (
+                <div class="pii-workspace-metric" key={m.id}>
+                  <strong class={`pii-workspace-metric-val ${m.tone || ''}`}>{m.value}</strong>
+                  <small class="pii-workspace-metric-lbl">
+                    {m.label}
+                    {m.sub ? ` · ${m.sub}` : ''}
+                  </small>
+                </div>
+              ))}
             </div>
+          )}
+
+          {card.status === 'empty' && card.metrics.length === 0 && (
+            <p class="pii-workspace-state">
+              {fr ? 'Rien à signaler pour le moment.' : 'Nothing requiring attention for this period.'}
+            </p>
+          )}
+
+          {Array.isArray(card.items) && card.items.length > 0 && (
+            <ul class="pii-workspace-audit-items" style={{ marginTop: '12px' }}>
+              {card.items.slice(0, 5).map(item => (
+                <li
+                  key={item.id}
+                  class="pii-workspace-audit-item"
+                  style={item.target ? { cursor: 'pointer' } : undefined}
+                  onClick={() => {
+                    if (item.target) go(item.target.page, item.target.routeId);
+                  }}
+                >
+                  <div style={{ display: 'grid', gap: '2px' }}>
+                    <span class="pii-workspace-audit-name">{item.title}</span>
+                    {item.subtitle && <small class="muted">{item.subtitle}</small>}
+                  </div>
+                  {item.status && (
+                    <span class={`pii-workspace-audit-status ${item.status === 'active' || item.status === 'completed' ? 'active' : ''}`}>
+                      {item.status}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </>
       )}
@@ -193,7 +216,7 @@ export function UnifiedWorkspace({
   legacyHome,
 }: {
   call: Call;
-  go: (page: string) => void;
+  go: (page: string, id?: string) => void;
   locale: Locale;
   name: string;
   legacyHome?: ComponentChildren;
@@ -202,14 +225,14 @@ export function UnifiedWorkspace({
   const roleNames = fr ? workspaceNames['fr-CA'] : workspaceNames.en;
   const [context, setContext] = useState<Load<Context>>(pending());
   const [active, setActive] = useState('');
-  const [loads, setLoads] = useState<Partial<Record<Module, Load<any>>>>({});
+  const [dashboard, setDashboard] = useState<Load<UnifiedDashboardResponse>>(pending());
   const [generation, setGeneration] = useState(0);
   const [homeRevision, setHomeRevision] = useState(0);
 
+  // 1. Initial Workspace Discovery
   useEffect(() => {
     let cancelled = false;
     setContext(pending());
-    setLoads({});
     call('GET', '/v1/workspace/context').then(
       (value: Context) => {
         if (cancelled) return;
@@ -224,31 +247,33 @@ export function UnifiedWorkspace({
         if (!cancelled) setContext({ state: 'error', message: e.message });
       }
     );
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [call, generation]);
 
+  // 2. Fetch Unified Dashboard Cards for Active Perspective
   useEffect(() => {
-    if (context.state !== 'ready' || !active || !context.value.roles.includes(active)) return;
+    if (context.state !== 'ready' || !active) return;
     let cancelled = false;
-    const allowed = (priorities[active] ?? []).filter(m => context.value.modules[m]);
-    setLoads(Object.fromEntries(allowed.map(m => [m, pending()])));
-    for (const m of allowed) {
-      const path = endpoints[m];
-      if (!path) {
-        setLoads(old => cancelled ? old : ({ ...old, [m]: { state: 'unavailable' } }));
-        continue;
-      }
-      call('GET', path).then(
-        value => {
-          if (!cancelled) setLoads(old => ({ ...old, [m]: { state: 'ready', value } }));
-        },
-        (e: Error & { status?: number }) => {
-          if (!cancelled) setLoads(old => ({ ...old, [m]: e.status === 403 ? { state: 'forbidden' } : { state: 'error', message: e.message } }));
+    setDashboard(pending());
+
+    call('GET', `/v1/workspace/dashboard?perspective=${encodeURIComponent(active)}&days=30`).then(
+      (data: UnifiedDashboardResponse) => {
+        if (!cancelled) setDashboard({ state: 'ready', value: data });
+      },
+      (e: Error & { status?: number }) => {
+        if (!cancelled) {
+          if (e.status === 403) setDashboard({ state: 'forbidden' });
+          else setDashboard({ state: 'error', message: e.message });
         }
-      );
-    }
-    return () => { cancelled = true; };
-  }, [context, active, call]);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [context, active, call, generation]);
 
   if (context.state === 'loading') {
     return (
@@ -276,7 +301,6 @@ export function UnifiedWorkspace({
   if (context.state !== 'ready') return null;
 
   const c = context.value;
-  const visible = c.roles.includes(active) ? (priorities[active] ?? []).filter(m => c.modules[m]) : [];
   const activeRoleName = roleNames[active] ?? (fr ? 'Personnel' : 'Personal');
   const scopeNames = c.scopes.map(s => s.name).join(', ') || (fr ? 'Espace autorisé' : 'Authorized workspace');
 
@@ -284,13 +308,31 @@ export function UnifiedWorkspace({
     <main class="pii-workspace">
       <header class="pii-workspace-header">
         <div class="pii-workspace-header-main">
-          <span class="pii-workspace-badge">{c.country} · {scopeNames}</span>
-          <h1 class="pii-workspace-title">{fr ? 'Mon espace de travail' : 'My workspace'}{name ? ', ' + name : ''}</h1>
-          <p class="pii-workspace-subhead">{fr ? `Aperçu ${activeRoleName} · Données limitées à vos autorisations` : `${activeRoleName} overview · Data limited to your authorized access`}</p>
+          <span class="pii-workspace-badge">
+            {c.country} · {scopeNames}
+          </span>
+          <h1 class="pii-workspace-title">
+            {fr ? 'Mon espace de travail' : 'My workspace'}
+            {name ? ', ' + name : ''}
+          </h1>
+          <p class="pii-workspace-subhead">
+            {fr
+              ? `Aperçu ${activeRoleName} · Données limitées à vos autorisations`
+              : `${activeRoleName} overview · Data limited to your authorized access`}
+          </p>
         </div>
         <div class="pii-workspace-header-actions">
-          <button class="pii-workspace-refresh-btn" type="button" onClick={() => { setGeneration(x => x + 1); setHomeRevision(x => x + 1); }}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+          <button
+            class="pii-workspace-refresh-btn"
+            type="button"
+            onClick={() => {
+              setGeneration(x => x + 1);
+              setHomeRevision(x => x + 1);
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
             <span>{fr ? 'Actualiser' : 'Refresh'}</span>
           </button>
         </div>
@@ -316,22 +358,49 @@ export function UnifiedWorkspace({
         </nav>
       )}
 
-      {visible.length ? (
-        <div class="pii-workspace-grid">
-          {visible.map(m => (
-            <Panel key={m} module={m} load={loads[m] ?? pending()} go={go} fr={fr} />
-          ))}
+      {dashboard.state === 'loading' ? (
+        <div class="pii-workspace-state" role="status" style={{ minHeight: '180px' }}>
+          <span>{fr ? 'Chargement des cartes d’activité…' : 'Loading activity cards…'}</span>
         </div>
+      ) : dashboard.state === 'forbidden' ? (
+        <div class="pii-workspace-state err" role="alert">
+          <span>{fr ? 'Accès non autorisé pour cette perspective.' : 'Access not authorized for this perspective.'}</span>
+        </div>
+      ) : dashboard.state === 'error' ? (
+        <div class="pii-workspace-state err" role="alert">
+          <span>{fr ? `Erreur : ${dashboard.message}` : `Error: ${dashboard.message}`}</span>
+        </div>
+      ) : dashboard.state === 'ready' ? (
+        dashboard.value.cards.length > 0 ? (
+          <div class="pii-workspace-grid">
+            {dashboard.value.cards.map(card => (
+              <CardPanel key={card.id} card={card} go={go} fr={fr} />
+            ))}
+          </div>
+        ) : (
+          <p class="pii-workspace-state">
+            {fr
+              ? 'Aucune carte d’activité n’est disponible pour ce rôle.'
+              : 'No activity cards are available for this role.'}
+          </p>
+        )
       ) : (
-        <p class="pii-workspace-state">{fr ? 'Aucun module récapitulatif disponible pour ce rôle. Contactez votre administrateur si un accès est attendu.' : 'No summary modules are currently available for this role. Contact your administrator if access is expected.'}</p>
+        <p class="pii-workspace-state">
+          {fr
+            ? 'Sommaire d’activité non disponible pour le moment.'
+            : 'Activity summary not available at this time.'}
+        </p>
       )}
 
-      {c.roles.includes(active) && c.modules.crm && (priorities[active] ?? []).includes('crm') && (
+      {/* Preserve CRM Home for users with authorized CRM access */}
+      {c.roles.includes(active) && c.modules.crm && ['admin', 'manager', 'partner', 'staff'].includes(active) && (
         <div key={homeRevision}>{legacyHome}</div>
       )}
 
       <p class="pii-workspace-footnote">
-        {fr ? 'Le changement de perspective n’augmente pas les autorisations. Tous les enregistrements sont vérifiés par le serveur.' : 'Perspective changes do not elevate permissions. All records are authorized by the server.'}
+        {fr
+          ? 'Le changement de perspective n’augmente pas les autorisations. Tous les enregistrements sont vérifiés par le serveur.'
+          : 'Perspective changes do not elevate permissions. All records are authorized by the server.'}
       </p>
     </main>
   );
