@@ -763,11 +763,55 @@ select{background-color:#fff;border:1px solid var(--line2);border-radius:10px;pa
 
 .pii-workspace-footnote{font-size:12px;color:var(--mute);margin:16px 0 10px;text-align:center}
 
+/* Executive Summary Strip */
+.pii-workspace-summary-strip{margin-bottom:18px}
+.pii-workspace-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.pii-workspace-summary-card{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 1px 3px rgba(15,23,42,.04);cursor:pointer;transition:all .15s ease;display:flex;flex-direction:column;gap:4px}
+.pii-workspace-summary-card:hover{border-color:var(--pri-line);transform:translateY(-1px);box-shadow:0 4px 12px rgba(15,23,42,.06)}
+.pii-workspace-summary-num{font-size:24px;line-height:1.1;font-weight:700;color:var(--navy);letter-spacing:-.02em}
+.pii-workspace-summary-num.warn{color:#d97706}
+.pii-workspace-summary-num.bad{color:var(--err)}
+.pii-workspace-summary-lbl{font-size:11.5px;font-weight:600;color:var(--mute);text-transform:uppercase;letter-spacing:.02em}
+
+/* Operational Work Queue */
+.pii-workspace-workqueue{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(15,23,42,.04)}
+.pii-workspace-workqueue-head{margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.pii-workspace-workqueue-title-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pii-workspace-workqueue-title{font-size:16px;font-weight:700;color:var(--navy);margin:0}
+.pii-workspace-workqueue-count{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--pri-soft);color:var(--pri)}
+.pii-workspace-workqueue-subhead{font-size:12.5px;color:var(--mute);margin:4px 0 0}
+.pii-workspace-workqueue-list{display:flex;flex-direction:column;gap:8px}
+.pii-workspace-workqueue-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;background:var(--tint);border:1px solid #edf0f5;border-radius:10px;transition:border-color .15s}
+.pii-workspace-workqueue-item:hover{border-color:#d5dce6}
+.pii-workspace-workqueue-main{flex:1 1 auto;min-width:0}
+.pii-workspace-workqueue-tags{display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap}
+.pii-workspace-priority-tag{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.03em;text-transform:uppercase}
+.pii-workspace-priority-tag.high{background:#fee2e2;color:#991b1b}
+.pii-workspace-priority-tag.medium{background:#fef3c7;color:#92400e}
+.pii-workspace-priority-tag.normal{background:#e0f2fe;color:#0369a1}
+.pii-workspace-role-tag{font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:4px;background:var(--line2);color:var(--ink)}
+.pii-workspace-date-tag{font-size:11px;color:var(--mute)}
+.pii-workspace-workqueue-item-title{font-size:13.5px;font-weight:600;color:var(--ink);display:block;margin-bottom:2px}
+.pii-workspace-workqueue-item-sub{font-size:12px;color:var(--mute);margin:0}
+.pii-workspace-workqueue-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;background:var(--pri);color:#fff;border:0;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s;flex-shrink:0}
+.pii-workspace-workqueue-btn:hover{background:var(--pri-h)}
+.pii-workspace-workqueue-btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.2;flex:none}
+
+/* Card Action Buttons */
+.pii-workspace-card-actions{display:flex;align-items:center;gap:6px;margin-top:12px;padding-top:10px;border-top:1px solid #edf0f5;flex-wrap:wrap}
+.pii-workspace-btn-action{padding:4px 10px;font-size:11.5px;font-weight:600;background:var(--tint);border:1px solid var(--line2);color:var(--ink);border-radius:6px;cursor:pointer;transition:all .12s}
+.pii-workspace-btn-action:hover{background:var(--pri-soft);border-color:var(--pri-line);color:var(--pri)}
+
 .pii[data-theme=dark] .pii-workspace-panel{background:var(--tint);border-color:var(--line2)}
 .pii[data-theme=dark] .pii-workspace-metric{background:var(--bg);border-color:var(--line2)}
 .pii[data-theme=dark] .pii-workspace-roles-group{background:var(--tint)}
 .pii[data-theme=dark] .pii-workspace-role-btn.active,.pii[data-theme=dark] .pii-workspace-role-btn[aria-pressed=true]{background:var(--bg);color:var(--pri)}
 .pii[data-theme=dark] .pii-workspace-refresh-btn{background:var(--tint);border-color:var(--line2);color:var(--ink)}
+.pii[data-theme=dark] .pii-workspace-summary-card{background:var(--tint);border-color:var(--line2)}
+.pii[data-theme=dark] .pii-workspace-workqueue{background:var(--tint);border-color:var(--line2)}
+.pii[data-theme=dark] .pii-workspace-workqueue-item{background:var(--bg);border-color:var(--line2)}
+.pii[data-theme=dark] .pii-workspace-card-actions{border-top-color:var(--line2)}
+.pii[data-theme=dark] .pii-workspace-btn-action{background:var(--bg);border-color:var(--line2);color:var(--ink)}
 
 /* Unified Site-wide Components */
 .obrow{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px;flex-wrap:wrap}

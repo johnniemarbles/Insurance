@@ -49,6 +49,26 @@ export interface DashboardCard {
   allowedActions: string[];
 }
 
+export interface ExecutiveSummary {
+  activeCarrierContracts: number;
+  pendingApprovals: number;
+  complianceAlerts: number;
+  carrierReceipts: number;
+  quarantinedReceipts: number;
+}
+
+export interface WorkQueueItem {
+  id: string;
+  category: 'webhook_review' | 'contract_approval' | 'audit_exception' | 'compliance_alert' | 'onboarding_review' | 'task' | 'coursework';
+  title: string;
+  subtitle?: string;
+  role: string;
+  priority: 'high' | 'medium' | 'normal';
+  date?: string;
+  target: { page: string; routeId?: string };
+  actionLabel?: string;
+}
+
 interface UnifiedDashboardResponse {
   version: number;
   tenantId: string;
@@ -58,6 +78,8 @@ interface UnifiedDashboardResponse {
   activeNodeIds: string[];
   isTenantAdmin: boolean;
   isHeadOffice: boolean;
+  summary?: ExecutiveSummary;
+  workQueue?: WorkQueueItem[];
   cards: DashboardCard[];
 }
 
@@ -117,6 +139,76 @@ const titles: Record<Locale, Record<Module, string>> = {
     notifications: 'Notifications',
   },
 };
+
+const actionLabels: Record<Locale, Record<string, string>> = {
+  en: {
+    view_pipeline: 'Open Pipeline',
+    create_record: 'New Record',
+    review_compliance: 'Review Alerts',
+    manage_holds: 'Legal Holds',
+    view_cases: 'Contract Cases',
+    prepare_packet: 'Prepare Packet',
+    view_directory: 'Partner Directory',
+    invite_partner: 'Invite Broker',
+    assign_course: 'Assign Courses',
+    view_reports: 'Reports',
+    launch_course: 'Resume Learning',
+    view_sampling: 'Audit Sampling',
+    mark_all_read: 'Mark Read',
+  },
+  'fr-CA': {
+    view_pipeline: 'Ouvrir dossiers',
+    create_record: 'Nouveau dossier',
+    review_compliance: 'Examiner alertes',
+    manage_holds: 'Gels juridiques',
+    view_cases: 'Dossiers contrats',
+    prepare_packet: 'Préparer dossier',
+    view_directory: 'Répertoire courtiers',
+    invite_partner: 'Inviter courtier',
+    assign_course: 'Assigner cours',
+    view_reports: 'Rapports',
+    launch_course: 'Reprendre cours',
+    view_sampling: 'Échantillonnage audit',
+    mark_all_read: 'Tout marquer lu',
+  },
+};
+
+function handleAction(action: string, card: DashboardCard, go: (page: string, id?: string) => void) {
+  switch (action) {
+    case 'view_pipeline':
+    case 'create_record':
+      go('pipelines');
+      break;
+    case 'review_compliance':
+    case 'manage_holds':
+      go('compliance', 'files');
+      break;
+    case 'view_cases':
+    case 'prepare_packet':
+      go('compliance', 'carriers');
+      break;
+    case 'view_directory':
+    case 'invite_partner':
+      go('partners');
+      break;
+    case 'assign_course':
+    case 'view_reports':
+    case 'launch_course':
+      go('training');
+      break;
+    case 'view_sampling':
+      go('compliance', 'files');
+      break;
+    case 'mark_all_read':
+      go('notifications');
+      break;
+    default:
+      if (card.drilldown) {
+        go(card.drilldown.page, card.drilldown.routeId);
+      }
+      break;
+  }
+}
 
 function CardPanel({
   card,
@@ -201,6 +293,21 @@ function CardPanel({
                 </li>
               ))}
             </ul>
+          )}
+
+          {Array.isArray(card.allowedActions) && card.allowedActions.length > 0 && (
+            <div class="pii-workspace-card-actions">
+              {card.allowedActions.map(act => (
+                <button
+                  key={act}
+                  type="button"
+                  class="pii-workspace-btn-action"
+                  onClick={() => handleAction(act, card, go)}
+                >
+                  {(fr ? actionLabels['fr-CA'] : actionLabels.en)[act] || act.replace(/_/g, ' ')}
+                </button>
+              ))}
+            </div>
           )}
         </>
       )}
@@ -371,19 +478,128 @@ export function UnifiedWorkspace({
           <span>{fr ? `Erreur : ${dashboard.message}` : `Error: ${dashboard.message}`}</span>
         </div>
       ) : dashboard.state === 'ready' ? (
-        dashboard.value.cards.length > 0 ? (
-          <div class="pii-workspace-grid">
-            {dashboard.value.cards.map(card => (
-              <CardPanel key={card.id} card={card} go={go} fr={fr} />
-            ))}
-          </div>
-        ) : (
-          <p class="pii-workspace-state">
-            {fr
-              ? 'Aucune carte d’activité n’est disponible pour ce rôle.'
-              : 'No activity cards are available for this role.'}
-          </p>
-        )
+        <>
+          {dashboard.value.summary && (
+            <section class="pii-workspace-summary-strip" aria-label={fr ? 'Sommaire de direction' : 'Executive Summary'}>
+              <div class="pii-workspace-summary-grid">
+                <div
+                  class="pii-workspace-summary-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => go('compliance', 'carriers')}
+                >
+                  <span class="pii-workspace-summary-num">{dashboard.value.summary.activeCarrierContracts}</span>
+                  <span class="pii-workspace-summary-lbl">{fr ? 'Contrats / nominations actifs' : 'Active Contracts / Appointments'}</span>
+                </div>
+                <div
+                  class="pii-workspace-summary-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => go('compliance', 'carriers')}
+                >
+                  <span class="pii-workspace-summary-num">{dashboard.value.summary.pendingApprovals}</span>
+                  <span class="pii-workspace-summary-lbl">{fr ? 'Approbations en attente' : 'Pending Approvals'}</span>
+                </div>
+                <div
+                  class="pii-workspace-summary-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => go('compliance', 'files')}
+                >
+                  <span class={`pii-workspace-summary-num ${dashboard.value.summary.complianceAlerts > 0 ? 'warn' : ''}`}>
+                    {dashboard.value.summary.complianceAlerts}
+                  </span>
+                  <span class="pii-workspace-summary-lbl">{fr ? 'Alertes de conformité' : 'Compliance Alerts'}</span>
+                </div>
+                <div
+                  class="pii-workspace-summary-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => go('compliance', 'carriers')}
+                >
+                  <span class={`pii-workspace-summary-num ${dashboard.value.summary.quarantinedReceipts > 0 ? 'bad' : ''}`}>
+                    {dashboard.value.summary.quarantinedReceipts}
+                  </span>
+                  <span class="pii-workspace-summary-lbl">{fr ? 'Webhooks en quarantaine' : 'Quarantined Webhooks'}</span>
+                </div>
+                <div
+                  class="pii-workspace-summary-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => go('compliance', 'carriers')}
+                >
+                  <span class="pii-workspace-summary-num">{dashboard.value.summary.carrierReceipts}</span>
+                  <span class="pii-workspace-summary-lbl">{fr ? 'Reçus de webhook' : 'Carrier Webhook Receipts'}</span>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {Array.isArray(dashboard.value.workQueue) && dashboard.value.workQueue.length > 0 && (
+            <section class="pii-workspace-workqueue" aria-label={fr ? 'File de travail opérationnelle' : 'Operational Action Queue'}>
+              <div class="pii-workspace-workqueue-head">
+                <div class="pii-workspace-workqueue-title-row">
+                  <h2 class="pii-workspace-workqueue-title">
+                    {fr ? 'File de travail opérationnelle' : 'Operational Action Queue'}
+                  </h2>
+                  <span class="pii-workspace-workqueue-count">
+                    {dashboard.value.workQueue.length} {fr ? 'tâches à traiter' : 'items requiring action'}
+                  </span>
+                </div>
+                <p class="pii-workspace-workqueue-subhead">
+                  {fr
+                    ? 'Révisions prioritaires, approbations en attente et conformité nécessitant une intervention dans votre périmètre.'
+                    : 'Priority reviews, pending approvals, and compliance tasks requiring action within your authorized scope.'}
+                </p>
+              </div>
+              <div class="pii-workspace-workqueue-list">
+                {dashboard.value.workQueue.map(item => (
+                  <div key={item.id} class="pii-workspace-workqueue-item">
+                    <div class="pii-workspace-workqueue-main">
+                      <div class="pii-workspace-workqueue-tags">
+                        <span class={`pii-workspace-priority-tag ${item.priority}`}>
+                          {item.priority.toUpperCase()}
+                        </span>
+                        <span class="pii-workspace-role-tag">{item.role}</span>
+                        {item.date && (
+                          <span class="pii-workspace-date-tag">
+                            {new Date(item.date).toLocaleDateString(fr ? 'fr-CA' : 'en-CA')}
+                          </span>
+                        )}
+                      </div>
+                      <strong class="pii-workspace-workqueue-item-title">{item.title}</strong>
+                      {item.subtitle && <p class="pii-workspace-workqueue-item-sub">{item.subtitle}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      class="pii-workspace-workqueue-btn"
+                      onClick={() => go(item.target.page, item.target.routeId)}
+                    >
+                      <span>{item.actionLabel || (fr ? 'Traiter' : 'Action')}</span>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M5 12h14M12 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {dashboard.value.cards.length > 0 ? (
+            <div class="pii-workspace-grid">
+              {dashboard.value.cards.map(card => (
+                <CardPanel key={card.id} card={card} go={go} fr={fr} />
+              ))}
+            </div>
+          ) : (
+            <p class="pii-workspace-state">
+              {fr
+                ? 'Aucune carte d’activité n’est disponible pour ce rôle.'
+                : 'No activity cards are available for this role.'}
+            </p>
+          )}
+        </>
       ) : (
         <p class="pii-workspace-state">
           {fr

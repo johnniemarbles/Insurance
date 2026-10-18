@@ -138,6 +138,17 @@ test('unified dashboard: 1. Admin receives full set of typed, permission-scoped 
   assert.equal(r.json.tenantId, co1TenantId);
   assert.ok(Array.isArray(r.json.cards));
 
+  // Verify executive summary
+  assert.ok(r.json.summary, 'admin gets executive summary');
+  assert.equal(typeof r.json.summary.activeCarrierContracts, 'number');
+  assert.equal(typeof r.json.summary.pendingApprovals, 'number');
+  assert.equal(typeof r.json.summary.complianceAlerts, 'number');
+  assert.equal(typeof r.json.summary.carrierReceipts, 'number');
+  assert.equal(typeof r.json.summary.quarantinedReceipts, 'number');
+
+  // Verify workQueue
+  assert.ok(Array.isArray(r.json.workQueue), 'admin gets work queue');
+
   const cardModules = r.json.cards.map((c: { module: string }) => c.module);
   assert.ok(cardModules.includes('crm'), 'admin gets crm card');
   assert.ok(cardModules.includes('compliance'), 'admin gets compliance card');
@@ -147,6 +158,14 @@ test('unified dashboard: 1. Admin receives full set of typed, permission-scoped 
   assert.ok(cardModules.includes('learning'), 'admin gets learning card');
   assert.ok(cardModules.includes('audit'), 'admin gets audit card');
   assert.ok(cardModules.includes('notifications'), 'admin gets notifications card');
+
+  // Verify compliance card metrics include quarantined
+  const compCard = r.json.cards.find((c: { module: string }) => c.module === 'compliance');
+  assert.ok(compCard.metrics.some((m: { id: string }) => m.id === 'quarantined'));
+
+  // Verify carriers card metrics include quarantined
+  const carrCard = r.json.cards.find((c: { module: string }) => c.module === 'carriers');
+  assert.ok(carrCard.metrics.some((m: { id: string }) => m.id === 'quarantined'));
 
   // Verify CRM card structure
   const crmCard = r.json.cards.find((c: { module: string }) => c.module === 'crm');
@@ -210,6 +229,8 @@ test('unified dashboard: 6. Learner receives personal coursework and notificatio
   const r = await call(LEARNER, 'GET', '/v1/workspace/dashboard?perspective=learner');
   assert.equal(r.status, 200);
   assert.equal(r.json.perspective, 'learner');
+  assert.equal(r.json.summary, undefined, 'learner must NOT receive executive summary');
+  assert.ok(Array.isArray(r.json.workQueue), 'learner receives workQueue array');
 
   const cardModules = r.json.cards.map((c: { module: string }) => c.module);
   assert.deepEqual(cardModules, ['learning', 'notifications']);
@@ -268,3 +289,30 @@ test('unified dashboard: 10. Default perspective resolution matches highest auth
   const rLearner = await call(LEARNER, 'GET', '/v1/workspace/dashboard');
   assert.equal(rLearner.json.perspective, 'learner');
 });
+
+test('unified dashboard: 11. Head Office perspective authorization and non-HO rejection', async () => {
+  const rHo = await call(ADMIN, 'GET', '/v1/workspace/dashboard?perspective=ho');
+  assert.equal(rHo.status, 200);
+  assert.equal(rHo.json.perspective, 'ho');
+  assert.ok(rHo.json.summary, 'HO perspective receives executive summary');
+  assert.equal(typeof rHo.json.summary.activeCarrierContracts, 'number');
+
+  // Non-HO/non-admin user requesting HO is rejected with 403
+  const rLearner = await call(LEARNER, 'GET', '/v1/workspace/dashboard?perspective=ho');
+  assert.equal(rLearner.status, 403);
+
+  const rBroker = await call(BROKER, 'GET', '/v1/workspace/dashboard?perspective=ho');
+  assert.equal(rBroker.status, 403);
+});
+
+test('unified dashboard: 12. Perspective-scoped work queue does not leak management queues into learner', async () => {
+  const rLearner = await call(LEARNER, 'GET', '/v1/workspace/dashboard?perspective=learner');
+  assert.equal(rLearner.status, 200);
+
+  // Learner work queue must never contain webhook reviews or contract approvals
+  const categories = rLearner.json.workQueue.map((item: { category: string }) => item.category);
+  assert.ok(!categories.includes('webhook_review'), 'learner queue must not leak webhook_review');
+  assert.ok(!categories.includes('contract_approval'), 'learner queue must not leak contract_approval');
+  assert.ok(!categories.includes('compliance_alert'), 'learner queue must not leak compliance_alert');
+});
+
