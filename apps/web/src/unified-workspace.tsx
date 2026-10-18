@@ -117,13 +117,13 @@ function Metrics({ module, data, fr }: { module: Module; data: any; fr: boolean 
     [fr ? 'Complétés' : 'Completed', data.totals.completed],
     [fr ? 'En retard' : 'Overdue', data.totals.overdue],
   ];
-  if (!entries.length) return <p>{fr ? 'Aucune donnée récapitulative disponible. Ouvrez l’espace pour plus de détails.' : 'No summary data is available. Open the workspace for details.'}</p>;
+  if (!entries.length) return <p class="pii-workspace-state">{fr ? 'Aucune donnée récapitulative disponible. Ouvrez l’espace pour plus de détails.' : 'No summary data is available. Open the workspace for details.'}</p>;
   return (
-    <div class="pii-workspace-metrics" style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: '12px' }}>
+    <div class="pii-workspace-metrics">
       {entries.map(([name, value]) => (
-        <div class="pii-workspace-metric" key={name} style={{ padding: '12px', borderRadius: '8px', background: 'rgba(125,140,165,.08)' }}>
-          <small>{name}</small>
-          <strong>{value}</strong>
+        <div class="pii-workspace-metric" key={name}>
+          <strong class="pii-workspace-metric-val">{value}</strong>
+          <small class="pii-workspace-metric-lbl">{name}</small>
         </div>
       ))}
     </div>
@@ -133,38 +133,54 @@ function Metrics({ module, data, fr }: { module: Module; data: any; fr: boolean 
 function Panel({ module, load, go, fr }: { module: Module; load: Load<any>; go: (page: string) => void; fr: boolean }) {
   const panelTitle = (fr ? titles['fr-CA'] : titles.en)[module];
   return (
-    <section class="pii-workspace-panel" style={{ border: '1px solid #dfe5ed', borderRadius: '12px', padding: '20px' }} aria-label={panelTitle}>
+    <section class="pii-workspace-panel" aria-label={panelTitle}>
       <div class="pii-workspace-panel-head">
-        <h2>{panelTitle}</h2>
+        <h2 class="pii-workspace-panel-title">{panelTitle}</h2>
         {module !== 'audit' && (
-          <button class="btn" onClick={() => go(destinations[module])}>
-            {fr ? 'Ouvrir l’espace' : 'Open workspace'}
+          <button class="pii-workspace-action-link" type="button" onClick={() => go(destinations[module])}>
+            <span>{fr ? 'Ouvrir l’espace' : 'Open workspace'}</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
           </button>
         )}
       </div>
-      {load.state === 'loading' ? <p role="status">{fr ? 'Chargement…' : 'Loading…'}</p> :
-       load.state === 'forbidden' ? <p>{fr ? 'Accès non accordé pour cet espace de travail.' : 'Access not granted for this workspace.'}</p> :
-       load.state === 'unavailable' ? <p>{fr ? 'Sommaire non connecté pour le moment. Ouvrez l’espace spécialisé.' : 'Summary not connected yet. Open the specialist workspace.'}</p> :
-       load.state === 'error' ? <p role="alert">{fr ? `Impossible de charger ce sommaire : ${load.message}` : `Could not load this summary: ${load.message}`}</p> :
-       <>
-         <Metrics module={module} data={load.value} fr={fr} />
-         {module === 'audit' && Array.isArray(load.value?.engagements) && (
-           <div style={{ marginTop: '16px' }}>
-             <h3>{fr ? 'Missions autorisées' : 'Authorized engagements'}</h3>
-             {load.value.engagements.length === 0 ? (
-               <p>{fr ? 'Aucune mission d’audit n’est actuellement visible.' : 'No audit engagements are currently visible.'}</p>
-             ) : (
-               <ul>
-                 {load.value.engagements.slice(0, 10).map((e: any) => (
-                   <li key={e.id}>
-                     {String(e.name ?? e.title ?? (fr ? 'Mission' : 'Engagement'))} — {String(e.status ?? 'unknown')}
-                   </li>
-                 ))}
-               </ul>
-             )}
-           </div>
-         )}
-       </>}
+      {load.state === 'loading' ? (
+        <div class="pii-workspace-state" role="status">
+          <span>{fr ? 'Chargement…' : 'Loading…'}</span>
+        </div>
+      ) : load.state === 'forbidden' ? (
+        <div class="pii-workspace-state">
+          <span>{fr ? 'Accès non accordé pour cet espace de travail.' : 'Access not granted for this workspace.'}</span>
+        </div>
+      ) : load.state === 'unavailable' ? (
+        <div class="pii-workspace-state">
+          <span>{fr ? 'Sommaire non connecté pour le moment. Ouvrez l’espace spécialisé.' : 'Summary not connected yet. Open the specialist workspace.'}</span>
+        </div>
+      ) : load.state === 'error' ? (
+        <div class="pii-workspace-state err" role="alert">
+          <span>{fr ? `Impossible de charger ce sommaire : ${load.message}` : `Could not load this summary: ${load.message}`}</span>
+        </div>
+      ) : (
+        <>
+          <Metrics module={module} data={load.value} fr={fr} />
+          {module === 'audit' && Array.isArray(load.value?.engagements) && (
+            <div class="pii-workspace-audit-list">
+              <h4>{fr ? 'Missions autorisées' : 'Authorized engagements'}</h4>
+              {load.value.engagements.length === 0 ? (
+                <p class="pii-workspace-state">{fr ? 'Aucune mission d’audit n’est actuellement visible.' : 'No audit engagements are currently visible.'}</p>
+              ) : (
+                <ul class="pii-workspace-audit-items">
+                  {load.value.engagements.slice(0, 10).map((e: any) => (
+                    <li key={e.id} class="pii-workspace-audit-item">
+                      <span class="pii-workspace-audit-name">{String(e.name ?? e.title ?? (fr ? 'Mission' : 'Engagement'))}</span>
+                      <span class={`pii-workspace-audit-status ${e.status === 'active' ? 'active' : ''}`}>{String(e.status ?? 'unknown')}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }
@@ -236,19 +252,25 @@ export function UnifiedWorkspace({
 
   if (context.state === 'loading') {
     return (
-      <div class="pii-workspace">
-        <p role="status">{fr ? 'Chargement de votre espace de travail…' : 'Loading your workspace…'}</p>
-      </div>
+      <main class="pii-workspace">
+        <div class="pii-workspace-state" role="status">
+          <span>{fr ? 'Chargement de votre espace de travail…' : 'Loading your workspace…'}</span>
+        </div>
+      </main>
     );
   }
   if (context.state === 'error') {
     return (
-      <div class="pii-workspace">
-        <p role="alert">{fr ? `Erreur de chargement : ${context.message}` : context.message}</p>
-        <button class="btn" onClick={() => setGeneration(x => x + 1)}>
-          {fr ? 'Réessayer' : 'Retry'}
-        </button>
-      </div>
+      <main class="pii-workspace">
+        <div class="pii-workspace-state err" role="alert">
+          <span>{fr ? `Erreur de chargement : ${context.message}` : context.message}</span>
+        </div>
+        <div style={{ marginTop: '16px', textAlign: 'center' }}>
+          <button class="btn" onClick={() => setGeneration(x => x + 1)}>
+            {fr ? 'Réessayer' : 'Retry'}
+          </button>
+        </div>
+      </main>
     );
   }
   if (context.state !== 'ready') return null;
@@ -259,36 +281,49 @@ export function UnifiedWorkspace({
   const scopeNames = c.scopes.map(s => s.name).join(', ') || (fr ? 'Espace autorisé' : 'Authorized workspace');
 
   return (
-    <main class="pii-workspace" style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
+    <main class="pii-workspace">
       <header class="pii-workspace-header">
-        <div>
-          <small>{c.country} · {scopeNames}</small>
-          <h1>{fr ? 'Mon espace de travail' : 'My workspace'}{name ? ', ' + name : ''}</h1>
-          <p>{fr ? `Aperçu ${activeRoleName} · Données limitées à vos autorisations` : `${activeRoleName} overview · Data limited to your authorized access`}</p>
+        <div class="pii-workspace-header-main">
+          <span class="pii-workspace-badge">{c.country} · {scopeNames}</span>
+          <h1 class="pii-workspace-title">{fr ? 'Mon espace de travail' : 'My workspace'}{name ? ', ' + name : ''}</h1>
+          <p class="pii-workspace-subhead">{fr ? `Aperçu ${activeRoleName} · Données limitées à vos autorisations` : `${activeRoleName} overview · Data limited to your authorized access`}</p>
         </div>
-        <button class="btn" onClick={() => { setGeneration(x => x + 1); setHomeRevision(x => x + 1); }}>
-          {fr ? 'Actualiser' : 'Refresh'}
-        </button>
+        <div class="pii-workspace-header-actions">
+          <button class="pii-workspace-refresh-btn" type="button" onClick={() => { setGeneration(x => x + 1); setHomeRevision(x => x + 1); }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+            <span>{fr ? 'Actualiser' : 'Refresh'}</span>
+          </button>
+        </div>
       </header>
 
       {c.roles.length > 1 && (
         <nav aria-label={fr ? 'Perspective de travail' : 'Workspace perspective'} class="pii-workspace-roles">
-          {c.roles.map(r => (
-            <button key={r} class="btn" aria-pressed={r === active} onClick={() => setActive(r)}>
-              {roleNames[r] ?? r}
-            </button>
-          ))}
+          <span class="pii-workspace-roles-label">{fr ? 'Perspective :' : 'Perspective:'}</span>
+          <div class="pii-workspace-roles-group" role="tablist">
+            {c.roles.map(r => (
+              <button
+                key={r}
+                role="tab"
+                class={`pii-workspace-role-btn ${r === active ? 'active' : ''}`}
+                aria-pressed={r === active}
+                aria-selected={r === active}
+                onClick={() => setActive(r)}
+              >
+                {roleNames[r] ?? r}
+              </button>
+            ))}
+          </div>
         </nav>
       )}
 
       {visible.length ? (
-        <div class="pii-workspace-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: '16px' }}>
+        <div class="pii-workspace-grid">
           {visible.map(m => (
             <Panel key={m} module={m} load={loads[m] ?? pending()} go={go} fr={fr} />
           ))}
         </div>
       ) : (
-        <p>{fr ? 'Aucun module récapitulatif disponible pour ce rôle. Contactez votre administrateur si un accès est attendu.' : 'No summary modules are currently available for this role. Contact your administrator if access is expected.'}</p>
+        <p class="pii-workspace-state">{fr ? 'Aucun module récapitulatif disponible pour ce rôle. Contactez votre administrateur si un accès est attendu.' : 'No summary modules are currently available for this role. Contact your administrator if access is expected.'}</p>
       )}
 
       {c.roles.includes(active) && c.modules.crm && (priorities[active] ?? []).includes('crm') && (
