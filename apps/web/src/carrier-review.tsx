@@ -63,7 +63,7 @@ export function CarrierReviewPanel({call,locale}:{call:Call;locale:string}) {
    try{await call('POST',`/v1/compliance/carrier-contracts/${id}/review`,{state,reason:reasons[id]??'',templateVersion:templateVersions[id]??''});setReasons(p=>({...p,[id]:''}));await refresh();}
    catch(e){setError(String(e));}finally{setBusy(false);}
  };
- return <section class="carrier-review-wrap" style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '36px' }}>
+ return <section class="carrier-review-wrap" style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '56px' }}>
    <div class="obcard">
      <h3 style={{ margin: '0 0 6px', fontSize: '18px', color: 'var(--navy)' }}>{fr?'Contrats des assureurs':'Carrier contracting queue'}</h3>
      <p class="muted" style={{ margin: 0 }}>{fr?'Les signatures et les nominations doivent être vérifiées séparément.':'Signatures and carrier appointments must be verified separately. No selling authorization is granted here.'}</p>

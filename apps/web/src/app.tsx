@@ -173,7 +173,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
       </>
       {/* framed: list pages share the page width and gutter (Phase 2) */}
       <Boundary key={`${page}:${routeId ?? ''}:${nonce}`} msg={t.crashed} retry={t.retry}>
-      <div class={framed ? 'pg-frame' : 'pg-raw'}>
+      <div class={`shell-main ${framed ? 'pg-frame' : 'pg-raw'}`}>
       {page === 'home' ? <UnifiedWorkspace call={call} locale={locale} go={go} name={meName} legacyHome={<HomePage call={call} t={t} locale={locale} go={go} name={meName} isAdmin={isAdmin} currency={host.region === 'us' ? 'USD' : 'CAD'} compose={compose} meEmail={meEmail} />} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'renewals' ? <RenewalsPage call={call} locale={locale} go={go} />
