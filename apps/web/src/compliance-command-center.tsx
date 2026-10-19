@@ -46,6 +46,9 @@ interface EngagementItem {
   scope?: string[];
 }
 
+export type ComplianceSection = 'files' | 'onboarding' | 'carriers';
+export type ComplianceFilter = 'all' | 'review' | 'expiring' | 'not_cleared' | 'risk' | 'aml' | 'retention' | 'overdue' | 'applications' | 'actions' | 'directory';
+
 export function ComplianceCommandCenter({
   call,
   locale,
@@ -53,7 +56,7 @@ export function ComplianceCommandCenter({
 }: {
   call: Call;
   locale: Locale;
-  onNavigate: (section: 'files' | 'onboarding' | 'carriers') => void;
+  onNavigate: (section: ComplianceSection, filter?: ComplianceFilter | string) => void;
 }) {
   const fr = locale === 'fr-CA';
   const [results, setResults] = useState<Record<Key, Result>>(initial);
@@ -114,15 +117,15 @@ export function ComplianceCommandCenter({
 
   const sections: {
     title: string;
-    cards: { key: Key; label: string; count: number | undefined; section: 'files' | 'onboarding' | 'carriers' }[];
+    cards: { key: Key; label: string; count: number | undefined; section: ComplianceSection; filter?: ComplianceFilter }[];
   }[] = [
     {
       title: fr ? 'Accréditations et dossiers' : 'Credentials & Broker Clearances',
       cards: [
-        { key: 'overview', label: fr ? 'Documents expirés' : 'Expired records', count: summary.value?.expired, section: 'files' },
-        { key: 'overview', label: fr ? 'Expirations (90 jours)' : 'Expiring in 90 days', count: summary.value?.expiring90, section: 'files' },
-        { key: 'clearance', label: fr ? 'Dossiers non validés' : 'Not cleared to transact', count: clearance.value?.notCleared?.length, section: 'files' },
-        { key: 'risk', label: fr ? 'Dossiers à risque' : 'Files at risk (missing gate)', count: risk.value?.files?.length, section: 'files' },
+        { key: 'overview', label: fr ? 'Documents expirés' : 'Expired records', count: summary.value?.expired, section: 'files', filter: 'expiring' },
+        { key: 'overview', label: fr ? 'Expirations (90 jours)' : 'Expiring in 90 days', count: summary.value?.expiring90, section: 'files', filter: 'expiring' },
+        { key: 'clearance', label: fr ? 'Dossiers non validés' : 'Not cleared to transact', count: clearance.value?.notCleared?.length, section: 'files', filter: 'not_cleared' },
+        { key: 'risk', label: fr ? 'Dossiers à risque' : 'Files at risk (missing gate)', count: risk.value?.files?.length, section: 'files', filter: 'risk' },
       ],
     },
     {
@@ -133,24 +136,28 @@ export function ComplianceCommandCenter({
           label: fr ? 'Correspondances ouvertes' : 'Open screening hits',
           count: summary.value?.openScreeningHits ?? amlItems.filter((a) => a.issue === 'screening_hit').length,
           section: 'files',
+          filter: 'aml',
         },
         {
           key: 'overview',
           label: fr ? 'Déclarations d’espèces dues' : 'Cash reports due',
           count: summary.value?.cashReportsDue ?? amlItems.filter((a) => a.issue === 'cash_unreported').length,
           section: 'files',
+          filter: 'aml',
         },
         {
           key: 'risk',
           label: fr ? 'Échecs vérif. identité' : 'Failed ID checks',
           count: amlItems.filter((a) => a.issue === 'id_failed').length,
           section: 'files',
+          filter: 'aml',
         },
         {
           key: 'overview',
           label: fr ? 'Retraits consentement (30j)' : 'Consent withdrawals (30d)',
           count: summary.value?.withdrawals30d,
           section: 'files',
+          filter: 'aml',
         },
       ],
     },
@@ -162,49 +169,56 @@ export function ComplianceCommandCenter({
           label: fr ? 'Gels juridiques ouverts' : 'Active legal holds',
           count: retention.value?.summary?.held ?? summary.value?.openHolds ?? holdItems.length,
           section: 'files',
+          filter: 'retention',
         },
         {
           key: 'retention',
           label: fr ? 'Conservation échue (examen)' : 'Past retention (due review)',
           count: retention.value?.summary?.due,
           section: 'files',
+          filter: 'retention',
         },
         {
           key: 'retention',
           label: fr ? 'Échéance dans 12 mois' : 'Retention due in 12m',
           count: retention.value?.summary?.dueWithin12Months,
           section: 'files',
+          filter: 'retention',
         },
         {
           key: 'audit',
           label: fr ? 'Missions d’audit actives' : 'Active audit engagements',
           count: auditItems.filter((e) => e.status === 'active' || e.status === 'open' || e.status === 'invited').length,
           section: 'files',
+          filter: 'retention',
         },
       ],
     },
     {
       title: fr ? 'Intégration et contrats' : 'Onboarding & Carrier Contracting',
       cards: [
-        { key: 'onboarding', label: fr ? 'Rapports en retard' : 'Overdue self-reports', count: onboarding.value?.selfReports?.overdue, section: 'onboarding' },
-        { key: 'onboarding', label: fr ? 'Contrôles périodiques en retard' : 'Overdue rechecks', count: onboarding.value?.rechecks?.overdue, section: 'onboarding' },
+        { key: 'onboarding', label: fr ? 'Rapports en retard' : 'Overdue self-reports', count: onboarding.value?.selfReports?.overdue, section: 'onboarding', filter: 'overdue' },
+        { key: 'onboarding', label: fr ? 'Contrôles périodiques en retard' : 'Overdue rechecks', count: onboarding.value?.rechecks?.overdue, section: 'onboarding', filter: 'overdue' },
         {
           key: 'carriers',
           label: fr ? 'Dossiers assureurs' : 'Carrier contract cases',
           count: Array.isArray(carriers.value) ? carriers.value.length : carriers.value?.contracts?.length,
           section: 'carriers',
+          filter: 'applications',
         },
         {
           key: 'webhooks',
           label: fr ? 'Webhooks en quarantaine' : 'Quarantined webhooks',
           count: quarantinedReceipts.length,
           section: 'carriers',
+          filter: 'actions',
         },
         {
           key: 'notifications',
           label: fr ? 'Alertes conformité actives' : 'Active compliance alerts',
           count: notifAlerts.length,
           section: 'files',
+          filter: 'review',
         },
       ],
     },
@@ -263,7 +277,7 @@ export function ComplianceCommandCenter({
                     type="button"
                     class="hstat"
                     key={c.label}
-                    onClick={() => onNavigate(c.section)}
+                    onClick={() => onNavigate(c.section, c.filter)}
                     aria-label={`${c.label}, ${display}`}
                   >
                     <b>{display}</b>
@@ -287,7 +301,7 @@ export function ComplianceCommandCenter({
                   : 'Open screening hits, failed identity checks, or cash transactions awaiting regulatory report reference.'}
               </p>
             </div>
-            <button class="btn" type="button" onClick={() => onNavigate('files')}>
+            <button class="btn" type="button" onClick={() => onNavigate('files', 'aml')}>
               {fr ? 'Examiner dans les dossiers' : 'Review in broker files'}
             </button>
           </div>
@@ -305,7 +319,7 @@ export function ComplianceCommandCenter({
                     {a.overdue ? ` · ${fr ? 'EN RETARD (> 15 jours)' : 'OVERDUE (> 15 days)'}` : ''}
                   </div>
                 </div>
-                <button class="btn" type="button" onClick={() => onNavigate('files')} style={{ padding: '4px 10px', fontSize: '12px' }}>
+                <button class="btn" type="button" onClick={() => onNavigate('files', 'aml')} style={{ padding: '4px 10px', fontSize: '12px' }}>
                   {fr ? 'Voir dossier' : 'Open file'}
                 </button>
               </div>
@@ -327,7 +341,7 @@ export function ComplianceCommandCenter({
                   : 'Insurer events quarantined upon receipt. Independent compliance review and adjudication required before carrier reconciliation.'}
               </p>
             </div>
-            <button class="btn" type="button" onClick={() => onNavigate('carriers')}>
+            <button class="btn" type="button" onClick={() => onNavigate('carriers', 'actions')}>
               {fr ? 'Traiter la quarantaine' : 'Review in carrier workspace'}
             </button>
           </div>
@@ -348,7 +362,7 @@ export function ComplianceCommandCenter({
                 <button
                   class="btn"
                   type="button"
-                  onClick={() => onNavigate('carriers')}
+                  onClick={() => onNavigate('carriers', 'actions')}
                   style={{ padding: '4px 10px', fontSize: '12px' }}
                 >
                   {fr ? 'Examiner' : 'Review'}
@@ -389,7 +403,7 @@ export function ComplianceCommandCenter({
       <div class="obcard" style={{ marginTop: '16px' }}>
         <h3>{fr ? 'Accès rapide aux postes opérationnels' : 'Quick Access to Operational Workspaces'}</h3>
         <div class="obrow" style={{ marginTop: '10px' }}>
-          <button class="btn" type="button" onClick={() => onNavigate('files')}>
+          <button class="btn" type="button" onClick={() => onNavigate('files', 'all')}>
             {fr ? 'Dossiers et pièces justificatives' : 'Broker files and evidence'}
           </button>
           <button class="btn" type="button" onClick={() => onNavigate('onboarding')}>

@@ -230,3 +230,34 @@ test('truthful Retention & Holds aggregation: active legal hold surfaces in rete
   assert.equal(overview.status, 200);
   assert.ok(overview.json.openHolds >= 1, 'overview.openHolds reflects active hold');
 });
+
+test('compliance expiring items: /v1/compliance/expiring returns items for authorized compliance officer', async () => {
+  // Add a licence to brokerId
+  await call(ADMIN, 'POST', `/v1/compliance/partners/${brokerId}/items`, {
+    kind: 'licence',
+    label: 'General Agent Licence',
+    number: 'ON-123456',
+    jurisdiction: 'ON',
+    lines: ['life', 'accident_sickness'],
+    expiresOn: '2026-11-15',
+  });
+
+  const expiring = await call(COMPLIANCE, 'GET', '/v1/compliance/expiring?days=90');
+  assert.equal(expiring.status, 200);
+  assert.ok(Array.isArray(expiring.json.items), 'items array returned');
+  const item = expiring.json.items.find((i: any) => i.nodeId === brokerId);
+  assert.ok(item, 'newly added licence found in expiring items');
+  assert.equal(item.kind, 'licence');
+  assert.equal(typeof item.daysLeft, 'number');
+});
+
+test('nodeId format validation: non-uuid nodeId like "cases" is rejected with 400 bad request', async () => {
+  const bad = await call(COMPLIANCE, 'GET', '/v1/compliance/partners/cases');
+  assert.equal(bad.status, 400);
+  assert.ok(bad.json?.error?.message?.includes('must match format "uuid"') || bad.json?.message?.includes('must match format "uuid"'));
+
+  // Valid UUID format that does not exist returns 404
+  const nonexistent = await call(COMPLIANCE, 'GET', '/v1/compliance/partners/00000000-0000-0000-0000-000000000000');
+  assert.equal(nonexistent.status, 404);
+});
+

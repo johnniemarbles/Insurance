@@ -153,6 +153,26 @@ export function registerComplianceRoutes(app: FastifyInstance, deps: AppDeps): v
     });
   });
 
+  app.get('/v1/compliance/expiring', { schema: { querystring: { type: 'object', properties: { days: { type: 'integer', minimum: 0, maximum: 365 } } } } }, async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const rawDays = (req.query as { days?: number | string }).days;
+    const days = typeof rawDays === 'number' ? rawDays : (rawDays ? parseInt(String(rawDays), 10) : 90);
+    return run(ctx, async (tx) => {
+      const rows = (await tx.query<{ itemId: string; nodeId: string; name: string; kind: string; label: string; expiresOn: string; daysLeft: number }>(
+        `SELECT i.id AS "itemId", i.node_id AS "nodeId", n.name, i.kind, i.label,
+                i.expires_on::text AS "expiresOn",
+                (i.expires_on - current_date)::int AS "daysLeft"
+           FROM compliance_items i
+           JOIN org_nodes n ON n.id = i.node_id
+          WHERE n.type = 'partner' AND n.is_active AND org_node_at_or_below(n.tenant_id, n.id)
+            AND i.expires_on IS NOT NULL AND i.expires_on <= current_date + ($1)::int
+          ORDER BY i.expires_on ASC LIMIT 500`,
+        [Number.isFinite(days) ? days : 90],
+      )).rows;
+      return { items: rows };
+    });
+  });
+
   app.get('/v1/compliance/partners/:nodeId', { schema: { params: { type: 'object', properties: { nodeId: uuid } } } }, async (req) => {
     const { ctx } = await deps.authenticate(req);
     const { nodeId } = req.params as { nodeId: string };

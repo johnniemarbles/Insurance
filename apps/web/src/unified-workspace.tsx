@@ -483,7 +483,7 @@ export function UnifiedWorkspace({
                     class="pii-workspace-summary-card"
                     role="button"
                     tabIndex={0}
-                    onClick={() => go('compliance', 'cases')}
+                    onClick={() => go('compliance', 'dashboard')}
                   >
                     <span class={`pii-workspace-summary-num ${dashboard.value.summary.complianceAlerts > 0 ? 'bad' : ''}`}>
                       {dashboard.value.summary.complianceAlerts}

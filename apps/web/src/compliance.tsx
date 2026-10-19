@@ -95,28 +95,44 @@ const SEC = {
   'fr-CA': { files: 'Dossiers', onb: 'Intégration', carriers: 'Contrats assureurs', label: 'Sections de conformité' },
 };
 
-const isSection = (id?: string): id is 'dashboard' | 'files' | 'onboarding' | 'carriers' =>
-  id === 'dashboard' || id === 'files' || id === 'onboarding' || id === 'carriers';
+const isUuid = (id?: string | null): id is string =>
+  typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+const normalizeSection = (id?: string | null): 'dashboard' | 'files' | 'onboarding' | 'carriers' | null => {
+  if (!id) return null;
+  const s = id.toLowerCase().trim();
+  if (s === 'dashboard' || s === 'overview') return 'dashboard';
+  if (s === 'files' || s === 'partners') return 'files';
+  if (s === 'onboarding') return 'onboarding';
+  if (s === 'carriers' || s === 'cases' || s === 'contracting' || s === 'quarantine') return 'carriers';
+  return null;
+};
 
 export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }: { call: Call; locale: Locale; isHeadOffice: boolean; go: (page: string, id?: string) => void; host?: HostOptions; openId?: string }) {
-  const [open, setOpen] = useState<string | null>(isSection(openId) ? null : (openId ?? null));
+  const [open, setOpen] = useState<string | null>(isUuid(openId) ? openId : null);
   // Null while the account's role is loading. Compliance officers get the onboarding dashboard as a second section; partners see their own onboarding at the top.
   const [officer, setOfficer] = useState<boolean | null>(null);
   const [section, setSection] = useState<'dashboard' | 'files' | 'onboarding' | 'carriers'>(
-    isSection(openId) ? openId : 'dashboard'
+    normalizeSection(openId) ?? (isUuid(openId) ? 'files' : 'dashboard')
   );
+  const [fileFilter, setFileFilter] = useState<string>('all');
   // A branch manager sees its partners' onboarding progress (steps and status only) above the list.
   const [manager, setManager] = useState(false);
   // Assigned staff see the same board with analytics only (plan v7, section 6).
   const [staff, setStaff] = useState(false);
   useEffect(() => { void call('GET', '/v1/onboarding/mine').then((r) => { setOfficer(r.officer === true); setManager(r.branchManager === true); setStaff(r.staff === true); }, () => setOfficer(false)); }, [call]);
   useEffect(() => {
-    if (isSection(openId)) {
-      setSection(openId);
-      setOpen(null);
-    } else if (openId) {
+    if (isUuid(openId)) {
       setOpen(openId);
       setSection('files');
+    } else {
+      setOpen(null);
+      const targetSec = normalizeSection(openId);
+      if (targetSec) {
+        setSection(targetSec);
+      } else if (!openId) {
+        setSection('dashboard');
+      }
     }
   }, [openId]);
 
@@ -134,12 +150,12 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }:
       <button role="tab" aria-selected={section === 'carriers'} onClick={() => { setSection('carriers'); setOpen(null); }}>{s.carriers}</button>
     </div>
   ) : undefined;
-  if (officer && section === 'dashboard') return <div class="obwrap">{tabs}<ComplianceCommandCenter call={call} locale={locale} onNavigate={(target) => { setSection(target); setOpen(null); }} /></div>;
+  if (officer && section === 'dashboard') return <div class="obwrap">{tabs}<ComplianceCommandCenter call={call} locale={locale} onNavigate={(target, filter) => { setSection(target); setOpen(null); if (filter) setFileFilter(filter); }} /></div>;
   if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
   if (officer && section === 'carriers') return <div class="obwrap">{tabs}<CarrierReviewPanel call={call} locale={locale} /></div>;
   const own = officer === false ? <PartnerOnboarding call={call} locale={locale} embedded /> : null;
   const lead = officer === true ? <><AssistantPanel call={call} locale={locale} /><DeadlinesPanel call={call} locale={locale} /></> : undefined;
-  const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} switchable={officer === true} openFile={setOpen} host={host} extra={panels} tabs={tabs} lead={lead} />;
+  const body = open ? <FileView call={call} locale={locale} nodeId={open} ho={isHeadOffice} back={() => setOpen(null)} /> : <ListView call={call} locale={locale} ho={isHeadOffice} switchable={officer === true} openFile={setOpen} host={host} extra={panels} tabs={tabs} lead={lead} initialTab={fileFilter} onTabChange={setFileFilter} />;
   const board = (manager || staff) && officer === false ? <div class="obwrap"><ManagerProgressBoard call={call} locale={locale} /></div> : null;
   return <>{own}{board}{body}</>;
 }
@@ -249,13 +265,17 @@ function FilesAtRisk({ call, locale }: { call: Call; locale: Locale; go: (page: 
   );
 }
 
-function ListView({ call, locale, ho, openFile, host, extra, tabs, lead, switchable }: { call: Call; locale: Locale; ho: boolean; switchable?: boolean; openFile: (id: string) => void; host?: HostOptions; extra?: ComponentChildren; tabs?: ComponentChildren; lead?: ComponentChildren }) {
+function ListView({ call, locale, ho, openFile, host, extra, tabs, lead, switchable, initialTab, onTabChange }: { call: Call; locale: Locale; ho: boolean; switchable?: boolean; openFile: (id: string) => void; host?: HostOptions; extra?: ComponentChildren; tabs?: ComponentChildren; lead?: ComponentChildren; initialTab?: string; onTabChange?: (tab: string) => void }) {
   const x = X[locale];
   const base = ho ? '/v1/ho' : '/v1/compliance';
   const [rows, setRows] = useState<any[] | null>(null);
   const [exp, setExp] = useState<any[]>([]);
+  const [clearance, setClearance] = useState<{ notCleared: { nodeId: string; name: string; reasons: string[] }[] } | null>(null);
   const [err, setErr] = useState('');
-  const [tab, setTab] = useState<'review' | 'all' | 'expiring' | 'companies'>(ho ? 'review' : 'all');
+  const [tab, setTab] = useState<'review' | 'all' | 'expiring' | 'not_cleared' | 'companies'>(() => {
+    if (initialTab === 'expiring' || initialTab === 'not_cleared' || initialTab === 'review') return initialTab;
+    return ho ? 'review' : 'all';
+  });
   const [cos, setCos] = useState<any[]>([]);
   const [coName, setCoName] = useState(''); const [coMail, setCoMail] = useState(''); const [coErr, setCoErr] = useState('');
   const loadCos = () => call('GET', '/v1/ho/companies').then((r) => setCos(r.companies), () => undefined);
@@ -266,6 +286,13 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs, lead, switcha
   const multi = ho && regions.length > 1;
   const here = host?.region ?? regions[0]?.id;
   const hereLabel = regions.find((r) => r.id === here)?.label ?? '';
+
+  useEffect(() => {
+    if (initialTab && (initialTab === 'expiring' || initialTab === 'not_cleared' || initialTab === 'review' || initialTab === 'all')) {
+      setTab(initialTab);
+    }
+  }, [initialTab]);
+
   // A global admin starts on All countries. Coming from a click there (a country or a company) skips straight to that country.
   const [scope, setScope] = useState<'all' | 'country'>(() => {
     if (!multi) return 'country';
@@ -303,7 +330,9 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs, lead, switcha
   const strip = multi && host ? <ConnectStrip host={host} locale={locale} /> : null;
   useEffect(() => {
     call('GET', `${base}/partners`).then((r) => setRows(r.partners), (e) => setErr((e as Error).message));
-    if (ho) { call('GET', '/v1/ho/expiring?days=60').then((r) => setExp(r.items), () => undefined); call('GET', '/v1/ho/insights').then((r) => setIns(r as Insights), () => undefined); void loadCos(); }
+    call('GET', `${ho ? '/v1/ho' : '/v1/compliance'}/expiring?days=90`).then((r) => setExp(r.items ?? []), () => undefined);
+    call('GET', '/v1/compliance/clearance').then(setClearance, () => undefined);
+    if (ho) { call('GET', '/v1/ho/insights').then((r) => setIns(r as Insights), () => undefined); void loadCos(); }
   }, [call]);
   const shown = useMemo(() => (rows ?? []).filter((r) => (tab !== 'review' || r.status === 'submitted') && `${r.name} ${r.company ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())), [rows, tab, q]);
   if (multi && scope === 'all' && host) return <div class="home"><div class="hwelcome"><div><h2 style={{ margin: 0 }}>{x.headTitle}</h2><span class="muted">{x.chooseSub}</span></div></div>{scopeBar}{strip}<AllCountries host={host} locale={locale} open={openCountry} /></div>;
@@ -325,10 +354,26 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs, lead, switcha
           <div class="hstat"><b>{rows.length}</b><span>{x.hPartners}</span>{ins && <Trend now={rows.length} before={ins.prev?.data.partners} since={ins.prev?.day} locale={locale} />}</div>
           <div class="hstat"><b>{cos.length}</b><span>{x.hCompanies}</span>{ins && <Trend now={cos.length} before={ins.prev?.data.companies} since={ins.prev?.day} locale={locale} />}</div>
         </div>
-        <div class="seg" role="tablist" aria-label={x.title} style={{ margin: '8px 0' }}>
-          {([['review', x.review], ['all', x.all], ['expiring', x.expiring], ...(multi ? [] : [['companies', x.companies] as const])] as const).map(([k, l]) => <button role="tab" aria-selected={tab === k} onClick={() => setTab(k as typeof tab)}>{l}</button>)}
-        </div>
       </>}
+      <div class="seg" role="tablist" aria-label={x.title} style={{ margin: '8px 0' }}>
+        <button role="tab" aria-selected={tab === 'all'} onClick={() => { setTab('all'); onTabChange?.('all'); }}>
+          {x.all} ({rows.length})
+        </button>
+        <button role="tab" aria-selected={tab === 'review'} onClick={() => { setTab('review'); onTabChange?.('review'); }}>
+          {x.review} ({waiting})
+        </button>
+        <button role="tab" aria-selected={tab === 'expiring'} onClick={() => { setTab('expiring'); onTabChange?.('expiring'); }}>
+          {x.expiring} ({exp.length})
+        </button>
+        <button role="tab" aria-selected={tab === 'not_cleared'} onClick={() => { setTab('not_cleared'); onTabChange?.('not_cleared'); }}>
+          {locale === 'fr-CA' ? 'Non autorisés' : 'Not cleared'} ({clearance?.notCleared?.length ?? 0})
+        </button>
+        {ho && !multi && (
+          <button role="tab" aria-selected={tab === 'companies'} onClick={() => { setTab('companies'); onTabChange?.('companies'); }}>
+            {x.companies} ({cos.length})
+          </button>
+        )}
+      </div>
       {tab === 'companies' ? (
         <section class="hcard">
           <h3>{multi ? x.coIn(hereLabel) : x.newCo}</h3>
@@ -341,9 +386,26 @@ function ListView({ call, locale, ho, openFile, host, extra, tabs, lead, switcha
           {cos.length === 0 && <p class="muted">{x.coNone}</p>}
           {cos.map((c) => <div class="erow" key={c.id}><span><b>{c.name}</b> <small class="muted">· {c.adminEmail}</small></span><span class="spacer" /><small class="muted">{x.coStat(c.partners, c.submitted, c.approved)}</small><span class={`chip ${c.adminStatus === 'invited' ? 'warn' : 'ok'}`}>{c.adminStatus === 'invited' ? x.invited : x.active}</span></div>)}
         </section>
+      ) : tab === 'not_cleared' ? (
+        <section class="hcard">
+          {(!clearance || clearance.notCleared.length === 0) && (
+            <div class="calm">
+              <b>{locale === 'fr-CA' ? 'Tous les partenaires sont autorisés' : 'All partners cleared'}</b>
+              {locale === 'fr-CA' ? 'Aucun partenaire n’a de blocage de conformité actif.' : 'All partners are cleared to transact.'}
+            </div>
+          )}
+          {(clearance?.notCleared ?? []).map((nc) => (
+            <button class="hrow" key={nc.nodeId} onClick={() => openFile(nc.nodeId)}>
+              <span class="rname">{nc.name}</span>
+              <span style={{ color: 'var(--bad, #b3261e)', fontSize: '13px', fontWeight: 500 }}>
+                {nc.reasons.map((r) => CL[r]?.[locale] ?? r).join(' · ')}
+              </span>
+            </button>
+          ))}
+        </section>
       ) : tab === 'expiring' ? (
         <section class="hcard">{exp.length === 0 && <div class="calm"><b>{x.calmExp}</b>{x.calmExpSub}</div>}
-          {exp.map((i) => <button class="hrow" key={i.itemId} onClick={() => openFile(i.nodeId)}><span class="rname">{i.name} <small class="muted">· {i.company}</small></span><small class="muted">{i.label}</small><span class={`due ${tone(i.daysLeft)}`}>{i.expiresOn} · {x.left(i.daysLeft)}</span></button>)}
+          {exp.map((i) => <button class="hrow" key={i.itemId} onClick={() => openFile(i.nodeId)}><span class="rname">{i.name}{i.company ? <small class="muted"> · {i.company}</small> : null}</span><small class="muted">{i.kind === 'licence' ? (locale === 'fr-CA' ? 'Permis' : 'Licence') : 'E&O'} · {i.label}</small><span class={`due ${tone(i.daysLeft)}`}>{i.expiresOn} · {x.left(i.daysLeft)}</span></button>)}
         </section>
       ) : (
         <section class="hcard">
@@ -387,7 +449,14 @@ function FileView({ call, locale, nodeId, ho, back }: { call: Call; locale: Loca
   const load = () => call('GET', base).then(setF, (e) => setErr((e as Error).message));
   useEffect(() => { void load(); }, [nodeId]);
   const act = async (fn: () => Promise<unknown>, ok = '') => { setErr(''); setMsg(''); try { await fn(); setMsg(ok); await load(); } catch (e) { setErr((e as Error).message); } };
-  if (!f) return err ? <ErrorBar msg={err} retry={x.retry} /> : <div class="msg">…</div>;
+  if (!f) {
+    return (
+      <div class="home">
+        <div class="erow"><button class="link" onClick={back}>← {x.back}</button></div>
+        {err ? <ErrorBar msg={err} retry={x.retry} /> : <div class="msg">…</div>}
+      </div>
+    );
+  }
   const p = f.profile;
   const locked = ho; // head office reads and reviews; it does not edit a partner's file
   const stepText = (s: Step) => (s.hint === 'limit_low' ? x.limitLow(money(f.eoMin, locale)) : '');
