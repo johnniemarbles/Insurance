@@ -1,9 +1,21 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { Locale } from './types.ts';
+import {
+  type Module,
+  type DashboardMetric,
+  type DashboardItem,
+  type DashboardCard,
+  type ExecutiveSummary,
+  type WorkQueueItem,
+  type UnifiedDashboardResponse,
+  type DashboardFocus,
+  combineWorkspaceDashboards,
+  filterWorkQueueByFocus,
+  filterCardsByFocus,
+} from './workspace-aggregation.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
-type Module = 'crm' | 'compliance' | 'training' | 'learning' | 'audit' | 'onboarding' | 'carriers' | 'commercial' | 'notifications';
 
 interface Context {
   version: number;
@@ -16,72 +28,21 @@ interface Context {
   scopes: { id: string; name: string }[];
 }
 
-export interface DashboardMetric {
-  id: string;
-  label: string;
-  value: string | number;
-  sub?: string;
-  tone?: 'good' | 'warn' | 'bad' | 'neutral';
-}
-
-export interface DashboardItem {
-  id: string;
-  title: string;
-  subtitle?: string;
-  status?: string;
-  date?: string;
-  target?: { page: string; routeId?: string };
-}
-
-export interface DashboardCard {
-  id: string;
-  module: Module;
-  title: string;
-  description?: string;
-  status: 'ready' | 'empty' | 'forbidden' | 'unavailable';
-  metrics: DashboardMetric[];
-  items?: DashboardItem[];
-  drilldown: {
-    page: string;
-    routeId?: string;
-    label: string;
-  };
-  allowedActions: string[];
-}
-
-export interface ExecutiveSummary {
-  activeCarrierContracts: number;
-  pendingApprovals: number;
-  complianceAlerts: number;
-  carrierReceipts: number;
-  quarantinedReceipts: number;
-}
-
-export interface WorkQueueItem {
-  id: string;
-  category: 'webhook_review' | 'contract_approval' | 'audit_exception' | 'compliance_alert' | 'onboarding_review' | 'task' | 'coursework' | 'statement_reconciliation';
-  title: string;
-  subtitle?: string;
-  role: string;
-  priority: 'high' | 'medium' | 'normal';
-  date?: string;
-  target: { page: string; routeId?: string };
-  actionLabel?: string;
-}
-
-interface UnifiedDashboardResponse {
-  version: number;
-  tenantId: string;
-  country: 'CA' | 'US';
-  perspective: string;
-  roles: string[];
-  activeNodeIds: string[];
-  isTenantAdmin: boolean;
-  isHeadOffice: boolean;
-  summary?: ExecutiveSummary;
-  workQueue?: WorkQueueItem[];
-  cards: DashboardCard[];
-}
+export type {
+  Module,
+  DashboardMetric,
+  DashboardItem,
+  DashboardCard,
+  ExecutiveSummary,
+  WorkQueueItem,
+  UnifiedDashboardResponse,
+  DashboardFocus,
+};
+export {
+  combineWorkspaceDashboards,
+  filterWorkQueueByFocus,
+  filterCardsByFocus,
+};
 
 type Load<T> =
   | { state: 'loading' }
@@ -91,6 +52,7 @@ type Load<T> =
   | { state: 'unavailable' };
 
 const pending = <T,>(): Load<T> => ({ state: 'loading' });
+
 
 const workspaceNames: Record<Locale, Record<string, string>> = {
   en: {
@@ -338,13 +300,12 @@ export function UnifiedWorkspace({
   go,
   locale,
   name,
-  legacyHome,
 }: {
   call: Call;
   go: (page: string, id?: string) => void;
   locale: Locale;
   name: string;
-  legacyHome?: ComponentChildren;
+  legacyHome?: ComponentChildren; // Kept for caller compatibility; no longer rendered twice.
 }) {
   const fr = locale === 'fr-CA';
   const roleNames = fr ? workspaceNames['fr-CA'] : workspaceNames.en;
@@ -352,7 +313,7 @@ export function UnifiedWorkspace({
   const [active, setActive] = useState('');
   const [dashboard, setDashboard] = useState<Load<UnifiedDashboardResponse>>(pending());
   const [generation, setGeneration] = useState(0);
-  const [homeRevision, setHomeRevision] = useState(0);
+  const [focus, setFocus] = useState<'all' | 'executive' | 'compliance'>('all');
 
   // 1. Initial Workspace Discovery
   useEffect(() => {
@@ -362,11 +323,7 @@ export function UnifiedWorkspace({
       (value: Context) => {
         if (cancelled) return;
         setContext({ state: 'ready', value });
-        setActive(previous =>
-          value.roles.includes(previous)
-            ? previous
-            : (['admin', 'manager', 'compliance', 'auditor', 'trainer', 'partner', 'learner', 'staff'].find(r => value.roles.includes(r)) ?? 'staff')
-        );
+        setActive(value.roles.includes('admin') ? 'admin' : value.roles.includes('ho') ? 'ho' : value.roles.includes('compliance') ? 'compliance' : (value.roles[0] ?? 'learner'));
       },
       (e: Error) => {
         if (!cancelled) setContext({ state: 'error', message: e.message });
@@ -383,9 +340,17 @@ export function UnifiedWorkspace({
     let cancelled = false;
     setDashboard(pending());
 
-    call('GET', `/v1/workspace/dashboard?perspective=${encodeURIComponent(active)}&days=30`).then(
-      (data: UnifiedDashboardResponse) => {
-        if (!cancelled) setDashboard({ state: 'ready', value: data });
+    const roles = context.value.roles;
+    const perspectives = [active];
+    // Compliance and finance data are separately requested only when the account
+    // has a matching authorized role. Every endpoint rechecks server permissions.
+    if (roles.includes('compliance') && active !== 'compliance') perspectives.push('compliance');
+    if ((roles.includes('admin') || roles.includes('finance')) && active !== 'finance') perspectives.push('finance');
+    Promise.all(perspectives.map(p =>
+      call('GET', `/v1/workspace/dashboard?perspective=${encodeURIComponent(p)}&days=30`) as Promise<UnifiedDashboardResponse>
+    )).then(
+      (data) => {
+        if (!cancelled) setDashboard({ state: 'ready', value: combineWorkspaceDashboards(data) });
       },
       (e: Error & { status?: number }) => {
         if (!cancelled) {
@@ -426,7 +391,7 @@ export function UnifiedWorkspace({
   if (context.state !== 'ready') return null;
 
   const c = context.value;
-  const activeRoleName = roleNames[active] ?? (fr ? 'Personnel' : 'Personal');
+  const activeRoleName = c.roles.includes('compliance') && (c.roles.includes('admin') || c.isTenantAdmin) ? (fr ? 'Direction et conformité' : 'Executive + Compliance') : (roleNames[active] ?? (fr ? 'Personnel' : 'Personal'));
   const scopeNames = c.scopes.map(s => s.name).join(', ') || (fr ? 'Espace autorisé' : 'Authorized workspace');
 
   return (
@@ -437,7 +402,7 @@ export function UnifiedWorkspace({
             {c.country} · {scopeNames}
           </span>
           <h1 class="pii-workspace-title">
-            {fr ? 'Mon espace de travail' : 'My workspace'}
+            {fr ? 'Centre de pilotage' : 'Command Center'}
             {name ? ', ' + name : ''}
           </h1>
           <p class="pii-workspace-subhead">
@@ -452,7 +417,7 @@ export function UnifiedWorkspace({
             type="button"
             onClick={() => {
               setGeneration(x => x + 1);
-              setHomeRevision(x => x + 1);
+              setFocus('all');
             }}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -463,25 +428,17 @@ export function UnifiedWorkspace({
         </div>
       </header>
 
-      {c.roles.length > 1 && (
-        <nav aria-label={fr ? 'Perspective de travail' : 'Workspace perspective'} class="pii-workspace-roles">
-          <span class="pii-workspace-roles-label">{fr ? 'Perspective :' : 'Perspective:'}</span>
-          <div class="pii-workspace-roles-group" role="tablist">
-            {c.roles.map(r => (
-              <button
-                key={r}
-                role="tab"
-                class={`pii-workspace-role-btn ${r === active ? 'active' : ''}`}
-                aria-pressed={r === active}
-                aria-selected={r === active}
-                onClick={() => setActive(r)}
-              >
-                {roleNames[r] ?? r}
-              </button>
-            ))}
-          </div>
-        </nav>
-      )}
+      <nav class="pii-workspace-roles" aria-label={fr ? 'Filtrer le tableau de bord' : 'Dashboard focus'}>
+        <span class="pii-workspace-roles-label">{fr ? 'Vue :' : 'Focus:'}</span>
+        <div class="pii-workspace-roles-group">
+          {(['all', 'executive', 'compliance'] as const).filter(mode => mode !== 'compliance' || c.roles.includes('compliance') || c.isTenantAdmin).map(mode => (
+            <button type="button" key={mode} class={`pii-workspace-role-btn ${focus === mode ? 'active' : ''}`}
+              aria-pressed={focus === mode} onClick={() => setFocus(mode)}>
+              {mode === 'all' ? (fr ? 'Tout' : 'All responsibilities') : mode === 'executive' ? (fr ? 'Direction' : 'Executive') : (fr ? 'Conformité' : 'Compliance')}
+            </button>
+          ))}
+        </div>
+      </nav>
 
       {dashboard.state === 'loading' ? (
         <div class="pii-workspace-state" role="status" style={{ minHeight: '180px' }}>
@@ -495,140 +452,140 @@ export function UnifiedWorkspace({
         <div class="pii-workspace-state err" role="alert">
           <span>{fr ? `Erreur : ${dashboard.message}` : `Error: ${dashboard.message}`}</span>
         </div>
-      ) : dashboard.state === 'ready' ? (
-        <>
-          {dashboard.value.summary && (
-            <section class="pii-workspace-summary-strip" aria-label={fr ? 'Sommaire de direction' : 'Executive Summary'}>
-              <div class="pii-workspace-summary-grid">
-                <div
-                  class="pii-workspace-summary-card"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => go('compliance', 'carriers')}
-                >
-                  <span class="pii-workspace-summary-num">{dashboard.value.summary.activeCarrierContracts}</span>
-                  <span class="pii-workspace-summary-lbl">{fr ? 'Contrats / nominations actifs' : 'Active Contracts / Appointments'}</span>
-                </div>
-                <div
-                  class="pii-workspace-summary-card"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => go('compliance', 'carriers')}
-                >
-                  <span class="pii-workspace-summary-num">{dashboard.value.summary.pendingApprovals}</span>
-                  <span class="pii-workspace-summary-lbl">{fr ? 'Approbations en attente' : 'Pending Approvals'}</span>
-                </div>
-                <div
-                  class="pii-workspace-summary-card"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => go('compliance', 'files')}
-                >
-                  <span class={`pii-workspace-summary-num ${dashboard.value.summary.complianceAlerts > 0 ? 'warn' : ''}`}>
-                    {dashboard.value.summary.complianceAlerts}
-                  </span>
-                  <span class="pii-workspace-summary-lbl">{fr ? 'Alertes de conformité' : 'Compliance Alerts'}</span>
-                </div>
-                <div
-                  class="pii-workspace-summary-card"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => go('compliance', 'carriers')}
-                >
-                  <span class={`pii-workspace-summary-num ${dashboard.value.summary.quarantinedReceipts > 0 ? 'bad' : ''}`}>
-                    {dashboard.value.summary.quarantinedReceipts}
-                  </span>
-                  <span class="pii-workspace-summary-lbl">{fr ? 'Webhooks en quarantaine' : 'Quarantined Webhooks'}</span>
-                </div>
-                <div
-                  class="pii-workspace-summary-card"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => go('compliance', 'carriers')}
-                >
-                  <span class="pii-workspace-summary-num">{dashboard.value.summary.carrierReceipts}</span>
-                  <span class="pii-workspace-summary-lbl">{fr ? 'Reçus de webhook' : 'Carrier Webhook Receipts'}</span>
-                </div>
-              </div>
-            </section>
-          )}
+      ) : dashboard.state === 'ready' ? (() => {
+        const filteredWorkQueue = filterWorkQueueByFocus(dashboard.value.workQueue, focus);
+        const filteredCards = filterCardsByFocus(dashboard.value.cards, focus);
 
-          {Array.isArray(dashboard.value.workQueue) && dashboard.value.workQueue.length > 0 && (
-            <section class="pii-workspace-workqueue" aria-label={fr ? 'File de travail opérationnelle' : 'Operational Action Queue'}>
-              <div class="pii-workspace-workqueue-head">
-                <div class="pii-workspace-workqueue-title-row">
-                  <h2 class="pii-workspace-workqueue-title">
-                    {fr ? 'File de travail opérationnelle' : 'Operational Action Queue'}
-                  </h2>
-                  <span class="pii-workspace-workqueue-count">
-                    {dashboard.value.workQueue.length} {fr ? 'tâches à traiter' : 'items requiring action'}
-                  </span>
-                </div>
-                <p class="pii-workspace-workqueue-subhead">
-                  {fr
-                    ? 'Révisions prioritaires, approbations en attente et conformité nécessitant une intervention dans votre périmètre.'
-                    : 'Priority reviews, pending approvals, and compliance tasks requiring action within your authorized scope.'}
-                </p>
-              </div>
-              <div class="pii-workspace-workqueue-list">
-                {dashboard.value.workQueue.map(item => (
-                  <div key={item.id} class="pii-workspace-workqueue-item">
-                    <div class="pii-workspace-workqueue-main">
-                      <div class="pii-workspace-workqueue-tags">
-                        <span class={`pii-workspace-priority-tag ${item.priority}`}>
-                          {item.priority.toUpperCase()}
-                        </span>
-                        <span class="pii-workspace-role-tag">{item.role}</span>
-                        {item.date && (
-                          <span class="pii-workspace-date-tag">
-                            {new Date(item.date).toLocaleDateString(fr ? 'fr-CA' : 'en-CA')}
-                          </span>
-                        )}
-                      </div>
-                      <strong class="pii-workspace-workqueue-item-title">{item.title}</strong>
-                      {item.subtitle && <p class="pii-workspace-workqueue-item-sub">{item.subtitle}</p>}
-                    </div>
-                    <button
-                      type="button"
-                      class="pii-workspace-workqueue-btn"
-                      onClick={() => go(item.target.page, item.target.routeId)}
-                    >
-                      <span>{item.actionLabel || (fr ? 'Traiter' : 'Action')}</span>
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M5 12h14M12 5l7 7-7 7" />
-                      </svg>
-                    </button>
+        return (
+          <>
+            {dashboard.value.summary && (
+              <section class="pii-workspace-summary-strip" aria-label={fr ? 'Sommaire de direction' : 'Executive Summary'}>
+                <div class="pii-workspace-summary-grid">
+                  <div
+                    class="pii-workspace-summary-card"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => go('compliance', 'carriers')}
+                  >
+                    <span class="pii-workspace-summary-num">{dashboard.value.summary.activeCarrierContracts}</span>
+                    <span class="pii-workspace-summary-lbl">{fr ? 'Contrats / nominations actifs' : 'Active Contracts / Appointments'}</span>
                   </div>
+                  <div
+                    class="pii-workspace-summary-card"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => go('compliance', 'carriers')}
+                  >
+                    <span class="pii-workspace-summary-num">{dashboard.value.summary.pendingApprovals}</span>
+                    <span class="pii-workspace-summary-lbl">{fr ? 'Approbations en attente' : 'Pending Approvals'}</span>
+                  </div>
+                  <div
+                    class="pii-workspace-summary-card"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => go('compliance', 'cases')}
+                  >
+                    <span class={`pii-workspace-summary-num ${dashboard.value.summary.complianceAlerts > 0 ? 'bad' : ''}`}>
+                      {dashboard.value.summary.complianceAlerts}
+                    </span>
+                    <span class="pii-workspace-summary-lbl">{fr ? 'Alertes de conformité' : 'Compliance Alerts'}</span>
+                  </div>
+                  <div
+                    class="pii-workspace-summary-card"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => go('compliance', 'carriers')}
+                  >
+                    <span class={`pii-workspace-summary-num ${dashboard.value.summary.quarantinedReceipts > 0 ? 'bad' : ''}`}>
+                      {dashboard.value.summary.quarantinedReceipts}
+                    </span>
+                    <span class="pii-workspace-summary-lbl">{fr ? 'Webhooks en quarantaine' : 'Quarantined Webhooks'}</span>
+                  </div>
+                  <div
+                    class="pii-workspace-summary-card"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => go('compliance', 'carriers')}
+                  >
+                    <span class="pii-workspace-summary-num">{dashboard.value.summary.carrierReceipts}</span>
+                    <span class="pii-workspace-summary-lbl">{fr ? 'Reçus de webhook' : 'Carrier Webhook Receipts'}</span>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {filteredWorkQueue.length > 0 && (
+              <section class="pii-workspace-workqueue" aria-label={fr ? 'File de travail opérationnelle' : 'Operational Action Queue'}>
+                <div class="pii-workspace-workqueue-head">
+                  <div class="pii-workspace-workqueue-title-row">
+                    <h2 class="pii-workspace-workqueue-title">
+                      {fr ? 'File de travail opérationnelle' : 'Operational Action Queue'}
+                    </h2>
+                    <span class="pii-workspace-workqueue-count">
+                      {filteredWorkQueue.length} {fr ? 'tâches à traiter' : 'items requiring action'}
+                    </span>
+                  </div>
+                  <p class="pii-workspace-workqueue-subhead">
+                    {fr
+                      ? 'Révisions prioritaires, approbations en attente et conformité nécessitant une intervention dans votre périmètre.'
+                      : 'Priority reviews, pending approvals, and compliance tasks requiring action within your authorized scope.'}
+                  </p>
+                </div>
+                <div class="pii-workspace-workqueue-list">
+                  {filteredWorkQueue.map(item => (
+                    <div key={item.id} class="pii-workspace-workqueue-item">
+                      <div class="pii-workspace-workqueue-main">
+                        <div class="pii-workspace-workqueue-tags">
+                          <span class={`pii-workspace-priority-tag ${item.priority}`}>
+                            {item.priority.toUpperCase()}
+                          </span>
+                          <span class="pii-workspace-role-tag">{item.role}</span>
+                          {item.date && (
+                            <span class="pii-workspace-date-tag">
+                              {new Date(item.date).toLocaleDateString(fr ? 'fr-CA' : 'en-CA')}
+                            </span>
+                          )}
+                        </div>
+                        <strong class="pii-workspace-workqueue-item-title">{item.title}</strong>
+                        {item.subtitle && <p class="pii-workspace-workqueue-item-sub">{item.subtitle}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        class="pii-workspace-workqueue-btn"
+                        onClick={() => go(item.target.page, item.target.routeId)}
+                      >
+                        <span>{item.actionLabel || (fr ? 'Traiter' : 'Action')}</span>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 12h14M12 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {filteredCards.length > 0 ? (
+              <div class="pii-workspace-grid">
+                {filteredCards.map(card => (
+                  <CardPanel key={card.id} card={card} go={go} fr={fr} />
                 ))}
               </div>
-            </section>
-          )}
-
-          {dashboard.value.cards.length > 0 ? (
-            <div class="pii-workspace-grid">
-              {dashboard.value.cards.map(card => (
-                <CardPanel key={card.id} card={card} go={go} fr={fr} />
-              ))}
-            </div>
-          ) : (
-            <p class="pii-workspace-state">
-              {fr
-                ? 'Aucune carte d’activité n’est disponible pour ce rôle.'
-                : 'No activity cards are available for this role.'}
-            </p>
-          )}
-        </>
-      ) : (
+            ) : (
+              <p class="pii-workspace-state">
+                {fr
+                  ? 'Aucune carte d’activité n’est disponible pour ce filtre.'
+                  : 'No activity cards are available for this focus.'}
+              </p>
+            )}
+          </>
+        );
+      })() : (
         <p class="pii-workspace-state">
           {fr
             ? 'Sommaire d’activité non disponible pour le moment.'
             : 'Activity summary not available at this time.'}
         </p>
-      )}
-
-      {/* Preserve CRM Home for users with authorized CRM access */}
-      {c.roles.includes(active) && c.modules.crm && ['admin', 'manager', 'partner', 'staff'].includes(active) && (
-        <div key={homeRevision}>{legacyHome}</div>
       )}
 
       <p class="pii-workspace-footnote">
