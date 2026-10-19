@@ -89,6 +89,43 @@ test('carrier certifications: input validation & role authorization', async () =
     payload: { tier: 'non_existent_tier' },
   });
   assert.equal(invalidTierRes.statusCode, 422);
+
+  // 6. Certified tier without expiry date gets 422
+  const missingExpiryRes = await app.inject({
+    method: 'POST',
+    url: '/v1/compliance/carrier-certifications/ia-financial-group/tier',
+    payload: { tier: 'certified' },
+  });
+  assert.equal(missingExpiryRes.statusCode, 422);
+  assert.match(missingExpiryRes.json().error.message, /A finite certification expiry date is required/);
+
+  // 7. Certified tier with malformed expiry date gets 422
+  const malformedExpiryRes = await app.inject({
+    method: 'POST',
+    url: '/v1/compliance/carrier-certifications/ia-financial-group/tier',
+    payload: { tier: 'certified', tierExpiresOn: 'not-a-date' },
+  });
+  assert.equal(malformedExpiryRes.statusCode, 422);
+  assert.match(malformedExpiryRes.json().error.message, /A finite certification expiry date is required/);
+
+  // 8. Certified tier with past expiry date gets 422
+  const pastExpiryRes = await app.inject({
+    method: 'POST',
+    url: '/v1/compliance/carrier-certifications/ia-financial-group/tier',
+    payload: { tier: 'certified', tierExpiresOn: '2020-01-01' },
+  });
+  assert.equal(pastExpiryRes.statusCode, 422);
+  assert.match(pastExpiryRes.json().error.message, /Certification expiry must be a valid future date/);
+
+  // 9. Certified tier with today's expiry date gets 422 (must be strictly in the future)
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayExpiryRes = await app.inject({
+    method: 'POST',
+    url: '/v1/compliance/carrier-certifications/ia-financial-group/tier',
+    payload: { tier: 'certified', tierExpiresOn: todayStr },
+  });
+  assert.equal(todayExpiryRes.statusCode, 422);
+  assert.match(todayExpiryRes.json().error.message, /Certification expiry must be a valid future date/);
 });
 
 test('carrier certifications: authoritative registry database roundtrip and tenant isolation', async () => {
@@ -178,7 +215,7 @@ test('carrier certifications: authoritative registry database roundtrip and tena
     const prematureCertRes = await app.inject({
       method: 'POST',
       url: '/v1/compliance/carrier-certifications/ia-financial-group/tier',
-      payload: { tier: 'certified' },
+      payload: { tier: 'certified', tierExpiresOn: '2027-10-19' },
     });
     assert.equal(prematureCertRes.statusCode, 422);
     assert.match(prematureCertRes.json().error.message, /requires Gate 1 .* and Gate 2/);
@@ -218,7 +255,38 @@ test('carrier certifications: authoritative registry database roundtrip and tena
     assert.equal(certifiedIa.certifiedBy, userId);
     assert.ok(certifiedIa.certifiedAt);
 
-    // 9. Multi-tenant isolation: switch to another tenant
+    // 9. Query audit history: ia-financial-group has 3 records (Gate 1 insert, Gate 2 update, certified update)
+    const auditGet = await app.inject({
+      method: 'GET',
+      url: '/v1/compliance/carrier-certifications/ia-financial-group/audit',
+    });
+    assert.equal(auditGet.statusCode, 200);
+    const auditBody = auditGet.json();
+    assert.equal(auditBody.carrierId, 'ia-financial-group');
+    assert.equal(auditBody.history.length, 3);
+
+    // Latest audit record: tier promotion to certified (revision 3)
+    const recTier = auditBody.history[0];
+    assert.equal(recTier.revision, 3);
+    assert.equal(recTier.operation, 'UPDATE');
+    assert.equal(recTier.actorId, userId);
+    assert.equal(recTier.currentRecord.tier, 'certified');
+
+    // Middle audit record: Gate 2 verification (revision 2)
+    const recGate2 = auditBody.history[1];
+    assert.equal(recGate2.revision, 2);
+    assert.equal(recGate2.operation, 'UPDATE');
+    assert.equal(recGate2.actorId, userId);
+    assert.equal(recGate2.currentRecord.gate2_sandbox_certified, true);
+
+    // Initial audit record: Gate 1 creation (revision 1)
+    const recGate1 = auditBody.history[2];
+    assert.equal(recGate1.revision, 1);
+    assert.equal(recGate1.operation, 'INSERT');
+    assert.equal(recGate1.actorId, userId);
+    assert.equal(recGate1.currentRecord.gate1_legal_agreement, true);
+
+    // 10. Multi-tenant isolation: switch to another tenant
     authTenantId = '00000000-0000-0000-0000-000000000002';
     authUserId = '00000000-0000-0000-0000-000000000003';
     const isolatedGet = await app.inject({
@@ -229,6 +297,14 @@ test('carrier certifications: authoritative registry database roundtrip and tena
     assert.equal(isolatedIa.isAuthoritative, false, 'Tenant B must see uncertified default status');
     assert.equal(isolatedIa.currentTier, 'manual_portal');
     assert.equal(isolatedIa.gates.gate1LegalAgreement, false);
+
+    // Audit history must also be strictly isolated (Tenant B sees zero history)
+    const isolatedAuditGet = await app.inject({
+      method: 'GET',
+      url: '/v1/compliance/carrier-certifications/ia-financial-group/audit',
+    });
+    assert.equal(isolatedAuditGet.statusCode, 200);
+    assert.equal(isolatedAuditGet.json().history.length, 0, 'Tenant B must not see Tenant A audit history');
   } finally {
     await appPool.end();
     await owner.end();
