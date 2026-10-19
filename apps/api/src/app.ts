@@ -50,6 +50,7 @@ import { registerCarrierPreflightRoutes } from './routes-carrier-preflight.ts';
 import { registerCarrierProductRevocationRoutes } from './routes-carrier-product-revocation.ts';
 import { registerCarrierHoldRoutes } from './routes-carrier-holds.ts';
 import { registerCarrierBusinessStagingRoutes } from './routes-carrier-business-staging.ts';
+import { registerCommercialRoutes } from './routes-commercial.ts';
 import { registerExtensionRoutes } from './routes-extension.ts';
 import { registerOnboardingSignRoutes } from './routes-onboarding-sign.ts';
 import { registerOnboardingSelfReportRoutes } from './routes-onboarding-self-report.ts';
@@ -209,6 +210,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerCarrierProductRevocationRoutes(app, deps);
   registerCarrierHoldRoutes(app, deps);
   registerCarrierBusinessStagingRoutes(app, deps);
+  registerCommercialRoutes(app, deps);
   registerExtensionRoutes(app, deps);
   registerOnboardingSignRoutes(app, deps);
   registerOnboardingSelfReportRoutes(app, deps);
