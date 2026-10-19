@@ -884,7 +884,7 @@ test('Phase 13: Statement Deduplication, Immutable Approval Snapshots & Lock Tri
     assert.equal(splitRows[0].status, 'approved');
     assert.equal(splitRows[1].status, 'clawback');
 
-    // 6. Verify Line Item Uniqueness Constraint: duplicate split insert must fail
+    // 6. Verify Post-Approval Insert Lock: attempting to insert splits into approved statement is blocked
     const lineItem = (
       await c.query<{ id: string }>('SELECT id FROM commission_line_items WHERE import_id = $1 LIMIT 1', [imp.id])
     ).rows[0];
@@ -900,9 +900,9 @@ test('Phase 13: Statement Deduplication, Immutable Approval Snapshots & Lock Tri
         );
       },
       (err: any) => {
-        return err.code === '23505' && err.constraint === 'comm_splits_line_unique';
+        return err.message.includes('Cannot insert commission splits for an approved or posted statement');
       },
-      'Unique constraint comm_splits_line_unique must prevent duplicate split for same line item'
+      'Lock trigger must prevent INSERT into commission_splits for approved import'
     );
 
     // 7. Verify Database Lock Trigger: trg_lock_approved_commission_splits blocks UPDATE and DELETE
@@ -932,7 +932,7 @@ test('Phase 13: Statement Deduplication, Immutable Approval Snapshots & Lock Tri
         await c.query("UPDATE commission_imports SET status = 'reconciled' WHERE id = $1", [imp.id]);
       },
       (err: any) => {
-        return err.message.includes('Cannot revoke or alter status of an approved statement');
+        return err.message.includes('Cannot modify an approved or posted commission statement');
       },
       'Lock trigger must prevent UPDATE on approved commission import'
     );
@@ -948,4 +948,249 @@ test('Phase 13: Statement Deduplication, Immutable Approval Snapshots & Lock Tri
     );
   });
 });
+
+test('Phase 14: Concurrent Agreement Overlap Prevention & GiST Exclusion Constraint', async () => {
+  // Test concurrent insertion of overlapping active agreements using separate pg.Client instances
+  const c1 = new pg.Client({ connectionString: db.ownerUrl });
+  const c2 = new pg.Client({ connectionString: db.ownerUrl });
+  await c1.connect();
+  await c2.connect();
+
+  try {
+    const agreementId1 = randomUUID();
+    const agreementId2 = randomUUID();
+
+    // Begin transactions simultaneously
+    await c1.query('BEGIN');
+    await c2.query('BEGIN');
+
+    // Attempt to insert overlapping agreements concurrently for the same (tenant, producer, carrier)
+    const p1 = c1.query(
+      `INSERT INTO commission_agreements (
+         id, tenant_id, producer_node_id, carrier_id, version,
+         broker_split_bps, branch_override_bps, mga_spread_bps, holdback_bps,
+         effective_from, effective_to, status
+       ) VALUES ($1, $2, $3, 'manulife', 'manu-v-concurrent-1', 7000, 1500, 1500, 500, '2026-01-01', '2026-12-31', 'active')`,
+      [agreementId1, tenantId, brokerNodeId]
+    );
+
+    const p2 = c2.query(
+      `INSERT INTO commission_agreements (
+         id, tenant_id, producer_node_id, carrier_id, version,
+         broker_split_bps, branch_override_bps, mga_spread_bps, holdback_bps,
+         effective_from, effective_to, status
+       ) VALUES ($1, $2, $3, 'manulife', 'manu-v-concurrent-2', 7000, 1500, 1500, 500, '2026-06-01', '2027-06-30', 'active')`,
+      [agreementId2, tenantId, brokerNodeId]
+    );
+
+    // One must succeed and one must wait/fail due to advisory lock & GiST exclusion constraint
+    const results = await Promise.allSettled([
+      (async () => {
+        await p1;
+        await c1.query('COMMIT');
+      })(),
+      (async () => {
+        await p2;
+        await c2.query('COMMIT');
+      })(),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+
+    assert.equal(fulfilled.length, 1, 'Exactly one concurrent agreement insert must succeed');
+    assert.equal(rejected.length, 1, 'The competing concurrent agreement insert must be rejected');
+
+    const err = (rejected[0] as PromiseRejectedResult).reason;
+    assert.ok(
+      err.code === '23P01' || err.message.includes('overlaps with an existing agreement'),
+      'Failure must be an exclusion / overlap violation'
+    );
+  } finally {
+    try { await c1.query('ROLLBACK'); } catch {}
+    try { await c2.query('ROLLBACK'); } catch {}
+    await c1.end();
+    await c2.end();
+  }
+});
+
+test('Phase 14: Financial Ledger Immutability, Line Item Locking & Reversal Accounting Workflow', async () => {
+  // 1. Create a policy for Manulife
+  const manuPolRes = await call(MGR_MTL, 'POST', '/v1/commercial/policies', {
+    carrierId: 'manulife',
+    branchNodeId: branchMtlId,
+    producerNodeId: brokerNodeId,
+    policyNumber: 'POL-MANU-LEDGER-001',
+    planName: 'Manulife PerformLife',
+    jurisdiction: 'QC',
+    annualPremiumCents: 240000,
+    modalPremiumCents: 20000,
+    premiumFrequency: 'monthly',
+    status: 'active',
+    effectiveDate: '2026-01-01',
+  });
+  assert.equal(manuPolRes.status, 201);
+
+  // 2. Ingest statement
+  const manuCsv = [
+    'PolicyNumber,GrossAmount,NetAmount,TransactionType,ProducerCode',
+    'POL-MANU-LEDGER-001,2000.00,1600.00,first_year,QC-GILL-01',
+  ].join('\n');
+
+  const importRes = await call(COMPLIANCE, 'POST', '/v1/commercial/commission-imports/csv', {
+    carrierId: 'manulife',
+    statementReference: 'MANU-LEDGER-STMT-2026-11',
+    statementDate: '2026-11-01',
+    csvContent: manuCsv,
+  });
+  assert.equal(importRes.status, 201);
+  const imp = importRes.json.import;
+  assert.equal(imp.status, 'reconciled');
+
+  // 3. Approve statement
+  const approveRes = await call(COMPLIANCE, 'POST', `/v1/commercial/commission-imports/${imp.id}/approve`);
+  assert.equal(approveRes.status, 200);
+  assert.equal(approveRes.json.status, 'approved');
+
+  // 4. Verify complete financial lock on line items, splits, and statement header
+  await owner(async (c) => {
+    const lineItem = (
+      await c.query<{ id: string }>('SELECT id FROM commission_line_items WHERE import_id = $1 LIMIT 1', [imp.id])
+    ).rows[0];
+    assert.ok(lineItem);
+
+    const split = (
+      await c.query<{ id: string }>('SELECT id FROM commission_splits WHERE import_id = $1 LIMIT 1', [imp.id])
+    ).rows[0];
+    assert.ok(split);
+
+    // 4a. Commission Line Items: INSERT blocked
+    await assert.rejects(
+      async () => {
+        await c.query(
+          `INSERT INTO commission_line_items (
+             tenant_id, import_id, policy_number, transaction_type,
+             gross_amount_cents, net_amount_cents, reconciliation_status
+           ) VALUES ($1, $2, 'POL-MANU-NEW', 'first_year', 10000, 8000, 'unmatched')`,
+          [tenantId, imp.id]
+        );
+      },
+      (err: any) => err.message.includes('Cannot add line items to an approved or posted statement'),
+      'trg_lock_approved_commission_line_items must block INSERT'
+    );
+
+    // 4b. Commission Line Items: UPDATE blocked
+    await assert.rejects(
+      async () => {
+        await c.query('UPDATE commission_line_items SET gross_amount_cents = 0 WHERE id = $1', [lineItem.id]);
+      },
+      (err: any) => err.message.includes('Cannot modify or delete line items for an approved or posted statement'),
+      'trg_lock_approved_commission_line_items must block UPDATE'
+    );
+
+    // 4c. Commission Line Items: DELETE blocked
+    await assert.rejects(
+      async () => {
+        await c.query('DELETE FROM commission_line_items WHERE id = $1', [lineItem.id]);
+      },
+      (err: any) => err.message.includes('Cannot modify or delete line items for an approved or posted statement'),
+      'trg_lock_approved_commission_line_items must block DELETE'
+    );
+
+    // 4d. Commission Splits: INSERT blocked
+    await assert.rejects(
+      async () => {
+        await c.query(
+          `INSERT INTO commission_splits (
+             tenant_id, import_id, line_item_id, producer_node_id, status,
+             gross_amount_cents, broker_net_cents, branch_override_cents, mga_spread_cents, holdback_cents
+           ) VALUES ($1, $2, $3, $4, 'calculated', 5000, 3500, 750, 750, 0)`,
+          [tenantId, imp.id, lineItem.id, brokerNodeId]
+        );
+      },
+      (err: any) => err.message.includes('Cannot insert commission splits for an approved or posted statement'),
+      'trg_lock_approved_commission_splits must block INSERT'
+    );
+
+    // 4e. Commission Splits: UPDATE blocked
+    await assert.rejects(
+      async () => {
+        await c.query('UPDATE commission_splits SET broker_net_cents = 0 WHERE id = $1', [split.id]);
+      },
+      (err: any) => err.message.includes('Cannot modify or delete commission splits for an approved or posted statement'),
+      'trg_lock_approved_commission_splits must block UPDATE'
+    );
+
+    // 4f. Commission Splits: DELETE blocked
+    await assert.rejects(
+      async () => {
+        await c.query('DELETE FROM commission_splits WHERE id = $1', [split.id]);
+      },
+      (err: any) => err.message.includes('Cannot modify or delete commission splits for an approved or posted statement'),
+      'trg_lock_approved_commission_splits must block DELETE'
+    );
+
+    // 4g. Commission Imports: UPDATE blocked (including transitions to posted or total tampering)
+    await assert.rejects(
+      async () => {
+        await c.query("UPDATE commission_imports SET status = 'posted' WHERE id = $1", [imp.id]);
+      },
+      (err: any) => err.message.includes('Cannot modify an approved or posted commission statement'),
+      'trg_lock_approved_commission_imports must block transition to posted'
+    );
+
+    await assert.rejects(
+      async () => {
+        await c.query('UPDATE commission_imports SET total_gross_cents = 999999 WHERE id = $1', [imp.id]);
+      },
+      (err: any) => err.message.includes('Cannot modify an approved or posted commission statement'),
+      'trg_lock_approved_commission_imports must block financial tampering'
+    );
+
+    // 4h. Commission Imports: DELETE blocked
+    await assert.rejects(
+      async () => {
+        await c.query('DELETE FROM commission_imports WHERE id = $1', [imp.id]);
+      },
+      (err: any) => err.message.includes('Cannot delete an approved commission statement'),
+      'trg_lock_approved_commission_imports must block DELETE'
+    );
+  });
+
+  // 5. Reversal Accounting Workflow: Correcting financial records via an audited offsetting entry
+  const reversalCsv = [
+    'PolicyNumber,GrossAmount,NetAmount,TransactionType,ProducerCode',
+    'POL-MANU-LEDGER-001,1000.00,800.00,first_year,QC-GILL-01',
+    'POL-MANU-LEDGER-001,-500.00,-400.00,chargeback,QC-GILL-01',
+  ].join('\n');
+
+  const reversalImportRes = await call(COMPLIANCE, 'POST', '/v1/commercial/commission-imports/csv', {
+    carrierId: 'manulife',
+    statementReference: 'MANU-LEDGER-REVERSAL-2026-11',
+    statementDate: '2026-11-15',
+    csvContent: reversalCsv,
+  });
+  assert.equal(reversalImportRes.status, 201);
+  const revImp = reversalImportRes.json.import;
+  assert.equal(revImp.status, 'reconciled');
+  assert.equal(revImp.chargebackCount, 1);
+
+  // Approve reversal statement as a separate immutable transaction
+  const revApproveRes = await call(COMPLIANCE, 'POST', `/v1/commercial/commission-imports/${revImp.id}/approve`);
+  assert.equal(revApproveRes.status, 200);
+  assert.equal(revApproveRes.json.status, 'approved');
+
+  // Verify both records exist immutably in the ledger
+  const listRes = await call(COMPLIANCE, 'GET', '/v1/commercial/commission-imports?carrier_id=manulife');
+  assert.equal(listRes.status, 200);
+  const originalInList = listRes.json.imports.find((i: any) => i.id === imp.id);
+  const reversalInList = listRes.json.imports.find((i: any) => i.id === revImp.id);
+  assert.ok(originalInList);
+  assert.ok(reversalInList);
+  assert.equal(originalInList.status, 'approved');
+  assert.equal(reversalInList.status, 'approved');
+  assert.equal(originalInList.total_gross_cents, 200000);
+  assert.equal(reversalInList.total_gross_cents, 50000);
+});
+
 
