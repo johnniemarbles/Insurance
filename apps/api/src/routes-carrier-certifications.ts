@@ -219,13 +219,32 @@ export function registerCarrierCertificationRoutes(app: FastifyInstance, deps: A
       throw invalid(`Invalid certification tier. Must be one of: ${VALID_TIERS.join(', ')}`);
     }
 
-    if (tierExpiresOn && !/^\d{4}-\d{2}-\d{2}$/.test(tierExpiresOn)) {
-      throw invalid('tierExpiresOn must be in YYYY-MM-DD format');
+    // Preserve the existing unconditional refusal.
+    if (tier === 'live') {
+      throw invalid('Live electronic dispatch is disabled fail-closed. Carriers can only be certified after manual review.');
     }
 
-    // Safety rule: Live dispatch is hard-locked fail closed
-    if (tier === 'live') {
-      throw invalid('Live electronic dispatch is disabled fail-closed (allowExternalDispatch: false)');
+    if (tier === 'certified') {
+      if (
+        !tierExpiresOn ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(tierExpiresOn)
+      ) {
+        throw invalid(
+          'A finite certification expiry date is required'
+        );
+      }
+
+      const expiry = new Date(`${tierExpiresOn}T00:00:00Z`);
+
+      if (
+        !Number.isFinite(expiry.getTime()) ||
+        expiry.toISOString().slice(0, 10) !== tierExpiresOn ||
+        tierExpiresOn <= new Date().toISOString().slice(0, 10)
+      ) {
+        throw invalid(
+          'Certification expiry must be a valid future date'
+        );
+      }
     }
 
     return withRequestTx(deps.appPool, ctx, async (tx: Tx) => {
@@ -299,6 +318,49 @@ export function registerCarrierCertificationRoutes(app: FastifyInstance, deps: A
       });
 
       return { ok: true, certification: updated };
+    });
+  });
+
+  // 4. Query Carrier Certification Audit History
+  app.get('/v1/compliance/carrier-certifications/:carrierId/audit', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const carrierId = (req.params as { carrierId: string }).carrierId;
+
+    return withRequestTx(deps.appPool, ctx, async (tx: Tx) => {
+      const rows = (
+        await tx.query<{
+          id: string;
+          tenant_id: string;
+          carrier_id: string;
+          revision: number;
+          operation: string;
+          actor_id: string | null;
+          recorded_at: string;
+          previous_record: Record<string, unknown> | null;
+          current_record: Record<string, unknown> | null;
+        }>(
+          `SELECT id, tenant_id, carrier_id, revision, operation, actor_id, recorded_at, previous_record, current_record
+             FROM carrier_certification_audit
+            WHERE carrier_id = $1
+            ORDER BY recorded_at DESC, revision DESC`,
+          [carrierId]
+        )
+      ).rows;
+
+      return {
+        carrierId,
+        history: rows.map((r) => ({
+          id: r.id,
+          tenantId: r.tenant_id,
+          carrierId: r.carrier_id,
+          revision: r.revision,
+          operation: r.operation,
+          actorId: r.actor_id,
+          recordedAt: r.recorded_at,
+          previousRecord: r.previous_record,
+          currentRecord: r.current_record,
+        })),
+      };
     });
   });
 }

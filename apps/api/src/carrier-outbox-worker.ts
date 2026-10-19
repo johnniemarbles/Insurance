@@ -159,15 +159,45 @@ export async function sweepCarrierOutbox(
           const cert = (
             await tx.query<{
               tier: string;
+              gate1_legal_agreement: boolean;
               gate2_sandbox_certified: boolean;
+              gate3_kms_secrets_provisioned: boolean;
+              gate4_outbox_safety_verified: boolean;
               gate5_feature_flag_active: boolean;
+              certified_by: string | null;
+              certified_at: string | null;
+              tier_expires_on: string | null;
+              not_expired: boolean;
             }>(
-              `SELECT tier, gate2_sandbox_certified, gate5_feature_flag_active
-                 FROM carrier_certifications
-                WHERE tenant_id = $1 AND carrier_id = $2`,
+              `SELECT
+                 tier,
+                 gate1_legal_agreement,
+                 gate2_sandbox_certified,
+                 gate3_kms_secrets_provisioned,
+                 gate4_outbox_safety_verified,
+                 gate5_feature_flag_active,
+                 certified_by,
+                 certified_at,
+                 tier_expires_on,
+                 tier_expires_on > CURRENT_DATE AS not_expired
+               FROM carrier_certifications
+               WHERE tenant_id = $1 AND carrier_id = $2`,
               [item.tenant_id, item.carrier_id]
             )
           ).rows[0];
+
+          const productionCertified = Boolean(
+            cert &&
+            cert.tier === 'live' &&
+            cert.not_expired &&
+            cert.gate1_legal_agreement &&
+            cert.gate2_sandbox_certified &&
+            cert.gate3_kms_secrets_provisioned &&
+            cert.gate4_outbox_safety_verified &&
+            cert.gate5_feature_flag_active &&
+            cert.certified_by &&
+            cert.certified_at
+          );
 
           const connection: CarrierConnection = {
             tenantId: item.tenant_id,
@@ -209,7 +239,7 @@ export async function sweepCarrierOutbox(
               carrierAuthorized: connection.enabled,
               destinationVerified: connection.verified,
               sandboxApproved: Boolean(cert?.gate2_sandbox_certified),
-              productionApproved: Boolean(cert?.tier === 'live' && cert?.gate5_feature_flag_active),
+              productionApproved: productionCertified,
               changeTicket: null,
             });
 

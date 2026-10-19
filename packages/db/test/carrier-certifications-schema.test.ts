@@ -72,7 +72,7 @@ test('carrier_certifications schema: RLS, check constraints, and activation inva
       );
     }, /violates check constraint/);
 
-    // 8. RLS runtime verification
+    // 8. RLS runtime verification for carrier_certifications
     // Set tenant session context on app client
     await app.query("SELECT set_config('app.tenant_id', $1, false)", [tenantId]);
     const appRows = (
@@ -92,6 +92,64 @@ test('carrier_certifications schema: RLS, check constraints, and activation inva
       )
     ).rows;
     assert.equal(isolatedRows.length, 0, 'Must be isolated by RLS tenant wall');
+
+    // 9. Verify zero RLS drift on carrier_certification_audit
+    const auditDrift = await owner.query<{ table_name: string }>(
+      "SELECT table_name FROM rls_drift WHERE table_name = 'carrier_certification_audit'"
+    );
+    assert.equal(auditDrift.rowCount, 0, 'carrier_certification_audit must not have RLS drift');
+
+    // 10. Audit history triggered automatically by migration trigger
+    await app.query("SELECT set_config('app.tenant_id', $1, false)", [tenantId]);
+    await app.query("SELECT set_config('app.user_id', $1, false)", [userId]);
+
+    const auditRows = (
+      await app.query<{
+        carrier_id: string;
+        revision: number;
+        operation: string;
+        actor_id: string | null;
+        previous_record: Record<string, unknown> | null;
+        current_record: Record<string, unknown> | null;
+      }>(
+        "SELECT carrier_id, revision, operation, actor_id, previous_record, current_record FROM carrier_certification_audit WHERE carrier_id = 'ia-financial-group' ORDER BY revision ASC"
+      )
+    ).rows;
+
+    assert.ok(auditRows.length >= 1, 'Audit row must be created by trigger');
+    assert.equal(auditRows[0]!.operation, 'INSERT');
+    assert.equal(auditRows[0]!.revision, 1);
+    assert.equal(auditRows[0]!.carrier_id, 'ia-financial-group');
+
+    // 11. Immutability & append-only protection: app_runtime cannot write directly to audit table
+    await assert.rejects(async () => {
+      await app.query(
+        `INSERT INTO carrier_certification_audit (tenant_id, carrier_id, revision, operation)
+         VALUES ($1, 'ia-financial-group', 99, 'INSERT')`,
+        [tenantId]
+      );
+    }, /permission denied for table carrier_certification_audit/);
+
+    await assert.rejects(async () => {
+      await app.query(
+        "UPDATE carrier_certification_audit SET operation = 'UPDATE' WHERE carrier_id = 'ia-financial-group'"
+      );
+    }, /permission denied for table carrier_certification_audit/);
+
+    await assert.rejects(async () => {
+      await app.query(
+        "DELETE FROM carrier_certification_audit WHERE carrier_id = 'ia-financial-group'"
+      );
+    }, /permission denied for table carrier_certification_audit/);
+
+    // 12. Tenant isolation on audit history: other tenant sees 0 rows
+    await app.query("SELECT set_config('app.tenant_id', $1, false)", [fakeTenant]);
+    const isolatedAuditRows = (
+      await app.query(
+        "SELECT * FROM carrier_certification_audit WHERE carrier_id = 'ia-financial-group'"
+      )
+    ).rows;
+    assert.equal(isolatedAuditRows.length, 0, 'Audit history must be strictly tenant-isolated');
   } finally {
     await app.end();
     await owner.end();
