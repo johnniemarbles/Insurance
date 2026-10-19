@@ -139,3 +139,149 @@ export function validateSha256Hash(hash: unknown): string {
   }
   return hash.trim().toLowerCase();
 }
+
+export interface CommissionAgreement {
+  id: string;
+  tenantId: string;
+  producerNodeId: string;
+  carrierId: string;
+  version: string;
+  brokerSplitBps: number;
+  branchOverrideBps: number;
+  mgaSpreadBps: number;
+  holdbackBps: number;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  status: 'draft' | 'active' | 'superseded' | 'terminated';
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommissionSplit {
+  id: string;
+  tenantId: string;
+  importId: string;
+  lineItemId: string;
+  agreementId?: string | null;
+  producerNodeId: string;
+  grossAmountCents: number;
+  brokerNetCents: number;
+  branchOverrideCents: number;
+  mgaSpreadCents: number;
+  holdbackCents: number;
+  status: 'calculated' | 'approved' | 'held';
+  createdAt: string;
+}
+
+/**
+ * Deterministic MGA & Broker commission split engine.
+ * Splits are computed strictly using integer cents from contractual basis points.
+ */
+export function calculateDeterministicSplit(
+  grossAmountCents: number,
+  agreement: {
+    brokerSplitBps: number;
+    branchOverrideBps: number;
+    mgaSpreadBps: number;
+    holdbackBps: number;
+  }
+): {
+  brokerGrossCents: number;
+  brokerNetCents: number;
+  branchOverrideCents: number;
+  mgaSpreadCents: number;
+  holdbackCents: number;
+} {
+  const totalBps = agreement.brokerSplitBps + agreement.branchOverrideBps + agreement.mgaSpreadBps;
+  if (totalBps !== 10000) {
+    throw new Error(`Split basis points must equal exactly 10,000 (100.00%), received: ${totalBps}`);
+  }
+  const brokerGrossCents = Math.round((grossAmountCents * agreement.brokerSplitBps) / 10000);
+  const holdbackCents = Math.round((brokerGrossCents * agreement.holdbackBps) / 10000);
+  const brokerNetCents = brokerGrossCents - holdbackCents;
+  const branchOverrideCents = Math.round((grossAmountCents * agreement.branchOverrideBps) / 10000);
+  const mgaSpreadCents = grossAmountCents - brokerGrossCents - branchOverrideCents;
+
+  return {
+    brokerGrossCents,
+    brokerNetCents,
+    branchOverrideCents,
+    mgaSpreadCents,
+    holdbackCents,
+  };
+}
+
+export interface CsvStatementRow {
+  policyNumber: string;
+  grossAmountCents: number;
+  netAmountCents: number;
+  transactionType: CommissionTransactionType;
+  carrierProducerCode?: string | null;
+}
+
+/**
+ * Parses and validates a standard carrier commission CSV file content.
+ * Accepts headers: PolicyNumber, GrossAmount, NetAmount, TransactionType, [ProducerCode]
+ */
+export function parseCommissionCsv(csvText: string): CsvStatementRow[] {
+  const lines = csvText.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) {
+    throw new Error('CSV statement must contain a header row and at least one data row');
+  }
+
+  const headerLine = lines[0]!.toLowerCase();
+  const headers = headerLine.split(',').map(h => h.trim().replace(/^["']|["']$/g, ''));
+  
+  const policyIdx = headers.findIndex(h => h.includes('policy'));
+  const grossIdx = headers.findIndex(h => h.includes('gross'));
+  const netIdx = headers.findIndex(h => h.includes('net'));
+  const typeIdx = headers.findIndex(h => h.includes('type') || h.includes('transaction'));
+  const codeIdx = headers.findIndex(h => h.includes('producer') || h.includes('agent') || h.includes('code'));
+
+  if (policyIdx === -1 || grossIdx === -1 || netIdx === -1) {
+    throw new Error('CSV header missing mandatory columns: PolicyNumber, GrossAmount, NetAmount');
+  }
+
+  const rows: CsvStatementRow[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const rawCols = lines[i]!.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
+    if (rawCols.length <= Math.max(policyIdx, grossIdx, netIdx)) continue;
+
+    const policyNumber = rawCols[policyIdx] ?? '';
+    if (!policyNumber) throw new Error(`Row ${i}: Policy number cannot be empty`);
+
+    const grossFloat = Number.parseFloat(rawCols[grossIdx] ?? '0');
+    const netFloat = Number.parseFloat(rawCols[netIdx] ?? '0');
+    if (!Number.isFinite(grossFloat) || !Number.isFinite(netFloat)) {
+      throw new Error(`Row ${i}: Invalid numerical dollar amount`);
+    }
+
+    const grossAmountCents = Math.round(grossFloat * 100);
+    const netAmountCents = Math.round(netFloat * 100);
+
+    let transactionType: CommissionTransactionType = 'first_year';
+    if (typeIdx !== -1 && rawCols[typeIdx]) {
+      const rawType = rawCols[typeIdx]!.toLowerCase();
+      if (COMMISSION_TRANSACTION_TYPES.includes(rawType as CommissionTransactionType)) {
+        transactionType = rawType as CommissionTransactionType;
+      }
+    } else if (grossAmountCents < 0) {
+      transactionType = 'chargeback';
+    }
+
+    const carrierProducerCode = codeIdx !== -1 && rawCols[codeIdx] ? rawCols[codeIdx] : null;
+
+    rows.push({
+      policyNumber,
+      grossAmountCents,
+      netAmountCents,
+      transactionType,
+      carrierProducerCode,
+    });
+  }
+
+  return rows;
+}

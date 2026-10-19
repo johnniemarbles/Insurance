@@ -373,3 +373,223 @@ test('Phase 11: Idempotent Commission Statement Import & Reconciliation Preview'
   const payoutRes = await call(ADMIN, 'POST', `/v1/commercial/commission-imports/${imp.id}/payout`);
   assert.equal(payoutRes.status, 403, 'Payouts must be strictly refused with 403 Forbidden');
 });
+
+test('Phase 12: Commission Agreements & Versioned Deterministic Basis Points (BPS)', async () => {
+  // 1. Create Agreement v1: 75% broker, 10% branch, 15% MGA, 5% holdback
+  const res1 = await call(COMPLIANCE, 'POST', '/v1/commercial/agreements', {
+    producerNodeId: brokerNodeId,
+    carrierId: 'ia-financial-group',
+    version: 'v1',
+    brokerSplitBps: 7500,
+    branchOverrideBps: 1000,
+    mgaSpreadBps: 1500,
+    holdbackBps: 500,
+    effectiveFrom: '2026-01-01',
+  });
+  assert.equal(res1.status, 201, 'Agreement v1 should be created');
+  assert.equal(res1.json.agreement.broker_split_bps, 7500);
+  assert.equal(res1.json.agreement.version, 'v1');
+
+  // 2. Reject agreement where BPS does not sum to 10,000 (100.00%)
+  const resInvalid = await call(COMPLIANCE, 'POST', '/v1/commercial/agreements', {
+    producerNodeId: brokerNodeId,
+    carrierId: 'ia-financial-group',
+    version: 'v-invalid',
+    brokerSplitBps: 7000,
+    branchOverrideBps: 1000,
+    mgaSpreadBps: 1000, // Total = 9,000 BPS
+    holdbackBps: 500,
+    effectiveFrom: '2026-01-01',
+  });
+  assert.equal(resInvalid.status, 422, 'Invalid BPS sum must be rejected with 422');
+
+  // 3. Create Agreement v2 (revised split: 70% broker, 15% branch, 15% MGA)
+  const res2 = await call(COMPLIANCE, 'POST', '/v1/commercial/agreements', {
+    producerNodeId: brokerNodeId,
+    carrierId: 'ia-financial-group',
+    version: 'v2',
+    brokerSplitBps: 7000,
+    branchOverrideBps: 1500,
+    mgaSpreadBps: 1500,
+    holdbackBps: 500,
+    effectiveFrom: '2026-06-01',
+  });
+  assert.equal(res2.status, 201, 'Agreement v2 should be created');
+  assert.equal(res2.json.agreement.version, 'v2');
+
+  // 4. List agreements
+  const listRes = await call(COMPLIANCE, 'GET', `/v1/commercial/agreements?carrier_id=ia-financial-group&producer_node_id=${brokerNodeId}`);
+  assert.equal(listRes.status, 200);
+  assert.ok(listRes.json.agreements.length >= 2, 'Should list both versions');
+});
+
+test('Phase 12: CSV Commission Statement Ingestion & Pre-Commit Preview', async () => {
+  const csvContent = [
+    'PolicyNumber,GrossAmount,NetAmount,TransactionType,ProducerCode',
+    'POL-IA-2026-001,1000.00,800.00,first_year,QC-GILL-01',
+    'POL-IA-2026-001,-200.00,-160.00,chargeback,QC-GILL-01',
+    'POL-IA-UNRESOLVED-888,500.00,400.00,renewal,QC-GILL-01',
+  ].join('\n');
+
+  // 1. Safe CSV preview before committing
+  const previewRes = await call(COMPLIANCE, 'POST', '/v1/commercial/commission-imports/csv-preview', {
+    carrierId: 'ia-financial-group',
+    csvContent,
+  });
+  assert.equal(previewRes.status, 200, 'CSV preview should succeed');
+  const p = previewRes.json.preview;
+  assert.equal(p.lineCount, 3);
+  assert.equal(p.matchedCount, 1);
+  assert.equal(p.chargebackCount, 1);
+  assert.equal(p.unmatchedCount, 1);
+  assert.equal(p.totalGrossCents, 130000); // $1,000.00 - $200.00 + $500.00 = $1,300.00
+  assert.equal(p.totalNetCents, 104000);   // $800.00 - $160.00 + $400.00 = $1,040.00
+
+  // 2. Ingest statement via CSV endpoint
+  const importRes = await call(COMPLIANCE, 'POST', '/v1/commercial/commission-imports/csv', {
+    carrierId: 'ia-financial-group',
+    statementReference: 'IA-COMM-CSV-2026-11',
+    statementDate: '2026-11-01',
+    csvContent,
+  });
+  assert.equal(importRes.status, 201, 'CSV statement import should register');
+  const imp = importRes.json.import;
+  assert.equal(imp.statementReference, 'IA-COMM-CSV-2026-11');
+  assert.equal(imp.status, 'exceptions_flagged');
+
+  // 3. Verify duplicate import rejection
+  const dupRes = await call(COMPLIANCE, 'POST', '/v1/commercial/commission-imports/csv', {
+    carrierId: 'ia-financial-group',
+    statementReference: 'IA-COMM-CSV-2026-11-RETRY',
+    statementDate: '2026-11-01',
+    csvContent,
+  });
+  assert.equal(dupRes.status, 409, 'Duplicate CSV statement must return 409');
+});
+
+test('Phase 12: Reconciliation Exception Line Resolution, Approval Lifecycle & Deterministic Splits', async () => {
+  // First, create the missing policy in inventory
+  const createPolicyRes = await call(MGR_MTL, 'POST', '/v1/commercial/policies', {
+    carrierId: 'ia-financial-group',
+    branchNodeId: branchMtlId,
+    producerNodeId: brokerNodeId,
+    policyNumber: 'POL-IA-UNRESOLVED-888',
+    planName: 'iA Universal Life',
+    jurisdiction: 'QC',
+    annualPremiumCents: 60000,
+    modalPremiumCents: 5000,
+    premiumFrequency: 'monthly',
+    status: 'active',
+    effectiveDate: '2026-10-01',
+  });
+  assert.equal(createPolicyRes.status, 201);
+  const resolvedPolicy = createPolicyRes.json.policy;
+
+  // Get the imported CSV statement preview to find the unmatched line
+  const impListRes = await call(COMPLIANCE, 'GET', '/v1/commercial/commission-imports?carrier_id=ia-financial-group');
+  assert.equal(impListRes.status, 200);
+  const csvImp = impListRes.json.imports.find((i: any) => i.statement_reference === 'IA-COMM-CSV-2026-11');
+  assert.ok(csvImp);
+
+  const previewRes = await call(COMPLIANCE, 'GET', `/v1/commercial/commission-imports/${csvImp.id}/preview`);
+  const unmatchedLine = previewRes.json.preview.lines.find((l: any) => l.policy_number === 'POL-IA-UNRESOLVED-888');
+  assert.ok(unmatchedLine);
+
+  // Resolve the unmatched exception line
+  const resolveRes = await call(COMPLIANCE, 'POST', `/v1/commercial/commission-imports/${csvImp.id}/reconcile-line`, {
+    lineItemId: unmatchedLine.id,
+    policyNumber: 'POL-IA-UNRESOLVED-888',
+  });
+  assert.equal(resolveRes.status, 200);
+  assert.equal(resolveRes.json.resolved, true);
+  assert.equal(resolveRes.json.remainingUnmatched, 0);
+  assert.equal(resolveRes.json.importStatus, 'reconciled');
+
+  // Approve statement & trigger deterministic split calculations
+  const approveRes = await call(COMPLIANCE, 'POST', `/v1/commercial/commission-imports/${csvImp.id}/approve`);
+  assert.equal(approveRes.status, 200);
+  assert.equal(approveRes.json.approved, true);
+  assert.equal(approveRes.json.status, 'approved');
+  assert.equal(approveRes.json.splitCount, 3); // 3 lines split
+
+  // Inspect generated splits
+  const splitsRes = await call(COMPLIANCE, 'GET', `/v1/commercial/commission-imports/${csvImp.id}/splits`);
+  assert.equal(splitsRes.status, 200);
+  const splits = splitsRes.json.splits;
+  assert.equal(splits.length, 3);
+
+  // Verify deterministic math on first line: $1,000.00 gross (100,000 cents)
+  // Agreement v2: broker 7000 BPS (70%), branch 1500 BPS (15%), MGA 1500 BPS (15%), holdback 500 BPS (5%)
+  // Broker gross = 70,000 cents. Holdback = 70,000 * 5% = 3,500 cents. Broker net = 66,500 cents.
+  // Branch override = 15,000 cents. MGA spread = 15,000 cents.
+  // Total = broker net (66500) + holdback (3500) + branch (15000) + mga (15000) = 100,000 cents.
+  const firstYearSplit = splits.find((s: any) => s.policy_number === 'POL-IA-2026-001' && s.gross_amount_cents > 0);
+  assert.ok(firstYearSplit);
+  assert.equal(firstYearSplit.gross_amount_cents, 100000);
+  assert.equal(firstYearSplit.broker_net_cents, 66500);
+  assert.equal(firstYearSplit.holdback_cents, 3500);
+  assert.equal(firstYearSplit.branch_override_cents, 15000);
+  assert.equal(firstYearSplit.mga_spread_cents, 15000);
+  assert.equal(
+    firstYearSplit.broker_net_cents + firstYearSplit.holdback_cents + firstYearSplit.branch_override_cents + firstYearSplit.mga_spread_cents,
+    firstYearSplit.gross_amount_cents,
+    'Splits must balance to exact gross amount cents'
+  );
+
+  // Payout remains strictly forbidden even after approval
+  const payoutRes = await call(ADMIN, 'POST', `/v1/commercial/commission-imports/${csvImp.id}/payout`);
+  assert.equal(payoutRes.status, 403, 'Payout must still be refused with 403 Forbidden');
+});
+
+test('Phase 12: Workspace Dashboard Work Queue & Commercial KPIs Integration', async () => {
+  // Create an active policy that expires in 15 days (renewal queue candidate)
+  const expiringDate = new Date();
+  expiringDate.setDate(expiringDate.getDate() + 15);
+  const expiryDateStr = expiringDate.toISOString().slice(0, 10);
+
+  const renewalPolicyRes = await call(MGR_MTL, 'POST', '/v1/commercial/policies', {
+    carrierId: 'ia-financial-group',
+    branchNodeId: branchMtlId,
+    producerNodeId: brokerNodeId,
+    policyNumber: 'POL-IA-EXPIRING-2026',
+    planName: 'iA Term 10 Renewable',
+    jurisdiction: 'QC',
+    annualPremiumCents: 85000,
+    modalPremiumCents: 7500,
+    premiumFrequency: 'monthly',
+    status: 'active',
+    effectiveDate: '2025-11-01',
+    expiryDate: expiryDateStr,
+  });
+  assert.equal(renewalPolicyRes.status, 201);
+
+  // Check Admin / Head Office perspective dashboard
+  const adminDashRes = await call(ADMIN, 'GET', '/v1/workspace/dashboard?perspective=admin');
+  assert.equal(adminDashRes.status, 200);
+  const adminDash = adminDashRes.json;
+
+  // Check executive summary includes pending approvals
+  assert.ok(adminDash.summary);
+  assert.ok(adminDash.summary.pendingApprovals >= 1);
+
+  // Check workQueue includes commercial items
+  const renewalItem = adminDash.workQueue.find((w: any) => w.id === `wq-pol-renewal-${renewalPolicyRes.json.policy.id}`);
+  assert.ok(renewalItem, 'Expiring policy renewal must appear in work queue');
+  assert.equal(renewalItem.category, 'contract_approval');
+  assert.equal(renewalItem.priority, 'high');
+
+  // Check carrier card has pendingStatements metric
+  const carrierCard = adminDash.cards.find((c: any) => c.module === 'carriers');
+  assert.ok(carrierCard, 'Carriers card must be present');
+  const stmtMetric = carrierCard.metrics.find((m: any) => m.id === 'pendingStatements');
+  assert.ok(stmtMetric, 'pendingStatements metric must be present on carrier card');
+  assert.ok(carrierCard.allowedActions.includes('reconcile_statements'));
+
+  // Check Broker (Partner) perspective dashboard
+  const brokerDashRes = await call(BROKER_MTL, 'GET', '/v1/workspace/dashboard?perspective=partner');
+  assert.equal(brokerDashRes.status, 200);
+  const brokerDash = brokerDashRes.json;
+  const brokerRenewalItem = brokerDash.workQueue.find((w: any) => w.id === `wq-pol-renewal-${renewalPolicyRes.json.policy.id}`);
+  assert.ok(brokerRenewalItem, 'Broker should see renewal item for their policy');
+  assert.equal(brokerRenewalItem.role, 'Broker');
+});
