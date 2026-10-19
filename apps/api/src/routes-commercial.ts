@@ -556,12 +556,18 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
     const brokerSplitBps = Number(b.brokerSplitBps);
     const branchOverrideBps = Number(b.branchOverrideBps);
     const mgaSpreadBps = Number(b.mgaSpreadBps);
-    const holdbackBps = b.holdbackBps !== undefined ? Number(b.holdbackBps) : 500;
+    if (b.holdbackBps === undefined || b.holdbackBps === null) {
+      throw invalid('holdbackBps is required and must be explicitly specified (use 0 for no holdback)');
+    }
+    const holdbackBps = Number(b.holdbackBps);
     const effectiveFrom = typeof b.effectiveFrom === 'string' ? b.effectiveFrom.trim() : '';
     const effectiveTo = typeof b.effectiveTo === 'string' ? b.effectiveTo.trim() : null;
 
     if (!producerNodeId || !carrierId || !effectiveFrom) {
       throw invalid('producerNodeId, carrierId, and effectiveFrom are required');
+    }
+    if (effectiveTo && effectiveTo < effectiveFrom) {
+      throw invalid('effectiveTo cannot be earlier than effectiveFrom');
     }
     if (
       !Number.isInteger(brokerSplitBps) || brokerSplitBps < 0 ||
@@ -573,8 +579,8 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
     if (brokerSplitBps + branchOverrideBps + mgaSpreadBps !== 10000) {
       throw invalid(`Split basis points must equal exactly 10,000 (100.00%), received: ${brokerSplitBps + branchOverrideBps + mgaSpreadBps}`);
     }
-    if (!Number.isInteger(holdbackBps) || holdbackBps < 0 || holdbackBps > 2000) {
-      throw invalid('holdbackBps must be an integer between 0 and 2,000 (0.00% to 20.00%)');
+    if (!Number.isInteger(holdbackBps) || holdbackBps < 0 || holdbackBps > brokerSplitBps) {
+      throw invalid('holdbackBps must be an integer between 0 and brokerSplitBps (cannot exceed broker share)');
     }
 
     const agreement = await withRequestTx(deps.appPool, ctx, async (tx: Tx) => {
@@ -590,6 +596,28 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
         )
       ).rowCount! > 0;
       if (!producerExists) throw invalid('Producer must be an active partner node');
+
+      // Enforce non-overlapping active agreement validity
+      const overlapping = (
+        await tx.query<{ id: string; version: string; effective_from: string; effective_to: string | null }>(
+          `SELECT id, version, effective_from::text, effective_to::text
+             FROM commission_agreements
+            WHERE tenant_id = $1
+              AND producer_node_id = $2
+              AND carrier_id = $3
+              AND status = 'active'
+              AND version <> $4
+              AND daterange(effective_from, coalesce(effective_to, 'infinity'::date), '[]') &&
+                  daterange($5::date, coalesce($6::date, 'infinity'::date), '[]')`,
+          [ctx.tenantId, producerNodeId, carrierId, version, effectiveFrom, effectiveTo]
+        )
+      ).rows[0];
+
+      if (overlapping) {
+        throw conflict(
+          `Active agreement version '${overlapping.version}' (${overlapping.effective_from} to ${overlapping.effective_to ?? 'infinity'}) overlaps with requested validity period`
+        );
+      }
 
       const row = (
         await tx.query(
@@ -684,7 +712,7 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
 
     let parsedRows;
     try {
-      parsedRows = parseCommissionCsv(csvContent);
+      parsedRows = parseCommissionCsv(csvContent, carrierId);
     } catch (e) {
       throw invalid((e as Error).message);
     }
@@ -784,7 +812,7 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
 
     let parsedRows;
     try {
-      parsedRows = parseCommissionCsv(csvContent);
+      parsedRows = parseCommissionCsv(csvContent, carrierId);
     } catch (e) {
       throw invalid((e as Error).message);
     }
@@ -822,8 +850,13 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
           carrier_id: string;
           status: string;
           statement_reference: string;
+          statement_date: string;
+          total_gross_cents: number;
+          total_net_cents: number;
+          line_count: number;
         }>(
-          `SELECT id, carrier_id, status, statement_reference 
+          `SELECT id, carrier_id, status, statement_reference, statement_date::text AS statement_date,
+                  total_gross_cents, total_net_cents, line_count
              FROM commission_imports WHERE id = $1 AND tenant_id = $2`,
           [id, ctx.tenantId]
         )
@@ -831,7 +864,20 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
 
       if (!imp) throw notFound('Commission import not found');
       if (imp.status === 'approved' || imp.status === 'posted') {
-        throw conflict(`Statement is already ${imp.status}`);
+        throw conflict(`Statement is already ${imp.status} and cannot be modified`);
+      }
+
+      // Guard: Statement cannot be approved if any unmatched exception lines remain
+      const unmatchedCount = (
+        await tx.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM commission_line_items
+            WHERE import_id = $1 AND tenant_id = $2 AND reconciliation_status = 'unmatched'`,
+          [id, ctx.tenantId]
+        )
+      ).rows[0]?.n ?? 0;
+
+      if (unmatchedCount > 0) {
+        throw conflict(`Cannot approve statement with ${unmatchedCount} unresolved exception line(s)`);
       }
 
       // Load matched and chargeback line items
@@ -852,36 +898,86 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
       ).rows;
 
       let splitCount = 0;
+      let totBrokerNet = 0;
+      let totBranchOverride = 0;
+      let totMgaSpread = 0;
+      let totHoldback = 0;
+      const appliedAgreements = new Map<string, {
+        id: string;
+        version: string;
+        brokerSplitBps: number;
+        branchOverrideBps: number;
+        mgaSpreadBps: number;
+        holdbackBps: number;
+      }>();
+      const computedSplits: Array<Record<string, unknown>> = [];
 
       for (const line of lines) {
         if (!line.producer_node_id) continue;
 
-        // Fetch active agreement
+        // Fetch active agreement valid on the statement date
         const agreement = (
           await tx.query<{
             id: string;
+            version: string;
             broker_split_bps: number;
             branch_override_bps: number;
             mga_spread_bps: number;
             holdback_bps: number;
           }>(
-            `SELECT id, broker_split_bps, branch_override_bps, mga_spread_bps, holdback_bps
+            `SELECT id, version, broker_split_bps, branch_override_bps, mga_spread_bps, holdback_bps
                FROM commission_agreements
               WHERE tenant_id = $1 AND producer_node_id = $2 AND carrier_id = $3 AND status = 'active'
-              ORDER BY created_at DESC LIMIT 1`,
-            [ctx.tenantId, line.producer_node_id, imp.carrier_id]
+                AND effective_from <= $4::date
+                AND (effective_to IS NULL OR effective_to >= $4::date)
+              ORDER BY effective_from DESC LIMIT 1`,
+            [ctx.tenantId, line.producer_node_id, imp.carrier_id, imp.statement_date]
           )
         ).rows[0];
 
-        // Default contractual split if no custom agreement: 70% broker, 10% branch, 20% MGA, 5% holdback
-        const activeBps = {
-          brokerSplitBps: agreement ? agreement.broker_split_bps : 7000,
-          branchOverrideBps: agreement ? agreement.branch_override_bps : 1000,
-          mgaSpreadBps: agreement ? agreement.mga_spread_bps : 2000,
-          holdbackBps: agreement ? agreement.holdback_bps : 500,
-        };
+        const activeBps = agreement
+          ? {
+              brokerSplitBps: agreement.broker_split_bps,
+              branchOverrideBps: agreement.branch_override_bps,
+              mgaSpreadBps: agreement.mga_spread_bps,
+              holdbackBps: agreement.holdback_bps,
+            }
+          : {
+              brokerSplitBps: 7000,
+              branchOverrideBps: 1500,
+              mgaSpreadBps: 1500,
+              holdbackBps: 0, // No arbitrary holdback if no agreement
+            };
+
+        if (agreement) {
+          appliedAgreements.set(agreement.id, {
+            id: agreement.id,
+            version: agreement.version,
+            brokerSplitBps: agreement.broker_split_bps,
+            branchOverrideBps: agreement.branch_override_bps,
+            mgaSpreadBps: agreement.mga_spread_bps,
+            holdbackBps: agreement.holdback_bps,
+          });
+        }
 
         const splits = calculateDeterministicSplit(line.gross_amount_cents, activeBps);
+        const splitStatus = line.gross_amount_cents < 0 ? 'clawback' : 'approved';
+
+        totBrokerNet += splits.brokerNetCents;
+        totBranchOverride += splits.branchOverrideCents;
+        totMgaSpread += splits.mgaSpreadCents;
+        totHoldback += splits.holdbackCents;
+
+        computedSplits.push({
+          lineItemId: line.id,
+          policyNumber: line.policy_number,
+          grossAmountCents: line.gross_amount_cents,
+          brokerNetCents: splits.brokerNetCents,
+          branchOverrideCents: splits.branchOverrideCents,
+          mgaSpreadCents: splits.mgaSpreadCents,
+          holdbackCents: splits.holdbackCents,
+          status: splitStatus,
+        });
 
         await tx.query(
           `INSERT INTO commission_splits (
@@ -890,8 +986,16 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
              branch_override_cents, mga_spread_cents, holdback_cents,
              status
            ) VALUES (
-             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'approved'
-           )`,
+             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+           )
+           ON CONFLICT (tenant_id, import_id, line_item_id) DO UPDATE SET
+             agreement_id = EXCLUDED.agreement_id,
+             gross_amount_cents = EXCLUDED.gross_amount_cents,
+             broker_net_cents = EXCLUDED.broker_net_cents,
+             branch_override_cents = EXCLUDED.branch_override_cents,
+             mga_spread_cents = EXCLUDED.mga_spread_cents,
+             holdback_cents = EXCLUDED.holdback_cents,
+             status = EXCLUDED.status`,
           [
             ctx.tenantId,
             id,
@@ -903,16 +1007,44 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
             splits.branchOverrideCents,
             splits.mgaSpreadCents,
             splits.holdbackCents,
+            splitStatus,
           ]
         );
         splitCount++;
       }
 
+      const firstAgreement = appliedAgreements.values().next().value;
+      const approvalSnapshot = {
+        statementId: id,
+        carrierId: imp.carrier_id,
+        statementReference: imp.statement_reference,
+        statementDate: imp.statement_date,
+        agreementVersion: firstAgreement?.version ?? null,
+        approvedAt: new Date().toISOString(),
+        approvedBy: ctx.userId,
+        totalGrossCents: imp.total_gross_cents,
+        totalNetCents: imp.total_net_cents,
+        lineCount: lines.length,
+        splitCount,
+        totals: {
+          brokerNetCents: totBrokerNet,
+          branchOverrideCents: totBranchOverride,
+          mgaSpreadCents: totMgaSpread,
+          holdbackCents: totHoldback,
+        },
+        appliedAgreements: Array.from(appliedAgreements.values()),
+        splits: computedSplits,
+      };
+
       await tx.query(
         `UPDATE commission_imports
-            SET status = 'approved', approved_by = $2, approved_at = now(), updated_at = now()
+            SET status = 'approved',
+                approval_snapshot = $2,
+                approved_by = $3,
+                approved_at = now(),
+                updated_at = now()
           WHERE id = $1`,
-        [id, ctx.userId]
+        [id, JSON.stringify(approvalSnapshot), ctx.userId]
       );
 
       return {
@@ -921,6 +1053,7 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
         statementReference: imp.statement_reference,
         status: 'approved',
         splitCount,
+        approvalSnapshot,
       };
     });
   });

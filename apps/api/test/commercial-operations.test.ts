@@ -6,6 +6,12 @@ import type { FastifyInstance } from 'fastify';
 import { bootstrapTenant, createPool, type Db } from '@pii/db';
 import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
+import {
+  parseDecimalToCents,
+  tokenizeCsv,
+  parseCommissionCsvStrict,
+  CARRIER_IMPORT_PROFILES,
+} from '@pii/domain';
 import { buildApp, type AppDeps } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 
@@ -385,6 +391,7 @@ test('Phase 12: Commission Agreements & Versioned Deterministic Basis Points (BP
     mgaSpreadBps: 1500,
     holdbackBps: 500,
     effectiveFrom: '2026-01-01',
+    effectiveTo: '2026-05-31',
   });
   assert.equal(res1.status, 201, 'Agreement v1 should be created');
   assert.equal(res1.json.agreement.broker_split_bps, 7500);
@@ -402,6 +409,20 @@ test('Phase 12: Commission Agreements & Versioned Deterministic Basis Points (BP
     effectiveFrom: '2026-01-01',
   });
   assert.equal(resInvalid.status, 422, 'Invalid BPS sum must be rejected with 422');
+
+  // 2b. Contract Control: Reject overlapping agreement date range
+  const resOverlap = await call(COMPLIANCE, 'POST', '/v1/commercial/agreements', {
+    producerNodeId: brokerNodeId,
+    carrierId: 'ia-financial-group',
+    version: 'v-overlap',
+    brokerSplitBps: 7000,
+    branchOverrideBps: 1500,
+    mgaSpreadBps: 1500,
+    holdbackBps: 500,
+    effectiveFrom: '2026-03-01',
+    effectiveTo: '2026-07-01',
+  });
+  assert.equal(resOverlap.status, 409, 'Overlapping agreement validity period must return 409 Conflict');
 
   // 3. Create Agreement v2 (revised split: 70% broker, 15% branch, 15% MGA)
   const res2 = await call(COMPLIANCE, 'POST', '/v1/commercial/agreements', {
@@ -593,3 +614,338 @@ test('Phase 12: Workspace Dashboard Work Queue & Commercial KPIs Integration', a
   assert.ok(brokerRenewalItem, 'Broker should see renewal item for their policy');
   assert.equal(brokerRenewalItem.role, 'Broker');
 });
+
+test('Phase 13: Strict Decimal-to-Cents Parsing & Exact Financial Precision', () => {
+  // 1. Basic conversions
+  assert.equal(parseDecimalToCents('100'), 10000);
+  assert.equal(parseDecimalToCents('100.00'), 10000);
+  assert.equal(parseDecimalToCents('100.50'), 10050);
+  assert.equal(parseDecimalToCents('0.05'), 5);
+  assert.equal(parseDecimalToCents('0.10'), 10);
+  assert.equal(parseDecimalToCents('0.01'), 1);
+
+  // 2. Float rounding pitfalls in standard JS:
+  // 0.07 * 100 = 7.000000000000001
+  // 19.99 * 100 = 1998.9999999999998
+  // 0.29 * 100 = 28.999999999999996
+  assert.equal(parseDecimalToCents('0.07'), 7);
+  assert.equal(parseDecimalToCents('19.99'), 1999);
+  assert.equal(parseDecimalToCents('0.29'), 29);
+  assert.equal(parseDecimalToCents('55.55'), 5555);
+
+  // 3. Thousands separators
+  assert.equal(parseDecimalToCents('1,234.56'), 123456);
+  assert.equal(parseDecimalToCents('$1,250,500.25'), 125050025);
+  assert.equal(parseDecimalToCents('-1,000,000.00'), -100000000);
+
+  // 4. Accounting parentheses for negative numbers
+  assert.equal(parseDecimalToCents('(150.00)'), -15000);
+  assert.equal(parseDecimalToCents('($1,250.50)'), -125050);
+  assert.equal(parseDecimalToCents('( 50.00 )'), -5000);
+  assert.equal(parseDecimalToCents('(0.07)'), -7);
+
+  // 5. Currency symbols and prefixes
+  assert.equal(parseDecimalToCents('$100.00'), 10000);
+  assert.equal(parseDecimalToCents('CAD 250.75'), 25075);
+  assert.equal(parseDecimalToCents('USD $10.00'), 1000);
+  assert.equal(parseDecimalToCents('-150.00'), -15000);
+  assert.equal(parseDecimalToCents('-0.05'), -5);
+
+  // 6. Explicit rejection of invalid formats
+  assert.throws(() => parseDecimalToCents('100.555'), /at most 2 decimal places/);
+  assert.throws(() => parseDecimalToCents('10.123'), /at most 2 decimal places/);
+  assert.throws(() => parseDecimalToCents('abc'), /Invalid monetary format/);
+  assert.throws(() => parseDecimalToCents('$$$'), /Invalid monetary format/);
+  assert.throws(() => parseDecimalToCents(''), /cannot be empty/);
+  assert.throws(() => parseDecimalToCents('12.34.56'), /Invalid monetary format/);
+  assert.throws(() => parseDecimalToCents('--100'), /Invalid monetary format/);
+});
+
+test('Phase 13: RFC 4180 CSV Tokenizer & Zero Silent Skipping Enforcement', () => {
+  // 1. Quoted commas
+  const quotedCommas = 'POL-123,"Smith, John",100.00';
+  const tokens1 = tokenizeCsv(quotedCommas);
+  assert.deepEqual(tokens1, [['POL-123', 'Smith, John', '100.00']]);
+
+  // 2. Escaped quotes
+  const escapedQuotes = 'POL-456,"Plan ""Elite"" Gold",200.00';
+  const tokens2 = tokenizeCsv(escapedQuotes);
+  assert.deepEqual(tokens2, [['POL-456', 'Plan "Elite" Gold', '200.00']]);
+
+  // 3. Multiline quoted fields
+  const multiline = 'POL-789,"Line 1\nLine 2",300.00';
+  const tokens3 = tokenizeCsv(multiline);
+  assert.deepEqual(tokens3, [['POL-789', 'Line 1\nLine 2', '300.00']]);
+
+  // 4. Zero silent skipping: Incomplete row throws line-numbered error
+  const incompleteCsv = [
+    'PolicyNumber,GrossAmount,NetAmount,TransactionType,ProducerCode',
+    'POL-001,100.00,80.00,first_year,QC-01',
+    'POL-002,200.00,160.00', // only 3 fields
+  ].join('\n');
+  assert.throws(() => parseCommissionCsvStrict(incompleteCsv, 'standard'), /Row 3: expected 5 fields, found 3/);
+
+  // 5. Zero silent skipping: Empty line in statement throws explicit error
+  const emptyLineCsv = [
+    'PolicyNumber,GrossAmount,NetAmount,TransactionType,ProducerCode',
+    'POL-001,100.00,80.00,first_year,QC-01',
+    '',
+    'POL-002,200.00,160.00,first_year,QC-01',
+  ].join('\n');
+  assert.throws(() => parseCommissionCsvStrict(emptyLineCsv, 'standard'), /Row 3 is empty; empty rows are not permitted/);
+
+  // 6. Missing required header throws explicit error
+  const missingHeaderCsv = [
+    'GrossAmount,NetAmount,TransactionType,ProducerCode',
+    '100.00,80.00,first_year,QC-01',
+  ].join('\n');
+  assert.throws(() => parseCommissionCsvStrict(missingHeaderCsv, 'standard'), /Missing required header column: policyNumber/);
+
+  // 7. Unknown carrier profile throws explicit error
+  assert.throws(() => parseCommissionCsvStrict(missingHeaderCsv, 'non-existent-carrier'), /Unknown carrier import profile/);
+});
+
+test('Phase 13: Carrier Profiles (iA & Sun Life) & Transaction Validation', async () => {
+  // 1. iA Financial Group with French headers & carrier transaction codes
+  const iaCsv = [
+    'NoPolice,CommissionBrute,CommissionNette,TypeTransaction,CodeConseiller',
+    'POL-IA-2026-001,1000.00,800.00,COMM1,QC-GILL-01',
+    'POL-IA-2026-001,(200.00),(160.00),CHGBK,QC-GILL-01',
+    'POL-IA-2026-001,300.00,240.00,COMM2,QC-GILL-01',
+  ].join('\n');
+
+  const iaPreview = await call(COMPLIANCE, 'POST', '/v1/commercial/commission-imports/csv-preview', {
+    carrierId: 'ia-financial-group',
+    csvContent: iaCsv,
+  });
+  assert.equal(iaPreview.status, 200);
+  assert.equal(iaPreview.json.preview.lineCount, 3);
+  assert.equal(iaPreview.json.preview.totalGrossCents, 110000); // 100000 - 20000 + 30000
+  assert.equal(iaPreview.json.preview.totalNetCents, 88000);    // 80000 - 16000 + 24000
+  assert.equal(iaPreview.json.preview.chargebackCount, 1);
+
+  // 2. Reject unknown transaction type
+  const invalidTypeCsv = [
+    'NoPolice,CommissionBrute,CommissionNette,TypeTransaction,CodeConseiller',
+    'POL-IA-2026-001,1000.00,800.00,UNKNOWN_TX,QC-GILL-01',
+  ].join('\n');
+  const invalidTypeRes = await call(COMPLIANCE, 'POST', '/v1/commercial/commission-imports/csv-preview', {
+    carrierId: 'ia-financial-group',
+    csvContent: invalidTypeCsv,
+  });
+  assert.equal(invalidTypeRes.status, 422);
+  assert.match(invalidTypeRes.json.error.message, /Unrecognized transaction type 'UNKNOWN_TX'/i);
+
+  // 3. Sun Life carrier profile with currency symbols and accounting parentheses
+  const sunLifeCsv = [
+    'Policy_Number,Gross_Amt,Net_Amt,Trans_Code,Advisor_ID',
+    'POL-IA-2026-001,"$1,500.50","$1,200.40",FYC,ADV-001',
+    'POL-IA-2026-001,($300.00),($240.00),CBK,ADV-001',
+  ].join('\n');
+  const slPreview = await call(COMPLIANCE, 'POST', '/v1/commercial/commission-imports/csv-preview', {
+    carrierId: 'sun-life',
+    csvContent: sunLifeCsv,
+  });
+  assert.equal(slPreview.status, 200);
+  assert.equal(slPreview.json.preview.lineCount, 2);
+  assert.equal(slPreview.json.preview.totalGrossCents, 120050); // 150050 - 30000
+  assert.equal(slPreview.json.preview.totalNetCents, 96040);    // 120040 - 24000
+});
+
+test('Phase 13: Contract Controls & Holdback Constraints', async () => {
+  // 1. Missing holdbackBps rejected
+  const resNoHoldback = await call(COMPLIANCE, 'POST', '/v1/commercial/agreements', {
+    producerNodeId: brokerNodeId,
+    carrierId: 'sun-life',
+    version: 'sl-v1',
+    brokerSplitBps: 8000,
+    branchOverrideBps: 1000,
+    mgaSpreadBps: 1000,
+    effectiveFrom: '2026-01-01',
+  });
+  assert.equal(resNoHoldback.status, 422);
+  assert.match(resNoHoldback.json.error.message, /holdbackBps is required/);
+
+  // 2. holdbackBps > brokerSplitBps rejected at API level
+  const resExcessiveHoldback = await call(COMPLIANCE, 'POST', '/v1/commercial/agreements', {
+    producerNodeId: brokerNodeId,
+    carrierId: 'sun-life',
+    version: 'sl-v1',
+    brokerSplitBps: 5000,
+    branchOverrideBps: 2500,
+    mgaSpreadBps: 2500,
+    holdbackBps: 6000, // 60% > 50%
+    effectiveFrom: '2026-01-01',
+  });
+  assert.equal(resExcessiveHoldback.status, 422);
+  assert.match(resExcessiveHoldback.json.error.message, /cannot exceed broker share/);
+
+  // 3. Database Check Constraint enforces holdback_bps <= broker_split_bps
+  await owner(async (c) => {
+    await assert.rejects(
+      async () => {
+        await c.query(
+          `INSERT INTO commission_agreements (
+             tenant_id, producer_node_id, carrier_id, version,
+             broker_split_bps, branch_override_bps, mga_spread_bps, holdback_bps, effective_from
+           ) VALUES ($1, $2, 'sun-life', 'sql-invalid-holdback', 4000, 3000, 3000, 5000, '2026-01-01')`,
+          [tenantId, brokerNodeId]
+        );
+      },
+      (err: any) => {
+        return err.code === '23514' && err.constraint === 'comm_agreements_holdback_le_broker';
+      },
+      'Database constraint must reject holdback_bps > broker_split_bps'
+    );
+  });
+});
+
+test('Phase 13: Statement Deduplication, Immutable Approval Snapshots & Lock Triggers', async () => {
+  // 1. Create a Sun Life policy
+  const slPolicyRes = await call(MGR_MTL, 'POST', '/v1/commercial/policies', {
+    carrierId: 'sun-life',
+    branchNodeId: branchMtlId,
+    producerNodeId: brokerNodeId,
+    policyNumber: 'POL-SL-LOCK-001',
+    planName: 'Sun Life SunSpectrum',
+    jurisdiction: 'QC',
+    annualPremiumCents: 120000,
+    modalPremiumCents: 10000,
+    premiumFrequency: 'monthly',
+    status: 'active',
+    effectiveDate: '2026-01-01',
+  });
+  assert.equal(slPolicyRes.status, 201);
+
+  // 2. Create Sun Life Agreement
+  const slAgreeRes = await call(COMPLIANCE, 'POST', '/v1/commercial/agreements', {
+    producerNodeId: brokerNodeId,
+    carrierId: 'sun-life',
+    version: 'sl-lock-v1',
+    brokerSplitBps: 8000,
+    branchOverrideBps: 1000,
+    mgaSpreadBps: 1000,
+    holdbackBps: 500,
+    effectiveFrom: '2026-01-01',
+  });
+  assert.equal(slAgreeRes.status, 201);
+
+  // 3. Ingest Sun Life CSV statement with matching lines
+  const slCsv = [
+    'Policy_Number,Gross_Amt,Net_Amt,Trans_Code,Advisor_ID',
+    'POL-SL-LOCK-001,"$1,000.00","$800.00",FYC,ADV-001',
+    'POL-SL-LOCK-001,"($200.00)","($160.00)",CBK,ADV-001',
+  ].join('\n');
+
+  const slImportRes = await call(COMPLIANCE, 'POST', '/v1/commercial/commission-imports/csv', {
+    carrierId: 'sun-life',
+    statementReference: 'SL-LOCK-STATEMENT-2026-11',
+    statementDate: '2026-11-01',
+    csvContent: slCsv,
+  });
+  assert.equal(slImportRes.status, 201, slImportRes.json?.error?.message ?? JSON.stringify(slImportRes.json));
+  const imp = slImportRes.json.import;
+  assert.equal(imp.status, 'reconciled');
+  assert.equal(imp.matchedCount, 1);
+  assert.equal(imp.chargebackCount, 1);
+  assert.equal(imp.unmatchedCount, 0);
+
+  // 4. Approve statement & verify approval snapshot
+  const approveRes = await call(COMPLIANCE, 'POST', `/v1/commercial/commission-imports/${imp.id}/approve`);
+  assert.equal(approveRes.status, 200);
+  assert.equal(approveRes.json.approved, true);
+
+  // 5. Inspect database record for approval_snapshot and split statuses
+  await owner(async (c) => {
+    const importRow = (
+      await c.query<{ approval_snapshot: any; status: string }>(
+        'SELECT approval_snapshot, status FROM commission_imports WHERE id = $1',
+        [imp.id]
+      )
+    ).rows[0];
+    assert.ok(importRow);
+    assert.equal(importRow.status, 'approved');
+    assert.ok(importRow.approval_snapshot, 'approval_snapshot must be stored on commission_imports');
+    assert.equal(importRow.approval_snapshot.carrierId, 'sun-life');
+    assert.equal(importRow.approval_snapshot.agreementVersion, 'sl-lock-v1');
+    assert.equal(importRow.approval_snapshot.totalGrossCents, 80000); // 100000 - 20000
+    assert.equal(importRow.approval_snapshot.splits.length, 2);
+
+    // Verify split records statuses: positive line -> approved, chargeback line -> clawback
+    const splitRows = (
+      await c.query<{ status: string; gross_amount_cents: string }>(
+        'SELECT status, gross_amount_cents FROM commission_splits WHERE import_id = $1 ORDER BY gross_amount_cents DESC',
+        [imp.id]
+      )
+    ).rows;
+    assert.equal(splitRows.length, 2);
+    assert.ok(splitRows[0]);
+    assert.ok(splitRows[1]);
+    assert.equal(splitRows[0].status, 'approved');
+    assert.equal(splitRows[1].status, 'clawback');
+
+    // 6. Verify Line Item Uniqueness Constraint: duplicate split insert must fail
+    const lineItem = (
+      await c.query<{ id: string }>('SELECT id FROM commission_line_items WHERE import_id = $1 LIMIT 1', [imp.id])
+    ).rows[0];
+    assert.ok(lineItem);
+    await assert.rejects(
+      async () => {
+        await c.query(
+          `INSERT INTO commission_splits (
+             tenant_id, import_id, line_item_id, agreement_id, producer_node_id, status,
+             gross_amount_cents, broker_net_cents, branch_override_cents, mga_spread_cents, holdback_cents
+           ) VALUES ($1, $2, $3, $4, $5, 'calculated', 1000, 800, 100, 100, 0)`,
+          [tenantId, imp.id, lineItem.id, slAgreeRes.json.agreement.id, brokerNodeId]
+        );
+      },
+      (err: any) => {
+        return err.code === '23505' && err.constraint === 'comm_splits_line_unique';
+      },
+      'Unique constraint comm_splits_line_unique must prevent duplicate split for same line item'
+    );
+
+    // 7. Verify Database Lock Trigger: trg_lock_approved_commission_splits blocks UPDATE and DELETE
+    await assert.rejects(
+      async () => {
+        await c.query('UPDATE commission_splits SET broker_net_cents = 0 WHERE import_id = $1', [imp.id]);
+      },
+      (err: any) => {
+        return err.message.includes('Cannot modify or delete commission splits for an approved or posted statement');
+      },
+      'Lock trigger must prevent UPDATE on splits of approved import'
+    );
+
+    await assert.rejects(
+      async () => {
+        await c.query('DELETE FROM commission_splits WHERE import_id = $1', [imp.id]);
+      },
+      (err: any) => {
+        return err.message.includes('Cannot modify or delete commission splits for an approved or posted statement');
+      },
+      'Lock trigger must prevent DELETE on splits of approved import'
+    );
+
+    // 8. Verify Database Lock Trigger: trg_lock_approved_commission_imports blocks UPDATE and DELETE
+    await assert.rejects(
+      async () => {
+        await c.query("UPDATE commission_imports SET status = 'reconciled' WHERE id = $1", [imp.id]);
+      },
+      (err: any) => {
+        return err.message.includes('Cannot revoke or alter status of an approved statement');
+      },
+      'Lock trigger must prevent UPDATE on approved commission import'
+    );
+
+    await assert.rejects(
+      async () => {
+        await c.query('DELETE FROM commission_imports WHERE id = $1', [imp.id]);
+      },
+      (err: any) => {
+        return err.message.includes('Cannot delete an approved commission statement');
+      },
+      'Lock trigger must prevent DELETE on approved commission import'
+    );
+  });
+});
+

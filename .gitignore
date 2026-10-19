@@ -8,3 +8,4 @@ apps/api/public/app
 
 apps/extension/dist
 apps/extension/pack
+*.pdf
