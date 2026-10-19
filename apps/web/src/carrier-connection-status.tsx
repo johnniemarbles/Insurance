@@ -7,6 +7,7 @@ export interface CarrierConnectionStatusItem {
   id: string;
   displayName: string;
   country: string;
+  isAuthoritative: boolean;
   currentTier: 'manual_portal' | 'sandbox_testing' | 'certified' | 'live';
   adapterStatus: 'implemented' | 'staged' | 'pending';
   dispatchLocked: boolean;
@@ -15,14 +16,26 @@ export interface CarrierConnectionStatusItem {
   recipientTo: string | null;
   gates: {
     gate1LegalAgreement: boolean;
+    gate1LegalEvidence?: string | null;
     gate2SandboxCertified: boolean;
+    gate2SandboxEvidence?: string | null;
     gate3KmsSecretsProvisioned: boolean;
+    gate3KmsEvidence?: string | null;
     gate4OutboxSafetyVerified: boolean;
+    gate4OutboxEvidence?: string | null;
     gate5FeatureFlagActive: boolean;
+    gate5ApprovedBy?: string | null;
+    gate5ApprovedAt?: string | null;
   };
+  tierExpiresOn?: string | null;
+  certifiedBy?: string | null;
+  certifiedAt?: string | null;
+  notes?: string | null;
+  revision?: number;
+  updatedAt?: string | null;
 }
 
-const STATIC_CARRIER_DATA: Record<string, Omit<CarrierConnectionStatusItem, 'id' | 'displayName' | 'country' | 'recipientVerified' | 'recipientTo'>> = {
+const STATIC_CARRIER_DATA: Record<string, Omit<CarrierConnectionStatusItem, 'id' | 'displayName' | 'country' | 'recipientVerified' | 'recipientTo' | 'isAuthoritative'>> = {
   'ia-financial-group': {
     currentTier: 'manual_portal',
     adapterStatus: 'implemented',
@@ -147,41 +160,93 @@ export function CarrierConnectionStatusPanel({
 
   useEffect(() => {
     let active = true;
-    call('GET', '/v1/compliance/carriers')
-      .then((res: { carriers?: Array<{ id: string; displayName: string; country: string; connectionMode: string; connectionVerified: boolean }> }) => {
+
+    function loadFallback() {
+      call('GET', '/v1/compliance/carriers')
+        .then((res: { carriers?: Array<{ id: string; displayName: string; country: string; connectionMode: string; connectionVerified: boolean }> }) => {
+          if (!active) return;
+          const list = (res.carriers ?? []).map(c => {
+            const defaults = STATIC_CARRIER_DATA[c.id] ?? {
+              currentTier: 'manual_portal' as const,
+              adapterStatus: 'pending' as const,
+              dispatchLocked: true,
+              webhookQuarantineActive: true,
+              gates: {
+                gate1LegalAgreement: false,
+                gate2SandboxCertified: false,
+                gate3KmsSecretsProvisioned: false,
+                gate4OutboxSafetyVerified: true,
+                gate5FeatureFlagActive: false,
+              },
+            };
+            return {
+              id: c.id,
+              displayName: c.displayName,
+              country: c.country,
+              isAuthoritative: false,
+              recipientVerified: c.connectionVerified,
+              recipientTo: null,
+              ...defaults,
+            };
+          });
+          setCarriers(list);
+          if (list.length > 0 && !list.some(c => c.id === selectedCarrierId)) {
+            setSelectedCarrierId(list[0]!.id);
+          }
+        })
+        .catch(() => {});
+    }
+
+    call('GET', '/v1/compliance/carrier-certifications')
+      .then((res: { certifications?: any[] }) => {
         if (!active) return;
-        const list = (res.carriers ?? []).map(c => {
-          const defaults = STATIC_CARRIER_DATA[c.id] ?? {
-            currentTier: 'manual_portal' as const,
-            adapterStatus: 'pending' as const,
-            dispatchLocked: true,
-            webhookQuarantineActive: true,
-            gates: {
-              gate1LegalAgreement: false,
-              gate2SandboxCertified: false,
-              gate3KmsSecretsProvisioned: false,
-              gate4OutboxSafetyVerified: true,
-              gate5FeatureFlagActive: false,
-            },
-          };
-          return {
-            id: c.id,
+        if (res?.certifications && Array.isArray(res.certifications) && res.certifications.length > 0) {
+          const list: CarrierConnectionStatusItem[] = res.certifications.map(c => ({
+            id: c.carrierId,
             displayName: c.displayName,
             country: c.country,
-            recipientVerified: c.connectionVerified,
+            isAuthoritative: Boolean(c.isAuthoritative),
+            currentTier: c.currentTier,
+            adapterStatus: c.adapterStatus,
+            dispatchLocked: Boolean(c.dispatchLocked),
+            webhookQuarantineActive: Boolean(c.webhookQuarantineActive),
+            recipientVerified: true,
             recipientTo: null,
-            ...defaults,
-          };
-        });
-        setCarriers(list);
-        if (list.length > 0 && !list.some(c => c.id === selectedCarrierId)) {
-          setSelectedCarrierId(list[0]!.id);
+            gates: {
+              gate1LegalAgreement: Boolean(c.gates?.gate1LegalAgreement),
+              gate1LegalEvidence: c.gates?.gate1LegalEvidence ?? null,
+              gate2SandboxCertified: Boolean(c.gates?.gate2SandboxCertified),
+              gate2SandboxEvidence: c.gates?.gate2SandboxEvidence ?? null,
+              gate3KmsSecretsProvisioned: Boolean(c.gates?.gate3KmsSecretsProvisioned),
+              gate3KmsEvidence: c.gates?.gate3KmsEvidence ?? null,
+              gate4OutboxSafetyVerified: Boolean(c.gates?.gate4OutboxSafetyVerified),
+              gate4OutboxEvidence: c.gates?.gate4OutboxEvidence ?? null,
+              gate5FeatureFlagActive: Boolean(c.gates?.gate5FeatureFlagActive),
+              gate5ApprovedBy: c.gates?.gate5ApprovedBy ?? null,
+              gate5ApprovedAt: c.gates?.gate5ApprovedAt ?? null,
+            },
+            tierExpiresOn: c.tierExpiresOn ?? null,
+            certifiedBy: c.certifiedBy ?? null,
+            certifiedAt: c.certifiedAt ?? null,
+            notes: c.notes ?? null,
+            revision: c.revision ?? 1,
+            updatedAt: c.updatedAt ?? null,
+          }));
+          setCarriers(list);
+          if (list.length > 0 && !list.some(c => c.id === selectedCarrierId)) {
+            setSelectedCarrierId(list[0]!.id);
+          }
+          return;
         }
+        loadFallback();
       })
-      .catch(() => {})
+      .catch(() => {
+        loadFallback();
+      })
       .finally(() => {
         if (active) setLoading(false);
       });
+
     return () => {
       active = false;
     };
@@ -295,7 +360,12 @@ export function CarrierConnectionStatusPanel({
                     onClick={() => setSelectedCarrierId(c.id)}
                   >
                     <div>
-                      <div style={{ fontWeight: 600, color: 'var(--navy)', fontSize: '14px' }}>{c.displayName}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--navy)', fontSize: '14px' }}>{c.displayName}</span>
+                        {c.isAuthoritative && (
+                          <span style={{ fontSize: '10px', color: 'var(--ok, #16a34a)' }} title={fr ? 'Registre en base' : 'Authoritative DB'}>●</span>
+                        )}
+                      </div>
                       <small class="muted">{c.country} · {tierInfo.label}</small>
                     </div>
                     <span class={`pill ${c.adapterStatus === 'implemented' ? 'ok' : 'muted'}`} style={{ fontSize: '11px' }}>
@@ -317,9 +387,20 @@ export function CarrierConnectionStatusPanel({
                   <h4 style={{ margin: 0, fontSize: '18px', color: 'var(--navy)' }}>{selected.displayName}</h4>
                   <small class="muted">ID: <code>{selected.id}</code> · {selected.country}</small>
                 </div>
-                <span class="pill ok" style={{ fontSize: '12px', padding: '4px 10px' }}>
-                  {tm[selected.currentTier].label}
-                </span>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {selected.isAuthoritative ? (
+                    <span class="pill ok" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                      {fr ? `✓ Registre vérifié (Rév. ${selected.revision ?? 1})` : `✓ Authoritative Ledger (Rev. ${selected.revision ?? 1})`}
+                    </span>
+                  ) : (
+                    <span class="pill muted" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                      {fr ? 'Référence par défaut' : 'Default Baseline'}
+                    </span>
+                  )}
+                  <span class={`pill ${selected.currentTier === 'live' ? 'bad' : 'ok'}`} style={{ fontSize: '12px', padding: '4px 10px' }}>
+                    {tm[selected.currentTier].label}
+                  </span>
+                </div>
               </div>
 
               {/* Status Attribute Badges */}
@@ -346,25 +427,52 @@ export function CarrierConnectionStatusPanel({
                 </div>
               </div>
 
-              {/* Five Release Gates Progress Checklist */}
+              {/* Five Release Gates Progress Checklist with Evidence */}
               <div>
                 <strong style={{ fontSize: '13px', color: 'var(--navy)' }}>
                   {fr ? 'Portes de déverrouillage pour expédition électronique en direct' : 'Live Electronic Dispatch Release Gates'}
                 </strong>
                 <ul style={{ listStyle: 'none', padding: 0, margin: '10px 0 0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {[
-                    { key: 'gate1LegalAgreement', title: fr ? 'Porte 1 : Entente bilatérale et DPA signés' : 'Gate 1: Bilateral Agreement & DPA Signed', active: selected.gates.gate1LegalAgreement },
-                    { key: 'gate2SandboxCertified', title: fr ? 'Porte 2 : Certification technique en bac à sable' : 'Gate 2: Technical Sandbox Certification', active: selected.gates.gate2SandboxCertified },
-                    { key: 'gate3KmsSecretsProvisioned', title: fr ? 'Porte 3 : Clés doubles HMAC provisionnées dans KMS' : 'Gate 3: KMS Dual-Secret Provisioning', active: selected.gates.gate3KmsSecretsProvisioned },
-                    { key: 'gate4OutboxSafetyVerified', title: fr ? 'Porte 4 : Verrouillage transactionnel outbox vérifié' : 'Gate 4: Outbox Worker Safety Verified', active: selected.gates.gate4OutboxSafetyVerified },
-                    { key: 'gate5FeatureFlagActive', title: fr ? 'Porte 5 : Activation explicite par drapeau de fonctionnalité' : 'Gate 5: Explicit Scoped Feature Flag Activation', active: selected.gates.gate5FeatureFlagActive },
+                    {
+                      key: 'gate1LegalAgreement',
+                      title: fr ? 'Porte 1 : Entente bilatérale et DPA signés' : 'Gate 1: Bilateral Agreement & DPA Signed',
+                      active: selected.gates.gate1LegalAgreement,
+                      evidence: selected.gates.gate1LegalEvidence,
+                    },
+                    {
+                      key: 'gate2SandboxCertified',
+                      title: fr ? 'Porte 2 : Certification technique en bac à sable' : 'Gate 2: Technical Sandbox Certification',
+                      active: selected.gates.gate2SandboxCertified,
+                      evidence: selected.gates.gate2SandboxEvidence,
+                    },
+                    {
+                      key: 'gate3KmsSecretsProvisioned',
+                      title: fr ? 'Porte 3 : Clés doubles HMAC provisionnées dans KMS' : 'Gate 3: KMS Dual-Secret Provisioning',
+                      active: selected.gates.gate3KmsSecretsProvisioned,
+                      evidence: selected.gates.gate3KmsEvidence,
+                    },
+                    {
+                      key: 'gate4OutboxSafetyVerified',
+                      title: fr ? 'Porte 4 : Verrouillage transactionnel outbox vérifié' : 'Gate 4: Outbox Worker Safety Verified',
+                      active: selected.gates.gate4OutboxSafetyVerified,
+                      evidence: selected.gates.gate4OutboxEvidence,
+                    },
+                    {
+                      key: 'gate5FeatureFlagActive',
+                      title: fr ? 'Porte 5 : Activation explicite par drapeau de fonctionnalité' : 'Gate 5: Explicit Scoped Feature Flag Activation',
+                      active: selected.gates.gate5FeatureFlagActive,
+                      evidence: selected.gates.gate5ApprovedBy
+                        ? (fr ? `Approuvé par: ${selected.gates.gate5ApprovedBy.slice(0, 8)}…` : `Approved by: ${selected.gates.gate5ApprovedBy.slice(0, 8)}…`)
+                        : null,
+                    },
                   ].map(gate => (
                     <li
                       key={gate.key}
                       style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
+                        flexDirection: 'column',
+                        gap: '4px',
                         padding: '8px 12px',
                         borderRadius: '6px',
                         background: gate.active ? 'var(--green-soft, #f0fdf4)' : 'var(--bg-subtle, #f8fafc)',
@@ -372,14 +480,41 @@ export function CarrierConnectionStatusPanel({
                         fontSize: '12px',
                       }}
                     >
-                      <span style={{ fontWeight: gate.active ? 600 : 400 }}>{gate.title}</span>
-                      <span class={`pill ${gate.active ? 'ok' : 'muted'}`} style={{ fontSize: '10px' }}>
-                        {gate.active ? (fr ? 'Complété' : 'Verified') : (fr ? 'Requis' : 'Pending')}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontWeight: gate.active ? 600 : 400 }}>{gate.title}</span>
+                        <span class={`pill ${gate.active ? 'ok' : 'muted'}`} style={{ fontSize: '10px' }}>
+                          {gate.active ? (fr ? 'Complété' : 'Verified') : (fr ? 'Requis' : 'Pending')}
+                        </span>
+                      </div>
+                      {gate.evidence && (
+                        <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontStyle: 'italic', wordBreak: 'break-word' }}>
+                          🔍 {fr ? 'Preuve' : 'Evidence'}: {gate.evidence}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
               </div>
+
+              {/* Provenance & Audit Metadata */}
+              {selected.isAuthoritative && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', borderTop: '1px solid var(--line2, #e2e8f0)', paddingTop: '12px', fontSize: '12px' }}>
+                  <div>
+                    <span class="muted">{fr ? 'Échéance palier:' : 'Tier Expiry:'} </span>
+                    <strong>{selected.tierExpiresOn ?? (fr ? 'Indéterminée (Standard)' : 'Indefinite (Standard)')}</strong>
+                  </div>
+                  <div>
+                    <span class="muted">{fr ? 'Dernière révision:' : 'Last Revision:'} </span>
+                    <strong>{selected.revision ? `Rev #${selected.revision}` : 'Initial'}</strong>
+                  </div>
+                  {selected.certifiedAt && (
+                    <div>
+                      <span class="muted">{fr ? 'Certifié le:' : 'Certified On:'} </span>
+                      <strong>{new Date(selected.certifiedAt).toLocaleDateString(fr ? 'fr-CA' : 'en-CA')}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

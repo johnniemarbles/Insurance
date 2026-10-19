@@ -156,6 +156,19 @@ export async function sweepCarrierOutbox(
             )
           ).rows[0];
 
+          const cert = (
+            await tx.query<{
+              tier: string;
+              gate2_sandbox_certified: boolean;
+              gate5_feature_flag_active: boolean;
+            }>(
+              `SELECT tier, gate2_sandbox_certified, gate5_feature_flag_active
+                 FROM carrier_certifications
+                WHERE tenant_id = $1 AND carrier_id = $2`,
+              [item.tenant_id, item.carrier_id]
+            )
+          ).rows[0];
+
           const connection: CarrierConnection = {
             tenantId: item.tenant_id,
             carrierId: item.carrier_id,
@@ -195,8 +208,8 @@ export async function sweepCarrierOutbox(
               allowExternalDispatch: false, // Remains strictly false until verified insurer technical interface is approved
               carrierAuthorized: connection.enabled,
               destinationVerified: connection.verified,
-              sandboxApproved: false,
-              productionApproved: false,
+              sandboxApproved: Boolean(cert?.gate2_sandbox_certified),
+              productionApproved: Boolean(cert?.tier === 'live' && cert?.gate5_feature_flag_active),
               changeTicket: null,
             });
 
