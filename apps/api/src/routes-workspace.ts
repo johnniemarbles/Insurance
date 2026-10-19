@@ -219,7 +219,8 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
           await tx.query<{ n: number }>(
             `SELECT (
               (SELECT count(*)::int FROM carrier_contract_cases WHERE state IN ('submitted', 'carrier_review')) +
-              (SELECT count(*)::int FROM onboarding_cases WHERE standing = 'review_required' OR stage = 'review')
+              (SELECT count(*)::int FROM onboarding_cases WHERE standing = 'review_required' OR stage = 'review') +
+              (SELECT count(*)::int FROM commission_imports WHERE status IN ('registered', 'exceptions_flagged'))
             ) AS n`
           )
         ).rows[0]?.n ?? 0;
@@ -386,6 +387,65 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
             date: ei.expiresOn,
             target: { page: 'compliance', routeId: 'files' },
             actionLabel: 'Verify Document',
+          });
+        }
+      }
+
+      // 5b. Commercial Operations: Statement reconciliation & exception review
+      if ((admin || compliance) && ['admin', 'ho', 'compliance'].includes(activePerspective)) {
+        const pendingImports = (
+          await tx.query<{ id: string; carrierId: string; ref: string; status: string; receivedDate: string }>(
+            `SELECT id, carrier_id AS "carrierId", statement_reference AS "ref", status, statement_date::text AS "receivedDate"
+               FROM commission_imports
+              WHERE status IN ('registered', 'exceptions_flagged')
+              ORDER BY statement_date DESC LIMIT 5`
+          )
+        ).rows;
+
+        for (const pi of pendingImports) {
+          workQueue.push({
+            id: `wq-comm-stmt-${pi.id}`,
+            category: 'compliance_alert',
+            title: `Commission Statement: ${pi.carrierId} (${pi.ref})`,
+            subtitle: pi.status === 'exceptions_flagged' ? 'Reconciliation exceptions flagged' : 'Pending reconciliation approval',
+            role: 'Compliance',
+            priority: pi.status === 'exceptions_flagged' ? 'high' : 'normal',
+            date: pi.receivedDate,
+            target: { page: 'compliance', routeId: 'carriers' },
+            actionLabel: 'Reconcile Statement',
+          });
+        }
+      }
+
+      // 5c. Commercial Operations: Policy renewals expiring in next 30 days
+      if (['admin', 'ho', 'manager', 'partner'].includes(activePerspective)) {
+        const expiringPolicies = (
+          await tx.query<{ id: string; policyNumber: string; carrierId: string; planName: string; expiryDate: string }>(
+            `SELECT p.id, p.policy_number AS "policyNumber", p.carrier_id AS "carrierId", p.plan_name AS "planName", p.expiry_date::text AS "expiryDate"
+               FROM policy_records p
+              WHERE p.status = 'active'
+                AND p.expiry_date IS NOT NULL
+                AND p.expiry_date >= CURRENT_DATE
+                AND p.expiry_date <= CURRENT_DATE + INTERVAL '30 days'
+                AND (
+                  app_is_head_office() OR app_is_tenant_admin()
+                  OR EXISTS (SELECT 1 FROM user_node_roles WHERE (node_id = p.branch_node_id OR node_id = p.producer_node_id) AND user_id = app_user_id())
+                )
+              ORDER BY p.expiry_date ASC LIMIT 5`
+          )
+        ).rows;
+
+        for (const ep of expiringPolicies) {
+          workQueue.push({
+            id: `wq-pol-renewal-${ep.id}`,
+            category: 'contract_approval',
+            title: `Policy Renewal: ${ep.carrierId} #${ep.policyNumber}`,
+            subtitle: `${ep.planName} · Expires ${ep.expiryDate}`,
+            role: activePerspective === 'partner' ? 'Broker' : 'Manager',
+            priority: 'high',
+            date: ep.expiryDate,
+            target: { page: 'compliance', routeId: 'carriers' },
+            actionLabel: 'Review Renewal',
           });
         }
       }
@@ -592,18 +652,24 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
             )
           ).rows[0]?.n ?? 0;
 
+          const pendingStatements = (
+            await tx.query<{ n: number }>(
+              `SELECT count(*)::int AS n FROM commission_imports WHERE status IN ('registered', 'exceptions_flagged')`
+            )
+          ).rows[0]?.n ?? 0;
+
           cards.push({
             id: 'card-carriers',
             module: 'carriers',
-            title: 'Carrier contracting cases',
-            description: 'Direct insurer contracting workflows, submissions, and appointments.',
-            status: cases.length === 0 && quarantinedReceipts === 0 ? 'empty' : 'ready',
+            title: 'Carrier contracting & reconciliation',
+            description: 'Direct insurer contracting workflows, appointments, and commercial statement reconciliation.',
+            status: cases.length === 0 && quarantinedReceipts === 0 && pendingStatements === 0 ? 'empty' : 'ready',
             metrics: [
               { id: 'total', label: 'Contract cases', value: cases.length },
               { id: 'inReview', label: 'In carrier review', value: inReview, tone: 'neutral' },
               { id: 'verified', label: 'Verified appointments', value: verified, tone: 'good' },
               { id: 'active', label: 'Active authorized', value: active, tone: 'good' },
-              { id: 'expired', label: 'Expired', value: expired, tone: expired > 0 ? 'warn' : 'neutral' },
+              { id: 'pendingStatements', label: 'Pending statements', value: pendingStatements, tone: pendingStatements > 0 ? 'warn' : 'good' },
               { id: 'quarantined', label: 'Quarantined webhooks', value: quarantinedReceipts, tone: quarantinedReceipts > 0 ? 'warn' : 'neutral' },
             ],
             items: cases.slice(0, 5).map(c => ({
@@ -612,8 +678,8 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
               subtitle: `State: ${c.effectiveState}`,
               status: c.effectiveState,
             })),
-            drilldown: { page: 'compliance', routeId: 'carriers', label: 'Open carrier contracting' },
-            allowedActions: ['view_cases', 'prepare_packet'],
+            drilldown: { page: 'compliance', routeId: 'carriers', label: 'Open carrier operations' },
+            allowedActions: ['view_cases', 'prepare_packet', 'reconcile_statements'],
           });
         } else if (mod === 'onboarding') {
           const cases = (
