@@ -173,7 +173,7 @@ export const SETTINGS: readonly SettingDef[] = [
   },
 ] as const;
 
-export const NAV_ITEMS = ['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings'] as const;
+export const NAV_ITEMS = ['home', 'notifications', 'pipelines', 'renewals', 'commercial', 'compliance', 'contacts', 'merges', 'training', 'settings'] as const;
 export type NavItemId = (typeof NAV_ITEMS)[number];
 export interface NavLayout { order: string[]; hidden: string[] }
 

@@ -20,6 +20,7 @@ import { HomePage } from './home.tsx';
 import { NotificationsPage } from './notifications.tsx';
 import { RenewalsPage } from './renewals.tsx';
 import { CompliancePage } from './compliance.tsx';
+import { CommercialPage } from './commercial.tsx';
 
 import { setHeadOffice, setCountrySwitch } from './ho.ts';
 import { tabArrows } from './a11y.ts';
@@ -47,6 +48,7 @@ const NAV_ICON: Record<string, string> = {
   inbox: 'M4 4h16v12H4zM4 16l4-4h8l4 4',
   pipelines: 'M4 6h6v4H4zM14 6h6v4h-6zM4 14h6v4H4zM14 14h6v4h-6z',
   renewals: 'M7 3v3M17 3v3M4 9h16M5 5h14v15H5z',
+  commercial: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   training: 'M12 4l9 4-9 4-9-4zM7 11v4c0 1.5 2.2 3 5 3s5-1.5 5-3v-4',
   compliance: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
   contacts: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21c0-4 3-6 7-6s7 2 7 6M16 4a4 4 0 0 1 0 8M22 21c0-2-1-4-3-5',
@@ -123,8 +125,8 @@ const older = (have?: string, need?: string) => {
   return false;
 };
 
-type PageId = 'inbox' | 'home' | 'notifications' | 'pipelines' | 'renewals' | 'compliance' | 'partners' | 'contacts' | 'merges' | 'training' | 'settings';
-const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewals', 'training', 'compliance', 'partners', 'contacts', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
+type PageId = 'inbox' | 'home' | 'notifications' | 'pipelines' | 'renewals' | 'commercial' | 'compliance' | 'partners' | 'contacts' | 'merges' | 'training' | 'settings';
+const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewals', 'commercial', 'training', 'compliance', 'partners', 'contacts', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 /** The top menu: three entries across the top; the rest of the sections stay in the left column. */
 const TOP_PAGES: { p: PageId; text: (l: Locale) => string }[] = [
   { p: 'home', text: (l) => (l === 'fr-CA' ? 'Tableau de bord' : 'Dashboard') },
@@ -152,10 +154,10 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
     const next = pageOf(p); setPage(next); setRouteId(id);
     try { localStorage.setItem('pii.page', next); } catch { /* private window */ }
   };
-  const label: Record<PageId, string> = { inbox: locale === 'fr-CA' ? 'Boîte de démo' : 'Demo inbox', home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', partners: locale === 'fr-CA' ? 'Partenaires' : 'Partners', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
+  const label: Record<PageId, string> = { inbox: locale === 'fr-CA' ? 'Boîte de démo' : 'Demo inbox', home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, commercial: locale === 'fr-CA' ? 'Finances & Polices' : 'Finance & Policies', compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', partners: locale === 'fr-CA' ? 'Partenaires' : 'Partners', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
-  // Home, Compliance and Training bring their own page width; every other page is framed the same way.
-  const framed = page !== 'home' && page !== 'compliance' && !(page === 'training' && LMS);
+  // Home, Compliance, Commercial and Training bring their own page width; every other page is framed the same way.
+  const framed = page !== 'home' && page !== 'compliance' && page !== 'commercial' && !(page === 'training' && LMS);
   return (
     <div class={`pii shell${settings?.get<boolean>('ui.compact') ? ' compact' : ''}${railOpen ? '' : ' rail-closed'}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
       {demoUserId && <DemoBar call={call} locale={locale} meId={demoUserId} />}
@@ -177,6 +179,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
       {page === 'home' ? <UnifiedWorkspace call={call} locale={locale} go={go} name={meName} legacyHome={<HomePage call={call} t={t} locale={locale} go={go} name={meName} isAdmin={isAdmin} currency={host.region === 'us' ? 'USD' : 'CAD'} compose={compose} meEmail={meEmail} />} />
         : page === 'notifications' ? <NotificationsPage call={call} locale={locale} go={go} />
         : page === 'renewals' ? <RenewalsPage call={call} locale={locale} go={go} />
+        : page === 'commercial' ? <CommercialPage call={call} locale={locale} openImportId={routeId} />
         : page === 'partners' ? <PartnersPage call={call} locale={locale} headOffice={isHeadOffice} go={go} />
         : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} host={host} openId={routeId} />
         : page === 'contacts' ? <ContactsView call={call} t={t} />

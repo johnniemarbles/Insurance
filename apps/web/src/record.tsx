@@ -192,9 +192,64 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
   const [taskDue, setTaskDue] = useState('');
   const [assignee, setAssignee] = useState('');
   const [busy, setBusy] = useState(false);
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [issueCarrier, setIssueCarrier] = useState('ia-financial-group');
+  const [issueNumber, setIssueNumber] = useState('');
+  const [issuePlan, setIssuePlan] = useState(box.name);
+  const [issueJurisdiction, setIssueJurisdiction] = useState('QC');
+  const [issueAnnual, setIssueAnnual] = useState(box.valueAmount ? String(box.valueAmount) : '1200.00');
+  const [issueModal, setIssueModal] = useState(box.valueAmount ? String(Math.round(box.valueAmount / 12 * 100) / 100) : '100.00');
+  const [issueFreq, setIssueFreq] = useState('monthly');
+  const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [issueBusy, setIssueBusy] = useState(false);
+  const [issueErr, setIssueErr] = useState('');
+  const [issueOk, setIssueOk] = useState('');
   const canEdit = full.canEdit !== false;
   const flash = useRef<ReturnType<typeof setTimeout>>();
   const say = (m: string) => { setMsg(m); clearTimeout(flash.current); flash.current = setTimeout(() => setMsg(''), 3500); };
+
+  const handleIssuePolicy = async (e: Event) => {
+    e.preventDefault();
+    setIssueBusy(true);
+    setIssueErr('');
+    try {
+      const annualCents = Math.round(parseFloat(issueAnnual) * 100);
+      const modalCents = Math.round(parseFloat(issueModal) * 100);
+      if (isNaN(annualCents) || isNaN(modalCents) || annualCents < 0 || modalCents < 0) {
+        throw new Error(locale === 'fr-CA' ? 'Montants de primes invalides' : 'Valid monetary premium amounts are required');
+      }
+      if (!issueNumber.trim() || !issuePlan.trim()) {
+        throw new Error(locale === 'fr-CA' ? 'Numéro de police et nom du régime requis' : 'Policy number and plan name are required');
+      }
+
+      const payload: Record<string, unknown> = {
+        carrierId: issueCarrier,
+        policyNumber: issueNumber.trim(),
+        planName: issuePlan.trim(),
+        jurisdiction: issueJurisdiction.trim().toUpperCase(),
+        annualPremiumCents: annualCents,
+        modalPremiumCents: modalCents,
+        premiumFrequency: issueFreq,
+        status: 'active',
+        effectiveDate: issueDate,
+      };
+      if (full.contextNodeId) {
+        payload.branchNodeId = full.contextNodeId;
+      }
+
+      await call('POST', '/v1/commercial/policies', payload);
+      setIssueOk(locale === 'fr-CA' ? `Police ${issueNumber} émise avec succès!` : `Policy ${issueNumber} successfully issued!`);
+      say(locale === 'fr-CA' ? 'Police émise' : 'Policy issued');
+      setTimeout(() => {
+        setIssueOpen(false);
+        setIssueOk('');
+      }, 1500);
+    } catch (x2) {
+      setIssueErr((x2 as Error).message);
+    } finally {
+      setIssueBusy(false);
+    }
+  };
 
   const toDraft = (b: Box) => ({ name: b.name, ownerUserId: b.ownerUserId ?? '', valueAmount: b.valueAmount == null ? '' : String(b.valueAmount), closeDate: b.closeDate ?? '', custom: { ...b.custom } as Record<string, unknown> });
   const loadFull = async (resetDraft: boolean) => {
@@ -276,6 +331,22 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
         <div class="rec-stage">
           <label for="rec-stg">{x.stage}</label>
           <select id="rec-stg" value={stageId} disabled={!canEdit} onChange={(e) => void move((e.target as HTMLSelectElement).value)}>{pipeline.stages.map((s) => <option value={s.id}>{s.name}</option>)}</select>
+          <button
+            type="button"
+            class="btn quiet"
+            style={{ marginLeft: '8px', fontSize: '13px', padding: '4px 10px' }}
+            title={locale === 'fr-CA' ? 'Émettre une police commerciale' : 'Issue In-Force Commercial Policy'}
+            onClick={() => {
+              setIssuePlan(draft.name || box.name);
+              if (draft.valueAmount) {
+                setIssueAnnual(draft.valueAmount);
+                setIssueModal(String(Math.round(Number(draft.valueAmount) / 12 * 100) / 100));
+              }
+              setIssueOpen(true);
+            }}
+          >
+            📋 {locale === 'fr-CA' ? 'Émettre la police' : 'Issue Policy'}
+          </button>
           {msg && <span class="savedchip" role="status">✓ {msg}</span>}
         </div>
         <div class="rec-tabs" role="tablist">
@@ -387,6 +458,88 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
           <div class="foot-row"><span class="spacer" /><button class="btn quiet" onClick={requestClose}>{x.close}</button></div>
         )}
       </footer>
+
+      {issueOpen && (
+        <div class="modal-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="issue-pol-h" class="rec-form" style={{ background: '#fff', borderRadius: '12px', padding: '24px', width: '90%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 id="issue-pol-h" style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>
+                📋 {locale === 'fr-CA' ? 'Émettre une police commerciale' : 'Issue In-Force Commercial Policy'}
+              </h3>
+              <button class="x" type="button" onClick={() => setIssueOpen(false)}>×</button>
+            </div>
+            <p class="muted" style={{ fontSize: '13px', marginBottom: '16px' }}>
+              {locale === 'fr-CA'
+                ? 'Reliez directement ce dossier CRM à une police commerciale dans le registre pour la réconciliation des commissions.'
+                : 'Bridge this CRM deal into an official in-force policy record for commission reconciliation and accounting.'}
+            </p>
+            {issueErr && <div class="err" role="alert" style={{ marginBottom: '12px' }}>{issueErr}</div>}
+            {issueOk && <div role="status" style={{ background: '#e6f4ea', color: '#137333', padding: '8px 10px', borderRadius: '8px', marginBottom: '12px', fontWeight: 600 }}>{issueOk}</div>}
+            <form onSubmit={handleIssuePolicy}>
+              <label class="fld">
+                <span>{locale === 'fr-CA' ? 'Assureur' : 'Carrier'} *</span>
+                <select value={issueCarrier} onChange={(e) => setIssueCarrier((e.target as HTMLSelectElement).value)}>
+                  <option value="ia-financial-group">iA Financial Group (Industrielle Alliance)</option>
+                  <option value="sun-life">Sun Life Assurance</option>
+                  <option value="manulife">Manulife Financial</option>
+                  <option value="canada-life">Canada Life</option>
+                  <option value="desjardins">Desjardins Insurance</option>
+                  <option value="empire-life">Empire Life</option>
+                  <option value="equitable-life">Equitable Life of Canada</option>
+                </select>
+              </label>
+              <div class="two">
+                <label class="fld">
+                  <span>{locale === 'fr-CA' ? 'Numéro de police' : 'Policy Number'} *</span>
+                  <input required placeholder="e.g. POL-849204" value={issueNumber} onInput={(e) => setIssueNumber((e.target as HTMLInputElement).value)} />
+                </label>
+                <label class="fld">
+                  <span>{locale === 'fr-CA' ? 'Territoire' : 'Jurisdiction'} *</span>
+                  <input required placeholder="QC / ON / BC" maxLength={10} value={issueJurisdiction} onInput={(e) => setIssueJurisdiction((e.target as HTMLInputElement).value)} />
+                </label>
+              </div>
+              <label class="fld">
+                <span>{locale === 'fr-CA' ? 'Nom du régime' : 'Plan Name'} *</span>
+                <input required placeholder="e.g. Term 20 Life Insurance" value={issuePlan} onInput={(e) => setIssuePlan((e.target as HTMLInputElement).value)} />
+              </label>
+              <div class="two">
+                <label class="fld">
+                  <span>{locale === 'fr-CA' ? 'Prime annuelle ($)' : 'Annual Premium ($)'} *</span>
+                  <input type="number" min="0" step="0.01" required value={issueAnnual} onInput={(e) => setIssueAnnual((e.target as HTMLInputElement).value)} />
+                </label>
+                <label class="fld">
+                  <span>{locale === 'fr-CA' ? 'Prime modale ($)' : 'Modal Premium ($)'} *</span>
+                  <input type="number" min="0" step="0.01" required value={issueModal} onInput={(e) => setIssueModal((e.target as HTMLInputElement).value)} />
+                </label>
+              </div>
+              <div class="two">
+                <label class="fld">
+                  <span>{locale === 'fr-CA' ? 'Fréquence de prime' : 'Premium Frequency'} *</span>
+                  <select value={issueFreq} onChange={(e) => setIssueFreq((e.target as HTMLSelectElement).value)}>
+                    <option value="monthly">{locale === 'fr-CA' ? 'Mensuel' : 'Monthly'}</option>
+                    <option value="annual">{locale === 'fr-CA' ? 'Annuel' : 'Annual'}</option>
+                    <option value="semi-annual">{locale === 'fr-CA' ? 'Semi-annuel' : 'Semi-Annual'}</option>
+                    <option value="quarterly">{locale === 'fr-CA' ? 'Trimestriel' : 'Quarterly'}</option>
+                  </select>
+                </label>
+                <label class="fld">
+                  <span>{locale === 'fr-CA' ? 'Date d’effet' : 'Effective Date'} *</span>
+                  <input type="date" required value={issueDate} onInput={(e) => setIssueDate((e.target as HTMLInputElement).value)} />
+                </label>
+              </div>
+              <div class="foot-row" style={{ marginTop: '16px' }}>
+                <span class="spacer" />
+                <button type="button" class="btn quiet" onClick={() => setIssueOpen(false)}>
+                  {locale === 'fr-CA' ? 'Annuler' : 'Cancel'}
+                </button>
+                <button type="submit" class="btn" disabled={issueBusy || !issueNumber.trim() || !issuePlan.trim()}>
+                  {issueBusy ? (locale === 'fr-CA' ? 'Émission en cours...' : 'Issuing...') : (locale === 'fr-CA' ? 'Confirmer l’émission' : 'Confirm Issuance')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
