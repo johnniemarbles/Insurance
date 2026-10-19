@@ -45,6 +45,7 @@ import { registerCarrierExpiryRoutes } from './routes-carrier-expiry.ts';
 import { registerCarrierHistoryRoutes } from './routes-carrier-history.ts';
 import { registerCarrierAuthorizationEvidenceRoutes } from './routes-carrier-authorization-evidence.ts';
 import { registerCarrierActivationRoutes } from './routes-carrier-activation.ts';
+import { registerCarrierCertificationRoutes } from './routes-carrier-certifications.ts';
 import { registerCarrierPreflightRoutes } from './routes-carrier-preflight.ts';
 import { registerCarrierProductRevocationRoutes } from './routes-carrier-product-revocation.ts';
 import { registerCarrierHoldRoutes } from './routes-carrier-holds.ts';
@@ -203,6 +204,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerCarrierHistoryRoutes(app, deps);
   registerCarrierAuthorizationEvidenceRoutes(app, deps);
   registerCarrierActivationRoutes(app, deps);
+  registerCarrierCertificationRoutes(app, deps);
   registerCarrierPreflightRoutes(app, deps);
   registerCarrierProductRevocationRoutes(app, deps);
   registerCarrierHoldRoutes(app, deps);
