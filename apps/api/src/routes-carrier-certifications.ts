@@ -86,7 +86,7 @@ export function registerCarrierCertificationRoutes(app: FastifyInstance, deps: A
           isAuthoritative,
           currentTier: r.tier ?? 'manual_portal',
           adapterStatus,
-          dispatchLocked: true, // Fail-closed: allowExternalDispatch remains false
+          dispatchLocked: r.tier !== 'live',
           webhookQuarantineActive: true,
           gates: {
             gate1LegalAgreement: Boolean(r.gate1_legal_agreement),
@@ -361,6 +361,153 @@ export function registerCarrierCertificationRoutes(app: FastifyInstance, deps: A
           currentRecord: r.current_record,
         })),
       };
+    });
+  });
+
+  // 5. Formal Insurer Production Appointment Sign-Off Protocol
+  app.post('/v1/compliance/carrier-certifications/:carrierId/production-signoff', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const isOfficer =
+      ctx.isTenantAdmin ||
+      ctx.roles.some((r) => r.role === 'compliance' || r.role === 'admin');
+    if (!isOfficer) throw forbidden('Compliance authorization required for insurer production sign-off');
+
+    const carrierId = (req.params as { carrierId: string }).carrierId;
+    if (!req.body || typeof req.body !== 'object') throw invalid('JSON object body required');
+
+    const b = req.body as Record<string, unknown>;
+    const appointmentReference = typeof b.appointmentReference === 'string' ? b.appointmentReference.trim() : '';
+    const insurerSignoffContact = typeof b.insurerSignoffContact === 'string' ? b.insurerSignoffContact.trim() : '';
+    const dpaAgreementHash = typeof b.dpaAgreementHash === 'string' ? b.dpaAgreementHash.trim().toLowerCase() : '';
+    const tierExpiresOn = typeof b.tierExpiresOn === 'string' ? b.tierExpiresOn.trim() : '';
+    const jurisdictions = Array.isArray(b.jurisdictions) && b.jurisdictions.length > 0 ? b.jurisdictions : ['QC', 'ON', 'BC'];
+
+    if (!appointmentReference || !insurerSignoffContact) {
+      throw invalid('appointmentReference and insurerSignoffContact are mandatory for production sign-off');
+    }
+    if (!/^[a-f0-9]{64}$/.test(dpaAgreementHash)) {
+      throw invalid('dpaAgreementHash must be a valid 64-character SHA-256 hex string');
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tierExpiresOn)) {
+      throw invalid('tierExpiresOn must be a valid future date (YYYY-MM-DD)');
+    }
+    const expiry = new Date(`${tierExpiresOn}T00:00:00Z`);
+    if (
+      !Number.isFinite(expiry.getTime()) ||
+      expiry.toISOString().slice(0, 10) !== tierExpiresOn ||
+      tierExpiresOn <= new Date().toISOString().slice(0, 10)
+    ) {
+      throw invalid('tierExpiresOn must be a valid future date');
+    }
+
+    return withRequestTx(deps.appPool, ctx, async (tx: Tx) => {
+      try {
+      // 1. Verify carrier exists
+      const carrierExists = (
+        await tx.query('SELECT 1 FROM carrier_directory WHERE id = $1', [carrierId])
+      ).rowCount;
+      if (!carrierExists) throw notFound('Carrier not found in directory');
+
+      // 2. Fetch current certification record and verify all 5 gates are satisfied
+      const certRow = (
+        await tx.query<{
+          gate1_legal_agreement: boolean;
+          gate2_sandbox_certified: boolean;
+          gate3_kms_secrets_provisioned: boolean;
+          gate4_outbox_safety_verified: boolean;
+          gate5_feature_flag_active: boolean;
+          gate5_approved_by: string | null;
+        }>(
+          `SELECT gate1_legal_agreement, gate2_sandbox_certified,
+                  gate3_kms_secrets_provisioned, gate4_outbox_safety_verified,
+                  gate5_feature_flag_active, gate5_approved_by
+             FROM carrier_certifications
+            WHERE carrier_id = $1 AND tenant_id = app_tenant_id()`,
+          [carrierId]
+        )
+      ).rows[0];
+
+      if (
+        !certRow ||
+        !certRow.gate1_legal_agreement ||
+        !certRow.gate2_sandbox_certified ||
+        !certRow.gate3_kms_secrets_provisioned ||
+        !certRow.gate4_outbox_safety_verified ||
+        !certRow.gate5_feature_flag_active ||
+        !certRow.gate5_approved_by
+      ) {
+        throw invalid('All 5 certification gates must be completed with verified evidence before production sign-off');
+      }
+
+      // 3. Record sign-off in carrier_production_signoffs
+      const signoffRes = await tx.query<{
+        id: string;
+        appointment_reference: string;
+        insurer_signoff_contact: string;
+        signed_off_at: string;
+        effective_from: string;
+        effective_to: string;
+      }>(
+        `INSERT INTO carrier_production_signoffs (
+           tenant_id, carrier_id, appointment_reference, insurer_signoff_contact,
+           signed_off_by, effective_from, effective_to, dpa_agreement_hash,
+           jurisdictions, status
+         ) VALUES (
+           app_tenant_id(), $1, $2, $3, $4, CURRENT_DATE, $5, $6, $7, 'active'
+         )
+         RETURNING id, appointment_reference, insurer_signoff_contact, signed_off_at, effective_from, effective_to`,
+        [
+          carrierId,
+          appointmentReference,
+          insurerSignoffContact,
+          ctx.userId,
+          tierExpiresOn,
+          dpaAgreementHash,
+          jurisdictions,
+        ]
+      );
+      const signoff = signoffRes.rows[0];
+      if (!signoff) {
+        throw invalid('Failed to record carrier production signoff');
+      }
+
+      // 4. Update carrier_certifications to tier 'live'
+      const updatedCert = (
+        await tx.query(
+          `UPDATE carrier_certifications
+              SET tier = 'live',
+                  certified_by = $2,
+                  certified_at = now(),
+                  tier_expires_on = $3,
+                  notes = COALESCE(notes || E'\n', '') || 'Production sign-off reference: ' || $4,
+                  revision = revision + 1,
+                  updated_at = now()
+            WHERE carrier_id = $1 AND tenant_id = app_tenant_id()
+            RETURNING *`,
+          [carrierId, ctx.userId, tierExpiresOn, appointmentReference]
+        )
+      ).rows[0];
+
+      await audit(tx, ctx, 'compliance.carrier_production_signed_off', 'carrier_certification', signoff.id, {
+        carrierId,
+        appointmentReference,
+        insurerSignoffContact,
+        tier: 'live',
+        tierExpiresOn,
+        dpaAgreementHash,
+      });
+
+        return {
+          ok: true,
+          tier: 'live',
+          dispatchLocked: false,
+          signoff,
+          certification: updatedCert,
+        };
+      } catch (err) {
+        console.error('PROD SIGNOFF DETAILED ERROR:', err);
+        throw err;
+      }
     });
   });
 }

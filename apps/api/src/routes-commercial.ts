@@ -15,7 +15,9 @@ import {
   type CommissionTransactionType,
   type ReconciliationStatus,
 } from '@pii/domain';
+import { generateCpa005File, generateNachaFile } from '@pii/platform';
 import type { AppDeps } from './app.ts';
+import { audit } from './audit.ts';
 import { forbidden, invalid, notFound, conflict } from './errors.ts';
 
 function requireCommercialAccess(roles: string[], isTenantAdmin: boolean) {
@@ -1099,9 +1101,9 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
     return await withRequestTx(deps.appPool, ctx, async (tx: Tx) => {
       const splits = (
         await tx.query(
-          `SELECT s.*, n.name AS producer_name, l.policy_number, l.transaction_type
+          `SELECT s.*, COALESCE(n.name, 'Licensed Producer') AS producer_name, l.policy_number, l.transaction_type
              FROM commission_splits s
-             JOIN org_nodes n ON n.id = s.producer_node_id
+             LEFT JOIN org_nodes n ON n.id = s.producer_node_id
              JOIN commission_line_items l ON l.id = s.line_item_id
             WHERE s.import_id = $1 AND s.tenant_id = $2
             ORDER BY s.created_at ASC`,
@@ -1184,9 +1186,419 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
     });
   });
 
-  // 14. Payout Execution Guard (Fail-Closed)
+  // 14. Payout Execution Guard (Fail-Closed default without dual approval)
   app.post('/v1/commercial/commission-imports/:id/payout', async () => {
     throw forbidden('Payouts are disabled until financial reconciliation and insurer approval are certified');
+  });
+
+  // 15. Dual-Custody Payout Batch Staging (Custody 1: Preparation)
+  app.post('/v1/commercial/commission-imports/:id/payout-batch/stage', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const roles = ctx.roles.map((r) => r.role);
+    requireCommercialAccess(roles, Boolean(ctx.isTenantAdmin));
+
+    const id = (req.params as { id: string }).id;
+    if (!/^[a-f0-9-]{36}$/i.test(id)) {
+      throw invalid('Valid UUID statement ID required');
+    }
+
+    const b = (req.body as Record<string, unknown>) ?? {};
+    const currency = typeof b.currency === 'string' && b.currency.toUpperCase() === 'USD' ? 'USD' : 'CAD';
+
+    return withRequestTx(deps.appPool, ctx, async (tx: Tx) => {
+      // 1. Fetch statement
+      const importRes = await tx.query<{
+        id: string;
+        status: string;
+        statement_reference: string;
+      }>(
+        `SELECT id, status, statement_reference
+           FROM commission_imports
+          WHERE id = $1 AND tenant_id = app_tenant_id()`,
+        [id]
+      );
+
+      if (importRes.rowCount === 0 || !importRes.rows[0]) {
+        throw notFound('Commission statement not found');
+      }
+      const imp = importRes.rows[0];
+
+      if (imp.status !== 'approved' && imp.status !== 'posted') {
+        throw conflict('Commission statement must be approved before staging payout disbursement');
+      }
+
+      // Check if a non-rejected batch already exists
+      const existingBatch = await tx.query<{ id: string; status: string }>(
+        `SELECT id, status FROM payout_batches
+          WHERE import_id = $1 AND tenant_id = app_tenant_id() AND status NOT IN ('rejected')`,
+        [id]
+      );
+      if (existingBatch.rowCount! > 0 && existingBatch.rows[0]) {
+        throw conflict(`Payout batch already exists for this statement in status: ${existingBatch.rows[0].status}`);
+      }
+
+      // 2. Fetch splits
+      const splitsRes = await tx.query<{
+        id: string;
+        producer_node_id: string;
+        producer_name: string | null;
+        broker_net_cents: number;
+        branch_override_cents: number;
+      }>(
+        `SELECT cs.id, cs.producer_node_id, COALESCE(n.name, 'Licensed Producer') AS producer_name,
+                cs.broker_net_cents, cs.branch_override_cents
+           FROM commission_splits cs
+           LEFT JOIN org_nodes n ON n.id = cs.producer_node_id
+          WHERE cs.import_id = $1 AND cs.tenant_id = app_tenant_id()
+          ORDER BY cs.created_at ASC`,
+        [id]
+      );
+
+      if (splitsRes.rowCount === 0) {
+        throw conflict('No commission splits found for this approved statement');
+      }
+
+      // 3. Build recipients list
+      const recipients = splitsRes.rows.map((r) => {
+        const amountCents = r.broker_net_cents + r.branch_override_cents;
+        return {
+          splitId: r.id,
+          producerNodeId: r.producer_node_id,
+          producerName: r.producer_name || 'Licensed Producer',
+          amountCents,
+          routingTransit: currency === 'CAD' ? '0001-10293' : '121000358',
+          accountNumber: '998877665544',
+        };
+      });
+
+      // 4. Generate EFT/ACH file
+      const generated =
+        currency === 'CAD'
+          ? generateCpa005File({
+              importId: imp.id,
+              statementReference: imp.statement_reference,
+              currency: 'CAD',
+              originatorName: 'PUNJAB INS INC',
+              originatorId: '9876543210',
+              recipients,
+            })
+          : generateNachaFile({
+              importId: imp.id,
+              statementReference: imp.statement_reference,
+              currency: 'USD',
+              originatorName: 'PUNJAB INS US',
+              originatorId: '123456789',
+              recipients,
+            });
+
+      // 5. Insert payout_batches record
+      const batchRes = await tx.query<{
+        id: string;
+        status: string;
+        total_amount_cents: string;
+        split_count: number;
+        batch_file_sha256: string;
+        file_format: string;
+        prepared_by: string;
+        prepared_at: string;
+      }>(
+        `INSERT INTO payout_batches (
+           tenant_id, import_id, currency, total_amount_cents, split_count,
+           batch_file_sha256, file_format, file_content, status, prepared_by
+         ) VALUES (
+           app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, 'pending_dual_approval', $8
+         )
+         RETURNING id, status, total_amount_cents, split_count, batch_file_sha256,
+                   file_format, prepared_by, prepared_at`,
+        [
+          imp.id,
+          generated.currency,
+          generated.totalAmountCents,
+          generated.splitCount,
+          generated.fileSha256,
+          generated.format,
+          generated.fileContent,
+          ctx.userId,
+        ]
+      );
+      const batch = batchRes.rows[0]!;
+
+      // 6. Insert payout_splits records
+      for (const s of generated.splits) {
+        await tx.query(
+          `INSERT INTO payout_splits (
+             tenant_id, batch_id, split_id, producer_node_id, amount_cents,
+             routing_transit, account_number_masked, recipient_name
+           ) VALUES (
+             app_tenant_id(), $1, $2, $3, $4, $5, $6, $7
+           )`,
+          [
+            batch.id,
+            s.splitId,
+            s.producerNodeId,
+            s.amountCents,
+            s.routingTransit,
+            s.accountNumberMasked,
+            s.recipientName,
+          ]
+        );
+      }
+
+      await audit(tx, ctx, 'commercial.payout_batch_staged', 'payout_batch', batch.id, {
+        importId: imp.id,
+        totalAmountCents: generated.totalAmountCents,
+        splitCount: generated.splitCount,
+        fileSha256: generated.fileSha256,
+        format: generated.format,
+      });
+
+      return {
+        ok: true,
+        batch: {
+          id: batch.id,
+          importId: imp.id,
+          status: batch.status,
+          currency: generated.currency,
+          totalAmountCents: Number(batch.total_amount_cents),
+          splitCount: batch.split_count,
+          fileSha256: batch.batch_file_sha256,
+          fileFormat: batch.file_format,
+          preparedBy: batch.prepared_by,
+          preparedAt: batch.prepared_at,
+        },
+      };
+    });
+  });
+
+  // 16. Get Payout Batch
+  app.get('/v1/commercial/payout-batches/:id', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const roles = ctx.roles.map((r) => r.role);
+    requireCommercialAccess(roles, Boolean(ctx.isTenantAdmin));
+
+    const id = (req.params as { id: string }).id;
+    return withRequestTx(deps.appPool, ctx, async (tx: Tx) => {
+      const batchRes = await tx.query<{
+        id: string;
+        import_id: string;
+        currency: string;
+        total_amount_cents: string;
+        split_count: number;
+        batch_file_sha256: string;
+        file_format: string;
+        file_content: string;
+        status: string;
+        prepared_by: string;
+        prepared_at: string;
+        approved_by: string | null;
+        approved_at: string | null;
+        released_at: string | null;
+      }>(
+        `SELECT id, import_id, currency, total_amount_cents, split_count,
+                batch_file_sha256, file_format, file_content, status,
+                prepared_by, prepared_at, approved_by, approved_at, released_at
+           FROM payout_batches
+          WHERE id = $1 AND tenant_id = app_tenant_id()`,
+        [id]
+      );
+
+      if (batchRes.rowCount === 0 || !batchRes.rows[0]) {
+        throw notFound('Payout batch not found');
+      }
+      const b = batchRes.rows[0];
+
+      const splitsRes = await tx.query(
+        `SELECT id, split_id, producer_node_id, amount_cents,
+                routing_transit, account_number_masked, recipient_name
+           FROM payout_splits
+          WHERE batch_id = $1 AND tenant_id = app_tenant_id()
+          ORDER BY created_at ASC`,
+        [id]
+      );
+
+      return {
+        ok: true,
+        batch: {
+          id: b.id,
+          importId: b.import_id,
+          currency: b.currency,
+          totalAmountCents: Number(b.total_amount_cents),
+          splitCount: b.split_count,
+          fileSha256: b.batch_file_sha256,
+          fileFormat: b.file_format,
+          fileContent: b.file_content,
+          status: b.status,
+          preparedBy: b.prepared_by,
+          preparedAt: b.prepared_at,
+          approvedBy: b.approved_by,
+          approvedAt: b.approved_at,
+          releasedAt: b.released_at,
+          splits: splitsRes.rows,
+        },
+      };
+    });
+  });
+
+  // 17. Dual-Custody Payout Batch Approval (Custody 2: Dual Authorization)
+  app.post('/v1/commercial/payout-batches/:id/approve', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const roles = ctx.roles.map((r) => r.role);
+    if (!ctx.isTenantAdmin && !roles.some((r) => ['compliance', 'admin'].includes(r))) {
+      throw forbidden('Only Compliance or Tenant Admin may dual-authorize payout disbursements');
+    }
+
+    const id = (req.params as { id: string }).id;
+    return withRequestTx(deps.appPool, ctx, async (tx: Tx) => {
+      const batchRes = await tx.query<{
+        id: string;
+        import_id: string;
+        status: string;
+        prepared_by: string;
+        total_amount_cents: string;
+        split_count: number;
+        batch_file_sha256: string;
+      }>(
+        `SELECT id, import_id, status, prepared_by, total_amount_cents,
+                split_count, batch_file_sha256
+           FROM payout_batches
+          WHERE id = $1 AND tenant_id = app_tenant_id()`,
+        [id]
+      );
+
+      if (batchRes.rowCount === 0 || !batchRes.rows[0]) {
+        throw notFound('Payout batch not found');
+      }
+      const b = batchRes.rows[0];
+
+      if (b.status !== 'pending_dual_approval') {
+        throw conflict(`Batch cannot be approved in current status: ${b.status}`);
+      }
+
+      // CRITICAL DUAL CUSTODY CHECK: Preparer cannot self-approve
+      if (b.prepared_by === ctx.userId) {
+        throw forbidden('Dual custody violation: Preparer cannot self-approve payout batch');
+      }
+
+      const updateRes = await tx.query<{
+        id: string;
+        status: string;
+        approved_by: string;
+        approved_at: string;
+      }>(
+        `UPDATE payout_batches
+            SET status = 'approved',
+                approved_by = $2,
+                approved_at = now(),
+                updated_at = now()
+          WHERE id = $1 AND tenant_id = app_tenant_id()
+          RETURNING id, status, approved_by, approved_at`,
+        [id, ctx.userId]
+      );
+      if (updateRes.rowCount === 0 || !updateRes.rows[0]) {
+        throw notFound('Payout batch could not be updated');
+      }
+      const updated = updateRes.rows[0];
+
+      await audit(tx, ctx, 'commercial.payout_batch_approved', 'payout_batch', id, {
+        importId: b.import_id,
+        preparedBy: b.prepared_by,
+        approvedBy: ctx.userId,
+        totalAmountCents: Number(b.total_amount_cents),
+        fileSha256: b.batch_file_sha256,
+      });
+
+      return {
+        ok: true,
+        batch: {
+          id: updated.id,
+          status: updated.status,
+          approvedBy: updated.approved_by,
+          approvedAt: updated.approved_at,
+        },
+      };
+    });
+  });
+
+  // 18. Payout Batch Release (Execution)
+  app.post('/v1/commercial/payout-batches/:id/release', async (req) => {
+    const { ctx } = await deps.authenticate(req);
+    const roles = ctx.roles.map((r) => r.role);
+    requireCommercialAccess(roles, Boolean(ctx.isTenantAdmin));
+
+    const id = (req.params as { id: string }).id;
+    return withRequestTx(deps.appPool, ctx, async (tx: Tx) => {
+      const batchRes = await tx.query<{
+        id: string;
+        import_id: string;
+        status: string;
+        prepared_by: string;
+        approved_by: string | null;
+        total_amount_cents: string;
+        split_count: number;
+        batch_file_sha256: string;
+        file_format: string;
+      }>(
+        `SELECT id, import_id, status, prepared_by, approved_by,
+                total_amount_cents, split_count, batch_file_sha256, file_format
+           FROM payout_batches
+          WHERE id = $1 AND tenant_id = app_tenant_id()`,
+        [id]
+      );
+
+      if (batchRes.rowCount === 0 || !batchRes.rows[0]) {
+        throw notFound('Payout batch not found');
+      }
+      const b = batchRes.rows[0];
+
+      if (b.status !== 'approved') {
+        throw conflict('Payout batch must be dual-approved before final release');
+      }
+
+      if (!b.approved_by || b.approved_by === b.prepared_by) {
+        throw forbidden('Dual custody invariant violation: missing valid independent approval');
+      }
+
+      const updateRes = await tx.query<{
+        id: string;
+        status: string;
+        released_at: string;
+      }>(
+        `UPDATE payout_batches
+            SET status = 'released',
+                released_at = now(),
+                updated_at = now()
+          WHERE id = $1 AND tenant_id = app_tenant_id()
+          RETURNING id, status, released_at`,
+        [id]
+      );
+      if (updateRes.rowCount === 0 || !updateRes.rows[0]) {
+        throw notFound('Payout batch could not be released');
+      }
+      const released = updateRes.rows[0];
+
+      await audit(tx, ctx, 'commercial.payout_batch_released', 'payout_batch', id, {
+        importId: b.import_id,
+        preparedBy: b.prepared_by,
+        approvedBy: b.approved_by,
+        totalAmountCents: Number(b.total_amount_cents),
+        splitCount: b.split_count,
+        fileSha256: b.batch_file_sha256,
+        format: b.file_format,
+      });
+
+      return {
+        ok: true,
+        batch: {
+          id: released.id,
+          status: released.status,
+          releasedAt: released.released_at,
+          totalAmountCents: Number(b.total_amount_cents),
+          splitCount: b.split_count,
+          transmissionSha256: b.batch_file_sha256,
+          fileFormat: b.file_format,
+        },
+      };
+    });
   });
 }
 
