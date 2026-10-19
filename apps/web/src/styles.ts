@@ -732,7 +732,7 @@ select{background-color:#fff;border:1px solid var(--line2);border-radius:10px;pa
 .pii-workspace-role-btn.active,.pii-workspace-role-btn[aria-pressed=true]{background:var(--bg);color:var(--pri);box-shadow:0 1px 3px rgba(15,23,42,.12)}
 
 .pii-workspace-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-bottom:20px}
-@media(max-width:640px){.pii-workspace-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.pii-workspace-grid{grid-template-columns:1fr}.pii-workspace-workqueue-item{flex-direction:column;align-items:stretch;gap:10px}.pii-workspace-workqueue-btn{width:100%;justify-content:center}}
 
 .pii-workspace-panel{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(15,23,42,.04);transition:box-shadow .2s ease,border-color .2s ease;display:flex;flex-direction:column}
 .pii-workspace-panel:hover{border-color:#d5dce6;box-shadow:0 4px 16px rgba(15,23,42,.07)}
