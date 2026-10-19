@@ -8,6 +8,7 @@ export type DashboardModule =
   | 'compliance'
   | 'onboarding'
   | 'carriers'
+  | 'commercial'
   | 'training'
   | 'learning'
   | 'audit'
@@ -58,7 +59,7 @@ export interface ExecutiveSummary {
 
 export interface WorkQueueItem {
   id: string;
-  category: 'webhook_review' | 'contract_approval' | 'audit_exception' | 'compliance_alert' | 'onboarding_review' | 'task' | 'coursework';
+  category: 'webhook_review' | 'contract_approval' | 'audit_exception' | 'compliance_alert' | 'onboarding_review' | 'task' | 'coursework' | 'statement_reconciliation';
   title: string;
   subtitle?: string;
   role: string;
@@ -91,14 +92,17 @@ const PERSPECTIVE_ALIASES: Record<string, string> = {
   learning: 'learner',
   head_office: 'ho',
   headoffice: 'ho',
+  finance: 'finance',
+  accounting: 'finance',
 };
 
-const ROLE_PRIORITIES = ['admin', 'compliance', 'manager', 'partner', 'trainer', 'auditor', 'staff', 'learner'];
+const ROLE_PRIORITIES = ['admin', 'ho', 'compliance', 'finance', 'manager', 'partner', 'trainer', 'auditor', 'staff', 'learner'];
 
 const PERSPECTIVE_MODULES: Record<string, DashboardModule[]> = {
   admin: ['crm', 'compliance', 'onboarding', 'carriers', 'training', 'learning', 'audit', 'notifications'],
   ho: ['crm', 'compliance', 'onboarding', 'carriers', 'training', 'audit', 'notifications'],
   compliance: ['compliance', 'onboarding', 'carriers', 'audit', 'notifications'],
+  finance: ['commercial', 'carriers', 'compliance', 'notifications'],
   manager: ['crm', 'onboarding', 'training', 'learning', 'notifications'],
   partner: ['crm', 'onboarding', 'carriers', 'learning', 'notifications'],
   auditor: ['audit', 'notifications'],
@@ -184,6 +188,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
       if (admin) authorizedPerspectives.add('admin');
       if (isHeadOffice || admin) authorizedPerspectives.add('ho');
       if (compliance) authorizedPerspectives.add('compliance');
+      if (admin || compliance || isHeadOffice) authorizedPerspectives.add('finance');
       if (roles.includes('manager') || admin) authorizedPerspectives.add('manager');
       if (roles.includes('partner') || admin) authorizedPerspectives.add('partner');
       if (roles.includes('trainer') || admin) authorizedPerspectives.add('trainer');
@@ -503,6 +508,33 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
         }
       }
 
+      // 8. Finance & Compliance: Pending statement reconciliations and unmatched exceptions
+      if (['admin', 'ho', 'compliance', 'finance'].includes(activePerspective)) {
+        const pendingImports = (
+          await tx.query<{ id: string; carrier_id: string; statement_reference: string; status: string; total_gross_cents: number; statement_date: string }>(
+            `SELECT id, carrier_id, statement_reference, status, total_gross_cents, statement_date::text AS statement_date
+               FROM commission_imports
+              WHERE tenant_id = $1 AND status IN ('registered', 'exceptions_flagged')
+              ORDER BY statement_date DESC LIMIT 5`,
+            [ctx.tenantId]
+          )
+        ).rows;
+
+        for (const imp of pendingImports) {
+          workQueue.push({
+            id: `wq-imp-${imp.id}`,
+            category: 'statement_reconciliation',
+            title: `Commission Statement: ${imp.carrier_id.toUpperCase()} (${imp.statement_reference})`,
+            subtitle: `Status: ${imp.status} · Remittance: $${(imp.total_gross_cents / 100).toFixed(2)}`,
+            role: 'Finance',
+            priority: imp.status === 'exceptions_flagged' ? 'high' : 'medium',
+            date: imp.statement_date,
+            target: { page: 'commercial', routeId: imp.id },
+            actionLabel: 'Reconcile Statement',
+          });
+        }
+      }
+
       for (const mod of activeModules) {
         if (mod === 'crm') {
           if (!crmAllowed) continue;
@@ -680,6 +712,70 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: AppDeps): vo
             })),
             drilldown: { page: 'compliance', routeId: 'carriers', label: 'Open carrier operations' },
             allowedActions: ['view_cases', 'prepare_packet', 'reconcile_statements'],
+          });
+        } else if (mod === 'commercial') {
+          const policiesCount = (
+            await tx.query<{ n: number }>(
+              `SELECT count(*)::int AS n FROM policy_records WHERE tenant_id = $1 AND status = 'active'`,
+              [ctx.tenantId]
+            )
+          ).rows[0]?.n ?? 0;
+
+          const totalPremiumCents = (
+            await tx.query<{ total: number }>(
+              `SELECT coalesce(sum(annual_premium_cents), 0)::bigint AS total 
+                 FROM policy_records WHERE tenant_id = $1 AND status = 'active'`,
+              [ctx.tenantId]
+            )
+          ).rows[0]?.total ?? 0;
+
+          const pendingImports = (
+            await tx.query<{ n: number }>(
+              `SELECT count(*)::int AS n FROM commission_imports 
+                WHERE tenant_id = $1 AND status IN ('registered', 'exceptions_flagged')`,
+              [ctx.tenantId]
+            )
+          ).rows[0]?.n ?? 0;
+
+          const unmatchedLines = (
+            await tx.query<{ n: number }>(
+              `SELECT count(*)::int AS n FROM commission_line_items 
+                WHERE tenant_id = $1 AND reconciliation_status = 'unmatched'`,
+              [ctx.tenantId]
+            )
+          ).rows[0]?.n ?? 0;
+
+          const recentImports = (
+            await tx.query<{ id: string; carrier_id: string; statement_reference: string; status: string; total_gross_cents: number; statement_date: string }>(
+              `SELECT id, carrier_id, statement_reference, status, total_gross_cents, statement_date::text AS statement_date
+                 FROM commission_imports 
+                WHERE tenant_id = $1 
+                ORDER BY imported_at DESC LIMIT 5`,
+              [ctx.tenantId]
+            )
+          ).rows;
+
+          cards.push({
+            id: 'card-commercial',
+            module: 'commercial',
+            title: 'Commercial Operations & Finance',
+            description: 'Authoritative policy inventory, carrier statement remittance, and deterministic commission splits.',
+            status: policiesCount === 0 && recentImports.length === 0 ? 'empty' : 'ready',
+            metrics: [
+              { id: 'activePolicies', label: 'Active policies', value: policiesCount, tone: 'good' },
+              { id: 'annualPremium', label: 'Annualized premium', value: `$${(Number(totalPremiumCents) / 100).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, tone: 'good' },
+              { id: 'pendingStatements', label: 'Pending statements', value: pendingImports, tone: pendingImports > 0 ? 'warn' : 'good' },
+              { id: 'unmatchedLines', label: 'Unmatched exceptions', value: unmatchedLines, tone: unmatchedLines > 0 ? 'bad' : 'good' },
+            ],
+            items: recentImports.map((imp) => ({
+              id: imp.id,
+              title: `${imp.carrier_id.toUpperCase()}: ${imp.statement_reference}`,
+              subtitle: `Gross: $${(imp.total_gross_cents / 100).toFixed(2)} · ${imp.statement_date}`,
+              status: imp.status,
+              target: { page: 'commercial', routeId: imp.id },
+            })),
+            drilldown: { page: 'commercial', label: 'Open finance & policies' },
+            allowedActions: ['view_policies', 'upload_statement', 'reconcile_statement'],
           });
         } else if (mod === 'onboarding') {
           const cases = (

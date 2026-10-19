@@ -207,8 +207,8 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
     const effectiveDate = typeof b.effectiveDate === 'string' ? b.effectiveDate.trim() : '';
     const expiryDate = typeof b.expiryDate === 'string' ? b.expiryDate.trim() : null;
 
-    if (!carrierId || !branchNodeId || !producerNodeId || !policyNumber || !planName || !effectiveDate) {
-      throw invalid('carrierId, branchNodeId, producerNodeId, policyNumber, planName, and effectiveDate are required');
+    if (!carrierId || !policyNumber || !planName || !effectiveDate) {
+      throw invalid('carrierId, policyNumber, planName, and effectiveDate are required');
     }
     if (!/^[A-Z]{2}(?:-[A-Z0-9]{2,10})?$/.test(jurisdiction)) {
       throw invalid('Invalid jurisdiction code (e.g. QC, ON, CA-QC)');
@@ -236,20 +236,50 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
       ).rowCount! > 0;
       if (!carrierExists) throw notFound('Carrier not found in directory');
 
+      let effectiveBranchNodeId = branchNodeId;
+      if (!effectiveBranchNodeId) {
+        if (ctx.nodeIds && ctx.nodeIds.length > 0) {
+          effectiveBranchNodeId = ctx.nodeIds[0]!;
+        } else {
+          const defaultBranch = await tx.query<{ id: string }>(
+            `SELECT id FROM org_nodes WHERE tenant_id = $1 AND type IN ('location', 'tenant') ORDER BY CASE WHEN type = 'location' THEN 1 ELSE 2 END LIMIT 1`,
+            [ctx.tenantId]
+          );
+          if (defaultBranch.rows[0]) {
+            effectiveBranchNodeId = defaultBranch.rows[0].id;
+          } else {
+            throw invalid('branchNodeId is required (no location or branch node found)');
+          }
+        }
+      }
+
       // Validate branch node is authorized for user
-      if (!ctx.isTenantAdmin && !ctx.nodeIds.includes(branchNodeId)) {
+      if (!ctx.isTenantAdmin && !ctx.nodeIds.includes(effectiveBranchNodeId)) {
         throw forbidden('Not authorized for branch location');
+      }
+
+      let effectiveProducerNodeId = producerNodeId;
+      if (!effectiveProducerNodeId) {
+        const defaultProducer = await tx.query<{ id: string }>(
+          `SELECT id FROM org_nodes WHERE tenant_id = $1 AND type = 'partner' LIMIT 1`,
+          [ctx.tenantId]
+        );
+        if (defaultProducer.rows[0]) {
+          effectiveProducerNodeId = defaultProducer.rows[0].id;
+        } else {
+          effectiveProducerNodeId = effectiveBranchNodeId;
+        }
       }
 
       // Validate producer node exists and belongs to this branch or tenant
       const producerValid = (
         await tx.query(
           `SELECT 1 FROM org_nodes n
-            WHERE n.id = $1 AND n.tenant_id = $2 AND n.type = 'partner'`,
-          [producerNodeId, ctx.tenantId]
+            WHERE n.id = $1 AND n.tenant_id = $2 AND n.type IN ('partner', 'location', 'tenant')`,
+          [effectiveProducerNodeId, ctx.tenantId]
         )
       ).rowCount! > 0;
-      if (!producerValid) throw invalid('Producer node must be an active partner');
+      if (!producerValid) throw invalid('Producer node must be an active partner or location');
 
       // Duplicate policy check
       const dup = (
@@ -273,8 +303,8 @@ export function registerCommercialRoutes(app: FastifyInstance, deps: AppDeps) {
            ) RETURNING *`,
           [
             ctx.tenantId,
-            branchNodeId,
-            producerNodeId,
+            effectiveBranchNodeId,
+            effectiveProducerNodeId,
             carrierId,
             policyNumber,
             planName,

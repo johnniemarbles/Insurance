@@ -865,7 +865,7 @@ test('settings: layered values, locks held by the database, and nothing leaks si
   // Nav layout is cleaned: unknown items are refused, missing ones are appended.
   assert.equal((await call(S1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['bogus'], hidden: [] } })).status, 422);
   const lay = await call(S1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['training', 'home'], hidden: ['contacts'] } });
-  assert.deepEqual(lay.json.settings['nav.layout'].value.order, ['training', 'home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'settings']);
+  assert.deepEqual(lay.json.settings['nav.layout'].value.order, ['training', 'home', 'notifications', 'pipelines', 'renewals', 'commercial', 'compliance', 'contacts', 'merges', 'settings']);
   const hist = (await call(S1U, 'GET', '/v1/settings/history')).json.history;
   assert.ok(hist.some((h: { key: string }) => h.key === 'merge.dailyCap'));
   assert.ok(!hist.some((h: { scopeType: string; changedBy: string }) => h.scopeType === 'user' && /p1@|admin@/.test(h.changedBy)), "others' personal history is not visible");
@@ -874,7 +874,7 @@ test('settings: layered values, locks held by the database, and nothing leaks si
 test('left panel and home: layout drives the items, the layout is per person, counts are live', async () => {
   const nav = async (u: string) => (await call(u, 'GET', '/v1/nav')).json;
   const base = await nav(P1U);
-  assert.deepEqual(base.items.map((i: { id: string }) => i.id), ['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings']);
+  assert.deepEqual(base.items.map((i: { id: string }) => i.id), ['home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'merges', 'training', 'settings', 'commercial']);
   assert.ok(base.pipelines.some((p: { id: string }) => p.id === pipe1));
   const mk = await call(P1U, 'POST', `/v1/pipelines/${pipe1}/views`, { name: 'Nav view', shared: true, config: { scope: 'all' } });
   assert.ok(mk.status < 300, JSON.stringify(mk.json));
@@ -883,7 +883,7 @@ test('left panel and home: layout drives the items, the layout is per person, co
   assert.ok(!(await nav(P2U)).pipelines.some((p: { views: { name: string }[] }) => p.views.some((v) => v.name === 'Nav view')), 'a sibling does not see it');
   assert.equal((await call(P1U, 'PUT', '/v1/settings/nav.layout', { scope: 'user', value: { order: ['training', 'home'], hidden: ['merges', 'settings'] } })).status, 200);
   const mine = await nav(P1U);
-  assert.deepEqual(mine.items.map((i: { id: string }) => i.id), ['training', 'home', 'notifications', 'pipelines', 'renewals', 'compliance', 'contacts', 'settings'], 'settings can never be hidden');
+  assert.deepEqual(mine.items.map((i: { id: string }) => i.id), ['training', 'home', 'notifications', 'pipelines', 'renewals', 'commercial', 'compliance', 'contacts', 'settings'], 'settings can never be hidden');
   assert.equal((await nav(LRN)).items.length, 9, 'everyone is a partner, learners included');
   const home = (await call(P1U, 'GET', '/v1/home')).json;
   assert.ok(Array.isArray(home.tasks) && Array.isArray(home.risks) && Array.isArray(home.merges) && Array.isArray(home.recent));

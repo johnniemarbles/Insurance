@@ -13,6 +13,7 @@ const NAMES: Record<string, Record<'en' | 'fr-CA', string>> = {
   notifications: { en: 'Notifications', 'fr-CA': 'Notifications' },
   pipelines: { en: 'Pipelines', 'fr-CA': 'Pipelines' },
   renewals: { en: 'Renewals', 'fr-CA': 'Renouvellements' },
+  commercial: { en: 'Finance & Policies', 'fr-CA': 'Finances et polices' },
   compliance: { en: 'Compliance', 'fr-CA': 'Conformité' },
   contacts: { en: 'Contacts', 'fr-CA': 'Contacts' },
   merges: { en: 'Mail merges', 'fr-CA': 'Publipostages' },
@@ -33,11 +34,20 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       for (const id of NAV_ITEMS) if (!order.includes(id)) order.push(id); // items added since the layout was saved
       const lms = process.env.LMS_ENABLED !== '0'; // on by default; set LMS_ENABLED=0 to switch the learning side off
       const canCompliance = Boolean(ctx.canUseCrm || ctx.isTenantAdmin || ctx.roles.some((r) => r.role === 'compliance' || r.role === 'auditor' || r.role === 'admin'));
-      const ids = order.filter((id) => !hidden.has(id) && (id !== 'compliance' || canCompliance) && (id !== 'training' || lms)); // Training holds courses and each licensee's CE file, so every signed-in person gets it
+      const canCommercial = Boolean(ctx.isTenantAdmin || ctx.roles.some((r) => ['admin', 'compliance', 'manager', 'partner'].includes(r.role)));
+      const ids = order.filter((id) => !hidden.has(id) && (id !== 'compliance' || canCompliance) && (id !== 'commercial' || canCommercial) && (id !== 'training' || lms)); // Training holds courses and each licensee's CE file, so every signed-in person gets it
       if (!ids.includes('settings')) ids.push('settings'); // there is always a way back to Settings
       let tasksDue = 0;
+      let pendingCommercial = 0;
       let pipelines: { id: string; name: string; count: number; views: { id: string; name: string }[] }[] = [];
       const unread = await unreadCount(tx, ctx.userId);
+      if (canCommercial) {
+        pendingCommercial = (await tx.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM commission_imports 
+            WHERE tenant_id = $1 AND status IN ('registered', 'exceptions_flagged')`,
+          [ctx.tenantId]
+        )).rows[0]?.n ?? 0;
+      }
       if (ctx.canUseCrm) {
         tasksDue = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM tasks WHERE assignee_id = $1 AND done_at IS NULL AND due_at < (date_trunc('day', now()) + interval '1 day')`, [ctx.userId])).rows[0]!.n;
         if (ids.includes('pipelines')) {
@@ -49,7 +59,11 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
         }
       }
       return {
-        items: ids.map((id) => ({ id, name: NAMES[id]![loc], count: id === 'home' ? tasksDue : id === 'notifications' ? unread : 0 })),
+        items: ids.map((id) => ({
+          id,
+          name: NAMES[id]![loc],
+          count: id === 'home' ? tasksDue : id === 'notifications' ? unread : id === 'commercial' ? pendingCommercial : 0,
+        })),
         pipelines,
       };
     });

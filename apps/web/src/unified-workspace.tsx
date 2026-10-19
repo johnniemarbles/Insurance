@@ -3,7 +3,7 @@ import type { ComponentChildren } from 'preact';
 import type { Locale } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
-type Module = 'crm' | 'compliance' | 'training' | 'learning' | 'audit' | 'onboarding' | 'carriers' | 'notifications';
+type Module = 'crm' | 'compliance' | 'training' | 'learning' | 'audit' | 'onboarding' | 'carriers' | 'commercial' | 'notifications';
 
 interface Context {
   version: number;
@@ -59,7 +59,7 @@ export interface ExecutiveSummary {
 
 export interface WorkQueueItem {
   id: string;
-  category: 'webhook_review' | 'contract_approval' | 'audit_exception' | 'compliance_alert' | 'onboarding_review' | 'task' | 'coursework';
+  category: 'webhook_review' | 'contract_approval' | 'audit_exception' | 'compliance_alert' | 'onboarding_review' | 'task' | 'coursework' | 'statement_reconciliation';
   title: string;
   subtitle?: string;
   role: string;
@@ -96,6 +96,7 @@ const workspaceNames: Record<Locale, Record<string, string>> = {
   en: {
     admin: 'Executive',
     ho: 'Head Office',
+    finance: 'Finance',
     manager: 'Manager',
     partner: 'Broker',
     compliance: 'Compliance',
@@ -107,6 +108,7 @@ const workspaceNames: Record<Locale, Record<string, string>> = {
   'fr-CA': {
     admin: 'Direction',
     ho: 'Siège social',
+    finance: 'Finances',
     manager: 'Gestionnaire',
     partner: 'Courtier',
     compliance: 'Conformité',
@@ -123,6 +125,7 @@ const titles: Record<Locale, Record<Module, string>> = {
     compliance: 'Compliance alerts',
     onboarding: 'Onboarding',
     carriers: 'Carrier contracting cases',
+    commercial: 'Commercial operations & finance',
     learning: 'My coursework',
     training: 'Training and CE',
     audit: 'Audit engagements',
@@ -133,6 +136,7 @@ const titles: Record<Locale, Record<Module, string>> = {
     compliance: 'Alertes de conformité',
     onboarding: 'Intégration',
     carriers: 'Dossiers contrats assureurs',
+    commercial: 'Opérations commerciales et finances',
     learning: 'Mon apprentissage',
     training: 'Formation et UFC',
     audit: 'Missions d’audit',
@@ -155,6 +159,10 @@ const actionLabels: Record<Locale, Record<string, string>> = {
     launch_course: 'Resume Learning',
     view_sampling: 'Audit Sampling',
     mark_all_read: 'Mark Read',
+    view_policies: 'Policy Inventory',
+    upload_statement: 'Upload Statement',
+    reconcile_statement: 'Reconcile',
+    reconcile_statements: 'Reconcile',
   },
   'fr-CA': {
     view_pipeline: 'Ouvrir dossiers',
@@ -170,6 +178,10 @@ const actionLabels: Record<Locale, Record<string, string>> = {
     launch_course: 'Reprendre cours',
     view_sampling: 'Échantillonnage audit',
     mark_all_read: 'Tout marquer lu',
+    view_policies: 'Inventaire des polices',
+    upload_statement: 'Téléverser relevé',
+    reconcile_statement: 'Rapprocher',
+    reconcile_statements: 'Rapprocher',
   },
 };
 
@@ -186,6 +198,12 @@ function handleAction(action: string, card: DashboardCard, go: (page: string, id
     case 'view_cases':
     case 'prepare_packet':
       go('compliance', 'carriers');
+      break;
+    case 'view_policies':
+    case 'upload_statement':
+    case 'reconcile_statement':
+    case 'reconcile_statements':
+      go('commercial');
       break;
     case 'view_directory':
     case 'invite_partner':
