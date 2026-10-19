@@ -3,6 +3,7 @@ import { CarrierEvidenceForm } from './carrier-evidence.tsx';
 import { CarrierAuthorizationEvidencePanel } from './carrier-authorization-evidence.tsx';
 import { CarrierHoldsPanel } from './carrier-holds.tsx';
 import { CarrierBusinessStagingPanel } from './carrier-business-staging.tsx';
+import { CarrierConnectionStatusPanel } from './carrier-connection-status.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 
@@ -416,7 +417,7 @@ export function CarrierReviewPanel({ call, locale, partnerNodeId }: { call: Call
           aria-selected={activeTab === 'directory'}
           onClick={() => setActiveTab('directory')}
         >
-          {fr ? 'Répertoire des assureurs' : 'Carrier Directory'}
+          {fr ? 'Statut & Certification' : 'Connection Status & Certification'}
         </button>}
         <button
           role="tab"
@@ -462,52 +463,56 @@ export function CarrierReviewPanel({ call, locale, partnerNodeId }: { call: Call
 
       {/* 3. Tab Contents */}
 
-      {/* TAB 1: Carrier Directory */}
+      {/* TAB 1: Carrier Connection Status & Certification Screen */}
       {activeTab === 'directory' && (
-        <div class="obcard">
-          <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: 'var(--navy)' }}>
-            {fr ? 'Assureurs sous contrat direct' : 'Direct Contracting Carrier Directory'}
-          </h3>
-          <p class="muted" style={{ margin: '0 0 16px', fontSize: '13px' }}>
-            {fr
-              ? 'Paramètres d’expédition et modes de soumission configurés pour chaque assureur partenaire.'
-              : 'Configured submission modes, recipient addresses, and verification safeguards for each partner carrier.'}
-          </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <CarrierConnectionStatusPanel call={call} locale={locale} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
-            {directory.map(carrier => (
-              <div key={carrier.id} class="hcard" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <strong style={{ fontSize: '15px', color: 'var(--navy)' }}>{carrier.displayName}</strong>
-                  <span class={`pill ${carrier.configuredMode === 'semi_automated' ? 'ok' : 'muted'}`} style={{ fontSize: '11px' }}>
-                    {carrier.configuredMode === 'semi_automated' ? (fr ? 'Semi-automatique' : 'Semi-Automated') : (fr ? 'Export manuel' : 'Manual Export')}
-                  </span>
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--mute)' }}>
-                  <div>{fr ? 'Pays' : 'Country'}: <strong>{carrier.country}</strong></div>
-                  <div>
-                    {fr ? 'Destinataire' : 'Primary Recipient'}:{' '}
-                    <strong>{carrier.recipientTo || (fr ? 'Non configuré' : 'Not configured')}</strong>
+          <div class="obcard">
+            <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: 'var(--navy)' }}>
+              {fr ? 'Paramètres d’expédition des dossiers' : 'Direct Contracting Submission Settings'}
+            </h3>
+            <p class="muted" style={{ margin: '0 0 16px', fontSize: '13px' }}>
+              {fr
+                ? 'Adresses de destination et vérifications administratives pour chaque assureur partenaire.'
+                : 'Configured submission modes, recipient addresses, and verification safeguards for each partner carrier.'}
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+              {directory.map(carrier => (
+                <div key={carrier.id} class="hcard" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ fontSize: '15px', color: 'var(--navy)' }}>{carrier.displayName}</strong>
+                    <span class={`pill ${carrier.configuredMode === 'semi_automated' ? 'ok' : 'muted'}`} style={{ fontSize: '11px' }}>
+                      {carrier.configuredMode === 'semi_automated' ? (fr ? 'Semi-automatique' : 'Semi-Automated') : (fr ? 'Export manuel' : 'Manual Export')}
+                    </span>
                   </div>
-                  <div>
-                    {fr ? 'Copies' : 'CC'}: <strong>{(carrier.recipientCc ?? []).length}</strong> adresse(s)
+                  <div style={{ fontSize: '12px', color: 'var(--mute)' }}>
+                    <div>{fr ? 'Pays' : 'Country'}: <strong>{carrier.country}</strong></div>
+                    <div>
+                      {fr ? 'Destinataire' : 'Primary Recipient'}:{' '}
+                      <strong>{carrier.recipientTo || (fr ? 'Non configuré' : 'Not configured')}</strong>
+                    </div>
+                    <div>
+                      {fr ? 'Copies' : 'CC'}: <strong>{(carrier.recipientCc ?? []).length}</strong> {fr ? 'adresse(s)' : 'recipient(s)'}
+                    </div>
+                    <div>
+                      {fr ? 'Envoi activé' : 'Dispatch Gate'}:{' '}
+                      <span style={{ color: carrier.sendingEnabled ? 'var(--ok)' : 'var(--warn)', fontWeight: 600 }}>
+                        {carrier.sendingEnabled ? (fr ? 'Activé' : 'Verified & Active') : (fr ? 'Désactivé (par défaut)' : 'Disabled by Default')}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    {fr ? 'Envoi activé' : 'Dispatch Gate'}:{' '}
-                    <span style={{ color: carrier.sendingEnabled ? 'var(--ok)' : 'var(--warn)', fontWeight: 600 }}>
-                      {carrier.sendingEnabled ? (fr ? 'Activé' : 'Verified & Active') : (fr ? 'Désactivé (par défaut)' : 'Disabled by Default')}
+                  <div style={{ marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid var(--line2)' }}>
+                    <span class="muted" style={{ fontSize: '11px' }}>
+                      {carrier.recipientVerifiedAt
+                        ? (fr ? `Vérifié le ${carrier.recipientVerifiedAt.slice(0, 10)}` : `Verified on ${carrier.recipientVerifiedAt.slice(0, 10)}`)
+                        : (fr ? 'Vérification du destinataire requise' : 'Recipient verification required before dispatch')}
                     </span>
                   </div>
                 </div>
-                <div style={{ marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid var(--line2)' }}>
-                  <span class="muted" style={{ fontSize: '11px' }}>
-                    {carrier.recipientVerifiedAt
-                      ? (fr ? `Vérifié le ${carrier.recipientVerifiedAt.slice(0, 10)}` : `Verified on ${carrier.recipientVerifiedAt.slice(0, 10)}`)
-                      : (fr ? 'Vérification du destinataire requise' : 'Recipient verification required before dispatch')}
-                  </span>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       )}
