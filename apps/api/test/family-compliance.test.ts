@@ -287,6 +287,10 @@ test('ID references: no numbers, rules set by compliance, current by role, and t
   assert.ok((await gate()).missing.includes('id_record')); // Simran has no check yet
   assert.equal((await call(P1U, 'POST', `/v1/people/${simran}/id-references`, { method: 'dual_process', result: 'verified', checkedOn: today(), documentsSeen: ['credit_file', 'utility_bill'] })).status, 201);
   assert.ok(!(await gate()).missing.includes('id_record'));
+  // Append-only: the runtime role can add ID references but never change or remove one.
+  for (const sql of ["UPDATE identity_references SET result = 'failed'", 'DELETE FROM identity_references', "UPDATE life_events SET kind = 'other'", "UPDATE person_consents SET purpose = 'marketing'"]) {
+    await assert.rejects(owner(async (c) => { await c.query('BEGIN'); await c.query('SET LOCAL ROLE app_runtime'); await c.query(sql); }), /permission denied/, sql);
+  }
   // Deal-level paperwork recorded before Gate C is untouched and still listed as it was.
   assert.equal((await call(P1U, 'GET', `/v1/boxes/${box1}/person-compliance`)).json.dealLevelConsents, 0);
 });
