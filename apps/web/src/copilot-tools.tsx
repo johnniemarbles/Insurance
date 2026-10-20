@@ -137,3 +137,72 @@ export function AuditReadyPanel({ call, locale }: { call: Call; locale: Locale }
     </section>
   );
 }
+
+const MT = {
+  en: { title: 'Meeting notes from a recording', help: 'Upload a call or meeting recording (MP3, M4A, WAV, WebM or OGG, up to 20 MB). PII transcribes it and drafts notes and follow-ups for you to review. The recording itself is not kept.',
+    file: 'Recording', consent: 'The client was told this meeting was recorded and agreed', go: 'Transcribe and summarise', working: 'Transcribing… this can take a minute for a long call.',
+    summary: 'Summary', tasks: 'Follow-ups to add as tasks', needs: 'May change the needs analysis', compliance: 'For your file', transcript: 'Transcript', keepTranscript: 'Also save the transcript', save: 'Save to the deal', saved: (n: number) => `Saved: one note${n ? ` and ${n} task${n === 1 ? '' : 's'}` : ''}.`, due: 'due' },
+  'fr-CA': { title: 'Notes de rencontre à partir d’un enregistrement', help: 'Téléversez l’enregistrement d’un appel ou d’une rencontre (MP3, M4A, WAV, WebM ou OGG, 20 Mo au plus). PII le transcrit et prépare des notes et des suivis à réviser. L’enregistrement n’est pas conservé.',
+    file: 'Enregistrement', consent: 'Le client a été informé que la rencontre était enregistrée et y a consenti', go: 'Transcrire et résumer', working: 'Transcription… cela peut prendre une minute pour un long appel.',
+    summary: 'Résumé', tasks: 'Suivis à ajouter comme tâches', needs: 'Peut changer l’analyse des besoins', compliance: 'Pour votre dossier', transcript: 'Transcription', keepTranscript: 'Enregistrer aussi la transcription', save: 'Enregistrer dans l’affaire', saved: (n: number) => `Enregistré : une note${n ? ` et ${n} tâche${n === 1 ? '' : 's'}` : ''}.`, due: 'échéance' },
+};
+const AUDIO: Record<string, string> = { mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', webm: 'audio/webm', ogg: 'audio/ogg' };
+const addDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+
+/** On a deal's Activity tab: upload a recording, review the transcript, summary and follow-ups, save what you keep. */
+export function MeetingNotes({ call, locale, boxId, canEdit, onSaved }: { call: Call; locale: Locale; boxId: string; canEdit: boolean; onSaved?: () => void }) {
+  const x = MT[locale] ?? MT.en;
+  const [on, setOn] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [res, setRes] = useState<{ transcript: string; summary: string; followUps: { title: string; dueInDays: number | null }[]; needsChanges: string[]; complianceNotes: string[] } | null>(null);
+  const [summary, setSummary] = useState('');
+  const [pick, setPick] = useState<boolean[]>([]);
+  const [keep, setKeep] = useState(false);
+  const [saved, setSaved] = useState<number | null>(null);
+  useEffect(() => { call('GET', '/v1/copilot/settings').then((s) => setOn(!!s?.allowedForMe && !!s?.using), () => setOn(false)); }, [call]);
+  if (!on || !canEdit) return null;
+  const go = async () => {
+    if (!file) return;
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    setBusy(true); setErr(''); setRes(null); setSaved(null);
+    try {
+      const r = await call('POST', '/v1/copilot/meetings', { boxId, mime: AUDIO[ext] ?? file.type, dataBase64: await toB64(file), consentConfirmed: consent, language: locale });
+      setRes(r); setSummary([r.summary, ...(r.needsChanges.length ? ['', `${x.needs}:`, ...r.needsChanges.map((n: string) => `- ${n}`)] : []), ...(r.complianceNotes.length ? ['', `${x.compliance}:`, ...r.complianceNotes.map((n: string) => `- ${n}`)] : [])].join('\n'));
+      setPick(r.followUps.map(() => true));
+    } catch (e) { setErr(msg(e)); } finally { setBusy(false); }
+  };
+  const save = async () => {
+    if (!res) return;
+    setErr('');
+    const tasks = res.followUps.filter((_, i) => pick[i]).map((f) => ({ title: f.title, ...(f.dueInDays != null ? { dueOn: addDays(f.dueInDays) } : {}) }));
+    try { await call('POST', '/v1/copilot/meetings/save', { boxId, summary, ...(keep ? { transcript: res.transcript } : {}), tasks }); setSaved(tasks.length); onSaved?.(); } catch (e) { setErr(msg(e)); }
+  };
+  const box = { display: 'flex', gap: '8px', alignItems: 'center', fontWeight: 400 } as const;
+  const cb = { width: 'auto', margin: 0, minHeight: 0 } as const;
+  return (
+    <section class="rec-form" aria-label={x.title} style={{ marginBottom: '14px' }}>
+      <h3>{x.title}</h3>
+      <p class="muted">{x.help}</p>
+      <label>{x.file}</label><input aria-label={x.file} type="file" accept=".mp3,.m4a,.wav,.webm,.ogg,audio/*" onChange={(e) => setFile((e.target as HTMLInputElement).files?.[0] ?? null)} />
+      <label style={box}><input type="checkbox" style={cb} checked={consent} onChange={() => setConsent(!consent)} />{x.consent}</label>
+      <div class="actions"><button type="button" class="btn" disabled={!file || !consent || busy} onClick={() => void go()}>{x.go}</button></div>
+      {busy && <p class="muted" role="status">{x.working}</p>}
+      {err && <p class="err" role="alert">{err}</p>}
+      {res && (
+        <div>
+          <label>{x.summary}</label>
+          <textarea aria-label={x.summary} rows={8} value={summary} onInput={(e) => setSummary((e.target as HTMLTextAreaElement).value)} />
+          {res.followUps.length > 0 && <fieldset style={{ border: 0, padding: 0, margin: '8px 0' }}><legend style={{ fontSize: '13px', fontWeight: 600 }}>{x.tasks}</legend>
+            {res.followUps.map((f, i) => <label key={i} style={box}><input type="checkbox" style={cb} checked={pick[i] ?? false} onChange={() => setPick(pick.map((p, j) => (j === i ? !p : p)))} />{f.title}{f.dueInDays != null ? <span class="muted"> · {x.due} {addDays(f.dueInDays)}</span> : null}</label>)}
+          </fieldset>}
+          <details><summary class="muted" style={{ cursor: 'pointer' }}>{x.transcript}</summary><p style={{ whiteSpace: 'pre-wrap', fontSize: '12.5px' }}>{res.transcript}</p></details>
+          <label style={box}><input type="checkbox" style={cb} checked={keep} onChange={() => setKeep(!keep)} />{x.keepTranscript}</label>
+          {saved != null ? <p role="status" class="hcard" style={{ borderColor: 'var(--ok)' }}>{x.saved(saved)}</p> : <div class="actions"><button type="button" class="btn" disabled={summary.trim().length < 5} onClick={() => void save()}>{x.save}</button></div>}
+        </div>
+      )}
+    </section>
+  );
+}
