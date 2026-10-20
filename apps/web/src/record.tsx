@@ -4,11 +4,12 @@ import { AiBox } from './ai.tsx';
 import { AdviceTab, adviceTabLabel } from './advice.tsx';
 import { AmlTab, amlTabLabel } from './aml.tsx';
 import { ConsentTab, consentTabLabel } from './consent.tsx';
-import { DOC_TYPES, docLabel } from './doctypes.ts';
+import { UPLOAD_DOC_TYPES, docLabel } from './doctypes.ts';
 import type { Strings } from './i18n.ts';
 import type { Box, FieldDef, Locale, Pipeline, Stage } from './types.ts';
 import { DealPeopleCompliance } from './family-compliance.tsx';
 import { LetterDrafts, MeetingNotes } from './copilot-tools.tsx';
+import { SuitabilityCard } from './suitability.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Person { id: string; displayName: string | null; email: string }
@@ -161,7 +162,7 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
         } catch (e2) { setErr((e2 as Error).message); }
       })()}>⬇ {x.pkg}</button>}
       {canEdit && <select aria-label={x.kind} value={dtype} onChange={(e) => setDtype((e.target as HTMLSelectElement).value)} style={{ marginRight: '8px' }}>
-        <option value="">{x.untyped}</option>{DOC_TYPES.map((d) => <option value={d.k}>{d.l[locale]}</option>)}
+        <option value="">{x.untyped}</option>{UPLOAD_DOC_TYPES.map((d) => <option value={d.k}>{d.l[locale]}</option>)}
       </select>}
       {canEdit && <label class="btn quiet" style={{ display: 'inline-block', cursor: 'pointer' }}>{busy ? x.busy : x.add}<input type="file" hidden disabled={busy} accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={(e) => void pick(e)} /></label>}
       {docs.length === 0 && <p class="muted">{x.none}</p>}
@@ -401,7 +402,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
         )}
 
         {tab === 'files' && <Documents boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
-        {tab === 'advice' && <><AdviceTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><LetterDrafts boxId={box.id} call={call} locale={locale} canEdit={canEdit} /></>}
+        {tab === 'advice' && <><AdviceTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><SuitabilityCard boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><LetterDrafts boxId={box.id} call={call} locale={locale} canEdit={canEdit} /></>}
         {tab === 'aml' && <AmlTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
         {tab === 'consent' && <><ConsentTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><DealPeopleCompliance call={call} locale={locale} boxId={box.id} /></>}
 

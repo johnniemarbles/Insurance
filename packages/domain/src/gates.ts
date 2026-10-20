@@ -1,7 +1,7 @@
 // File-completeness gates: which kinds of document a record may be required to hold before it enters a stage.
 // Pure logic, shared by the server and the screens.
 
-export const DOC_TYPES = ['privacy_consent', 'brokerage_agreement', 'needs_analysis', 'id_record', 'pink_slip_optin', 'beneficiary_designation', 'recommendation', 'replacement_disclosure'] as const;
+export const DOC_TYPES = ['privacy_consent', 'brokerage_agreement', 'needs_analysis', 'id_record', 'pink_slip_optin', 'beneficiary_designation', 'recommendation', 'replacement_disclosure', 'suitability_review'] as const;
 export type DocType = (typeof DOC_TYPES)[number];
 
 export const DOC_TYPE_LABELS: Record<DocType, { en: string; 'fr-CA': string }> = {
@@ -13,7 +13,10 @@ export const DOC_TYPE_LABELS: Record<DocType, { en: string; 'fr-CA': string }> =
   beneficiary_designation: { en: 'Beneficiary designation', 'fr-CA': 'Désignation de bénéficiaire' },
   recommendation: { en: 'Recommendation', 'fr-CA': 'Recommandation' },
   replacement_disclosure: { en: 'Replacement disclosure', 'fr-CA': 'Divulgation de remplacement' },
+  suitability_review: { en: 'Suitability review', 'fr-CA': 'Examen de la convenance' },
 };
+/** Kinds of paperwork a person can upload. A suitability review is made in PII, never uploaded. */
+export const UPLOAD_DOC_TYPES = DOC_TYPES.filter((t) => t !== 'suitability_review');
 
 export const isDocType = (v: unknown): v is DocType => typeof v === 'string' && (DOC_TYPES as readonly string[]).includes(v);
 

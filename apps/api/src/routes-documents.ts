@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
-import { ADVICE_DOC_TYPES, DOC_TYPES, type RequestContext } from '@pii/domain';
+import { ADVICE_DOC_TYPES, UPLOAD_DOC_TYPES, type RequestContext } from '@pii/domain';
 import { open, seal } from '@pii/platform';
 import { audit } from './audit.ts';
 import { HttpError, forbidden, invalid, notFound } from './errors.ts';
@@ -78,7 +78,7 @@ export function registerDocumentRoutes(app: FastifyInstance, deps: AppDeps): voi
 
   app.post('/v1/boxes/:id/documents', {
     bodyLimit: 14 * 1024 * 1024,
-    schema: { params: idp, body: { type: 'object', required: ['name', 'mime', 'dataBase64'], additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 300 }, mime: { type: 'string', maxLength: 100 }, docType: { enum: [...DOC_TYPES] }, dataBase64: { type: 'string', minLength: 4, maxLength: 12 * 1024 * 1024 } } } },
+    schema: { params: idp, body: { type: 'object', required: ['name', 'mime', 'dataBase64'], additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 300 }, mime: { type: 'string', maxLength: 100 }, docType: { enum: [...UPLOAD_DOC_TYPES] }, dataBase64: { type: 'string', minLength: 4, maxLength: 12 * 1024 * 1024 } } } },
   }, async (req, reply) => {
     const { ctx, user } = await (async () => { const i = await deps.authenticate(req); return { ctx: i.ctx, user: i.user }; })();
     requireCrm(ctx);
