@@ -13,7 +13,7 @@ const X = {
     off: 'The assistant is off for your company. A company administrator can turn it on in Settings.', fromEmail: 'Used linked email', notEmail: 'Based on notes and tasks only', aiNote: 'AI-written. Check before you use it.',
     title: 'Needs attention', help: 'Records that look stuck, based on simple rules: time in stage, overdue tasks, a passed close date, and no next step.', none: 'Nothing looks stuck. Nice.', days: (n: number) => `${n} days in stage`,
     why: { stalled: 'Stalled', overdue: 'Overdue task', past_close: 'Past close date', no_next_step: 'No next step', unowned: 'No owner' } as Record<string, string>,
-    adminTitle: 'AI assistant', adminHelp: 'Summaries, next-step ideas and reply drafts. When you use it, the record’s name, stage, value, notes and tasks are sent to Anthropic’s AI service to write the answer; nothing is used to train models. Off by default.',
+    adminTitle: 'AI assistant', adminHelp: 'Summaries, next-step ideas and reply drafts. When you use it, the record’s name, stage, value, notes and tasks are sent to the company’s AI service (Anthropic unless the AI co-pilot setting chooses another) to write the answer; nothing is used to train models. Off by default.',
     enable: 'Turn on the assistant for my company', partners: 'Partners can use the assistant too', email: 'Also let it read emails that people have linked to a record', unavailable: 'The server has no AI service connected yet.', close: 'Close',
   },
   'fr-CA': {
@@ -21,7 +21,7 @@ const X = {
     off: 'L’assistant est désactivé pour votre entreprise. Un administrateur peut l’activer dans Paramètres.', fromEmail: 'Courriels liés utilisés', notEmail: 'Fondé sur les notes et les tâches seulement', aiNote: 'Rédigé par IA. Vérifiez avant d’utiliser.',
     title: 'À surveiller', help: 'Dossiers qui semblent bloqués, selon des règles simples : temps dans l’étape, tâches en retard, date de clôture dépassée et aucune prochaine étape.', none: 'Rien ne semble bloqué. Parfait.', days: (n: number) => `${n} jours dans l’étape`,
     why: { stalled: 'Bloqué', overdue: 'Tâche en retard', past_close: 'Clôture dépassée', no_next_step: 'Aucune prochaine étape', unowned: 'Sans responsable' } as Record<string, string>,
-    adminTitle: 'Assistant IA', adminHelp: 'Résumés, idées de prochaine étape et brouillons de réponse. À l’utilisation, le nom du dossier, l’étape, la valeur, les notes et les tâches sont envoyés au service d’IA d’Anthropic pour rédiger la réponse; rien n’est utilisé pour entraîner des modèles. Désactivé par défaut.',
+    adminTitle: 'Assistant IA', adminHelp: 'Résumés, idées de prochaine étape et brouillons de réponse. À l’utilisation, le nom du dossier, l’étape, la valeur, les notes et les tâches sont envoyés au service d’IA de l’entreprise (Anthropic, sauf si le réglage du copilote IA en choisit un autre) pour rédiger la réponse; rien n’est utilisé pour entraîner des modèles. Désactivé par défaut.',
     enable: 'Activer l’assistant pour mon entreprise', partners: 'Les partenaires peuvent aussi utiliser l’assistant', email: 'Lui permettre aussi de lire les courriels liés à un dossier', unavailable: 'Aucun service d’IA n’est encore connecté au serveur.', close: 'Fermer',
   },
 };
