@@ -3,6 +3,7 @@ import { fireAutomations, runOne, type Trigger } from './automation-engine.ts';
 import { actingAs, flushEffects, type Effect } from './effects.ts';
 import { buildDigest } from './digest.ts';
 import { sweepRenewals } from './renewals.ts';
+import { sweepFamilyReviews } from './routes-family-compliance.ts';
 import { sweepCompliance, withDigest } from './routes-compliance.ts';
 import { sweepOnboardingRechecks } from './onboarding-recheck.ts';
 import { sweepAssignments, sweepLearnerReminders } from './routes-forecast.ts';
@@ -92,6 +93,7 @@ async function runSweeps(deps: AppDeps): Promise<void> {
   await sweepStaleInvitations(deps);
   await sweepPartnerInviteReminders(deps);
   await sweepRenewals(deps);
+  await sweepFamilyReviews(deps).catch(() => 0);
   await withDigest(deps, async (d) => {
     await sweepCompliance(d);
     await sweepLearnerReminders(d);
