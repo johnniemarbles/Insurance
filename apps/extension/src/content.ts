@@ -9,15 +9,16 @@ const REGION_CHOICES = Object.keys(__REGIONS__).map((id) => ({ id, label: REGION
 let chosenRegion: string | undefined;
 // The country changed (here or in another Gmail tab): every PII screen on this page starts over in place, no Gmail reload.
 const announceRegion = () => { try { window.dispatchEvent(new CustomEvent('pii-region-changed')); window.dispatchEvent(new CustomEvent('pii-settings-changed')); } catch { /* ignore */ } };
-chrome.storage.onChanged.addListener((ch, area) => {
+chrome.storage.onChanged.addListener((ch: Record<string, { newValue?: unknown; oldValue?: unknown }>, area: string) => {
   if (area !== 'sync' || !ch.region) return;
   const next = typeof ch.region.newValue === 'string' ? ch.region.newValue : Object.keys(__REGIONS__)[0];
   if (next !== chosenRegion) { chosenRegion = next; announceRegion(); }
 });
-// Test switch (options page): show the screens from the server in a frame instead of the copy built into this extension.
-let embedUi = false;
-chrome.storage.sync.get('embedUi').then((v) => { embedUi = v.embedUi === true; }, () => undefined);
-chrome.storage.sync.get('region').then((v) => { chosenRegion = typeof v.region === 'string' ? v.region : Object.keys(__REGIONS__)[0]; }, () => undefined);
+// PII's full-page screens come from the server, in a frame, so they update with every server release (no store update).
+// The copy built into this extension is the fallback: used when the frame cannot load, or when the person turns it on in Options.
+let bundledUi = false;
+chrome.storage.sync.get('bundledUi').then((v: { bundledUi?: unknown }) => { bundledUi = v.bundledUi === true; }, () => undefined);
+chrome.storage.sync.get('region').then((v: { region?: unknown }) => { chosenRegion = typeof v.region === 'string' ? v.region : Object.keys(__REGIONS__)[0]; }, () => undefined);
 
 const rawTransport: Transport = async (method, path, body, region) => {
   try {
@@ -63,6 +64,15 @@ const transport: Transport = async (method, path, body, region) => {
   return rawTransport(method, path, body, region);
 };
 const signIn = (region?: string, keep?: boolean, opts?: { fresh?: boolean }) => { whoCache.clear(); void chrome.runtime.sendMessage({ type: 'pii:signin', region, keep, hint: gmailAccount || undefined, fresh: opts?.fresh }); };
+const switchRegion = (id: string) => { chosenRegion = id; void chrome.storage.sync.set({ region: id }); announceRegion(); };
+// The server the frame loads from: the same rule the background worker uses for API calls, so the frame and its token always match.
+const frameBase = async (region?: string): Promise<string> => {
+  try {
+    const r = (await chrome.runtime.sendMessage({ type: 'pii:base', region })) as { base?: string } | undefined;
+    if (r?.base) return r.base;
+  } catch { /* extension reloaded; fall through */ }
+  return (__REGIONS__[region ?? ''] ?? __API_BASE__).replace(/\/+$/, '');
+};
 
 
 // Sending for mail merge: open a normal Gmail compose window, fill it in, press Send, and wait to hear how it went.
@@ -114,15 +124,32 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     const host = document.createElement('div');
     host.style.cssText = 'height:calc(100vh - 130px);min-height:480px;background:#fff';
     view.getElement().appendChild(host);
-    const regionBase = () => (__REGIONS__[chosenRegion ?? ''] ?? __API_BASE__).replace(/\/+$/, '');
-    const unmount = embedUi ? mountEmbedded(host, {
-      base: regionBase(), extVersion: chrome.runtime.getManifest().version, route: { page: params.page ?? 'pipelines', id: params.id },
-      getToken: () => transport('POST', '/v1/embed-token'), onSignIn: signIn, navigate: goto,
-    }) : mountPii(host, {
-      extVersion: chrome.runtime.getManifest().version, transport, onSignIn: signIn, regions: REGION_CHOICES, get region() { return chosenRegion; }, switchRegion: (id: string) => { chosenRegion = id; void chrome.storage.sync.set({ region: id }); announceRegion(); }, compose: { send: sendOne(sdk) },
-      route: { page: params.page ?? 'pipelines', id: params.id }, navigate: goto,
+    const route = { page: params.page ?? 'pipelines', id: params.id };
+    const bundled = () => mountPii(host, {
+      extVersion: chrome.runtime.getManifest().version, transport, onSignIn: signIn, regions: REGION_CHOICES, get region() { return chosenRegion; }, switchRegion, compose: { send: sendOne(sdk) },
+      route, navigate: goto,
     });
-    view.on('destroy', unmount);
+    let unmount: () => void = () => undefined;
+    let gone = false;
+    const start = async () => {
+      unmount();
+      if (bundledUi) { unmount = bundled(); return; }
+      const base = await frameBase(chosenRegion);
+      if (gone) return;
+      unmount = mountEmbedded(host, {
+        base, extVersion: chrome.runtime.getManifest().version, route, regions: REGION_CHOICES, region: chosenRegion,
+        getToken: () => transport('POST', '/v1/embed-token', undefined, chosenRegion), onSignIn: signIn, navigate: goto,
+        switchRegion, compose: sendOne(sdk), relay: (method, path, body, region) => transport(method, path, body, region),
+        // The server's screens did not answer: show the copy built into this extension instead.
+        onFail: () => { if (gone) return; console.warn('[PII] server screens did not load; using the built-in copy'); unmount(); unmount = bundled(); },
+      });
+    };
+    void start();
+    // The country changed (here or in another tab): load that country's screens.
+    const onRegion = () => { if (!bundledUi) void start(); };
+    window.addEventListener('pii-region-changed', onRegion);
+    const stop = () => { gone = true; window.removeEventListener('pii-region-changed', onRegion); unmount(); };
+    view.on('destroy', stop);
   };
   sdk.Router.handleCustomRoute('pii/:page', mountRoute);
   sdk.Router.handleCustomRoute('pii/:page/:id', mountRoute);
@@ -130,7 +157,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
   // The PII mark and the bell in Gmail's top bar, next to the account area. If Gmail's layout changes and the spot is not found, they float top right instead.
   const hostEl = document.createElement('div');
   hostEl.id = 'pii-header';
-  mountHeader(hostEl, { extVersion: chrome.runtime.getManifest().version, transport, onSignIn: signIn, regions: REGION_CHOICES, get region() { return chosenRegion; }, switchRegion: (id: string) => { chosenRegion = id; void chrome.storage.sync.set({ region: id }); announceRegion(); }, navigate: goto }, chrome.runtime.getURL('nav-icon.png'));
+  mountHeader(hostEl, { extVersion: chrome.runtime.getManifest().version, transport, onSignIn: signIn, regions: REGION_CHOICES, get region() { return chosenRegion; }, switchRegion, navigate: goto }, chrome.runtime.getURL('nav-icon.png'));
   const place = () => {
     const acct = document.querySelector('header[role="banner"] a[aria-label*="Google Account"], header[role="banner"] [aria-label*="Google Account"]');
     let anchor: HTMLElement | null = acct as HTMLElement | null;
@@ -163,7 +190,7 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
     // A normal link item (the kind that worked before) with the pages nested under it, each with a Google Material icon.
     const top = sdk.NavMenu.addNavItem({ name: 'PII', iconUrl: icon, routeID: 'pii/:page', routeParams: { page: 'home' }, orderHint: 5 });
     section = top;
-    const fallback: NavData = { items: [['home', 'Home'], ['notifications', 'Notifications'], ['pipelines', 'Pipelines'], ['contacts', 'Contacts'], ['settings', 'Settings']].map(([id, name]) => ({ id, name, count: 0 })), pipelines: [] };
+    const fallback: NavData = { items: [['home', 'Home'], ['notifications', 'Notifications'], ['pipelines', 'Pipelines'], ['contacts', 'Contacts'], ['settings', 'Settings']].map(([id, name]) => ({ id: id!, name: name!, count: 0 })), pipelines: [] };
     const nav = r.status === 200 && Array.isArray(r.json?.items) ? (r.json as NavData) : fallback;
     const svg = (n: string) => chrome.runtime.getURL(`icons/${n}.svg`);
     // Each item is added on its own, so one that fails never takes the rest of the menu with it. Two levels only (page > pipeline).

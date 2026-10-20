@@ -26,17 +26,21 @@ async function callApi(m: ApiRequest): Promise<ApiResponse> {
   return { status: res.status, json };
 }
 
-chrome.runtime.onMessage.addListener((msg: Message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg: Message, sender: { id?: string }, sendResponse: (r: unknown) => void) => {
   if (sender.id !== chrome.runtime.id) return false;
   if (msg.type === 'pii:api') {
     callApi(msg).then(sendResponse, () => sendResponse({ status: 0, json: { error: { message: 'Cannot reach the server' } } }));
+    return true;
+  }
+  if (msg.type === 'pii:base') {
+    apiBase(msg.region).then((base) => sendResponse({ base }), () => sendResponse({}));
     return true;
   }
   if (msg.type === 'pii:signin') {
     // keep: sign in to that country without making it the one the rest of the app uses.
     const pick = msg.region && __REGIONS__[msg.region] && !msg.keep ? chrome.storage.sync.set({ region: msg.region }) : Promise.resolve();
     // fresh: end the current PII session first (it belongs to a different Google account than the Gmail on screen).
-    pick.then(() => apiBase(msg.region)).then(async (b) => {
+    pick.then(() => apiBase(msg.region)).then(async (b: string) => {
       if (msg.fresh) { try { await fetch(`${b}/auth/logout`, { method: 'POST', credentials: 'include' }); } catch { /* the sign-in below replaces the session anyway */ } }
       const q = msg.hint ? `?hint=${encodeURIComponent(msg.hint)}` : '';
       await chrome.tabs.create({ url: `${b}/auth/google/start${q}` });

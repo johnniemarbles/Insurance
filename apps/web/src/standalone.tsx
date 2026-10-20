@@ -1,5 +1,5 @@
 import { mountPii } from './mount.tsx';
-import type { Transport, TransportResult, PiiRoute } from './types.ts';
+import type { ComposeApi, Transport, TransportResult, PiiRoute, RegionChoice } from './types.ts';
 
 const call = async (method: string, path: string, body: unknown, headers: Record<string, string>, credentials: RequestCredentials): Promise<TransportResult> => {
   try {
@@ -37,12 +37,34 @@ if (!embedded) {
     if (wasBlocked && token) location.reload(); // the person signed in while this frame was waiting
     waiter?.(!!token);
   };
-  const transport: Transport = async (method, path, body) => {
+  // A call for another country (head-office views) goes to that country's server through the extension, which holds that sign-in.
+  let ownRegion: string | undefined;
+  const relayed = new Map<string, (r: TransportResult) => void>();
+  let relaySeq = 0;
+  const relay = (method: string, path: string, body: unknown, region: string) => new Promise<TransportResult>((resolve) => {
+    const reqId = `a${Date.now()}-${++relaySeq}`;
+    const t = setTimeout(() => { relayed.delete(reqId); resolve({ status: 0, json: null }); }, 30_000);
+    relayed.set(reqId, (r) => { clearTimeout(t); relayed.delete(reqId); resolve(r); });
+    up({ pii: 'api', reqId, method, path, body, region });
+  });
+  const transport: Transport = async (method, path, body, region) => {
+    if (region && ownRegion && region !== ownRegion) return relay(method, path, body, region);
     if (blocked) return blocked;
     if (!token) return { status: 401, json: null };
     let r = await call(method, path, body, { authorization: `Bearer ${token}` }, 'omit');
     if (r.status === 401 && (await renew()) && token) r = await call(method, path, body, { authorization: `Bearer ${token}` }, 'omit');
     return r;
+  };
+  // Gmail's compose window lives in the extension: ask it to send and wait for its answer (review mode can take ten minutes).
+  const pending = new Map<string, (r: Awaited<ReturnType<ComposeApi['send']>>) => void>();
+  let seq = 0;
+  const compose: ComposeApi = {
+    send: (m) => new Promise((resolve) => {
+      const reqId = `c${Date.now()}-${++seq}`;
+      const t = setTimeout(() => { pending.delete(reqId); resolve({ ok: false, error: 'Gmail did not answer' }); }, 11 * 60_000);
+      pending.set(reqId, (r) => { clearTimeout(t); pending.delete(reqId); resolve(r); });
+      up({ pii: 'compose', reqId, to: m.to, subject: m.subject, html: m.html, review: m.review === true });
+    }),
   };
   let mounted = false;
   window.addEventListener('message', (e) => {
@@ -51,12 +73,20 @@ if (!embedded) {
       mounted = true;
       take(e.data);
       const route = e.data.route as PiiRoute | undefined;
+      ownRegion = typeof e.data.region === 'string' ? e.data.region : undefined;
+      const regions = Array.isArray(e.data.regions) ? (e.data.regions as RegionChoice[]).filter((r) => r && typeof r.id === 'string' && typeof r.label === 'string') : undefined;
       mountPii(el, {
         transport, extVersion: String(e.data.extVersion ?? ''), route,
+        regions, region: typeof e.data.region === 'string' ? e.data.region : undefined,
+        // The extension reloads this frame from the other country's server.
+        switchRegion: regions && regions.length > 1 ? (id) => up({ pii: 'region', region: id }) : undefined,
+        compose: e.data.compose === true ? compose : undefined,
         onSignIn: (region, keep, opts) => up({ pii: 'signin', region, keep, fresh: opts?.fresh }),
         navigate: (page, id) => up({ pii: 'navigate', page, id }),
       });
     } else if (e.data.pii === 'token') take(e.data);
+    else if (e.data.pii === 'api-result' && typeof e.data.reqId === 'string') relayed.get(e.data.reqId)?.({ status: Number(e.data.status ?? 0), json: e.data.json ?? null });
+    else if (e.data.pii === 'compose-result' && typeof e.data.reqId === 'string') pending.get(e.data.reqId)?.(e.data.result ?? { ok: false, error: 'No answer from Gmail' });
   });
   up({ pii: 'ready' });
 }
