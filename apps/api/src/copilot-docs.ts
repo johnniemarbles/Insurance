@@ -89,3 +89,20 @@ export const LETTER_TASK: Record<LetterKind, string> = {
   annual_review: 'a short letter inviting the client to their annual review, summarising what is on file and what has changed since the last review.',
   follow_up: 'a short follow-up letter after the latest meeting: what was discussed and the agreed next steps.',
 };
+
+export interface MeetingNotes { summary: string; followUps: { title: string; dueInDays: number | null }[]; needsChanges: string[]; complianceNotes: string[] }
+/** The model's meeting JSON, checked and trimmed; a reply that is not JSON becomes a summary with no lists. */
+export function parseMeeting(raw: string): MeetingNotes {
+  const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+  let j: Record<string, unknown> = {};
+  try { const start = text.indexOf('{'), end = text.lastIndexOf('}'); j = JSON.parse(start >= 0 && end > start ? text.slice(start, end + 1) : text) as Record<string, unknown>; }
+  catch { return { summary: text.slice(0, 4000), followUps: [], needsChanges: [], complianceNotes: [] }; }
+  const strs = (v: unknown, n: number) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '').map((x) => x.trim().slice(0, 300)).slice(0, n) : []);
+  const follow = Array.isArray(j.followUps) ? j.followUps.flatMap((f) => {
+    const o = f as { title?: unknown; dueInDays?: unknown };
+    if (typeof o?.title !== 'string' || !o.title.trim()) return [];
+    const d = typeof o.dueInDays === 'number' && Number.isFinite(o.dueInDays) ? Math.min(365, Math.max(0, Math.round(o.dueInDays))) : null;
+    return [{ title: o.title.trim().slice(0, 300), dueInDays: d }];
+  }).slice(0, 20) : [];
+  return { summary: typeof j.summary === 'string' ? j.summary.trim().slice(0, 4000) : '', followUps: follow, needsChanges: strs(j.needsChanges, 20), complianceNotes: strs(j.complianceNotes, 20) };
+}

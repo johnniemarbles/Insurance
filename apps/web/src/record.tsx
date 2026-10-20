@@ -8,7 +8,7 @@ import { DOC_TYPES, docLabel } from './doctypes.ts';
 import type { Strings } from './i18n.ts';
 import type { Box, FieldDef, Locale, Pipeline, Stage } from './types.ts';
 import { DealPeopleCompliance } from './family-compliance.tsx';
-import { LetterDrafts } from './copilot-tools.tsx';
+import { LetterDrafts, MeetingNotes } from './copilot-tools.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Person { id: string; displayName: string | null; email: string }
@@ -407,6 +407,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
 
         {tab === 'activity' && (
           <div>
+            <MeetingNotes boxId={box.id} call={call} locale={locale} canEdit={canEdit} onSaved={() => void loadFeed()} />
             {canEdit && (
               <div class="composer">
                 <div class="seg" role="tablist">

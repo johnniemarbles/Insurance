@@ -2,6 +2,38 @@
 export interface AiClient {
   readonly model: string;
   complete(input: { system: string; user: string; maxTokens: number }): Promise<string>;
+  /** Speech to text, for providers that take audio (OpenAI, Gemini). The audio is sent once and never stored by PII. */
+  transcribe?(input: { audio: Buffer; mime: string; language?: string }): Promise<string>;
+}
+
+/** Audio types a meeting recording may be, and their usual file extension. */
+export const AUDIO_TYPES: Record<string, string> = { 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/webm': 'webm', 'audio/ogg': 'ogg' };
+const TRANSCRIBE_DEFAULT = { openai: 'gpt-4o-mini-transcribe' };
+
+function openaiTranscriber(apiKey: string, env: Record<string, string | undefined> = process.env) {
+  const model = (env.AI_TRANSCRIBE_MODEL_OPENAI ?? '').trim() || TRANSCRIBE_DEFAULT.openai;
+  return async ({ audio, mime, language }: { audio: Buffer; mime: string; language?: string }) => {
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(audio)], { type: mime }), `meeting.${AUDIO_TYPES[mime] ?? 'mp3'}`);
+    form.append('model', model);
+    if (language) form.append('language', language.slice(0, 2));
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', { method: 'POST', headers: { authorization: `Bearer ${apiKey}` }, body: form, signal: AbortSignal.timeout(300_000) });
+    if (!res.ok) throw new Error(`Transcription service answered ${res.status}`);
+    return (((await res.json()) as { text?: string }).text ?? '').trim();
+  };
+}
+function geminiTranscriber(apiKey: string, model: string) {
+  return async ({ audio, mime }: { audio: Buffer; mime: string }) => {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Transcribe this recording word for word. Label speakers as Speaker 1, Speaker 2. Output only the transcript.' }, { inlineData: { mimeType: mime, data: audio.toString('base64') } }] }], generationConfig: { maxOutputTokens: 8192 } }),
+      signal: AbortSignal.timeout(300_000),
+    });
+    if (!res.ok) throw new Error(`Transcription service answered ${res.status}`);
+    const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    return (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('').trim();
+  };
 }
 
 export const AI_PROVIDERS = ['anthropic', 'openai', 'gemini'] as const;
@@ -81,7 +113,9 @@ export function geminiClient(apiKey: string, model: string): AiClient {
 
 /** A client for one provider with a given key (PII's own key, or a partner's). */
 export function makeAiClient(provider: AiProvider, apiKey: string, model: string): AiClient {
-  return provider === 'anthropic' ? anthropicClient(apiKey, model) : provider === 'openai' ? openaiClient(apiKey, model) : geminiClient(apiKey, model);
+  if (provider === 'anthropic') return anthropicClient(apiKey, model); // Anthropic takes no audio: no transcribe
+  if (provider === 'openai') return { ...openaiClient(apiKey, model), transcribe: openaiTranscriber(apiKey) };
+  return { ...geminiClient(apiKey, model), transcribe: geminiTranscriber(apiKey, model) };
 }
 
 /** The model for a provider: AI_MODEL_<PROVIDER>, then that provider's default. Invalid ids are refused. */
@@ -103,7 +137,12 @@ export function aiProvidersFromEnv(env: Record<string, string | undefined> = pro
   const out: Partial<Record<AiProvider, AiClient>> = {};
   // Local acceptance runs only (APP_ENV=dev): stand-in providers that answer from the first record or passage they are given, citing it.
   if (env.AI_FAKE_PROVIDERS === '1' && env.APP_ENV === 'dev') {
-    for (const p of AI_PROVIDERS) out[p] = { model: `fake-${p}`, complete: async ({ user }) => { const m = /\[([CRA]1)\] ([^\n]+)/.exec(user); return m ? `From your records: ${m[2]!.slice(0, 160)} [${m[1]}]` : 'Nothing found.'; } };
+    for (const p of AI_PROVIDERS) {
+      out[p] = { model: `fake-${p}`, complete: async ({ user }) => {
+        if (user.includes('<transcript>')) return JSON.stringify({ summary: 'Raj wants to review his life cover after the mortgage renewal.', followUps: [{ title: 'Send Raj the term 20 quote', dueInDays: 3 }], needsChanges: ['Mortgage balance is now 480,000'], complianceNotes: ['Recording consent confirmed at the start of the call'] });
+        const m = /\[([CRA]1)\] ([^\n]+)/.exec(user); return m ? `From your records: ${m[2]!.slice(0, 160)} [${m[1]}]` : 'Nothing found.'; } };
+      if (p !== 'anthropic') out[p]!.transcribe = async () => 'Speaker 1: Thanks for meeting, Raj. Speaker 2: I renewed my mortgage and want to check my life cover.';
+    }
     return out;
   }
   const keys: Record<AiProvider, string | undefined> = { anthropic: env.ANTHROPIC_API_KEY, openai: env.OPENAI_API_KEY, gemini: env.GEMINI_API_KEY };
