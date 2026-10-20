@@ -114,6 +114,35 @@ async function redactIfSet(deps: AppDeps, ctx: RequestContext, verificationId: s
   } catch (e) { log.warn({ err: (e as Error).message, verification: verificationId }, 'eid: Stripe redaction failed; retry from the Stripe dashboard'); }
 }
 
+/** Create a Stripe Identity link for one client on a deal, as `ctx` (an advisor, or the advisor a client intake acts for). */
+export async function startStripeCheck(deps: AppDeps, ctx: RequestContext, id: string, contactId: string, log: FastifyBaseLogger, opts: { skipEditCheck?: boolean } = {}): Promise<{ id: string; url: string }> {
+  const run = <T>(fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
+  const stripe = deps.stripeIdentity as StripeIdentity | undefined;
+  // Check access and the company's choice before anything goes to Stripe.
+  const pre = await run(async (tx) => {
+    const b = await boxFor(tx, id);
+    if (!opts.skipEditCheck) requireEdit(ctx, b.owner_node_id);
+    if (!(await settingsOf(tx, deps)).stripeOn || !stripe) throw new HttpError(503, 'eid_unavailable', 'Stripe Identity is not switched on for your company');
+    await clientOn(tx, id, contactId);
+    if ((await tx.query(`SELECT 1 FROM id_verifications WHERE box_id = $1 AND contact_id = $2 AND status = ANY($3)`, [id, contactId, OPEN])).rowCount) {
+      throw new HttpError(409, 'eid_open', 'A check for this client is already open. Cancel it first to send a new link.');
+    }
+    return { name: await nameOf(tx, ctx.userId) };
+  });
+  const verificationId = randomUUID();
+  let session: { id: string; url: string };
+  try {
+    session = await stripe!.createSession({ returnUrl: `${deps.config.appOrigin}/eid-done`, metadata: { tenant_id: ctx.tenantId, verification_id: verificationId, requested_by: ctx.userId } });
+  } catch (e) { log.warn({ err: (e as Error).message }, 'eid: Stripe session failed'); throw new HttpError(502, 'eid_failed', 'Stripe Identity could not create the link. Try again in a minute.'); }
+  await run(async (tx) => {
+    const b = await boxFor(tx, id);
+    await tx.query(`INSERT INTO id_verifications (id, tenant_id, box_id, contact_id, route, status, stripe_session_id, requested_by, requested_by_name) VALUES ($1,$2,$3,$4,'stripe','link_sent',$5,$6,$7)`,
+      [verificationId, ctx.tenantId, id, contactId, session.id, ctx.userId, pre.name]);
+    await audit(tx, ctx, 'eid_requested', 'box', id, { verification: verificationId, route: 'stripe' }, b.owner_node_id);
+  });
+  return { id: verificationId, url: session.url };
+}
+
 export function registerEidRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
   const idp = { type: 'object', properties: { id: uuid } } as const;
@@ -170,29 +199,8 @@ export function registerEidRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { ctx } = await begin(req);
     const { id } = req.params as { id: string };
     const { contactId } = req.body as { contactId: string };
-    const stripe = deps.stripeIdentity as StripeIdentity | undefined;
-    // Check access and the company's choice before anything goes to Stripe.
-    const pre = await run(ctx, async (tx) => {
-      requireEdit(ctx, (await boxFor(tx, id)).owner_node_id);
-      if (!(await settingsOf(tx, deps)).stripeOn || !stripe) throw new HttpError(503, 'eid_unavailable', 'Stripe Identity is not switched on for your company');
-      await clientOn(tx, id, contactId);
-      if ((await tx.query(`SELECT 1 FROM id_verifications WHERE box_id = $1 AND contact_id = $2 AND status = ANY($3)`, [id, contactId, OPEN])).rowCount) {
-        throw new HttpError(409, 'eid_open', 'A check for this client is already open. Cancel it first to send a new link.');
-      }
-      return { name: await nameOf(tx, ctx.userId) };
-    });
-    const verificationId = randomUUID();
-    let session: { id: string; url: string };
-    try {
-      session = await stripe!.createSession({ returnUrl: `${deps.config.appOrigin}/eid-done`, metadata: { tenant_id: ctx.tenantId, verification_id: verificationId, requested_by: ctx.userId } });
-    } catch (e) { req.log.warn({ err: (e as Error).message }, 'eid: Stripe session failed'); throw new HttpError(502, 'eid_failed', 'Stripe Identity could not create the link. Try again in a minute.'); }
-    await run(ctx, async (tx) => {
-      const b = await boxFor(tx, id);
-      await tx.query(`INSERT INTO id_verifications (id, tenant_id, box_id, contact_id, route, status, stripe_session_id, requested_by, requested_by_name) VALUES ($1,$2,$3,$4,'stripe','link_sent',$5,$6,$7)`,
-        [verificationId, ctx.tenantId, id, contactId, session.id, ctx.userId, pre.name]);
-      await audit(tx, ctx, 'eid_requested', 'box', id, { verification: verificationId, route: 'stripe' }, b.owner_node_id);
-    });
-    return reply.code(201).send({ id: verificationId, url: session.url });
+    const out = await startStripeCheck(deps, ctx, id, contactId, req.log);
+    return reply.code(201).send(out);
   });
 
   app.post('/v1/boxes/:id/eid/own-check', {

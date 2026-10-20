@@ -10,6 +10,7 @@ import type { Box, FieldDef, Locale, Pipeline, Stage } from './types.ts';
 import { DealPeopleCompliance } from './family-compliance.tsx';
 import { LetterDrafts, MeetingNotes } from './copilot-tools.tsx';
 import { SuitabilityCard } from './suitability.tsx';
+import { IntakeCard } from './intake.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Person { id: string; displayName: string | null; email: string }
@@ -398,6 +399,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
             <h3>{x.contacts}</h3>
             {(full.contacts ?? []).length === 0 && <p class="muted">{x.noContacts}</p>}
             {(full.contacts ?? []).map((c) => <div class="ev" key={c.id}>{c.fullName ?? c.email}<small>{c.fullName ? c.email : ''}</small></div>)}
+            <IntakeCard boxId={box.id} call={call} locale={locale} canEdit={canEdit} />
           </div>
         )}
 
