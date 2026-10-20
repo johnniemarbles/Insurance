@@ -5,6 +5,7 @@ import { useDialogFocus } from './a11y.ts';
 import type { Locale } from './types.ts';
 import { FamilyInsurance } from './family-insurance.tsx';
 import { FamilyCompliance } from './family-compliance.tsx';
+import { FamilyTimeline } from './family-tools.tsx';
 
 export type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 export type Role = 'head' | 'spouse_partner' | 'child' | 'dependent' | 'other';
@@ -385,6 +386,7 @@ export function FamilyPanel({ call, locale, familyId, onClose, onOpenPerson, onC
           {history && (past.length === 0 ? <p class="muted">—</p> : <ul class="maplist">{past.map((m) => <li key={m.id}>{m.fullName || '—'} · {x.roles[m.role]} · {x.reasons[m.endReason ?? ''] ?? m.endReason} {day(m.endedAt, locale)}</li>)}</ul>)}
           {active && <FamilyInsurance key={`${familyId}:${fam.version}`} call={call} locale={locale} familyId={familyId} />}
           {active && <FamilyCompliance key={`fc:${familyId}:${fam.version}`} call={call} locale={locale} familyId={familyId} onOpenPerson={onOpenPerson} />}
+          <FamilyTimeline key={`tl:${familyId}:${fam.version}`} call={call} locale={locale} familyId={familyId} />
           {active && (
             <details style={{ marginTop: '14px' }}>
               <summary class="muted" style={{ cursor: 'pointer' }}>{x.archive}</summary>

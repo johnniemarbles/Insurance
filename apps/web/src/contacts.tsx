@@ -6,13 +6,16 @@ import type { Locale } from './types.ts';
 import { FamilyCard, FamilyPanel, familyStrings, type Call, type Role } from './families.tsx';
 import { MissingPeopleQueue, useFamilyInsuranceOn } from './family-insurance.tsx';
 import { PersonCompliance, ReviewsQueue, useFamilyComplianceOn } from './family-compliance.tsx';
+import { FamilyEmail, FamilyImport, useFamilyToolsOn } from './family-tools.tsx';
+import { MergePanel } from './merge.tsx';
+import type { ComposeApi } from './types.ts';
 
 interface Row { id: string; fullName: string | null; email: string | null; phone: string | null; custom: { title?: string } }
 interface Mship { contactId: string; familyId: string; familyName: string; role: Role }
 
 const G = {
-  en: { group: 'Group by family', headsOnly: 'Heads only', counts: (p: number, f: number) => `${p} ${p === 1 ? 'person' : 'people'} · ${f} ${f === 1 ? 'family' : 'families'}`, noFamily: 'Not in a family', familyOfOne: 'Family of one', open: 'Open', client: 'Client', missingPeople: 'Policies missing people', reviews: 'Compliance reviews' },
-  'fr-CA': { group: 'Regrouper par famille', headsOnly: 'Chefs de famille seulement', counts: (p: number, f: number) => `${p} ${p === 1 ? 'personne' : 'personnes'} · ${f} ${f === 1 ? 'famille' : 'familles'}`, noFamily: 'Pas dans une famille', familyOfOne: 'Famille d’une personne', open: 'Ouvrir', client: 'Client', missingPeople: 'Polices sans personnes', reviews: 'Examens de conformité' },
+  en: { group: 'Group by family', headsOnly: 'Heads only', counts: (p: number, f: number) => `${p} ${p === 1 ? 'person' : 'people'} · ${f} ${f === 1 ? 'family' : 'families'}`, noFamily: 'Not in a family', familyOfOne: 'Family of one', open: 'Open', client: 'Client', missingPeople: 'Policies missing people', reviews: 'Compliance reviews', email: 'Email families', importF: 'Import families' },
+  'fr-CA': { group: 'Regrouper par famille', headsOnly: 'Chefs de famille seulement', counts: (p: number, f: number) => `${p} ${p === 1 ? 'personne' : 'personnes'} · ${f} ${f === 1 ? 'famille' : 'familles'}`, noFamily: 'Pas dans une famille', familyOfOne: 'Famille d’une personne', open: 'Ouvrir', client: 'Client', missingPeople: 'Polices sans personnes', reviews: 'Examens de conformité', email: 'Écrire aux familles', importF: 'Importer des familles' },
 };
 const ROLE_ORDER: Record<Role, number> = { head: 0, spouse_partner: 1, child: 2, dependent: 3, other: 4 };
 
@@ -31,7 +34,7 @@ function ClientPanel({ call, locale, row, onClose, onOpenFamily, onOpenPerson, o
   );
 }
 
-export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: Strings; locale?: Locale }) {
+export function ContactsView({ call, t, locale = 'en', compose, familiesPage = false }: { call: Call; t: Strings; locale?: Locale; compose?: ComposeApi; familiesPage?: boolean }) {
   const g = G[locale] ?? G.en;
   const [rows, setRows] = useState<Row[] | null>(null);
   const [q, setQ] = useState('');
@@ -40,7 +43,7 @@ export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: String
   // Families exist only where the server has them switched on: a 404 here means off, and nothing family-related shows.
   const [famOn, setFamOn] = useState<boolean | null>(null);
   const [mships, setMships] = useState<Record<string, Mship>>({});
-  const [grouped, setGrouped] = useState(false);
+  const [grouped, setGrouped] = useState(familiesPage);
   const [headsOnly, setHeadsOnly] = useState(false);
   const [openRow, setOpenRow] = useState<Row | null>(null);
   const [openFamily, setOpenFamily] = useState<string | null>(null);
@@ -49,6 +52,8 @@ export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: String
   const [queue, setQueue] = useState(false);
   const complianceOn = useFamilyComplianceOn(call);
   const [reviewsOpen, setReviewsOpen] = useState(false);
+  const toolsOn = useFamilyToolsOn(call);
+  const [tool, setTool] = useState<'' | 'email' | 'import' | 'merges'>('');
   useEffect(() => { const h = setTimeout(() => setDq(q), 250); return () => clearTimeout(h); }, [q]);
   useEffect(() => {
     let live = true;
@@ -103,6 +108,8 @@ export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: String
         <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
           {famOn && insuranceOn && <button type="button" class="linkbtn" style={{ fontSize: '13px' }} onClick={() => setQueue(true)}>{g.missingPeople}</button>}
           {famOn && complianceOn && <button type="button" class="linkbtn" style={{ fontSize: '13px' }} onClick={() => setReviewsOpen(true)}>{g.reviews}</button>}
+          {famOn && toolsOn && <button type="button" class="linkbtn" style={{ fontSize: '13px' }} onClick={() => setTool('email')}>{g.email}</button>}
+          {famOn && toolsOn && <button type="button" class="linkbtn" style={{ fontSize: '13px' }} onClick={() => setTool('import')}>{g.importF}</button>}
           {famOn && (
             <>
               <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '13px', color: 'var(--ink)' }}>
@@ -172,6 +179,9 @@ export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: String
       )}
       {queue && <MissingPeopleQueue call={call} locale={locale} onClose={() => setQueue(false)} />}
       {reviewsOpen && <ReviewsQueue call={call} locale={locale} onClose={() => setReviewsOpen(false)} />}
+      {tool === 'email' && <FamilyEmail call={call} locale={locale} onClose={() => setTool('')} onCreated={() => setTool('merges')} />}
+      {tool === 'import' && <FamilyImport call={call} locale={locale} onClose={() => setTool('')} onDone={changed} />}
+      {tool === 'merges' && <MergePanel call={call} locale={locale} compose={compose} boxIds={[]} onClose={() => setTool('')} onOpenBox={() => undefined} />}
       {openFamily && (
         <FamilyPanel call={call} locale={locale} familyId={openFamily} onChanged={changed}
           onClose={() => setOpenFamily(null)} onOpenPerson={(id) => { const r = byId[id]; setOpenFamily(null); if (r) setOpenRow(r); }} />

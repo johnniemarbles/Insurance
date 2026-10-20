@@ -383,11 +383,12 @@ export function registerFamilyToolsRoutes(app: FastifyInstance, deps: AppDeps): 
   });
 
   // ---------------------------------------------------------------- Gmail side panel
-  app.get('/v1/families/strip', {
-    schema: { querystring: { type: 'object', additionalProperties: false, required: ['emails'], properties: { emails: { type: 'string', minLength: 3, maxLength: 4000 } } } },
+  // POST, not GET: the addresses of an open conversation go in the body so they never reach request logs. Nothing is stored.
+  app.post('/v1/families/strip', {
+    schema: { body: { type: 'object', additionalProperties: false, required: ['emails'], properties: { emails: { type: 'array', minItems: 1, maxItems: 50, items: { type: 'string', maxLength: 320 } } } } },
   }, async (req) => {
     const { ctx } = await begin(req);
-    const emails = [...new Set((req.query as { emails: string }).emails.split(',').map((e) => e.trim().toLowerCase()).filter((e) => e.includes('@')))].slice(0, 20);
+    const emails = [...new Set((req.body as { emails: string[] }).emails.map((e) => e.trim().toLowerCase()).filter((e) => e.includes('@')))].slice(0, 20);
     return run(ctx, async (tx) => {
       const people = (await tx.query<{ id: string; email: string; name: string | null; owner_node_id: string; family_id: string | null }>(
         `SELECT DISTINCT ON (lower(c.email::text)) c.id, lower(c.email::text) AS email, c.full_name AS name, c.owner_node_id,

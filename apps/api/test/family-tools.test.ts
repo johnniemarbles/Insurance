@@ -96,7 +96,7 @@ test('switched off: Gate D routes answer 404 and the left panel has no Families 
   try {
     assert.equal((await call(P1U, 'POST', '/v1/family-merges/plan', { familyIds: [fam] })).status, 404);
     assert.equal((await call(P1U, 'GET', `/v1/families/${fam}/timeline`)).status, 404);
-    assert.equal((await call(P1U, 'GET', '/v1/families/strip?emails=raj.singh@client.test')).status, 404);
+    assert.equal((await call(P1U, 'POST', '/v1/families/strip', { emails: ['raj.singh@client.test'] })).status, 404);
     assert.ok(!(await call(P1U, 'GET', '/v1/nav?v=1.6.0')).json.items.some((i: any) => i.id === 'families'));
   } finally { process.env.FAMILIES_PRODUCTIVITY_ENABLED = '1'; }
 });
@@ -251,15 +251,15 @@ test('timeline: joins, policy roles and family emails, newest first, under the v
 
 test('Gmail strip: the sender\'s family, and private suggestions that can be dismissed', async () => {
   const lone = await contact(P1U, 'Gurdeep Singh');
-  const s = (await call(P1U, 'GET', '/v1/families/strip?emails=raj.singh@client.test,gurdeep.singh@client.test,priya.sharma@client.test,unknown@x.test')).json;
+  const s = (await call(P1U, 'POST', '/v1/families/strip', { emails: ['raj.singh@client.test', 'gurdeep.singh@client.test', 'priya.sharma@client.test', 'unknown@x.test'] })).json;
   assert.equal(s.people.length, 2); // Priya belongs to a sibling partner: not even her name comes back
   assert.equal(s.families.length, 1);
   assert.equal(s.families[0].name, 'Singh family');
   assert.equal(s.families[0].canEdit, true);
   const sug = s.suggestions.find((x: any) => x.contactId === lone);
   assert.deepEqual(sug.reasons, ['same_conversation', 'same_last_name']);
-  assert.equal((await call(LOC, 'GET', '/v1/families/strip?emails=raj.singh@client.test,gurdeep.singh@client.test')).json.suggestions.length, 0);
+  assert.equal((await call(LOC, 'POST', '/v1/families/strip', { emails: ['raj.singh@client.test', 'gurdeep.singh@client.test'] })).json.suggestions.length, 0);
   assert.equal((await call(P1U, 'POST', '/v1/families/suggestions/dismiss', { contactId: lone, familyId: fam })).status, 204);
-  assert.equal((await call(P1U, 'GET', '/v1/families/strip?emails=raj.singh@client.test,gurdeep.singh@client.test')).json.suggestions.length, 0);
-  assert.equal((await call(P2U, 'GET', '/v1/families/strip?emails=raj.singh@client.test')).json.people.length, 0);
+  assert.equal((await call(P1U, 'POST', '/v1/families/strip', { emails: ['raj.singh@client.test', 'gurdeep.singh@client.test'] })).json.suggestions.length, 0);
+  assert.equal((await call(P2U, 'POST', '/v1/families/strip', { emails: ['raj.singh@client.test'] })).json.people.length, 0);
 });

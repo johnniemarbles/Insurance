@@ -102,7 +102,44 @@ export function mountSidebar(host: HTMLElement, thread: ThreadInfo): void {
     const parts: Node[] = [head, sub];
     if (linked.boxes.length === 0) parts.push(addPanel(me, threadId, pipelines, recent, hit));
     else for (const b of linked.boxes) parts.push(boxPanel(b, pipelines, threadId));
+    const strip = el('div');
+    parts.splice(2, 0, strip);
     show(...parts);
+    void familyStrip(strip, [thread.getSender()?.email ?? '', ...recipients].filter((a) => a && a.toLowerCase() !== myEmail));
+  }
+
+  // ---------------- family strip (families switched on) ----------------
+  // The conversation's addresses are sent in a request body to look up clients the partner can already see; nothing is
+  // stored. Suggestions are only for this partner and change nothing until they press Add.
+  interface Strip { families: { id: string; name: string; version: number; canEdit: boolean; members: { contactId: string; name: string | null; role: string }[] }[];
+    suggestions: { contactId: string; name: string | null; familyId: string; familyName: string; familyVersion: number; reasons: string[] }[] }
+  async function familyStrip(host: HTMLElement, emails: string[]): Promise<void> {
+    if (!emails.length) return;
+    let s: Strip;
+    try { s = await api<Strip>('POST', '/v1/families/strip', { emails: [...new Set(emails.map((e) => e.toLowerCase()))].slice(0, 50) }); } catch { return; } // switched off (404) or unavailable: show nothing
+    if (!s.families.length && !s.suggestions.length) return;
+    const card = el('div', { class: 'card' });
+    for (const f of s.families) {
+      card.append(el('b', { textContent: `${t.family}: ${f.name}` }),
+        el('div', { class: 'muted', textContent: f.members.map((m) => `${m.name ?? '—'} (${t.roles[m.role] ?? m.role})`).join(' · ') }));
+    }
+    for (const g of s.suggestions) {
+      const role = el('select');
+      for (const r of ['other', 'spouse_partner', 'child', 'dependent']) role.append(el('option', { value: r, textContent: t.roles[r] ?? r }));
+      const msg = el('div');
+      const add = el('button', { textContent: t.addToFamily });
+      const no = el('button', { class: 'quiet', textContent: t.notNow });
+      const row = el('div', { class: 'row' }, el('div', { textContent: t.suggest(g.name ?? '—', g.familyName) }),
+        el('div', { class: 'muted', textContent: g.reasons.map((r) => t.reasons[r] ?? r).join(' · ') }), role, add, no, msg);
+      add.onclick = async () => {
+        add.disabled = true;
+        try { await api('POST', `/v1/families/${g.familyId}/members`, { version: g.familyVersion, contactId: g.contactId, role: role.value }); row.replaceChildren(el('div', { class: 'ok', textContent: t.added(g.name ?? '—', g.familyName) })); }
+        catch (e) { add.disabled = false; msg.replaceChildren(el('div', { class: 'err', textContent: errText(e) })); }
+      };
+      no.onclick = async () => { try { await api('POST', '/v1/families/suggestions/dismiss', { contactId: g.contactId, familyId: g.familyId }); } catch { /* not shown again this time anyway */ } row.remove(); };
+      card.append(row);
+    }
+    host.replaceChildren(card);
   }
 
   // ---------------- not linked yet ----------------
