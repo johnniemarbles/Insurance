@@ -61,6 +61,7 @@ export function ComplianceCommandCenter({
   const fr = locale === 'fr-CA';
   const [results, setResults] = useState<Record<Key, Result>>(initial);
   const [revision, setRevision] = useState(0);
+  const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -224,6 +225,24 @@ export function ComplianceCommandCenter({
     },
   ];
 
+  const evidenceFor = (label: string): { title: string; detail: string }[] | null => {
+    const aml = (issue: string) => amlItems.filter(x => x.issue === issue).map(x => ({ title: x.name, detail: x.detail || x.issue }));
+    switch (label) {
+      case 'Not cleared to transact': case 'Dossiers non validés':
+        return (clearance.value?.notCleared ?? []).map((x: any) => ({ title: String(x.name ?? x.nodeId), detail: Array.isArray(x.reasons) ? x.reasons.join(', ') : '' }));
+      case 'Open screening hits': case 'Correspondances ouvertes': return aml('screening_hit');
+      case 'Cash reports due': case 'Déclarations d’espèces dues': return aml('cash_unreported');
+      case 'Failed ID checks': case 'Échecs vérif. identité': return aml('id_failed');
+      case 'Active legal holds': case 'Gels juridiques ouverts': return holdItems.map(x => ({ title: x.name, detail: x.reason }));
+      case 'Active audit engagements': case 'Missions d’audit actives':
+        return auditItems.filter(x => ['active', 'open', 'invited'].includes(x.status)).map(x => ({ title: x.title, detail: x.status + ' · ' + x.endsOn }));
+      case 'Quarantined webhooks': case 'Webhooks en quarantaine':
+        return quarantinedReceipts.map((x: any) => ({ title: String(x.carrierId ?? x.carrier_id ?? x.id ?? 'Carrier receipt'), detail: String(x.externalEventId ?? x.external_event_id ?? x.status ?? '') }));
+      default: return null;
+    }
+  };
+  const selectedCard = sections.flatMap(x => x.cards).find(x => x.label === selectedMetric);
+  const selectedRows = selectedMetric ? evidenceFor(selectedMetric) : null;
   const errors = SOURCES.filter((s) => results[s.key].state === 'error');
 
   return (
@@ -260,6 +279,40 @@ export function ComplianceCommandCenter({
           </div>
         )}
 
+        {selectedCard && (
+          <section class="obcard" role="region" aria-label={selectedCard.label} style={{ marginTop: '16px' }}>
+            <div class="obrow">
+              <h3>{selectedCard.label}</h3>
+              <button type="button" class="btn" onClick={() => setSelectedMetric(null)}>{fr ? 'Fermer' : 'Close'}</button>
+            </div>
+            {results[selectedCard.key].state !== 'ready' || typeof selectedCard.count !== 'number' ? (
+              <p role="status" class="muted">{fr ? 'Données indisponibles ou en cours de chargement.' : 'Data unavailable or loading. No zero is assumed.'}</p>
+            ) : selectedRows === null ? (
+              <div>
+                <p>{fr ? 'Total vérifié' : 'Verified total'}: <strong>{selectedCard.count}</strong></p>
+                <p class="muted">{fr ? 'Le service ne fournit pas encore une liste détaillée correspondant exactement à cet indicateur.' : 'The service does not yet expose an exact record-level list for this metric.'}</p>
+                {(selectedCard.filter === 'expiring' || selectedCard.filter === 'not_cleared') && (
+                  <button class="btn" type="button" onClick={() => onNavigate('files', selectedCard.filter)}>
+                    {fr ? 'Voir les dossiers' : 'View broker files'}
+                  </button>
+                )}
+              </div>
+            ) : selectedRows.length === 0 ? (
+              <p class="muted">{selectedCard.count === 0
+                ? (fr ? 'Aucun dossier correspondant.' : 'No matching records.')
+                : (fr ? 'Le total ne correspond pas aux dossiers disponibles.' : 'Summary count does not reconcile with available records.')}</p>
+            ) : (
+              <div>
+                {selectedRows.length !== selectedCard.count && <p role="status" class="muted">{fr ? 'Écart entre total et dossiers visibles.' : 'Count differs from visible records.'}</p>}
+                {selectedRows.map((row, i) => (
+                  <div class="ev" key={i} style={{ marginTop: '8px' }}>
+                    <strong>{row.title}</strong><p class="muted">{row.detail}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
         {sections.map((sec) => (
           <div key={sec.title} style={{ marginTop: '20px' }}>
             <h3 style={{ margin: '0 0 10px', fontSize: '15px', color: '#475569' }}>{sec.title}</h3>
@@ -277,7 +330,8 @@ export function ComplianceCommandCenter({
                     type="button"
                     class="hstat"
                     key={c.label}
-                    onClick={() => onNavigate(c.section, c.filter)}
+                    onClick={() => setSelectedMetric(c.label)}
+                    aria-expanded={selectedMetric === c.label}
                     aria-label={`${c.label}, ${display}`}
                   >
                     <b>{display}</b>
