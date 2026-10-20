@@ -6,6 +6,8 @@ import { listRisks } from './risk.ts';
 import { listRenewals } from './renewals.ts';
 import { unreadCount } from './routes-notifications.ts';
 import { resolveSettings } from './settings.ts';
+import { familyToolsEnabled } from './routes-family-tools.ts';
+import { FAMILIES_NAV_MIN_EXTENSION, versionAtLeast } from './family-tools-rules.ts';
 import type { AppDeps } from './app.ts';
 
 const NAMES: Record<string, Record<'en' | 'fr-CA', string>> = {
@@ -19,11 +21,12 @@ const NAMES: Record<string, Record<'en' | 'fr-CA', string>> = {
   merges: { en: 'Mail merges', 'fr-CA': 'Publipostages' },
   training: { en: 'Training', 'fr-CA': 'Formation' },
   settings: { en: 'Settings', 'fr-CA': 'Paramètres' },
+  families: { en: 'Families', 'fr-CA': 'Familles' },
 };
 
 /** What Gmail's left panel shows for this person: their layout, limited to what their role can use, with live counts. */
 export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
-  app.get('/v1/nav', async (req) => {
+  app.get('/v1/nav', { schema: { querystring: { type: 'object', properties: { v: { type: 'string', maxLength: 20 } } } } }, async (req) => {
     const identity = await deps.authenticate(req);
     const { ctx } = identity;
     const loc = identity.user.locale === 'fr-CA' ? 'fr-CA' : 'en';
@@ -37,6 +40,8 @@ export function registerNavRoutes(app: FastifyInstance, deps: AppDeps): void {
       const canCommercial = Boolean(ctx.isTenantAdmin || ctx.roles.some((r) => ['admin', 'compliance', 'manager', 'partner'].includes(r.role)));
       const ids = order.filter((id) => !hidden.has(id) && (id !== 'compliance' || canCompliance) && (id !== 'commercial' || canCommercial) && (id !== 'training' || lms)); // Training holds courses and each licensee's CE file, so every signed-in person gets it
       if (!ids.includes('settings')) ids.push('settings'); // there is always a way back to Settings
+      // Families (Gate D): only for an extension that ships the Families icon (it sends its version), and only beside Contacts.
+      if (familyToolsEnabled() && ctx.canUseCrm && ids.includes('contacts') && versionAtLeast((req.query as { v?: string }).v, FAMILIES_NAV_MIN_EXTENSION)) ids.splice(ids.indexOf('contacts') + 1, 0, 'families');
       let tasksDue = 0;
       let pendingCommercial = 0;
       let pipelines: { id: string; name: string; count: number; views: { id: string; name: string }[] }[] = [];
