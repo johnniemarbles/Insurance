@@ -2,6 +2,8 @@ import type { Tx } from '@pii/db';
 import { ADVICE_DOC_TYPES, CONSENT_GATE_TYPE, DOC_TYPE_LABELS, consentStates, isDocType, missingDocs, openScreeningHits, type ConsentKind, type DocType } from '@pii/domain';
 import { HttpError } from './errors.ts';
 import { tenantSettingInt } from './needs-analysis.ts';
+import { personLevelFiled } from './family-compliance-gates.ts';
+import { familyComplianceEnabled } from './routes-family-compliance.ts';
 
 /** What a record holds against what a stage requires. All lists are document type keys.
  *  `unverified`: advice paperwork uploaded but not yet verified by compliance. `needsExpiredOn`: the last signed needs analysis, if it has expired. */
@@ -52,6 +54,8 @@ export async function gateStatus(tx: Tx, stageId: string, boxId: string): Promis
   if (!filed.includes('id_record') && (await tx.query("SELECT 1 FROM client_id_records WHERE box_id = $1 AND result = 'verified' LIMIT 1", [boxId])).rowCount) filed.push('id_record');
   const consents = (await tx.query<{ kind: string; createdAt: string; withdrawnAt: string | null }>('SELECT kind, created_at AS "createdAt", withdrawn_at AS "withdrawnAt" FROM client_consents WHERE box_id = $1 ORDER BY created_at', [boxId])).rows;
   for (const k of consentStates(consents).active) { const t = CONSENT_GATE_TYPE[k as ConsentKind]; if (t && !filed.includes(t)) filed.push(t); }
+  // Families, Gate C (switched off by default): person-level consents and ID checks this deal uses also count.
+  if (familyComplianceEnabled()) for (const t of await personLevelFiled(tx, boxId)) if (!filed.includes(t)) filed.push(t);
   const overridden = (await tx.query<{ t: string }>('SELECT DISTINCT unnest(doc_types) AS t FROM gate_overrides WHERE box_id = $1 AND stage_id = $2', [boxId, stageId])).rows.map((r) => r.t);
   const missing = missingDocs(req, filed, overridden);
   return { stageId, stageName: st.name, required: req, filed, overridden, missing, unverified: [...unverified].filter((t) => missing.includes(t)), needsExpiredOn: missing.includes('needs_analysis') ? needsExpiredOn : null };

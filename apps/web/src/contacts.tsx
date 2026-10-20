@@ -5,13 +5,14 @@ import type { Strings } from './i18n.ts';
 import type { Locale } from './types.ts';
 import { FamilyCard, FamilyPanel, familyStrings, type Call, type Role } from './families.tsx';
 import { MissingPeopleQueue, useFamilyInsuranceOn } from './family-insurance.tsx';
+import { PersonCompliance, ReviewsQueue, useFamilyComplianceOn } from './family-compliance.tsx';
 
 interface Row { id: string; fullName: string | null; email: string | null; phone: string | null; custom: { title?: string } }
 interface Mship { contactId: string; familyId: string; familyName: string; role: Role }
 
 const G = {
-  en: { group: 'Group by family', headsOnly: 'Heads only', counts: (p: number, f: number) => `${p} ${p === 1 ? 'person' : 'people'} · ${f} ${f === 1 ? 'family' : 'families'}`, noFamily: 'Not in a family', familyOfOne: 'Family of one', open: 'Open', client: 'Client', missingPeople: 'Policies missing people' },
-  'fr-CA': { group: 'Regrouper par famille', headsOnly: 'Chefs de famille seulement', counts: (p: number, f: number) => `${p} ${p === 1 ? 'personne' : 'personnes'} · ${f} ${f === 1 ? 'famille' : 'familles'}`, noFamily: 'Pas dans une famille', familyOfOne: 'Famille d’une personne', open: 'Ouvrir', client: 'Client', missingPeople: 'Polices sans personnes' },
+  en: { group: 'Group by family', headsOnly: 'Heads only', counts: (p: number, f: number) => `${p} ${p === 1 ? 'person' : 'people'} · ${f} ${f === 1 ? 'family' : 'families'}`, noFamily: 'Not in a family', familyOfOne: 'Family of one', open: 'Open', client: 'Client', missingPeople: 'Policies missing people', reviews: 'Compliance reviews' },
+  'fr-CA': { group: 'Regrouper par famille', headsOnly: 'Chefs de famille seulement', counts: (p: number, f: number) => `${p} ${p === 1 ? 'personne' : 'personnes'} · ${f} ${f === 1 ? 'famille' : 'familles'}`, noFamily: 'Pas dans une famille', familyOfOne: 'Famille d’une personne', open: 'Ouvrir', client: 'Client', missingPeople: 'Polices sans personnes', reviews: 'Examens de conformité' },
 };
 const ROLE_ORDER: Record<Role, number> = { head: 0, spouse_partner: 1, child: 2, dependent: 3, other: 4 };
 
@@ -24,6 +25,7 @@ function ClientPanel({ call, locale, row, onClose, onOpenFamily, onOpenPerson, o
       <h2>{row.fullName || row.email || '—'}</h2>
       <p class="muted" style={{ margin: '0 0 12px' }}>{[row.email, row.phone, row.custom?.title].filter(Boolean).join(' · ') || '—'}</p>
       <FamilyCard key={row.id} call={call} locale={locale} contactId={row.id} contactName={row.fullName ?? row.email ?? ''} onOpenFamily={onOpenFamily} onOpenPerson={onOpenPerson} onChanged={onChanged} />
+      <PersonCompliance key={`c:${row.id}`} call={call} locale={locale} contactId={row.id} />
       <div class="actions"><button type="button" class="btn quiet" onClick={onClose}>{x.close}</button></div>
     </aside>
   );
@@ -45,6 +47,8 @@ export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: String
   const [nonce, setNonce] = useState(0);
   const insuranceOn = useFamilyInsuranceOn(call);
   const [queue, setQueue] = useState(false);
+  const complianceOn = useFamilyComplianceOn(call);
+  const [reviewsOpen, setReviewsOpen] = useState(false);
   useEffect(() => { const h = setTimeout(() => setDq(q), 250); return () => clearTimeout(h); }, [q]);
   useEffect(() => {
     let live = true;
@@ -98,6 +102,7 @@ export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: String
         <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--navy)', margin: 0 }}>{t.contacts}</h1>
         <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
           {famOn && insuranceOn && <button type="button" class="linkbtn" style={{ fontSize: '13px' }} onClick={() => setQueue(true)}>{g.missingPeople}</button>}
+          {famOn && complianceOn && <button type="button" class="linkbtn" style={{ fontSize: '13px' }} onClick={() => setReviewsOpen(true)}>{g.reviews}</button>}
           {famOn && (
             <>
               <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '13px', color: 'var(--ink)' }}>
@@ -166,6 +171,7 @@ export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: String
           onOpenFamily={(id) => setOpenFamily(id)} onOpenPerson={(id) => { const r = byId[id]; if (r) setOpenRow(r); }} />
       )}
       {queue && <MissingPeopleQueue call={call} locale={locale} onClose={() => setQueue(false)} />}
+      {reviewsOpen && <ReviewsQueue call={call} locale={locale} onClose={() => setReviewsOpen(false)} />}
       {openFamily && (
         <FamilyPanel call={call} locale={locale} familyId={openFamily} onChanged={changed}
           onClose={() => setOpenFamily(null)} onOpenPerson={(id) => { const r = byId[id]; setOpenFamily(null); if (r) setOpenRow(r); }} />
