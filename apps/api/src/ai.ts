@@ -101,9 +101,9 @@ export function keyLooksRight(provider: AiProvider, key: string): boolean {
 /** PII's own clients, one per provider whose key is set (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY). */
 export function aiProvidersFromEnv(env: Record<string, string | undefined> = process.env): Partial<Record<AiProvider, AiClient>> {
   const out: Partial<Record<AiProvider, AiClient>> = {};
-  // Local acceptance runs only (APP_ENV=dev): stand-in providers that answer from the records they are given, citing [C1].
+  // Local acceptance runs only (APP_ENV=dev): stand-in providers that answer from the first record or passage they are given, citing it.
   if (env.AI_FAKE_PROVIDERS === '1' && env.APP_ENV === 'dev') {
-    for (const p of AI_PROVIDERS) out[p] = { model: `fake-${p}`, complete: async ({ user }) => { const first = /\[C1\] ([^\n]+)/.exec(user)?.[1]; return first ? `From your records: ${first.slice(0, 160)} [C1]` : 'Nothing found.'; } };
+    for (const p of AI_PROVIDERS) out[p] = { model: `fake-${p}`, complete: async ({ user }) => { const m = /\[([CRA]1)\] ([^\n]+)/.exec(user); return m ? `From your records: ${m[2]!.slice(0, 160)} [${m[1]}]` : 'Nothing found.'; } };
     return out;
   }
   const keys: Record<AiProvider, string | undefined> = { anthropic: env.ANTHROPIC_API_KEY, openai: env.OPENAI_API_KEY, gemini: env.GEMINI_API_KEY };

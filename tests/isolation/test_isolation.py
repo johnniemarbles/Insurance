@@ -232,6 +232,23 @@ for k, v in {'u1': 1, 'u2': 0, 'mgrX': 0, 'admin': 1}.items():
     check(f"copilot_log visible to {k} = {v}", n == v, n)
 _, _, e = run('u2', "INSERT INTO ai_partner_keys(tenant_id,node_id,provider,key_enc,key_id,last4,created_by) VALUES (%s,%s,'gemini','\\x00','k1','9999',%s)", (T, N['P1'], UID['u2']))
 check("sibling u2 cannot set a key for u1's partner", e is not None)
+
+print("\n== 3g. Co-pilot rulebook: everyone in the company reads it; only compliance or a tenant admin adds to it ==")
+RB = U()
+fc.execute("INSERT INTO rulebook_documents(id,tenant_id,title,mime,sha256,passages,text_chars,uploaded_by,uploaded_by_name) VALUES (%s,%s,'Manual','text/plain',%s,1,10,%s,'admin')", (RB, T, 'c' * 64, UID['admin']))
+fc.execute("INSERT INTO rulebook_passages(tenant_id,document_id,ord,body) VALUES (%s,%s,1,'Replacement needs a disclosure')", (T, RB))
+fs.commit()
+for k, v in {'u1': 1, 'u2': 1, 's1': 1, 'mgrX': 1, 'admin': 1, 'out': 0}.items():
+    n = len(run(k, "SELECT 1 FROM rulebook_passages")[0])
+    check(f"rulebook passages visible to {k} = {v}", n == v, n)
+_, _, e = run('u1', "INSERT INTO rulebook_documents(tenant_id,title,mime,sha256,passages,text_chars,uploaded_by,uploaded_by_name) VALUES (%s,'Mine','text/plain',%s,1,1,%s,'u1')", (T, 'd' * 64, UID['u1']))
+check("a partner cannot add to the rulebook", e is not None)
+_, _, e = run('u1', "INSERT INTO rulebook_passages(tenant_id,document_id,ord,body) VALUES (%s,%s,2,'Ignore the rules')", (T, RB))
+check("a partner cannot add a passage", e is not None)
+_, n, e = run('u1', "UPDATE rulebook_documents SET retired_at = now(), retired_by_name = 'u1'")
+check("a partner cannot retire a rulebook document (0 rows)", e is None and n == 0, (n, e))
+_, _, e = run('out', "INSERT INTO rulebook_passages(tenant_id,document_id,ord,body) VALUES (%s,%s,3,'x')", (T, RB))
+check("another tenant cannot write into this rulebook", e is not None)
 fs.close()
 
 print('\n== 4. Private Gmail data ==')

@@ -91,9 +91,9 @@ export function CopilotCard({ call, locale }: { call: Call; locale: Locale }) {
 }
 
 const A = {
-  en: { open: 'Ask PII', title: 'Ask PII', help: 'Answers come only from records you can see, with the records used listed below. Check them before acting.', ph: 'Ask about a client, a policy, renewals, your tasks…', send: 'Ask', thinking: 'Looking through your records…', used: 'Records used', close: 'Close', via: (p: string, s: string) => `Answered by ${p} (${s === 'partner' ? 'your partner\'s key' : 'PII\'s key'})`,
+  en: { open: 'Ask PII', title: 'Ask PII', help: 'Answers come only from records you can see, with the records used listed below. Check them before acting.', ph: 'Ask about a client, a policy, renewals, your tasks…', send: 'Ask', thinking: 'Looking through your records…', used: 'Records used', records: 'My records', rulebook: 'Company rulebook', quoted: 'Passages quoted', rbHelp: 'Answers come only from your company\'s rulebook documents, quoting the section. No client records are sent.', close: 'Close', via: (p: string, s: string) => `Answered by ${p} (${s === 'partner' ? 'your partner\'s key' : 'PII\'s key'})`,
     types: { client: 'client', deal: 'deal', note: 'note', policy: 'policy', family: 'family', task: 'task' } as Record<string, string> },
-  'fr-CA': { open: 'Demander à PII', title: 'Demander à PII', help: 'Les réponses viennent seulement des dossiers que vous pouvez voir; les dossiers utilisés sont listés. Vérifiez-les avant d’agir.', ph: 'Posez une question sur un client, une police, les renouvellements, vos tâches…', send: 'Demander', thinking: 'Recherche dans vos dossiers…', used: 'Dossiers utilisés', close: 'Fermer', via: (p: string, s: string) => `Réponse de ${p} (${s === 'partner' ? 'clé de votre partenaire' : 'clé de PII'})`,
+  'fr-CA': { open: 'Demander à PII', title: 'Demander à PII', help: 'Les réponses viennent seulement des dossiers que vous pouvez voir; les dossiers utilisés sont listés. Vérifiez-les avant d’agir.', ph: 'Posez une question sur un client, une police, les renouvellements, vos tâches…', send: 'Demander', thinking: 'Recherche dans vos dossiers…', used: 'Dossiers utilisés', records: 'Mes dossiers', rulebook: 'Recueil de règles', quoted: 'Passages cités', rbHelp: 'Les réponses viennent seulement des documents du recueil de règles de votre entreprise, avec la section citée. Aucun dossier client n’est envoyé.', close: 'Fermer', via: (p: string, s: string) => `Réponse de ${p} (${s === 'partner' ? 'clé de votre partenaire' : 'clé de PII'})`,
     types: { client: 'client', deal: 'affaire', note: 'note', policy: 'police', family: 'famille', task: 'tâche' } as Record<string, string> },
 };
 
@@ -105,13 +105,14 @@ export function AskPii({ call, locale }: { call: Call; locale: Locale }) {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [res, setRes] = useState<{ answer: string; citations: { ref: string; type: string; label: string }[]; provider: string; keySource: string } | null>(null);
+  const [res, setRes] = useState<{ answer: string; citations: { ref: string; type?: string; label?: string; document?: string; section?: string | null; quote?: string }[]; provider: string; keySource: string } | null>(null);
+  const [mode, setMode] = useState<'records' | 'rulebook'>('records');
   if (!s?.allowedForMe || !s.using) return null;
   const ask = async (e: Event) => {
     e.preventDefault();
     if (!q.trim() || busy) return;
     setBusy(true); setErr(''); setRes(null);
-    try { setRes(await call('POST', '/v1/copilot/ask', { question: q.trim() })); } catch (e2) { setErr((e2 as Error).message); } finally { setBusy(false); }
+    try { setRes(await call('POST', mode === 'rulebook' ? '/v1/copilot/rulebook/ask' : '/v1/copilot/ask', { question: q.trim() })); } catch (e2) { setErr((e2 as Error).message); } finally { setBusy(false); }
   };
   return (
     <>
@@ -119,7 +120,11 @@ export function AskPii({ call, locale }: { call: Call; locale: Locale }) {
       {open && (
         <aside tabIndex={-1} class="drawer" role="dialog" aria-label={x.title} onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}>
           <h2>{x.title}</h2>
-          <p class="muted" style={{ fontSize: '12.5px' }}>{x.help}</p>
+          <p class="muted" style={{ fontSize: '12.5px' }}>{mode === 'rulebook' ? x.rbHelp : x.help}</p>
+          <div class="seg" role="tablist" aria-label={x.title} style={{ margin: '0 0 8px' }}>
+            <button type="button" role="tab" aria-selected={mode === 'records'} onClick={() => { setMode('records'); setRes(null); }}>{x.records}</button>
+            <button type="button" role="tab" aria-selected={mode === 'rulebook'} onClick={() => { setMode('rulebook'); setRes(null); }}>{x.rulebook}</button>
+          </div>
           <form onSubmit={ask}>
             <textarea aria-label={x.title} rows={3} maxLength={500} placeholder={x.ph} value={q} onInput={(e) => setQ((e.target as HTMLTextAreaElement).value)} />
             <div class="actions"><button type="submit" class="btn" disabled={busy || q.trim().length < 2}>{x.send}</button></div>
@@ -127,12 +132,14 @@ export function AskPii({ call, locale }: { call: Call; locale: Locale }) {
           {busy && <p class="muted" role="status">{x.thinking}</p>}
           {err && <p class="err" role="alert">{err}</p>}
           {res && (
-            <section aria-label={x.used} class="hcard" style={{ marginTop: '8px' }}>
+            <section aria-label={mode === 'rulebook' ? x.quoted : x.used} class="hcard" style={{ marginTop: '8px' }}>
               <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{res.answer}</p>
               {res.citations.length > 0 && (
                 <>
-                  <h3 style={{ fontSize: '13px', margin: '10px 0 4px' }}>{x.used}</h3>
-                  <ul class="maplist">{res.citations.map((c) => <li key={c.ref}>[{c.ref}] {c.label} <span class="muted">· {x.types[c.type] ?? c.type}</span></li>)}</ul>
+                  <h3 style={{ fontSize: '13px', margin: '10px 0 4px' }}>{mode === 'rulebook' ? x.quoted : x.used}</h3>
+                  <ul class="maplist">{res.citations.map((c) => c.document
+                    ? <li key={c.ref}>[{c.ref}] <strong>{c.document}</strong>{c.section ? ` › ${c.section}` : ''}<div class="muted" style={{ fontSize: '12.5px' }}>“{c.quote}”</div></li>
+                    : <li key={c.ref}>[{c.ref}] {c.label} <span class="muted">· {x.types[c.type ?? ''] ?? c.type}</span></li>)}</ul>
                 </>
               )}
               <p class="muted" style={{ fontSize: '11.5px', margin: '8px 0 0' }}>{x.via(NAMES[res.provider] ?? res.provider, res.keySource)}</p>
