@@ -12,6 +12,7 @@ import { LMS } from './features.ts';
 import { ContactsView } from './contacts.tsx';
 import { IntegrationsPanel } from './integrations.tsx';
 import { MergePanel } from './merge.tsx';
+import { AskPii } from './copilot.tsx';
 import { FilterBar } from './filterbar.tsx';
 import { AttentionPanel } from './ai.tsx';
 import { NewRecord, RecordPanel } from './record.tsx';
@@ -190,6 +191,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
         : <PipelineView key={`${page}:${routeId ?? ''}`} call={call} t={t} locale={locale} meEmail={meEmail} compose={compose} initialPid={routeId} prefs={prefs} openMerges={page === 'merges'} onStartTipsOff={() => void (settings as SettingsApi).set('ui.startTips', 'user', false)} />}
       </div>
       </Boundary>
+      <AskPii call={call} locale={locale} />
     </div>
   );
 }

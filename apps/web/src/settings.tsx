@@ -6,6 +6,7 @@ import { LMS } from './features.ts';
 import { NAV_ITEMS, SETTINGS, type NavLayout, type SettingDef, type SettingScope, type SettingTab } from '../../../packages/domain/src/settings.ts';
 import type { ComposeApi, Locale } from './types.ts';
 import { AiAdminCard } from './ai.tsx';
+import { CopilotCard } from './copilot.tsx';
 import { VendorPanel } from './vendors.tsx';
 import { CertificateSigner } from './report.tsx';
 import { RetentionPolicies } from './retention-settings.tsx';
@@ -1618,6 +1619,7 @@ function AdvancedTab({
       })}
 
       {api.canSet.tenant && <AiAdminCard call={call} locale={locale} />}
+      <CopilotCard call={call} locale={locale} />
 
       <h3>{x.apply}</h3>
       <div class="erow wrap2">

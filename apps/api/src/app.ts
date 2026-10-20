@@ -1,4 +1,4 @@
-import type { AiClient } from './ai.ts';
+import type { AiClient, AiProvider } from './ai.ts';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Config } from '@pii/platform';
 import { assertDeployment, type Db } from '@pii/db';
@@ -14,6 +14,7 @@ import { registerFamilyRoutes } from './routes-families.ts';
 import { registerFamilyInsuranceRoutes } from './routes-family-insurance.ts';
 import { registerFamilyComplianceRoutes } from './routes-family-compliance.ts';
 import { registerFamilyToolsRoutes } from './routes-family-tools.ts';
+import { registerCopilotRoutes } from './routes-copilot.ts';
 import type { KeyProvider } from '@pii/platform';
 import { registerPageRoutes } from './routes-pages.ts';
 import { registerThreadRoutes } from './routes-threads.ts';
@@ -91,6 +92,10 @@ export interface AppDeps {
   keys?: KeyProvider;
   /** AI text service. Absent: AI features answer 503. */
   ai?: AiClient;
+  /** PII's own AI clients, one per provider whose key is set. A company picks one (Settings). */
+  aiProviders?: Partial<Record<AiProvider, AiClient>>;
+  /** Builds a client from a partner's own key. Tests replace it; absent, the real provider client is used. */
+  aiFactory?: (provider: AiProvider, apiKey: string) => AiClient;
   /** Sends reminder emails. Absent: reminders stay in the app. */
   mailer?: import('./mailer.ts').Mailer;
   /** Write-once archive (S3 with Object Lock). Absent: signed paperwork stays in the database only. */
@@ -203,6 +208,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerFamilyInsuranceRoutes(app, deps);
   registerFamilyComplianceRoutes(app, deps);
   registerFamilyToolsRoutes(app, deps);
+  registerCopilotRoutes(app, deps);
   registerNoteRoutes(app, deps);
   registerThreadRoutes(app, deps);
   registerLmsRoutes(app, deps);

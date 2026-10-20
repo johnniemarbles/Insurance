@@ -219,6 +219,19 @@ check("nobody can write a dismissal for someone else", e is not None)
 _, _, e = run('u2', """INSERT INTO family_imports(tenant_id,owner_node_id,user_id,file_sha256,rows_total,clients_created,clients_linked,families_created,families_joined)
                        VALUES (%s,%s,%s,%s,1,1,0,0,0)""", (T, N['P1'], UID['u2'], 'b' * 64))
 check("sibling u2 cannot log an import for u1's branch", e is not None)
+
+print("\n== 3f. Co-pilot: a partner's AI key reaches only that partner (and tenant admins); question logs are own-only ==")
+fc.execute("INSERT INTO ai_partner_keys(tenant_id,node_id,provider,key_enc,key_id,last4,created_by) VALUES (%s,%s,'gemini','\\x00','k1','1234',%s)", (T, N['P1'], UID['u1']))
+fc.execute("INSERT INTO copilot_log(tenant_id,user_id,kind,provider,key_source,model,question_chars,records_sent,records_cited) VALUES (%s,%s,'ask','gemini','partner','m',10,3,1)", (T, UID['u1']))
+fs.commit()
+for k, v in {'u1': 1, 'u2': 0, 'mgrX': 0, 's1': 0, 'admin': 1, 'out': 0}.items():
+    n = len(run(k, "SELECT 1 FROM ai_partner_keys")[0])
+    check(f"ai_partner_keys visible to {k} = {v}", n == v, n)
+for k, v in {'u1': 1, 'u2': 0, 'mgrX': 0, 'admin': 1}.items():
+    n = len(run(k, "SELECT 1 FROM copilot_log")[0])
+    check(f"copilot_log visible to {k} = {v}", n == v, n)
+_, _, e = run('u2', "INSERT INTO ai_partner_keys(tenant_id,node_id,provider,key_enc,key_id,last4,created_by) VALUES (%s,%s,'gemini','\\x00','k1','9999',%s)", (T, N['P1'], UID['u2']))
+check("sibling u2 cannot set a key for u1's partner", e is not None)
 fs.close()
 
 print('\n== 4. Private Gmail data ==')
