@@ -8,6 +8,7 @@ import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import { addBrokerFixture } from './support/broker.ts';
+import { NEEDS_FULL } from './support/advice.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
 let co: { tenantId: string };
@@ -68,7 +69,7 @@ test('withdrawal re-opens the gate, shows on the overview, stops emails, and can
   assert.equal(ec.status, 409);
   const e = (await call(PA, 'GET', `/v1/boxes/${box}/consents`)).json.consents.find((x: any) => x.kind === 'electronic_comms').id;
   assert.equal((await call(PA, 'POST', `/v1/consents/${e}/withdraw`, { note: 'Asked to stop emails' })).status, 200);
-  const adv = (await call(PA, 'POST', `/v1/boxes/${box}/advice`, { kind: 'recommendation', title: 'T', body: 'B', clientName: 'Rita', clientEmail: 'r@c.test' })).json.id;
+  const adv = (await call(PA, 'POST', `/v1/boxes/${box}/advice`, { kind: 'needs_analysis', title: 'T', body: 'B', clientName: 'Rita', clientEmail: 'r@c.test', answers: NEEDS_FULL })).json.id;
   assert.equal((await call(PA, 'POST', `/v1/advice/${adv}/send-code`)).status, 409, 'no email after withdrawal');
   assert.equal((await call(PA, 'POST', `/v1/consents/${e}/withdraw`, {})).status, 409);
   assert.equal((await call(PA, 'POST', `/v1/consents/${c}/withdraw`, { note: 'Client withdrew' })).status, 200);
@@ -100,6 +101,8 @@ test('a closed file past its period is due, a legal hold stops that, and the hol
   const won = (await call(ADMIN, 'POST', `/v1/pipelines/${pipe}/stages`, { name: 'Done', isWon: true })).json.id;
   const b3 = (await call(PA, 'POST', '/v1/boxes', { pipelineId: pipe, name: 'Old client' })).json.id;
   await call(PA, 'POST', `/v1/boxes/${b3}/id-records`, { method: 'credit_file', result: 'verified' });
+  // Moving forward past the gated stage needs its paperwork too.
+  await call(PA, 'POST', `/v1/boxes/${b3}/consents`, { kind: 'collection_use', channel: 'in_person' });
   assert.equal((await call(PA, 'PATCH', `/v1/boxes/${b3}`, { stageId: won })).status, 204);
   const o = new pg.Client({ connectionString: db.ownerUrl }); await o.connect();
   await o.query(`UPDATE boxes SET stage_entered_at = now() - interval '6 years' WHERE id = $1`, [b3]); await o.end();
