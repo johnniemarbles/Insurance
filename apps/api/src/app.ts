@@ -11,6 +11,7 @@ import { registerPipelineRoutes } from './routes-pipelines.ts';
 import { registerBoxRoutes } from './routes-boxes.ts';
 import { registerContactRoutes } from './routes-contacts.ts';
 import { registerFamilyRoutes } from './routes-families.ts';
+import { registerFamilyInsuranceRoutes } from './routes-family-insurance.ts';
 import type { KeyProvider } from '@pii/platform';
 import { registerPageRoutes } from './routes-pages.ts';
 import { registerThreadRoutes } from './routes-threads.ts';
@@ -197,6 +198,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerBoxRoutes(app, deps);
   registerContactRoutes(app, deps);
   registerFamilyRoutes(app, deps);
+  registerFamilyInsuranceRoutes(app, deps);
   registerNoteRoutes(app, deps);
   registerThreadRoutes(app, deps);
   registerLmsRoutes(app, deps);

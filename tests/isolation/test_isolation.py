@@ -134,6 +134,26 @@ _, _, e = run('u1', "INSERT INTO family_memberships(tenant_id,family_id,contact_
 check("one active family per person (second membership refused)", e is not None)
 fc.execute("SELECT count(*) FROM family_memberships WHERE family_id=%s AND role='head' AND ended_at IS NULL", (FAM['F1'],))
 check("exactly one Head in F1", fc.fetchone()[0] == 1)
+
+print('\n== 3c. Families Gate B: policies reachable only on the CRM wall ==')
+POL = {}
+for pname, prod, br in (('pol-P1', 'P1', 'X'), ('pol-P2', 'P2', 'X'), ('pol-P3Y', 'P3', 'Y')):
+    POL[pname] = U()
+    fc.execute("""INSERT INTO policy_records(id,tenant_id,branch_node_id,producer_node_id,carrier_id,policy_number,plan_name,jurisdiction,
+                  annual_premium_cents,modal_premium_cents,premium_frequency,effective_date) VALUES (%s,%s,%s,%s,'ia-financial-group',%s,'Plan','CA-ON',100,100,'annual','2025-01-01')""",
+               (POL[pname], T, N[br], N[prod], pname))
+fc.execute("INSERT INTO policy_parties(tenant_id,policy_id,contact_id,role) VALUES (%s,%s,%s,'owner')", (T, POL['pol-P1'], contact_id('contact-b1')))
+fc.execute("INSERT INTO policy_parties(tenant_id,policy_id,contact_id,role) VALUES (%s,%s,%s,'owner')", (T, POL['pol-P3Y'], contact_id('contact-b4')))
+fs.commit()
+pexp = {'u1': 1, 'u2': 0, 'u3': 1, 'mgrX': 1, 'mgrY': 1, 'admin': 2, 'out': 0, 's1': 0}
+for k, v in pexp.items():
+    n = len(run(k, "SELECT 1 FROM policy_parties")[0])
+    check(f"policy parties visible to {k} = {v}", n == v, n)
+check("u2 cannot see u1's policy through policy_visible", run('u2', "SELECT policy_visible(%s)", (POL['pol-P1'],))[0][0][0] is False)
+_, _, e = run('u2', "INSERT INTO policy_parties(tenant_id,policy_id,contact_id,role) VALUES (%s,%s,%s,'insured')", (T, POL['pol-P1'], contact_id('contact-b2')))
+check("sibling u2 cannot put its client on u1's policy", e is not None)
+_, _, e = run('u1', "INSERT INTO policy_parties(tenant_id,policy_id,contact_id,role) VALUES (%s,%s,%s,'insured')", (T, POL['pol-P2'], contact_id('contact-b1')))
+check("u1 cannot put its client on a sibling's policy", e is not None)
 fs.close()
 
 print('\n== 4. Private Gmail data ==')
