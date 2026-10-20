@@ -10,3 +10,4 @@ apps/extension/dist
 apps/extension/pack
 *.pdf
 apps/extension/store
+tests/uat/families/harness/strip.js

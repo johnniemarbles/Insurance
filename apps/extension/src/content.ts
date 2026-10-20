@@ -182,7 +182,8 @@ InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
   const icon = chrome.runtime.getURL('nav-icon.png');
   const withCount = (name: string, n: number) => (n > 0 ? `${name} (${n})` : name);
   const drawNav = async () => {
-    const r = await transport('GET', '/v1/nav');
+    // The version tells the server this copy has the Families icon (from 1.6.0); older copies never get that item.
+    const r = await transport('GET', `/v1/nav?v=${encodeURIComponent(chrome.runtime.getManifest().version)}`);
     const sig = JSON.stringify(r.status === 200 ? r.json : r.status);
     if (sig === navSig && section) return;
     navSig = sig;

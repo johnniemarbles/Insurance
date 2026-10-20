@@ -125,8 +125,8 @@ const older = (have?: string, need?: string) => {
   return false;
 };
 
-type PageId = 'inbox' | 'home' | 'notifications' | 'pipelines' | 'renewals' | 'commercial' | 'compliance' | 'partners' | 'contacts' | 'merges' | 'training' | 'settings';
-const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewals', 'commercial', 'training', 'compliance', 'partners', 'contacts', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
+type PageId = 'inbox' | 'home' | 'notifications' | 'pipelines' | 'renewals' | 'commercial' | 'compliance' | 'partners' | 'contacts' | 'families' | 'merges' | 'training' | 'settings';
+const PAGES: PageId[] = (['home', 'inbox', 'notifications', 'pipelines', 'renewals', 'commercial', 'training', 'compliance', 'partners', 'contacts', 'families', 'merges', 'settings'] as PageId[]).filter((p) => LMS || p !== 'training');
 /** The top menu: three entries across the top; the rest of the sections stay in the left column. */
 const TOP_PAGES: { p: PageId; text: (l: Locale) => string }[] = [
   { p: 'home', text: (l) => (l === 'fr-CA' ? 'Tableau de bord' : 'Dashboard') },
@@ -154,7 +154,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
     const next = pageOf(p); setPage(next); setRouteId(id);
     try { localStorage.setItem('pii.page', next); } catch { /* private window */ }
   };
-  const label: Record<PageId, string> = { inbox: locale === 'fr-CA' ? 'Boîte de démo' : 'Demo inbox', home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, commercial: locale === 'fr-CA' ? 'Finances & Polices' : 'Finance & Policies', compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', partners: locale === 'fr-CA' ? 'Partenaires' : 'Partners', contacts: t.contacts, merges: t.mailMerge, training: t.training, settings: t.settings };
+  const label: Record<PageId, string> = { inbox: locale === 'fr-CA' ? 'Boîte de démo' : 'Demo inbox', home: t.home, notifications: t.notifications, pipelines: t.tabPipelines, renewals: t.renewals, commercial: locale === 'fr-CA' ? 'Finances & Polices' : 'Finance & Policies', compliance: locale === 'fr-CA' ? 'Conformité' : 'Compliance', partners: locale === 'fr-CA' ? 'Partenaires' : 'Partners', contacts: t.contacts, families: locale === 'fr-CA' ? 'Familles' : 'Families', merges: t.mailMerge, training: t.training, settings: t.settings };
   const prefs = settings ? { defaultView: settings.get<string>('ui.defaultView'), startTips: settings.get<boolean>('ui.startTips'), defaultPipeline: settings.get<string>('ui.defaultPipeline') } : null;
   // Home, Compliance, Commercial and Training bring their own page width; every other page is framed the same way.
   const framed = page !== 'home' && page !== 'compliance' && page !== 'commercial' && !(page === 'training' && LMS);
@@ -169,7 +169,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
         </nav>
         <div class="tabs" role="tablist" aria-label={locale === 'fr-CA' ? 'Sections' : 'Sections'}>
           <button class="rail-toggle" type="button" onClick={toggleRail} aria-expanded={railOpen} aria-label={railOpen ? t.railFold : t.railOpen} title={railOpen ? t.railFold : t.railOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={railOpen ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6'} /></svg></button>
-          {PAGES.filter((p) => p !== 'home' && p !== 'merges' && p !== 'notifications' && (p !== 'inbox' || demoUserId)).map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)} title={label[p]}><svg class="nv" viewBox="0 0 24 24" aria-hidden="true"><path d={NAV_ICON[p] ?? 'M4 12h16'} /></svg><span class="tl">{label[p]}</span></button>)}
+          {PAGES.filter((p) => p !== 'home' && p !== 'merges' && p !== 'notifications' && p !== 'families' && (p !== 'inbox' || demoUserId)).map((p) => <button role="tab" aria-selected={page === p || (p === 'pipelines' && page === 'merges')} onClick={() => go(p)} title={label[p]}><svg class="nv" viewBox="0 0 24 24" aria-hidden="true"><path d={NAV_ICON[p] ?? 'M4 12h16'} /></svg><span class="tl">{label[p]}</span></button>)}
           {supportEmail && <a class="tabs-fb" style={{ marginLeft: 0 }} href={`mailto:${supportEmail}?subject=PII%20feedback`}>{t.sendFeedback}</a>}
         </div>
       </>
@@ -182,7 +182,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
         : page === 'commercial' ? <CommercialPage call={call} locale={locale} openImportId={routeId} />
         : page === 'partners' ? <PartnersPage call={call} locale={locale} headOffice={isHeadOffice} go={go} />
         : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} host={host} openId={routeId} />
-        : page === 'contacts' ? <ContactsView call={call} t={t} locale={locale} />
+        : page === 'contacts' || page === 'families' ? <ContactsView key={page} call={call} t={t} locale={locale} compose={compose} familiesPage={page === 'families'} />
         : page === 'training' && LMS ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} isHeadOffice={isHeadOffice} isAdmin={isAdmin} />
         : page === 'inbox' && demoUserId ? <DemoInbox locale={locale} meEmail={meEmail} meName={meName} />
         : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} onLocale={onLocale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} compose={compose} /> : <div class="msg">{t.loading}</div>)

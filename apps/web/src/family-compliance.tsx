@@ -299,7 +299,7 @@ function AuthForm({ call, locale, x, self, onSave, onCancel }: { call: Call; loc
           : <ClientPicker call={call} locale={locale} exclude={[self]} onPick={(c) => setHolder({ id: c.id, label: c.fullName || c.email || '—' })} />)
         : <Txt label={x.holderOutside} value={name} onChange={setName} max={200} />}
       <fieldset style={{ border: 0, padding: 0, margin: '8px 0 0' }}><legend style={{ fontSize: '13px' }}>{x.scope}</legend>
-        {AUTH_PURPOSES.map((p) => <label key={p} style={{ display: 'block', fontWeight: 400 }}><input type="checkbox" checked={purposes.includes(p)} onChange={() => toggle(p)} /> {x.purposes[p]}</label>)}
+        {AUTH_PURPOSES.map((p) => <label key={p} style={{ display: 'flex', gap: '8px', alignItems: 'center', fontWeight: 400, margin: '2px 0' }}><input style={{ width: 'auto', margin: 0, minHeight: 0 }} type="checkbox" checked={purposes.includes(p)} onChange={() => toggle(p)} /> {x.purposes[p]}</label>)}
       </fieldset>
       <DateIn label={x.starts} value={starts} onChange={setStarts} />
       <DateIn label={x.ends} value={ends} onChange={setEnds} />
@@ -323,7 +323,7 @@ function IdForm({ x, onSave, onCancel }: { x: X; onSave: (b: Record<string, unkn
       <Sel label={x.result} value={result} onChange={setResult} opts={Object.entries(x.results)} />
       <DateIn label={x.checked} value={on} onChange={setOn} />
       <fieldset style={{ border: 0, padding: 0, margin: '8px 0 0' }}><legend style={{ fontSize: '13px' }}>{x.seen}</legend>
-        {DOCS.map((d) => <label key={d} style={{ display: 'inline-block', fontWeight: 400, marginRight: '10px' }}><input type="checkbox" checked={docs.includes(d)} disabled={!docs.includes(d) && docs.length >= 5} onChange={() => setDocs(docs.includes(d) ? docs.filter((q) => q !== d) : [...docs, d])} /> {x.docs[d]}</label>)}
+        {DOCS.map((d) => <label key={d} style={{ display: 'inline-flex', gap: '6px', alignItems: 'center', fontWeight: 400, marginRight: '12px' }}><input style={{ width: 'auto', margin: 0, minHeight: 0 }} type="checkbox" checked={docs.includes(d)} disabled={!docs.includes(d) && docs.length >= 5} onChange={() => setDocs(docs.includes(d) ? docs.filter((q) => q !== d) : [...docs, d])} /> {x.docs[d]}</label>)}
       </fieldset>
       <Txt label={x.idNote} value={note} onChange={setNote} max={300} />
       <div class="actions"><button type="button" class="btn" onClick={() => onSave({ method, result, checkedOn: on, documentsSeen: docs, ...(note.trim() ? { note: note.trim() } : {}) })}>{x.save}</button>

@@ -9,6 +9,7 @@ import { actingAs } from './effects.ts';
 import { BASE_TOKENS, escapeHtml, renderBody, renderSubject, tokensIn } from './merge-render.ts';
 import { notify } from './notify.ts';
 import { effectiveSetting } from './settings.ts';
+import { checkFamilyTemplate, familyToolsEnabled, familyVarsFor } from './routes-family-tools.ts';
 import type { AppDeps } from './app.ts';
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -101,7 +102,7 @@ export function registerMergeRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   // =================== mail merge ===================
-  const MCOLS = `m.id, m.name, m.subject, m.body, m.locale, m.status, m.created_at AS "createdAt", m.started_at AS "startedAt", m.finished_at AS "finishedAt",
+  const MCOLS = `m.id, m.name, m.subject, m.body, m.locale, m.status, m.audience, m.created_at AS "createdAt", m.started_at AS "startedAt", m.finished_at AS "finishedAt",
     (SELECT count(*)::int FROM mail_merge_recipients r WHERE r.merge_id = m.id) AS total,
     (SELECT count(*)::int FROM mail_merge_recipients r WHERE r.merge_id = m.id AND r.status = 'sent') AS sent,
     (SELECT count(*)::int FROM mail_merge_recipients r WHERE r.merge_id = m.id AND r.status = 'failed') AS failed,
@@ -160,7 +161,8 @@ export function registerMergeRoutes(app: FastifyInstance, deps: AppDeps): void {
       const m = (await tx.query(`SELECT ${MCOLS} FROM mail_merges m WHERE m.id = $1`, [id])).rows[0];
       if (!m) throw notFound('Mail merge not found');
       const recipients = (await tx.query(
-        `SELECT r.id, r.email, r.status, r.error, r.sent_at AS "sentAt", r.unsubscribed_at AS "unsubscribedAt", r.box_id AS "boxId", (SELECT b.name FROM boxes b WHERE b.id = r.box_id) AS "boxName"
+        `SELECT r.id, r.email, r.status, r.error, r.sent_at AS "sentAt", r.unsubscribed_at AS "unsubscribedAt", r.box_id AS "boxId", (SELECT b.name FROM boxes b WHERE b.id = r.box_id) AS "boxName",
+                (SELECT f.display_name FROM families f WHERE f.id = r.family_id) AS "familyName", r.facts
            FROM mail_merge_recipients r WHERE r.merge_id = $1 ORDER BY r.created_at LIMIT 500`, [id],
       )).rows;
       return { ...m, recipients };
@@ -173,8 +175,9 @@ export function registerMergeRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { id } = req.params as { id: string };
     const b = req.body as { name?: string; subject?: string; body?: string; status?: 'running' | 'paused' | 'cancelled' };
     await run(ctx, async (tx) => {
-      const m = (await tx.query<{ status: string; subject: string; body: string }>('SELECT status, subject, body FROM mail_merges WHERE id = $1 FOR UPDATE', [id])).rows[0];
+      const m = (await tx.query<{ status: string; subject: string; body: string; audience: string }>('SELECT status, subject, body, audience FROM mail_merges WHERE id = $1 FOR UPDATE', [id])).rows[0];
       if (!m) throw notFound('Mail merge not found');
+      if (m.audience === 'families') checkFamilyTemplate(b.subject ?? m.subject, b.body ?? m.body);
       if ((b.subject != null || b.body != null) && m.status === 'running') throw invalid('Pause the merge before changing the message');
       if (m.status === 'cancelled') throw invalid('This merge was cancelled');
       checkTemplate(b.subject ?? m.subject, b.body ?? m.body);
@@ -238,11 +241,11 @@ export function registerMergeRoutes(app: FastifyInstance, deps: AppDeps): void {
       const DAILY_CAP = Math.min(MAX_DAILY, await effectiveSetting<number>(tx, ctx.userId, 'merge.dailyCap'));
       if (today >= DAILY_CAP) throw new HttpError(429, 'daily_limit', `Daily limit of ${DAILY_CAP} messages reached. The merge continues tomorrow.`);
       for (let i = 0; i < 25; i++) {
-        const r = (await tx.query<{ id: string; email: string; box_id: string | null; contact_id: string | null; opted: boolean }>(
+        const r = (await tx.query<{ id: string; email: string; box_id: string | null; contact_id: string | null; family_id: string | null; opted: boolean }>(
           `UPDATE mail_merge_recipients r SET status = 'sending', claimed_at = now()
             WHERE r.id = (SELECT x.id FROM mail_merge_recipients x WHERE x.merge_id = $1 AND (x.status = 'pending' OR (x.status = 'sending' AND x.claimed_at < now() - interval '5 minutes'))
                            ORDER BY x.created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
-            RETURNING r.id, r.email, r.box_id, r.contact_id, (SELECT c.email_opt_out_at IS NOT NULL FROM contacts c WHERE c.id = r.contact_id) AS opted`, [id],
+            RETURNING r.id, r.email, r.box_id, r.contact_id, r.family_id, (SELECT c.email_opt_out_at IS NOT NULL FROM contacts c WHERE c.id = r.contact_id) AS opted`, [id],
         )).rows[0];
         if (!r) {
           const left = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM mail_merge_recipients WHERE merge_id = $1 AND status = 'sending'`, [id])).rows[0]!.n;
@@ -256,7 +259,18 @@ export function registerMergeRoutes(app: FastifyInstance, deps: AppDeps): void {
         if (r.opted) { await tx.query(`UPDATE mail_merge_recipients SET status = 'skipped', error = 'unsubscribed' WHERE id = $1`, [r.id]); continue; }
         const token = `unsub_${randomBytes(24).toString('base64url')}`;
         await tx.query('UPDATE mail_merge_recipients SET unsub_hash = $2 WHERE id = $1', [r.id, sha(token)]);
-        const vars = await varsFor(tx, r.box_id, r.email, r.contact_id, me);
+        let vars: Record<string, string>;
+        if (r.family_id && r.contact_id) {
+          // A family email (Gate D): only facts cleared for this one person, checked again now (they may have opted out,
+          // died or left the family since the merge was planned). If Gate D is switched off mid-merge, it stops sending these.
+          if (!familyToolsEnabled()) { await tx.query(`UPDATE mail_merge_recipients SET status = 'skipped', error = 'family email switched off' WHERE id = $1`, [r.id]); continue; }
+          const fv = await familyVarsFor(tx, r.family_id, r.contact_id, r.email, me, `${m.subject} ${m.body}`);
+          if (fv.skip) { await tx.query(`UPDATE mail_merge_recipients SET status = 'skipped', error = $2 WHERE id = $1`, [r.id, fv.skip]); continue; }
+          vars = fv.vars;
+          await tx.query('UPDATE mail_merge_recipients SET facts = $2 WHERE id = $1', [r.id, JSON.stringify(fv.facts)]);
+        } else {
+          vars = await varsFor(tx, r.box_id, r.email, r.contact_id, me);
+        }
         const subject = renderSubject(m.subject, vars);
         await tx.query('UPDATE mail_merge_recipients SET subject = $2 WHERE id = $1', [r.id, subject]);
         return {
