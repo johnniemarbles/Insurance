@@ -31,7 +31,8 @@ export const familyComplianceEnabled = (): boolean =>
 const idParams = { type: 'object', required: ['id'], properties: { id: uuid } } as const;
 const date = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } as const;
 const jurisdiction = { type: 'string', pattern: '^(CA|US)-[A-Z]{2}$' } as const;
-type Item = { type: 'family' | 'policy' | 'deal' | 'authority' | 'note'; id: string | null; label: string };
+// Review items carry a label for whoever reads them later, plus codes and roles the screens translate.
+type Item = { type: 'family' | 'policy' | 'deal' | 'authority' | 'note'; id: string | null; label: string; roles?: string[]; code?: string; params?: Record<string, string | number> };
 
 async function nameOf(tx: Tx, ctx: RequestContext): Promise<string> {
   return (await tx.query<{ n: string }>('SELECT coalesce(display_name, email::text) AS n FROM app_users WHERE id = $1', [ctx.userId])).rows[0]!.n;
@@ -79,11 +80,13 @@ async function affectedItems(tx: Tx, contactId: string): Promise<Item[]> {
   for (const r of (await tx.query<{ id: string; label: string }>(
     `SELECT f.id, f.display_name AS label FROM family_memberships m JOIN families f ON f.id = m.family_id
       WHERE m.contact_id = $1 AND m.ended_at IS NULL`, [contactId])).rows) items.push({ type: 'family', id: r.id, label: r.label });
-  for (const r of (await tx.query<{ id: string; label: string }>(
-    `SELECT p.id, concat_ws(' · ', p.carrier_id, p.plan_name, string_agg(DISTINCT pp.role, ', ')) AS label
-       FROM policy_parties pp JOIN policy_records p ON p.id = pp.policy_id
+  for (const r of (await tx.query<{ id: string; label: string; roles: string[] }>(
+    `SELECT p.id, concat_ws(' · ', coalesce(cd.display_name, p.carrier_id), p.plan_name, p.policy_number) AS label,
+            array_agg(DISTINCT pp.role ORDER BY pp.role) FILTER (WHERE pp.contact_id = $1) AS roles
+       FROM policy_parties pp JOIN policy_records p ON p.id = pp.policy_id LEFT JOIN carrier_directory cd ON cd.id = p.carrier_id
       WHERE (pp.contact_id = $1 OR pp.insured_contact_id = $1) AND pp.ended_at IS NULL AND policy_visible(p.id)
-      GROUP BY p.id, p.carrier_id, p.plan_name ORDER BY p.plan_name`, [contactId])).rows) items.push({ type: 'policy', id: r.id, label: r.label });
+      GROUP BY p.id, cd.display_name, p.carrier_id, p.plan_name, p.policy_number ORDER BY p.plan_name`, [contactId])).rows)
+    items.push({ type: 'policy', id: r.id, label: r.label, roles: r.roles ?? [] });
   for (const r of (await tx.query<{ id: string; label: string }>(
     `SELECT b.id, b.name AS label FROM boxes b JOIN stages s ON s.id = b.stage_id
       WHERE NOT s.is_won AND NOT s.is_lost
@@ -91,10 +94,10 @@ async function affectedItems(tx: Tx, contactId: string): Promise<Item[]> {
              OR EXISTS (SELECT 1 FROM deal_parties dp WHERE dp.box_id = b.id AND dp.contact_id = $1 AND dp.ended_at IS NULL))
       ORDER BY b.name LIMIT 50`, [contactId])).rows) items.push({ type: 'deal', id: r.id, label: r.label });
   for (const r of (await tx.query<{ id: string; label: string }>(
-    `SELECT a.id, concat(replace(a.kind, '_', ' '), ': ', coalesce(h.full_name, a.holder_name), ' for ', s.full_name) AS label
+    `SELECT a.id, concat(coalesce(h.full_name, a.holder_name), ' → ', s.full_name) AS label, a.kind
        FROM legal_authorities a JOIN contacts s ON s.id = a.subject_contact_id LEFT JOIN contacts h ON h.id = a.holder_contact_id
       WHERE (a.subject_contact_id = $1 OR a.holder_contact_id = $1) AND a.ended_at IS NULL AND a.status <> 'rejected'`, [contactId])).rows)
-    items.push({ type: 'authority', id: r.id, label: r.label });
+    items.push({ type: 'authority', id: r.id, label: r.label, code: (r as { kind?: string }).kind });
   return items;
 }
 
@@ -164,9 +167,11 @@ export function registerFamilyComplianceRoutes(app: FastifyInstance, deps: AppDe
         `SELECT id, kind, occurred_on::text AS "occurredOn", note, recorded_by_name AS "recordedBy", created_at AS "createdAt"
            FROM life_events WHERE contact_id = $1 ORDER BY occurred_on DESC, created_at DESC LIMIT 50`, [id])).rows;
       const reviews = (await tx.query(
-        `SELECT id, kind, items, due_on::text AS "dueOn", milestone_on::text AS "milestoneOn", opened_at AS "openedAt",
-                resolved_at AS "resolvedAt", resolved_by_name AS "resolvedBy", resolution_note AS "resolutionNote"
-           FROM compliance_reviews WHERE contact_id = $1 ORDER BY resolved_at IS NOT NULL, due_on LIMIT 50`, [id])).rows;
+        `SELECT r.id, r.kind, r.items, r.due_on::text AS "dueOn", r.milestone_on::text AS "milestoneOn", r.opened_at AS "openedAt",
+                le.kind AS "lifeEventKind", pc.purpose AS "consentPurpose", (r.due_on < current_date AND r.resolved_at IS NULL) AS overdue,
+                r.resolved_at AS "resolvedAt", r.resolved_by_name AS "resolvedBy", r.resolution_note AS "resolutionNote"
+           FROM compliance_reviews r LEFT JOIN life_events le ON le.id = r.life_event_id LEFT JOIN person_consents pc ON pc.id = r.consent_id
+          WHERE r.contact_id = $1 ORDER BY r.resolved_at IS NOT NULL, r.due_on LIMIT 50`, [id])).rows;
       return {
         person: { id: c.id, fullName: c.full_name, dateOfBirth: c.dob, age: ageOn(c.dob), deceasedOn: c.deceased_on, residenceJurisdiction: c.jur },
         capacity: await capacityFor(tx, c.jur, c.dob, today),
@@ -174,6 +179,7 @@ export function registerFamilyComplianceRoutes(app: FastifyInstance, deps: AppDe
         consents, authorities: { about, held }, idReferences: ids, dealIdRecords: dealIds, lifeEvents: events, reviews,
         canEdit: ctx.isTenantAdmin || ctx.nodeIds.includes(c.owner_node_id),
         canVerify: await canVerify(tx, ctx, c.owner_node_id),
+        viewerId: ctx.userId,
       };
     });
   });
@@ -686,8 +692,8 @@ export async function openDueReviews(tx: Tx, ctx: RequestContext): Promise<numbe
     if (reach.on > window) continue;
     if (reach.on < today && !p.guardian_open) continue; // already of age and nothing left open: no review needed
     const items: Item[] = await affectedItems(tx, p.id);
-    if (reach.leapDay) items.unshift({ type: 'note', id: null, label: 'Born on 29 February: confirm with counsel which day the age is reached' });
-    if (!p.confirmed) items.unshift({ type: 'note', id: null, label: `Age ${p.min_age} for ${p.jur} is not yet confirmed by counsel` });
+    if (reach.leapDay) items.unshift({ type: 'note', id: null, code: 'leap_day', label: 'Born on 29 February: confirm with counsel which day the age is reached' });
+    if (!p.confirmed) items.unshift({ type: 'note', id: null, code: 'rule_unconfirmed', params: { age: p.min_age, jurisdiction: p.jur }, label: `Age ${p.min_age} for ${p.jur} is not yet confirmed by counsel` });
     const id = await openReview(tx, ctx, { id: p.id, owner_node_id: p.owner_node_id, context_node_id: p.context_node_id }, 'coming_of_age',
       { ruleId: p.rule_id, milestoneOn: reach.on }, items, reach.on < today ? today : reach.on);
     if (id) opened++;
@@ -700,7 +706,7 @@ export async function openDueReviews(tx: Tx, ctx: RequestContext): Promise<numbe
     const items = (await tx.query<{ id: string; label: string }>(
       `SELECT DISTINCT b.id, b.name AS label FROM person_consents pc JOIN consent_uses u ON u.consent_id = pc.id JOIN boxes b ON b.id = u.box_id
         WHERE pc.authority_id = $1 AND pc.withdrawn_at IS NULL`, [a.id])).rows.map((r): Item => ({ type: 'deal', ...r }));
-    items.unshift({ type: 'authority', id: a.id, label: `Authority held by ${a.holder ?? 'someone'} ends on ${a.ends_on}` });
+    items.unshift({ type: 'authority', id: a.id, code: 'ends_on', params: { holder: a.holder ?? '', on: a.ends_on }, label: `Authority held by ${a.holder ?? 'someone'} ends on ${a.ends_on}` });
     const id = await openReview(tx, ctx, { id: a.subject, owner_node_id: a.owner_node_id, context_node_id: a.context_node_id }, 'authority_ending', { authorityId: a.id }, items, a.ends_on < today ? today : a.ends_on);
     if (id) opened++;
   }

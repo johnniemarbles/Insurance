@@ -7,6 +7,7 @@ import { ConsentTab, consentTabLabel } from './consent.tsx';
 import { DOC_TYPES, docLabel } from './doctypes.ts';
 import type { Strings } from './i18n.ts';
 import type { Box, FieldDef, Locale, Pipeline, Stage } from './types.ts';
+import { DealPeopleCompliance } from './family-compliance.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Person { id: string; displayName: string | null; email: string }
@@ -401,7 +402,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
         {tab === 'files' && <Documents boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
         {tab === 'advice' && <AdviceTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
         {tab === 'aml' && <AmlTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
-        {tab === 'consent' && <ConsentTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
+        {tab === 'consent' && <><ConsentTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><DealPeopleCompliance call={call} locale={locale} boxId={box.id} /></>}
 
         {tab === 'activity' && (
           <div>
