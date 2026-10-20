@@ -182,7 +182,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
         : page === 'commercial' ? <CommercialPage call={call} locale={locale} openImportId={routeId} />
         : page === 'partners' ? <PartnersPage call={call} locale={locale} headOffice={isHeadOffice} go={go} />
         : page === 'compliance' ? <CompliancePage call={call} locale={locale} isHeadOffice={isHeadOffice} go={go} host={host} openId={routeId} />
-        : page === 'contacts' ? <ContactsView call={call} t={t} />
+        : page === 'contacts' ? <ContactsView call={call} t={t} locale={locale} />
         : page === 'training' && LMS ? <TrainingView call={call} t={t} locale={locale} canAuthor={canAuthor} isHeadOffice={isHeadOffice} isAdmin={isAdmin} />
         : page === 'inbox' && demoUserId ? <DemoInbox locale={locale} meEmail={meEmail} meName={meName} />
         : page === 'settings' ? (settings ? <SettingsPage api={settings} call={call} locale={locale} onLocale={onLocale} initialTab={routeId} isManager={canAuthor} pipelines={pipeList} compose={compose} /> : <div class="msg">{t.loading}</div>)

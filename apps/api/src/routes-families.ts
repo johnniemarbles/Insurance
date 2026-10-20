@@ -315,7 +315,8 @@ export function registerFamilyRoutes(app: FastifyInstance, deps: AppDeps): void 
     });
   });
 
-  // Change Head: one transaction, under the family lock. The old Head takes the role given (default "Other").
+  // Change Head: one transaction, under the family lock. The old Head takes the role given; by default the two swap
+// roles (a spouse made Head leaves the old Head as spouse), which is what nearly every change of Head means.
   app.post('/v1/families/:id/change-head', {
     schema: { params: idParams, body: { type: 'object', additionalProperties: false, required: ['version', 'contactId'], properties: { version, contactId: uuid, formerHeadRole: { type: 'string', enum: [...NON_HEAD_ROLES] } } } },
   }, async (req) => {
@@ -330,11 +331,12 @@ export function registerFamilyRoutes(app: FastifyInstance, deps: AppDeps): void 
       if (next.role === 'head') throw invalid('That person is already the Head');
       const prev = (await tx.query<{ id: string; contact_id: string }>(
         `SELECT id, contact_id FROM family_memberships WHERE family_id = $1 AND role = 'head' AND ended_at IS NULL`, [id])).rows[0];
-      if (prev) await tx.query('UPDATE family_memberships SET role = $2 WHERE id = $1', [prev.id, b.formerHeadRole ?? 'other']);
+      const formerRole = b.formerHeadRole ?? next.role;
+      if (prev) await tx.query('UPDATE family_memberships SET role = $2 WHERE id = $1', [prev.id, formerRole]);
       await tx.query(`UPDATE family_memberships SET role = 'head' WHERE id = $1`, [next.id]);
       // The family follows its Head's location, so location managers see it on the same terms as the Head's record.
       await tx.query('UPDATE families SET context_node_id = (SELECT context_node_id FROM contacts WHERE id = $2) WHERE id = $1', [id, b.contactId]);
-      await audit(tx, ctx, 'family_head_changed', 'family', id, { from: prev?.contact_id ?? null, to: b.contactId, formerHeadRole: prev ? b.formerHeadRole ?? 'other' : null }, owner);
+      await audit(tx, ctx, 'family_head_changed', 'family', id, { from: prev?.contact_id ?? null, to: b.contactId, formerHeadRole: prev ? formerRole : null }, owner);
       return { family: await header(tx, id), members: await memberRows(tx, id, false) };
     });
   });

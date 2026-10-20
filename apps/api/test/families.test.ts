@@ -202,6 +202,18 @@ test('change Head: two people at once, exactly one wins and there is exactly one
   }
 });
 
+test('change Head without saying: the old Head takes the new Head\'s role (a swap), never a silent "Other"', async () => {
+  const f = (await call(P1U, 'GET', `/v1/families/${fam}`)).json;
+  const swap = await call(P1U, 'POST', `/v1/families/${fam}/change-head`, { version: f.version, contactId: simran });
+  assert.equal(swap.status, 200, swap.raw);
+  const roleOf = (id: string) => swap.json.members.find((m: any) => m.contactId === id).role;
+  assert.equal(roleOf(simran), 'head');
+  assert.equal(roleOf(raj), 'spouse_partner');
+  const back = await call(P1U, 'POST', `/v1/families/${fam}/change-head`, { version: swap.json.family.version, contactId: raj });
+  assert.equal(back.status, 200, back.raw);
+  assert.equal(back.json.members.find((m: any) => m.contactId === simran).role, 'spouse_partner');
+});
+
 test('add, re-role and end members; the Head leaving flags the family instead of blocking it', async () => {
   let f = (await call(P1U, 'GET', `/v1/families/${fam}`)).json;
   const add = await call(P1U, 'POST', `/v1/families/${fam}/members`, { version: f.version, contactId: uncle, role: 'other' });
