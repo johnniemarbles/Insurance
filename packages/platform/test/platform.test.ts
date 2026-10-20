@@ -5,9 +5,10 @@ import { loadConfig, localKeyProvider, seal, open, newToken, hashToken } from '.
 const env = { REGION: 'ca-qc', DATABASE_URL: 'a', APP_DATABASE_URL: 'b', AUTH_DATABASE_URL: 'c' };
 
 test('config refuses dev shortcuts in prod and staging', () => {
-  assert.throws(() => loadConfig({ ...env, APP_ENV: 'prod', DEV_AUTH: 'true' }), /not allowed/);
-  assert.throws(() => loadConfig({ ...env, APP_ENV: 'staging', LOCAL_KEYS: 'true', LOCAL_KEY_SECRET: 'x'.repeat(31) }), /32\+/);
-  assert.equal(loadConfig({ ...env, APP_ENV: 'prod', LOCAL_KEYS: 'true', LOCAL_KEY_SECRET: 'x'.repeat(32) }).localKeys, true);
+  // staging/prod must also say where they are hosted (see the hosting-country test below)
+  assert.throws(() => loadConfig({ ...env, HOSTED_IN: 'ca', APP_ENV: 'prod', DEV_AUTH: 'true' }), /not allowed/);
+  assert.throws(() => loadConfig({ ...env, HOSTED_IN: 'ca', APP_ENV: 'staging', LOCAL_KEYS: 'true', LOCAL_KEY_SECRET: 'x'.repeat(31) }), /32\+/);
+  assert.equal(loadConfig({ ...env, HOSTED_IN: 'ca', APP_ENV: 'prod', LOCAL_KEYS: 'true', LOCAL_KEY_SECRET: 'x'.repeat(32) }).localKeys, true);
   assert.equal(loadConfig({ ...env, APP_ENV: 'dev', DEV_AUTH: 'true' }).devAuth, true);
 });
 
@@ -16,20 +17,23 @@ test('config requires a valid region and database urls', () => {
   assert.throws(() => loadConfig({ REGION: 'us' }));
 });
 
-test('dataCountry follows REGION and rejects a conflicting override in prod', () => {
+test('dataCountry is where the data is physically hosted, not the tenant region', () => {
+  // HOSTED_IN (the physical hosting country) decides, whatever the tenant region is.
+  assert.equal(loadConfig({ ...env, REGION: 'ca-qc', HOSTED_IN: 'ca' }).dataCountry, 'CA');
+  assert.equal(loadConfig({ ...env, REGION: 'us', HOSTED_IN: 'us' }).dataCountry, 'US');
+  assert.equal(loadConfig({ ...env, REGION: 'ca-qc', HOSTED_IN: 'us', APP_ENV: 'prod' }).dataCountry, 'US');
+  // DATA_COUNTRY may be given instead, or alongside when it agrees.
+  assert.equal(loadConfig({ ...env, REGION: 'us', DATA_COUNTRY: 'CA', APP_ENV: 'prod' }).dataCountry, 'CA');
+  assert.equal(loadConfig({ ...env, HOSTED_IN: 'ca', DATA_COUNTRY: 'CA', APP_ENV: 'prod' }).dataCountry, 'CA');
+  assert.throws(() => loadConfig({ ...env, HOSTED_IN: 'ca', DATA_COUNTRY: 'US' }), /DATA_COUNTRY conflicts with HOSTED_IN/);
+  // Unknown values are refused.
+  assert.throws(() => loadConfig({ ...env, HOSTED_IN: 'eu' }), /Invalid HOSTED_IN/);
+  assert.throws(() => loadConfig({ ...env, DATA_COUNTRY: 'GB' }), /Invalid DATA_COUNTRY/);
+  // dev may leave it out and falls back to the region; staging/prod must say where they are hosted.
   assert.equal(loadConfig({ ...env, REGION: 'ca-qc' }).dataCountry, 'CA');
-  assert.equal(loadConfig({ ...env, REGION: 'us' }).dataCountry, 'US');
-  assert.equal(loadConfig({ ...env, REGION: 'ca-qc', DATA_COUNTRY: 'CA' }).dataCountry, 'CA');
-  // dev may set a mismatch (local experiments); staging/prod may not
-  assert.equal(loadConfig({ ...env, REGION: 'ca-qc', APP_ENV: 'dev', DATA_COUNTRY: 'US' }).dataCountry, 'US');
-  assert.throws(
-    () => loadConfig({ ...env, REGION: 'ca-qc', APP_ENV: 'prod', DATA_COUNTRY: 'US' }),
-    /DATA_COUNTRY=US conflicts with REGION=ca-qc/,
-  );
-  assert.throws(
-    () => loadConfig({ ...env, REGION: 'us', APP_ENV: 'staging', DATA_COUNTRY: 'CA' }),
-    /DATA_COUNTRY=CA conflicts with REGION=us/,
-  );
+  assert.equal(loadConfig({ ...env, REGION: 'us', APP_ENV: 'dev' }).dataCountry, 'US');
+  assert.throws(() => loadConfig({ ...env, APP_ENV: 'prod' }), /Hosting country must be configured/);
+  assert.throws(() => loadConfig({ ...env, REGION: 'us', APP_ENV: 'staging' }), /Hosting country must be configured/);
 });
 
 test('seal/open round trip, and ciphertext is bound to its row', () => {
