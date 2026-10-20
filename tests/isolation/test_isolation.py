@@ -97,6 +97,45 @@ check("sibling partners isolated (u1 sees none of u2's contacts)", 'contact-b2' 
 check("sibling sub-partners isolated (s1 does not see s2)", 'b6' not in names('s1', "SELECT name FROM boxes"))
 check("multi-location: mgrX cannot see work marked for Y", 'b4' not in names('mgrX', "SELECT name FROM boxes"))
 
+print('\n== 3b. Families (Gate A): same wall as the Head\'s client record ==')
+fs = su_conn(); fc = fs.cursor()
+def contact_id(full_name):
+    fc.execute("SELECT id FROM contacts WHERE full_name=%s", (full_name,)); return fc.fetchone()[0]
+SPOUSE = U()
+fc.execute("INSERT INTO contacts(id,tenant_id,owner_node_id,context_node_id,email,full_name) VALUES (%s,%s,%s,%s,'sp@client.com','contact-b1-spouse')", (SPOUSE, T, N['P1'], N['X']))
+FAM = {'F1': ('P1', 'X', [('contact-b1', 'head'), ('contact-b1-spouse', 'spouse_partner')]), 'F5': ('S1', 'X', [('contact-b5', 'head')]), 'F4': ('P3', 'Y', [('contact-b4', 'head')])}
+for fname, (own, ctxn, members) in FAM.items():
+    fid = U()
+    fc.execute("INSERT INTO families(id,tenant_id,owner_node_id,context_node_id,display_name) VALUES (%s,%s,%s,%s,%s)", (fid, T, N[own], N[ctxn], fname))
+    for cname, role in members:
+        fc.execute("INSERT INTO family_memberships(tenant_id,family_id,contact_id,role) VALUES (%s,%s,%s,%s)", (T, fid, contact_id(cname), role))
+    FAM[fname] = fid
+fc.execute("INSERT INTO person_relationships(tenant_id,person_a_id,person_b_id,kind) VALUES (%s,LEAST(%s::uuid,%s::uuid),GREATEST(%s::uuid,%s::uuid),'spouse_partner')",
+           (T, contact_id('contact-b1'), SPOUSE, contact_id('contact-b1'), SPOUSE))
+fs.commit()
+fexp = {'u1': ['F1'], 'u2': [], 'u3': ['F4', 'F5'], 's1': ['F5'], 's2': [], 'mgrX': ['F1', 'F5'], 'mgrY': ['F4'], 'admin': ['F1', 'F4', 'F5'], 'out': []}
+for k, v in fexp.items():
+    got = names(k, "SELECT display_name FROM families")
+    check(f"families visible to {k} = {v}", got == v, got)
+mexp = {'u1': 2, 'u2': 0, 's1': 1, 's2': 0, 'mgrX': 3, 'mgrY': 1, 'out': 0}
+for k, v in mexp.items():
+    n = len(run(k, "SELECT 1 FROM family_memberships")[0])
+    check(f"family members visible to {k} = {v}", n == v, n)
+check("relationship visible to u1", len(run('u1', "SELECT 1 FROM person_relationships")[0]) == 1)
+check("relationship hidden from sibling u2", len(run('u2', "SELECT 1 FROM person_relationships")[0]) == 0)
+check("relationship hidden from other tenant", len(run('out', "SELECT 1 FROM person_relationships")[0]) == 0)
+_, _, e = run('u2', "INSERT INTO family_memberships(tenant_id,family_id,contact_id,role) VALUES (%s,%s,%s,'other')", (T, FAM['F1'], contact_id('contact-b2')))
+check("sibling u2 cannot add its client to u1's family", e is not None)
+_, _, e = run('u1', "INSERT INTO family_memberships(tenant_id,family_id,contact_id,role) VALUES (%s,%s,%s,'other')", (T, FAM['F1'], contact_id('contact-b2')))
+check("u1 cannot add a sibling's client to its family", e is not None)
+_, n, e = run('u2', "UPDATE families SET display_name='taken' WHERE id=%s", (FAM['F1'],))
+check("sibling u2 cannot rename u1's family (0 rows)", e is None and n == 0, (n, e))
+_, _, e = run('u1', "INSERT INTO family_memberships(tenant_id,family_id,contact_id,role) VALUES (%s,%s,%s,'head')", (T, FAM['F1'], SPOUSE))
+check("one active family per person (second membership refused)", e is not None)
+fc.execute("SELECT count(*) FROM family_memberships WHERE family_id=%s AND role='head' AND ended_at IS NULL", (FAM['F1'],))
+check("exactly one Head in F1", fc.fetchone()[0] == 1)
+fs.close()
+
 print('\n== 4. Private Gmail data ==')
 for tbl, col in (('gmail_accounts','email'),('snippets','name'),('scheduled_sends','user_id::text')):
     for k in ('admin','mgrX','u3','u2'):
