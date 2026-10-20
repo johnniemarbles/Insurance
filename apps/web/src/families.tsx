@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { useDialogFocus } from './a11y.ts';
 import type { Locale } from './types.ts';
+import { FamilyInsurance } from './family-insurance.tsx';
 
 export type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 export type Role = 'head' | 'spouse_partner' | 'child' | 'dependent' | 'other';
@@ -47,7 +48,7 @@ const statusOf = (e: unknown) => (e as { status?: number }).status;
 const day = (iso: string | null, l: Locale) => (iso ? new Date(iso).toLocaleDateString(l, { year: 'numeric', month: 'short', day: 'numeric' }) : '');
 
 /** Client search used by "Add a member" and "Create a family". Only clients the partner may see come back. */
-function ClientPicker({ call, locale, exclude, onPick }: { call: Call; locale: Locale; exclude: string[]; onPick: (c: { id: string; fullName: string | null; email: string | null }) => void }) {
+export function ClientPicker({ call, locale, exclude, onPick }: { call: Call; locale: Locale; exclude: string[]; onPick: (c: { id: string; fullName: string | null; email: string | null }) => void }) {
   const x = familyStrings(locale);
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<{ id: string; fullName: string | null; email: string | null }[]>([]);
@@ -381,6 +382,7 @@ export function FamilyPanel({ call, locale, familyId, onClose, onOpenPerson, onC
             : <div class="actions" style={{ marginTop: '8px' }}><button type="button" class="btn quiet" onClick={() => setAdding(true)}>{x.addMember}</button></div>)}
           <p style={{ marginTop: '14px' }}><button type="button" class="linkbtn" onClick={() => setHistory(!history)}>{history ? x.hideHistory : x.showHistory}</button></p>
           {history && (past.length === 0 ? <p class="muted">—</p> : <ul class="maplist">{past.map((m) => <li key={m.id}>{m.fullName || '—'} · {x.roles[m.role]} · {x.reasons[m.endReason ?? ''] ?? m.endReason} {day(m.endedAt, locale)}</li>)}</ul>)}
+          {active && <FamilyInsurance key={`${familyId}:${fam.version}`} call={call} locale={locale} familyId={familyId} />}
           {active && (
             <details style={{ marginTop: '14px' }}>
               <summary class="muted" style={{ cursor: 'pointer' }}>{x.archive}</summary>

@@ -4,13 +4,14 @@ import { useDialogFocus } from './a11y.ts';
 import type { Strings } from './i18n.ts';
 import type { Locale } from './types.ts';
 import { FamilyCard, FamilyPanel, familyStrings, type Call, type Role } from './families.tsx';
+import { MissingPeopleQueue, useFamilyInsuranceOn } from './family-insurance.tsx';
 
 interface Row { id: string; fullName: string | null; email: string | null; phone: string | null; custom: { title?: string } }
 interface Mship { contactId: string; familyId: string; familyName: string; role: Role }
 
 const G = {
-  en: { group: 'Group by family', headsOnly: 'Heads only', counts: (p: number, f: number) => `${p} ${p === 1 ? 'person' : 'people'} · ${f} ${f === 1 ? 'family' : 'families'}`, noFamily: 'Not in a family', familyOfOne: 'Family of one', open: 'Open', client: 'Client' },
-  'fr-CA': { group: 'Regrouper par famille', headsOnly: 'Chefs de famille seulement', counts: (p: number, f: number) => `${p} ${p === 1 ? 'personne' : 'personnes'} · ${f} ${f === 1 ? 'famille' : 'familles'}`, noFamily: 'Pas dans une famille', familyOfOne: 'Famille d’une personne', open: 'Ouvrir', client: 'Client' },
+  en: { group: 'Group by family', headsOnly: 'Heads only', counts: (p: number, f: number) => `${p} ${p === 1 ? 'person' : 'people'} · ${f} ${f === 1 ? 'family' : 'families'}`, noFamily: 'Not in a family', familyOfOne: 'Family of one', open: 'Open', client: 'Client', missingPeople: 'Policies missing people' },
+  'fr-CA': { group: 'Regrouper par famille', headsOnly: 'Chefs de famille seulement', counts: (p: number, f: number) => `${p} ${p === 1 ? 'personne' : 'personnes'} · ${f} ${f === 1 ? 'famille' : 'familles'}`, noFamily: 'Pas dans une famille', familyOfOne: 'Famille d’une personne', open: 'Ouvrir', client: 'Client', missingPeople: 'Polices sans personnes' },
 };
 const ROLE_ORDER: Record<Role, number> = { head: 0, spouse_partner: 1, child: 2, dependent: 3, other: 4 };
 
@@ -42,6 +43,8 @@ export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: String
   const [openRow, setOpenRow] = useState<Row | null>(null);
   const [openFamily, setOpenFamily] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const insuranceOn = useFamilyInsuranceOn(call);
+  const [queue, setQueue] = useState(false);
   useEffect(() => { const h = setTimeout(() => setDq(q), 250); return () => clearTimeout(h); }, [q]);
   useEffect(() => {
     let live = true;
@@ -94,6 +97,7 @@ export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: String
       <div class="bar" style={{ padding: '0 0 16px 0', border: 0, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: 700, color: 'var(--navy)', margin: 0 }}>{t.contacts}</h1>
         <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {famOn && insuranceOn && <button type="button" class="linkbtn" style={{ fontSize: '13px' }} onClick={() => setQueue(true)}>{g.missingPeople}</button>}
           {famOn && (
             <>
               <label style={{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '13px', color: 'var(--ink)' }}>
@@ -161,6 +165,7 @@ export function ContactsView({ call, t, locale = 'en' }: { call: Call; t: String
         <ClientPanel call={call} locale={locale} row={openRow} onClose={() => setOpenRow(null)} onChanged={changed}
           onOpenFamily={(id) => setOpenFamily(id)} onOpenPerson={(id) => { const r = byId[id]; if (r) setOpenRow(r); }} />
       )}
+      {queue && <MissingPeopleQueue call={call} locale={locale} onClose={() => setQueue(false)} />}
       {openFamily && (
         <FamilyPanel call={call} locale={locale} familyId={openFamily} onChanged={changed}
           onClose={() => setOpenFamily(null)} onOpenPerson={(id) => { const r = byId[id]; setOpenFamily(null); if (r) setOpenRow(r); }} />
