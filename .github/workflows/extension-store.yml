@@ -1,0 +1,92 @@
+name: extension-store
+# Uploads the PII Chrome extension to the Chrome Web Store and submits it for review.
+# Runs when the extension's version changes on main, or by hand (Actions → extension-store → Run workflow).
+# Google still reviews every version; this only replaces the manual upload.
+#
+# Setup (once) — no key file: GitHub signs in to Google for each run (Workload Identity Federation).
+#   Repository variables:
+#     CWS_PUBLISHER_ID      from the Chrome Web Store developer dashboard
+#     CWS_WIF_PROVIDER      projects/<number>/locations/global/workloadIdentityPools/github/providers/pii-repo
+#     CWS_SERVICE_ACCOUNT   the service account email added in the developer dashboard's Account page
+#     CWS_ITEM_ID           optional, defaults to the PII listing (dkclimhnmcpflpjaiimfibfnefkdchei)
+#   Optional: Settings → Environments → chrome-web-store → Required reviewers, to approve each upload by hand.
+#   Google Cloud commands: docs/CHROME_WEB_STORE_PUBLISHING.md
+on:
+  push:
+    branches: [main]
+    paths: [apps/extension/public/manifest.json]
+  workflow_dispatch:
+    inputs:
+      publish_type:
+        description: Go live as soon as Google approves (DEFAULT_PUBLISH) or wait for a manual Publish (STAGED_PUBLISH)
+        type: choice
+        options: [DEFAULT_PUBLISH, STAGED_PUBLISH]
+        default: DEFAULT_PUBLISH
+      dry_run:
+        description: Build and check only, do not upload
+        type: boolean
+        default: false
+
+concurrency:
+  group: extension-store
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # lets this run prove to Google that it is this repository's workflow
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: chrome-web-store
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck the extension
+        run: npm run typecheck --workspace @pii/extension
+      - name: Manifest permissions unchanged (store-review freeze)
+        run: npm run check:freeze --workspace @pii/extension
+      - name: Extension tests
+        run: node --test apps/extension/test/*.test.ts
+      - name: Decide whether to upload
+        id: mode
+        env:
+          READY: ${{ vars.CWS_PUBLISHER_ID != '' && vars.CWS_WIF_PROVIDER != '' && vars.CWS_SERVICE_ACCOUNT != '' }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY" = "true" ]; then echo "dry=true" >> "$GITHUB_OUTPUT"; echo "Dry run requested."; exit 0; fi
+          if [ "$READY" != "true" ]; then
+            echo "dry=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Chrome Web Store publishing is not set up yet (variables CWS_PUBLISHER_ID, CWS_WIF_PROVIDER, CWS_SERVICE_ACCOUNT). Built the package only."
+          else
+            echo "dry=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Sign in to Google (no key file)
+        id: google
+        if: steps.mode.outputs.dry == 'false'
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.CWS_WIF_PROVIDER }}
+          service_account: ${{ vars.CWS_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+          access_token_lifetime: 900s
+      - name: Build, upload and submit for review
+        working-directory: apps/extension
+        env:
+          CWS_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          CWS_ITEM_ID: ${{ vars.CWS_ITEM_ID }}
+          CWS_PUBLISH_TYPE: ${{ inputs.publish_type || 'DEFAULT_PUBLISH' }}
+        run: node store-publish.mjs ${{ steps.mode.outputs.dry == 'true' && '--dry-run' || '' }}
+      - name: Keep the uploaded package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pii-extension-store
+          path: apps/extension/store/*.zip
+          retention-days: 30
