@@ -15,6 +15,7 @@ import { registerFamilyInsuranceRoutes } from './routes-family-insurance.ts';
 import { registerFamilyComplianceRoutes } from './routes-family-compliance.ts';
 import { registerFamilyToolsRoutes } from './routes-family-tools.ts';
 import { registerCopilotRoutes } from './routes-copilot.ts';
+import { registerCopilotToolsRoutes } from './routes-copilot-tools.ts';
 import type { KeyProvider } from '@pii/platform';
 import { registerPageRoutes } from './routes-pages.ts';
 import { registerThreadRoutes } from './routes-threads.ts';
@@ -209,6 +210,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerFamilyComplianceRoutes(app, deps);
   registerFamilyToolsRoutes(app, deps);
   registerCopilotRoutes(app, deps);
+  registerCopilotToolsRoutes(app, deps);
   registerNoteRoutes(app, deps);
   registerThreadRoutes(app, deps);
   registerLmsRoutes(app, deps);

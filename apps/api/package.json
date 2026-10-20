@@ -15,6 +15,7 @@
     "fastify": "^5.0.0",
     "pdf-lib": "^1.17.1",
     "qrcode-generator": "^2.0.4",
-    "regenerator-runtime": "^0.14.1"
+    "regenerator-runtime": "^0.14.1",
+    "unpdf": "^1.9.1"
   }
 }
