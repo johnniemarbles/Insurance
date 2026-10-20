@@ -1,0 +1,12 @@
+const B='http://127.0.0.1:3100', H={'x-dev-user-email':'sanjeev@uat.test','content-type':'application/json'};
+const c=async(m,u,b)=>{const r=await fetch(B+u,{method:m,headers:b?H:{'x-dev-user-email':H['x-dev-user-email']},body:b?JSON.stringify(b):undefined});const t=await r.text();if(r.status>=300)throw new Error(m+' '+u+' '+r.status+' '+t);return t?JSON.parse(t):null;};
+await c('POST','/v1/consent/first-login');
+const ids={};
+for (const [n,e,p] of [['Raj Singh','raj.singh@example.com','604-555-0101'],['Simran Singh','simran.singh@example.com','604-555-0102'],['Aman Singh','aman.singh@example.com',''],['Harjit Singh','harjit.singh@example.com','604-555-0107'],['Navjot Kaur','navjot.kaur@example.com','778-555-0133'],['Priya Sharma','priya.sharma@example.com','416-555-0190'],['Gurpreet Gill','gurpreet.gill@example.com','604-555-0150']]) ids[n]=(await c('POST','/v1/contacts',{fullName:n,email:e,...(p?{phone:p}:{})})).id;
+await c('PATCH','/v1/people/'+ids['Aman Singh']+'/profile',{dateOfBirth:'2014-03-15',preferredLanguage:'pa'});
+await c('PATCH','/v1/people/'+ids['Raj Singh']+'/profile',{dateOfBirth:'1982-07-02'});
+await c('PATCH','/v1/people/'+ids['Simran Singh']+'/profile',{dateOfBirth:'1985-11-20'});
+const f=await c('POST','/v1/families',{displayName:'Singh family',salutation:'Raj and Simran Singh',mailingAddress:'12 King George Blvd, Surrey BC',members:[{contactId:ids['Raj Singh'],role:'head'},{contactId:ids['Simran Singh'],role:'spouse_partner'},{contactId:ids['Aman Singh'],role:'child'}]});
+await c('POST','/v1/families',{displayName:'Kaur family',members:[{contactId:ids['Navjot Kaur'],role:'head'}]});
+await c('POST','/v1/people/'+ids['Aman Singh']+'/relationships',{otherContactId:ids['Raj Singh'],kind:'child_of'});
+console.log('seeded', f.id);
