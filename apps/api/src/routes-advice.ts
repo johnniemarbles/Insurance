@@ -116,7 +116,10 @@ export function registerAdviceRoutes(app: FastifyInstance, deps: AppDeps): void 
       if (b.linkedAdviceId) await checkLink(tx, r.kind, r.box_id, b.linkedAdviceId);
       const answers = b.answers !== undefined ? cleanAnswers(r.kind, b.answers) : null;
       // A structured record's summary follows its answers unless the advisor wrote their own.
-      const body = b.body?.trim() ?? (answers && r.body === summaryOf(r.kind, r.answers ?? {}) ? summaryOf(r.kind, answers) : null);
+      const auto = isStructured(r.kind) && r.body === summaryOf(r.kind, r.answers ?? {});
+      const given = b.body?.trim() || null;
+      // A blank body never wipes the record; an unchanged auto-written summary follows the new answers.
+      const body = given && !(auto && given === r.body) ? given : answers && auto ? summaryOf(r.kind, answers) : null;
       await tx.query(`UPDATE advice_records SET title = coalesce($2,title), body = coalesce($3,body), client_name = coalesce($4,client_name), client_email = coalesce($5,client_email),
           answers = coalesce($6::jsonb, answers), linked_advice_id = coalesce($7, linked_advice_id), updated_at = now() WHERE id = $1`,
         [id, b.title?.trim() ?? null, body, b.clientName?.trim() ?? null, b.clientEmail ?? null, answers ? JSON.stringify(answers) : null, b.linkedAdviceId ?? null]);
@@ -206,6 +209,8 @@ export function registerAdviceRoutes(app: FastifyInstance, deps: AppDeps): void 
       const r = await load(tx, id);
       requireEdit(ctx, r.owner_node_id);
       if (r.status === 'signed') throw new HttpError(409, 'advice_locked', 'Already signed');
+      // Built-in paperwork (needs analysis, recommendation) is signed by the client in PII. Paper copies go on the Files tab for compliance to verify.
+      if (r.tier !== 'vendor') throw new HttpError(409, 'builtin_tier', 'This paperwork is signed by the client in PII. If it was signed on paper, upload it on the Files tab for compliance to verify.');
       if (b.vendorId) {
         const rows = (await tx.query<{ vendor: string; enabled: boolean }>('SELECT vendor, enabled FROM signing_vendors')).rows;
         if (rows.some((v) => v.enabled) && !rows.some((v) => v.vendor === b.vendorId && v.enabled)) throw invalid('That vendor is not turned on for your company');

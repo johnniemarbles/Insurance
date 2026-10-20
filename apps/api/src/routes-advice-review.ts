@@ -106,6 +106,8 @@ export function registerAdviceReviewRoutes(app: FastifyInstance, deps: AppDeps):
       const due = (await tx.query<{ expired: number; soon: number }>(
         `SELECT count(*) FILTER (WHERE valid_until < current_date)::int AS expired, count(*) FILTER (WHERE valid_until BETWEEN current_date AND current_date + 30)::int AS soon FROM (${latest}) x`)).rows[0]!;
       const pending = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM advice_reviews WHERE status = 'pending'`)).rows[0]!.n;
+      // Needs analyses signed before the structured form existed: still counted until they expire, shown so compliance can decide.
+      const legacyNeeds = (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM advice_records WHERE kind = 'needs_analysis' AND status = 'signed' AND answers IS NULL AND (valid_until IS NULL OR valid_until >= current_date)`)).rows[0]!.n;
       // Pipelines that look like life sales (from a life template, or with a needs/application stage) but require no needs analysis.
       const pipelinesWithoutGate = (await tx.query(
         `SELECT p.id, p.name, n.name AS owner FROM pipelines p JOIN org_nodes n ON n.id = p.owner_node_id
@@ -113,7 +115,7 @@ export function registerAdviceReviewRoutes(app: FastifyInstance, deps: AppDeps):
             AND (p.template_code IN ('ca_life_health', 'us_life')
                  OR EXISTS (SELECT 1 FROM stages s WHERE s.pipeline_id = p.id AND (s.name ILIKE '%needs analysis%' OR s.name ILIKE '%analyse des besoins%' OR s.name ILIKE '%application%' OR s.name ILIKE '%proposition%' OR s.name ILIKE '%underwriting%')))
           ORDER BY p.name LIMIT 100`)).rows;
-      return { advisors, reviewsPending: pending, expired: due.expired, expiringSoon: due.soon, pipelinesWithoutGate };
+      return { advisors, reviewsPending: pending, expired: due.expired, expiringSoon: due.soon, legacyNeeds, pipelinesWithoutGate };
     });
   });
 }

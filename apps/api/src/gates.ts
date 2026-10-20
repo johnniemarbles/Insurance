@@ -9,9 +9,10 @@ export interface GateStatus { stageId: string; stageName: string; required: stri
 
 /**
  * Advice paperwork (needs analysis, recommendation, beneficiary designation, replacement disclosure) counts only when it is a signed advice
- * record on this file, or an upload a compliance person has verified. A needs analysis also has to be current. When the client's needs
- * analysis says existing cover is being replaced, any stage that requires the needs analysis or the recommendation also requires a signed
- * replacement disclosure (Code of Conduct: no replacement without a complete analysis and disclosure).
+ * record on this file, or an upload a compliance person has verified. A needs analysis has to be current: signed (or, on paper, signed by
+ * the client, as compliance recorded when verifying it) within the company's validity period. A recommendation counts only while the needs
+ * analysis it answers is signed and current. When any current needs analysis says existing cover is being replaced, a stage that requires
+ * the needs analysis or the recommendation also requires a signed replacement disclosure.
  */
 export async function gateStatus(tx: Tx, stageId: string, boxId: string): Promise<GateStatus | null> {
   const st = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1', [stageId])).rows[0];
@@ -20,7 +21,8 @@ export async function gateStatus(tx: Tx, stageId: string, boxId: string): Promis
   if (required.length === 0) return { stageId, stageName: st.name, required, filed: [], overridden: [], missing: [], unverified: [], needsExpiredOn: null };
   const months = await tenantSettingInt(tx, 'compliance.naValidityMonths', 12);
   const docs = (await tx.query<{ doc_type: string; verified: boolean; current: boolean }>(
-    `SELECT doc_type, verified_at IS NOT NULL AS verified, (verified_at IS NOT NULL AND (verified_at AT TIME ZONE 'UTC')::date + make_interval(months => $2) >= current_date) AS current
+    `SELECT doc_type, verified_at IS NOT NULL AS verified,
+            (verified_at IS NOT NULL AND coalesce(client_signed_on, (verified_at AT TIME ZONE 'UTC')::date) + make_interval(months => $2) >= current_date) AS current
        FROM box_documents WHERE box_id = $1 AND doc_type IS NOT NULL`, [boxId, months])).rows;
   const filed: string[] = [];
   const unverified = new Set<string>();
@@ -30,19 +32,23 @@ export async function gateStatus(tx: Tx, stageId: string, boxId: string): Promis
     if (d.doc_type === 'needs_analysis' && !d.current) continue;
     if (!filed.includes(d.doc_type)) filed.push(d.doc_type);
   }
-  const advice = (await tx.query<{ kind: string; current: boolean; valid_until: string | null; replacing: boolean }>(
-    `SELECT kind, (valid_until IS NULL OR valid_until >= current_date) AS current, valid_until::text AS valid_until, coalesce((answers->>'replacing')::boolean, false) AS replacing
-       FROM advice_records WHERE box_id = $1 AND status = 'signed' ORDER BY signed_at DESC`, [boxId])).rows;
+  const advice = (await tx.query<{ kind: string; current: boolean; valid_until: string | null; replacing: boolean; linked_ok: boolean }>(
+    `SELECT a.kind, (a.valid_until IS NULL OR a.valid_until >= current_date) AS current, a.valid_until::text AS valid_until,
+            coalesce((a.answers->>'replacing')::boolean, false) AS replacing,
+            (a.kind <> 'recommendation' OR EXISTS (SELECT 1 FROM advice_records n WHERE n.id = a.linked_advice_id AND n.box_id = a.box_id AND n.status = 'signed'
+                                                    AND (n.valid_until IS NULL OR n.valid_until >= current_date))) AS linked_ok
+       FROM advice_records a WHERE a.box_id = $1 AND a.status = 'signed' ORDER BY a.signed_at DESC`, [boxId])).rows;
   let needsExpiredOn: string | null = null;
   for (const a of advice) {
     if (a.kind === 'needs_analysis' && !a.current) { needsExpiredOn ??= a.valid_until; continue; }
+    if (!a.linked_ok) continue; // a recommendation whose needs analysis has expired (or that predates linking) no longer counts
     if (!filed.includes(a.kind)) filed.push(a.kind);
   }
   for (const t of filed) unverified.delete(t);
   if (filed.includes('needs_analysis')) needsExpiredOn = null;
-  const latestNeeds = advice.find((a) => a.kind === 'needs_analysis' && a.current);
+  const replacing = advice.some((a) => a.kind === 'needs_analysis' && a.current && a.replacing);
   const req = [...required];
-  if (latestNeeds?.replacing && (req.includes('needs_analysis') || req.includes('recommendation')) && !req.includes('replacement_disclosure')) req.push('replacement_disclosure');
+  if (replacing && (req.includes('needs_analysis') || req.includes('recommendation')) && !req.includes('replacement_disclosure')) req.push('replacement_disclosure');
   if (!filed.includes('id_record') && (await tx.query("SELECT 1 FROM client_id_records WHERE box_id = $1 AND result = 'verified' LIMIT 1", [boxId])).rowCount) filed.push('id_record');
   const consents = (await tx.query<{ kind: string; createdAt: string; withdrawnAt: string | null }>('SELECT kind, created_at AS "createdAt", withdrawn_at AS "withdrawnAt" FROM client_consents WHERE box_id = $1 ORDER BY created_at', [boxId])).rows;
   for (const k of consentStates(consents).active) { const t = CONSENT_GATE_TYPE[k as ConsentKind]; if (t && !filed.includes(t)) filed.push(t); }
@@ -53,32 +59,48 @@ export async function gateStatus(tx: Tx, stageId: string, boxId: string): Promis
 
 const labelOf = (t: string) => (isDocType(t) ? DOC_TYPE_LABELS[t as DocType].en : t);
 
-/** A record may enter a stage only when the paperwork that stage requires is on file, or the requirement was waived for this record.
- *  Jumping forward past a gated stage does not skip it. Moving to a lost stage is never blocked. */
-export async function checkStageGates(tx: Tx, stageId: string, boxId: string, fromStageId?: string | null): Promise<void> {
-  const target = (await tx.query<{ pipeline_id: string; position: number; is_lost: boolean }>('SELECT pipeline_id, position, is_lost FROM stages WHERE id = $1', [stageId])).rows[0];
-  if (!target || target.is_lost) return;
-  // The stage entered, plus any gated stage between where the record is now and where it goes (a forward jump cannot skip a gate).
-  const from = fromStageId === undefined
-    ? (await tx.query<{ position: number }>('SELECT s.position FROM boxes b JOIN stages s ON s.id = b.stage_id WHERE b.id = $1 AND s.pipeline_id = $2', [boxId, target.pipeline_id])).rows[0]?.position ?? 0
-    : fromStageId ? (await tx.query<{ position: number }>('SELECT position FROM stages WHERE id = $1 AND pipeline_id = $2', [fromStageId, target.pipeline_id])).rows[0]?.position ?? 0 : 0;
+/**
+ * Which gated stages apply when a record enters `stageId`: every gated stage up to and including it, and every gated stage in the pipeline
+ * when it is a won stage (so neither reordering nor a hop through Lost can skip paperwork). A lost stage without paperwork of its own needs nothing.
+ */
+async function applicableGates(tx: Tx, stageId: string): Promise<{ name: string; pipelineId: string; first: boolean; gated: string[] } | null> {
+  const t = (await tx.query<{ name: string; pipeline_id: string; position: number; is_won: boolean; is_lost: boolean; own: boolean; first: boolean }>(
+    `SELECT s.name, s.pipeline_id, s.position, s.is_won, s.is_lost, EXISTS (SELECT 1 FROM stage_doc_requirements r WHERE r.stage_id = s.id) AS own,
+            s.position = (SELECT min(position) FROM stages x WHERE x.pipeline_id = s.pipeline_id) AS first
+       FROM stages s WHERE s.id = $1`, [stageId])).rows[0];
+  if (!t) return null;
+  if (t.is_lost && !t.own) return { name: t.name, pipelineId: t.pipeline_id, first: t.first, gated: [] };
   const gated = (await tx.query<{ id: string }>(
-    `SELECT s.id FROM stages s WHERE s.pipeline_id = $1 AND NOT s.is_lost AND (s.id = $4 OR (s.position > $3 AND s.position <= $2))
+    `SELECT s.id FROM stages s WHERE s.pipeline_id = $1 AND (s.id = $3 OR $2 OR (s.position <= $4 AND NOT s.is_lost))
         AND EXISTS (SELECT 1 FROM stage_doc_requirements r WHERE r.stage_id = s.id) ORDER BY s.position`,
-    [target.pipeline_id, target.position, from, stageId])).rows;
-  if (gated.length === 0) return;
+    [t.pipeline_id, t.is_won, stageId, t.position])).rows.map((r) => r.id);
+  return { name: t.name, pipelineId: t.pipeline_id, first: t.first, gated };
+}
+
+/** Where a brand-new record (import, intake form, automation copy) may start: the stage asked for if no paperwork applies to it, otherwise the
+ *  pipeline's first stage. A new record has no paperwork yet, so any applicable gate would block it. */
+export async function startStageFor(tx: Tx, stageId: string): Promise<string> {
+  const g = await applicableGates(tx, stageId);
+  if (!g || g.first || g.gated.length === 0) return stageId;
+  return (await tx.query<{ id: string }>('SELECT id FROM stages WHERE pipeline_id = $1 ORDER BY position LIMIT 1', [g.pipelineId])).rows[0]!.id;
+}
+
+/** A record may enter a stage only when the paperwork every applicable gated stage requires is on file, or was waived for this record.
+ *  A record created in the pipeline's first stage is not blocked by that stage's own paperwork. */
+export async function checkStageGates(tx: Tx, stageId: string, boxId: string, opts: { creating?: boolean } = {}): Promise<void> {
+  const g = await applicableGates(tx, stageId);
+  if (!g || g.gated.length === 0 || (opts.creating && g.first)) return;
   const rows = (await tx.query<{ list: string; result: string; createdAt: string }>('SELECT list, result, created_at AS "createdAt" FROM screening_results WHERE box_id = $1 ORDER BY created_at', [boxId])).rows;
   const hits = openScreeningHits(rows);
-  const name = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1', [stageId])).rows[0]!.name;
-  if (hits.length) throw new HttpError(409, 'screening_hit', `To move to “${name}”, a compliance review of the ${hits.map((h) => (h === 'pep' ? 'PEP' : 'sanctions')).join(' and ')} screening hit is needed first`);
-  for (const s of gated) {
-    const g = await gateStatus(tx, s.id, boxId);
-    if (!g || g.missing.length === 0) continue;
+  if (hits.length) throw new HttpError(409, 'screening_hit', `To move to “${g.name}”, a compliance review of the ${hits.map((h) => (h === 'pep' ? 'PEP' : 'sanctions')).join(' and ')} screening hit is needed first`);
+  for (const id of g.gated) {
+    const s = await gateStatus(tx, id, boxId);
+    if (!s || s.missing.length === 0) continue;
     const notes = [
-      ...(g.stageId !== stageId ? [`required from “${g.stageName}” on`] : []),
-      ...(g.needsExpiredOn ? [`the last needs analysis expired on ${g.needsExpiredOn}, so a new signed one is needed`] : []),
-      ...(g.unverified.length ? [`uploaded ${g.unverified.map(labelOf).join(', ')} must be verified by compliance or signed in PII`] : []),
+      ...(id !== stageId ? [`required from “${s.stageName}” on`] : []),
+      ...(s.needsExpiredOn ? [`the last needs analysis expired on ${s.needsExpiredOn}, so a new signed one is needed`] : []),
+      ...(s.unverified.length ? [`uploaded ${s.unverified.map(labelOf).join(', ')} must be verified by compliance or signed in PII`] : []),
     ];
-    throw new HttpError(409, 'gate_blocked', `To move to “${name}”, file: ${g.missing.map(labelOf).join(', ')}${notes.length ? ` (${notes.join('; ')})` : ''}`);
+    throw new HttpError(409, 'gate_blocked', `To move to “${g.name}”, file: ${s.missing.map(labelOf).join(', ')}${notes.length ? ` (${notes.join('; ')})` : ''}`);
   }
 }

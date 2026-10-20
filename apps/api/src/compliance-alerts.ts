@@ -52,7 +52,7 @@ export async function sweepComplianceAlerts(deps: AppDeps): Promise<number> {
           `SELECT x.id, x.box_id, b.name, x.valid_until::text AS valid_until, coalesce(b.owner_user_id, x.created_by) AS to
              FROM (SELECT DISTINCT ON (box_id) id, box_id, valid_until, created_by FROM advice_records WHERE kind = 'needs_analysis' AND status = 'signed' ORDER BY box_id, signed_at DESC) x
              JOIN boxes b ON b.id = x.box_id JOIN stages s ON s.id = b.stage_id
-            WHERE NOT s.is_lost AND x.valid_until BETWEEN current_date - 30 AND current_date + 30 LIMIT 300`)).rows;
+            WHERE NOT s.is_lost AND x.valid_until BETWEEN current_date - 30 AND current_date + 30 ORDER BY x.valid_until LIMIT 300`)).rows;
         for (const d of due) if (d.to) out.push({ key: `na-due:${d.id}`, kind: 'needs_review_due', data: { boxId: d.box_id, name: d.name, validUntil: d.valid_until }, to: [d.to] });
         // A partner company created more than a week ago (but not long ago) that still has first-week steps open.
         const young = (await tx.query<{ id: string }>(

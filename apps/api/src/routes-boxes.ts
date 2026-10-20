@@ -122,8 +122,8 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
           if (c.rowCount === 0) throw invalid('A contact does not exist');
           await tx.query('INSERT INTO box_contacts (box_id, contact_id, tenant_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [id, cid, ctx.tenantId]);
         }
-        // A new record has no paperwork yet, so the document gate applies when it moves, not when it is created.
-        await checkStageRules(tx, stageId!, id, false);
+        // A new record has no paperwork yet: it may start in the first stage, but not in or past a stage that requires paperwork.
+        await checkStageRules(tx, stageId!, id, true, true);
         await fireAutomations(tx, ctx, id, stageId!, 'enter', effects);
         await audit(tx, ctx, 'box_created', 'box', id, { pipelineId: b.pipelineId, ownerNodeId });
         const sn = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1', [stageId])).rows[0]?.name ?? null;
@@ -329,7 +329,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
             `INSERT INTO box_events (tenant_id, box_id, kind, from_stage_id, to_stage_id, actor_id) VALUES ($1,$2,'stage_changed',$3,$4,$5)`,
             [ctx.tenantId, id, box.stageId, b.stageId, ctx.userId],
           );
-          await checkStageRules(tx, b.stageId, id, true, box.stageId);
+          await checkStageRules(tx, b.stageId, id);
           await fireAutomations(tx, ctx, id, b.stageId, 'enter', effects);
         }
         {

@@ -131,8 +131,11 @@ test('only a signed, current needs analysis opens the gate; a bare upload needs 
   // The uploader cannot verify their own paperwork; a partner cannot verify at all; compliance can, once, with a note.
   assert.equal((await call(PA, 'POST', `/v1/documents/${up.json.id}/verify`, { note: 'Paper fact-find signed in person' })).status, 403);
   assert.equal((await call(COMP, 'POST', `/v1/documents/${up.json.id}/verify`, { note: 'short' })).status, 400);
-  assert.equal((await call(COMP, 'POST', `/v1/documents/${up.json.id}/verify`, { note: 'Paper fact-find signed in person, checked complete' })).status, 204);
-  assert.equal((await call(COMP, 'POST', `/v1/documents/${up.json.id}/verify`, { note: 'Paper fact-find signed in person, checked complete' })).status, 409);
+  assert.equal((await call(COMP, 'POST', `/v1/documents/${up.json.id}/verify`, { note: 'Paper fact-find signed in person, checked complete' })).status, 422, 'a paper needs analysis needs the date the client signed it');
+  assert.equal((await call(COMP, 'POST', `/v1/documents/${up.json.id}/verify`, { note: 'Paper fact-find signed in person, checked complete', clientSignedOn: new Date().toISOString().slice(0, 10) })).status, 204);
+  assert.equal((await call(COMP, 'POST', `/v1/documents/${up.json.id}/verify`, { note: 'Paper fact-find signed in person, checked complete', clientSignedOn: '2026-01-01' })).status, 409);
+  assert.equal((await call(PA, 'DELETE', `/v1/documents/${up.json.id}`)).status, 409, 'verified paperwork stays on the record');
+  await assert.rejects(owner(`DELETE FROM box_documents WHERE id = $1`, [up.json.id]), /cannot be removed/);
   await assert.rejects(owner(`UPDATE box_documents SET verified_note = 'changed after the fact' WHERE id = $1`, [up.json.id]), /cannot have its verification/);
   const g2 = (await call(PA, 'GET', `/v1/boxes/${box}/gates`)).json.gates.find((x: any) => x.stageName === 'Application submitted');
   assert.ok(!g2.missing.includes('needs_analysis'));
@@ -315,4 +318,102 @@ test('compliance can waive a replacement disclosure the needs analysis calls for
   const w = await call(COMP, 'POST', `/v1/boxes/${box}/gate-overrides`, { stageId: stageId('Application submitted'), docTypes: ['replacement_disclosure'], reason: 'Group cover ends with employment; nothing individual is replaced' });
   assert.equal(w.status, 201, JSON.stringify(w.json));
   assert.equal((await move(PA, box, 'Application submitted')).status, 204);
+});
+
+
+// ---- the ways around the gate found in the independent review, each closed ----
+
+test('no hop through Lost: a record that went to Lost cannot jump straight to the won stage', async () => {
+  const box = await newBox('Lost hop client');
+  assert.equal((await move(PA, box, 'Lost')).status, 204);
+  const m = await call(PA, 'PATCH', `/v1/boxes/${box}`, { stageId: stageId('Issued and delivered'), custom: { insurer: 'Maple Life', premium: 100 } });
+  assert.equal(m.status, 409, JSON.stringify(m.json)); assert.match(JSON.stringify(m.json), /Needs analysis/);
+});
+
+test('a new record cannot be created in or past a stage that requires paperwork; the first stage is fine', async () => {
+  assert.equal((await call(PA, 'POST', '/v1/boxes', { pipelineId: pipe, stageId: stageId('Application submitted'), name: 'Straight in' })).status, 409);
+  assert.equal((await call(PA, 'POST', '/v1/boxes', { pipelineId: pipe, stageId: stageId('Offer made'), name: 'Straight in later' })).status, 409);
+  assert.equal((await call(PA, 'POST', '/v1/boxes', { pipelineId: pipe, stageId: stageId('Needs analysis'), name: 'Before the gate' })).status, 201);
+});
+
+test('an import puts rows asked for a gated stage in the first stage, and says so', async () => {
+  const r = await call(PA, 'POST', `/v1/pipelines/${pipe}/import`, { rows: [{ name: 'Imported A', stage: 'Application submitted' }, { name: 'Imported B', stage: 'Issued and delivered' }, { name: 'Imported C', stage: 'Needs analysis' }] });
+  assert.equal(r.status, 200, JSON.stringify(r.json)); assert.equal(r.json.created, 3);
+  assert.equal(r.json.placedEarlier.length, 2);
+  const boxes = (await call(PA, 'GET', `/v1/boxes?pipelineId=${pipe}`)).json.boxes ?? (await call(PA, 'GET', `/v1/boxes?pipelineId=${pipe}`)).json.items;
+  const at = (n: string) => boxes.find((b: any) => b.name === n).stageId;
+  assert.equal(at('Imported A'), stageId('Lead')); assert.equal(at('Imported B'), stageId('Lead')); assert.equal(at('Imported C'), stageId('Needs analysis'));
+});
+
+test('deleting a stage cannot push its records into a gated stage', async () => {
+  const p2 = (await call(PA, 'POST', '/v1/pipeline-templates/ca_life_health/use', { name: 'Delete-move test' })).json.id;
+  const st = (await call(PA, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === p2).stages;
+  const lead = st.find((s: any) => s.name === 'Lead').id, gated = st.find((s: any) => s.name === 'Application submitted').id;
+  assert.equal((await call(PA, 'POST', '/v1/boxes', { pipelineId: p2, name: 'Sitting in Lead' })).status, 201);
+  assert.equal((await call(PA, 'DELETE', `/v1/pipelines/${p2}/stages/${lead}?moveTo=${gated}`)).status, 409);
+});
+
+test('a partner cannot turn a gated stage into a lost or won stage, nor skip it by reordering', async () => {
+  const p3 = (await call(PA, 'POST', '/v1/pipeline-templates/ca_life_health/use', { name: 'Reorder test' })).json.id;
+  const st = (await call(PA, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === p3).stages;
+  const id = (n: string) => st.find((s: any) => s.name === n).id;
+  assert.equal((await call(PA, 'PATCH', `/v1/pipelines/${p3}/stages/${id('Application submitted')}`, { isLost: true })).status, 403);
+  assert.equal((await call(PA, 'PATCH', `/v1/pipelines/${p3}/stages/${id('Application submitted')}`, { isWon: true })).status, 403);
+  const order = st.map((s: any) => s.id).filter((x: string) => x !== id('Application submitted'));
+  assert.equal((await call(PA, 'PUT', `/v1/pipelines/${p3}/stages/order`, { stageIds: [...order, id('Application submitted')] })).status, 204);
+  const b = (await call(PA, 'POST', '/v1/boxes', { pipelineId: p3, name: 'Reorder client' })).json.id;
+  const m = await call(PA, 'PATCH', `/v1/boxes/${b}`, { stageId: id('Issued and delivered'), custom: { insurer: 'Maple Life', premium: 100 } });
+  assert.equal(m.status, 409, 'entering a won stage checks every gated stage in the pipeline');
+});
+
+test('built-in advice cannot be marked vendor-signed: the client signs it in PII or compliance verifies the paper', async () => {
+  const box = await newBox('Self-certify client');
+  const na = (await mkNeeds(PA, box)).json.id;
+  const up = (await call(PA, 'POST', `/v1/boxes/${box}/documents`, { name: 'whatever.pdf', mime: 'application/pdf', dataBase64: PDF })).json.id;
+  const r = await call(PA, 'POST', `/v1/advice/${na}/vendor-signed`, { vendorName: 'DocuSign', vendorRef: 'FAKE-1', documentId: up });
+  assert.equal(r.status, 409); assert.equal(r.json.code ?? r.json.error?.code, 'builtin_tier');
+});
+
+test('a partner’s own blank pipeline requires the paperwork on its won stage', async () => {
+  const own = await call(PA, 'POST', '/v1/pipelines', { name: 'My own life', stages: [{ name: 'New' }, { name: 'Application submitted' }, { name: 'Won', isWon: true }, { name: 'Lost', isLost: true }] });
+  assert.equal(own.status, 201);
+  const st = (await call(PA, 'GET', '/v1/pipelines')).json.pipelines.find((p: any) => p.id === own.json.id).stages;
+  assert.deepEqual([...st.find((s: any) => s.name === 'Won').requiredDocs].sort(), ['needs_analysis', 'privacy_consent', 'recommendation']);
+  const b = (await call(PA, 'POST', '/v1/boxes', { pipelineId: own.json.id, name: 'Own pipeline client' })).json.id;
+  assert.equal((await call(PA, 'PATCH', `/v1/boxes/${b}`, { stageId: st.find((s: any) => s.name === 'Won').id })).status, 409);
+});
+
+test('a recommendation stops counting when its needs analysis expires; an earlier replacing analysis still calls for the disclosure', async () => {
+  const box = await newBox('Aged recommendation client');
+  await consent(PA, box);
+  const na1 = (await mkNeeds(PA, box, { ...NEEDS, replacing: true, replacingNote: 'Replacing an older policy' })).json.id;
+  await sign(PA, na1);
+  const rec = (await mkRec(PA, box, na1)).json.id;
+  await sign(PA, rec);
+  // A second, non-replacing analysis does not cancel the first one's replacement while the first is current.
+  const na2 = (await mkNeeds(PA, box)).json.id;
+  await sign(PA, na2);
+  let g = (await call(PA, 'GET', `/v1/boxes/${box}/gates`)).json.gates.find((x: any) => x.stageName === 'Application submitted');
+  assert.ok(g.missing.includes('replacement_disclosure'));
+  // Once the first analysis expires, its recommendation no longer counts: a new one answering the current analysis is needed.
+  await owner(`SET session_replication_role = replica; UPDATE advice_records SET valid_until = current_date - 1 WHERE id = '${na1}'; SET session_replication_role = origin;`);
+  g = (await call(PA, 'GET', `/v1/boxes/${box}/gates`)).json.gates.find((x: any) => x.stageName === 'Application submitted');
+  assert.ok(g.missing.includes('recommendation')); assert.ok(!g.missing.includes('needs_analysis')); assert.ok(!g.missing.includes('replacement_disclosure'));
+});
+
+test('a paper needs analysis ages from the day the client signed it', async () => {
+  const box = await newBox('Old paper client');
+  await consent(PA, box);
+  const up = (await call(PA, 'POST', `/v1/boxes/${box}/documents`, { name: 'old-na.pdf', mime: 'application/pdf', dataBase64: PDF, docType: 'needs_analysis' })).json.id;
+  assert.equal((await call(COMP, 'POST', `/v1/documents/${up}/verify`, { note: 'Paper fact-find from 2024, checked', clientSignedOn: '2024-01-15' })).status, 204);
+  const g = (await call(PA, 'GET', `/v1/boxes/${box}/gates`)).json.gates.find((x: any) => x.stageName === 'Application submitted');
+  assert.ok(g.missing.includes('needs_analysis'), 'signed more than twelve months ago, so not current');
+});
+
+test('the client’s signed copy carries no internal review flags', async () => {
+  const { sealedAdvicePdf } = await import('../src/advice-seal.ts');
+  const base = { adviceId: 'x', boxId: 'y', kind: 'needs_analysis' as const, title: 'Needs analysis', body: 'Summary', clientName: 'Rita', clientEmail: null, contentHash: 'h', firm: 'Maple', method: 'otp' as const, typedName: null, ip: null, agent: null, signer: 'client' as const, answers: NEEDS };
+  const a = await sealedAdvicePdf({ ...base, flags: [] }, new Date(0));
+  const b = await sealedAdvicePdf({ ...base, flags: ['replacement', 'below_need'] }, new Date(0));
+  assert.equal(Buffer.compare(Buffer.from(a), Buffer.from(b)), 0, 'flags do not change the client’s document');
 });

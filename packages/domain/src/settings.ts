@@ -79,6 +79,10 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Review every file from a new advisor for (days)', 'fr-CA': 'Revoir chaque dossier d’un nouveau conseiller pendant (jours)' }, help: { en: 'Counted from the advisor’s first signed advice. 0 turns this off.', 'fr-CA': 'Compté à partir du premier conseil signé du conseiller. 0 désactive cette règle.' }, keywords: 'new advisor review supervision days compliance',
   },
   {
+    key: 'compliance.partnerPipelineGate', tab: 'companyRules', type: 'bool', default: true, scopes: ['tenant'], lockable: false,
+    label: { en: 'Partners’ own pipelines need a needs analysis before a sale is won', 'fr-CA': 'Les pipelines des partenaires exigent une analyse des besoins avant une vente conclue' }, help: { en: 'When a partner makes a pipeline from scratch, its won stages require privacy consent, a signed needs analysis and a signed recommendation. Compliance can change a pipeline’s paperwork afterwards; partners cannot remove it.', 'fr-CA': 'Quand un partenaire crée un pipeline de toutes pièces, ses étapes conclues exigent le consentement à la vie privée, une analyse des besoins signée et une recommandation signée. La conformité peut ensuite modifier ces exigences; les partenaires ne peuvent pas les retirer.' }, keywords: 'needs analysis partner pipeline gate won paperwork compliance',
+  },
+  {
     key: 'pipelines.partnerCreate', tab: 'companyRules', type: 'bool', default: true, scopes: ['tenant'], lockable: false,
     label: { en: 'Partners can make their own pipelines', 'fr-CA': 'Les partenaires peuvent créer leurs propres pipelines' }, help: { en: 'Partners can start a pipeline from scratch, from a template, or by copying one they can see. Turn off to keep pipelines with managers only.', 'fr-CA': 'Les partenaires peuvent créer un pipeline à partir de zéro, d’un modèle ou en copiant un pipeline visible. Désactivez pour réserver les pipelines aux gestionnaires.' }, keywords: 'pipeline partner create copy clone template own',
   },

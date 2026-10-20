@@ -6,12 +6,12 @@ import type { Locale } from './types.ts';
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Review { id: string; adviceId: string; boxId: string; boxName: string; kind: string; title: string; clientName: string; signedAt: string | null; advisor: string; ownFile: boolean; reason: string; flags: string[]; status: 'pending' | 'passed' | 'needs_action'; findings: string | null; reviewer: string | null; createdAt: string; reviewedAt: string | null }
 interface Advisor { userId: string; name: string; email: string; needsSigned: number; recommendationsSigned: number; replacements: number; flagged: number; reviewsPending: number; reviewsPassed: number; reviewsNeedsAction: number; needsWaived: number }
-interface Summary { advisors: Advisor[]; reviewsPending: number; expired: number; expiringSoon: number; pipelinesWithoutGate: { id: string; name: string; owner: string }[] }
+interface Summary { advisors: Advisor[]; reviewsPending: number; expired: number; expiringSoon: number; legacyNeeds?: number; pipelinesWithoutGate: { id: string; name: string; owner: string }[] }
 
 const T = {
   'en': {
     h: 'Needs analysis and advice reviews', help: 'Every flagged file and every file from a new advisor is reviewed; a share of the rest is sampled. The sampling rate and the new-advisor period are in Settings, Company rules.',
-    waiting: 'Waiting for review', expired: 'Clients with an expired needs analysis', soon: 'Expiring in 30 days', noGate: 'Life pipelines with no needs-analysis gate',
+    waiting: 'Waiting for review', expired: 'Clients with an expired needs analysis', soon: 'Expiring in 30 days', noGate: 'Life pipelines with no needs-analysis gate', legacy: 'Free-text needs analyses still counted',
     queue: 'Review queue', show: 'Show', st: { pending: 'Waiting', passed: 'Passed', needs_action: 'Needs action', all: 'All' }, none: 'Nothing here.',
     why: { flagged: 'Flagged', new_advisor: 'New advisor', random: 'Random sample', requested: 'Requested' },
     flag: { below_need: 'Below the calculated need', over_budget: 'Over budget', replacement: 'Replacement', client_chose_less: 'Client chose less', need_overridden: 'Need set by advisor' },
@@ -21,7 +21,7 @@ const T = {
   },
   'fr-CA': {
     h: 'Analyses des besoins et revues de conseils', help: 'Chaque dossier signalé et chaque dossier d’un nouveau conseiller est revu; une part des autres est échantillonnée. Le taux et la période sont dans Paramètres, Règles de l’entreprise.',
-    waiting: 'En attente de revue', expired: 'Clients dont l’analyse des besoins est expirée', soon: 'Expirent dans 30 jours', noGate: 'Pipelines vie sans exigence d’analyse des besoins',
+    waiting: 'En attente de revue', expired: 'Clients dont l’analyse des besoins est expirée', soon: 'Expirent dans 30 jours', noGate: 'Pipelines vie sans exigence d’analyse des besoins', legacy: 'Analyses en texte libre encore comptées',
     queue: 'File de revue', show: 'Afficher', st: { pending: 'En attente', passed: 'Réussies', needs_action: 'Mesures demandées', all: 'Toutes' }, none: 'Rien ici.',
     why: { flagged: 'Signalé', new_advisor: 'Nouveau conseiller', random: 'Échantillon aléatoire', requested: 'Demandée' },
     flag: { below_need: 'Inférieur au besoin calculé', over_budget: 'Au-dessus du budget', replacement: 'Remplacement', client_chose_less: 'Le client a choisi moins', need_overridden: 'Besoin fixé par le conseiller' },
@@ -54,7 +54,7 @@ export function AdviceReviewsPanel({ call, locale }: { call: Call; locale: Local
       <p class="muted">{x.help}</p>
       {err && <div class="err" role="alert">{err}</div>}
       {sum && <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
-        {([[x.waiting, sum.reviewsPending], [x.expired, sum.expired], [x.soon, sum.expiringSoon], [x.noGate, sum.pipelinesWithoutGate.length]] as [string, number][]).map(([k, v]) => (
+        {([[x.waiting, sum.reviewsPending], [x.expired, sum.expired], [x.soon, sum.expiringSoon], [x.legacy, sum.legacyNeeds ?? 0], [x.noGate, sum.pipelinesWithoutGate.length]] as [string, number][]).map(([k, v]) => (
           <div key={k} class="hcard" style={{ minWidth: '140px', padding: '8px 12px' }}><div style={{ fontSize: '1.6em', fontWeight: 700, color: v > 0 ? '#b3261e' : undefined }}>{v}</div><small class="muted">{k}</small></div>
         ))}
       </div>}

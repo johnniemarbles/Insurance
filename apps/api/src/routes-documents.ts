@@ -41,7 +41,7 @@ export function registerDocumentRoutes(app: FastifyInstance, deps: AppDeps): voi
       await box(tx, id);
       const rows = (await tx.query(
         `SELECT d.id, d.name, d.mime, d.doc_type AS "docType", d.size_bytes AS "sizeBytes", d.created_at AS "createdAt", coalesce(u.display_name, u.email::text) AS "uploadedBy",
-                d.verified_at AS "verifiedAt", d.verified_name AS "verifiedBy", d.verified_note AS "verifiedNote",
+                d.verified_at AS "verifiedAt", d.verified_name AS "verifiedBy", d.verified_note AS "verifiedNote", d.client_signed_on::text AS "clientSignedOn",
                 EXISTS (SELECT 1 FROM advice_records a WHERE a.document_id = d.id AND a.status = 'signed') AS "fromAdvice",
                 (d.doc_type = ANY($2::text[]) AND d.verified_at IS NULL AND NOT EXISTS (SELECT 1 FROM advice_records a WHERE a.document_id = d.id AND a.status = 'signed')) AS "needsVerify",
                 d.uploaded_by = $3 AS "mine"
@@ -53,22 +53,25 @@ export function registerDocumentRoutes(app: FastifyInstance, deps: AppDeps): voi
   // Advice paperwork done on paper (needs analysis, recommendation, ...) counts toward a gate only once compliance has checked it.
   // The person who uploaded it cannot verify it; a verification is permanent.
   app.post('/v1/documents/:id/verify', {
-    schema: { params: idp, body: { type: 'object', required: ['note'], additionalProperties: false, properties: { note: { type: 'string', minLength: 10, maxLength: 500 } } } },
+    schema: { params: idp, body: { type: 'object', required: ['note'], additionalProperties: false, properties: { note: { type: 'string', minLength: 10, maxLength: 500 }, clientSignedOn: { type: 'string', format: 'date' } } } },
   }, async (req, reply) => {
     const { ctx } = await deps.authenticate(req);
     requireCrm(ctx);
     if (!canWaive(ctx)) throw forbidden('Only an administrator or the compliance role can verify advice paperwork');
     const { id } = req.params as { id: string };
-    const { note } = req.body as { note: string };
+    const { note, clientSignedOn } = req.body as { note: string; clientSignedOn?: string };
+    if (clientSignedOn && clientSignedOn > new Date().toISOString().slice(0, 10)) throw invalid('The client cannot have signed it in the future');
     await run(ctx, async (tx) => {
       const d = (await tx.query<{ box_id: string; doc_type: string | null; uploaded_by: string | null; verified_at: string | null }>('SELECT box_id, doc_type, uploaded_by, verified_at FROM box_documents WHERE id = $1', [id])).rows[0];
       if (!d) throw notFound('Document not found');
       if (!d.doc_type || !ADVICE_DOC_TYPES.includes(d.doc_type)) throw invalid('Only advice paperwork needs verifying');
       if (d.verified_at) throw new HttpError(409, 'already_verified', 'This document is already verified');
       if (d.uploaded_by === ctx.userId) throw forbidden('Someone other than the person who uploaded it must verify it');
+      // A needs analysis on paper ages from the day the client signed it, not the day it was checked.
+      if (d.doc_type === 'needs_analysis' && !clientSignedOn) throw invalid('Say the date the client signed this needs analysis');
       const who = (await tx.query<{ n: string }>('SELECT coalesce(display_name, email::text) AS n FROM app_users WHERE id = $1', [ctx.userId])).rows[0]!.n;
-      await tx.query('UPDATE box_documents SET verified_by = $2, verified_name = $3, verified_note = $4, verified_at = now() WHERE id = $1', [id, ctx.userId, who, note.trim()]);
-      await audit(tx, ctx, 'document_verified', 'box', d.box_id, { documentId: id, docType: d.doc_type, note: note.trim() });
+      await tx.query('UPDATE box_documents SET verified_by = $2, verified_name = $3, verified_note = $4, verified_at = now(), client_signed_on = $5 WHERE id = $1', [id, ctx.userId, who, note.trim(), clientSignedOn ?? null]);
+      await audit(tx, ctx, 'document_verified', 'box', d.box_id, { documentId: id, docType: d.doc_type, note: note.trim(), clientSignedOn: clientSignedOn ?? null });
     });
     return reply.code(204).send();
   });
@@ -128,10 +131,12 @@ export function registerDocumentRoutes(app: FastifyInstance, deps: AppDeps): voi
     requireCrm(ctx);
     const { id } = req.params as { id: string };
     await run(ctx, async (tx) => {
-      const r = (await tx.query<{ box_id: string; name: string }>('SELECT box_id, name FROM box_documents WHERE id = $1', [id])).rows[0];
+      const r = (await tx.query<{ box_id: string; name: string; verified: boolean; sealed: boolean }>(
+        `SELECT box_id, name, verified_at IS NOT NULL AS verified, EXISTS (SELECT 1 FROM advice_records a WHERE a.document_id = d.id) AS sealed FROM box_documents d WHERE id = $1`, [id])).rows[0];
       if (!r) throw notFound('Document not found');
       const bx = await box(tx, r.box_id);
       requireEdit(ctx, bx.owner_node_id);
+      if (r.verified || r.sealed) throw new HttpError(409, 'document_kept', 'This is signed or compliance-verified paperwork, so it is kept on the record');
       await tx.query('DELETE FROM box_documents WHERE id = $1', [id]);
       await audit(tx, ctx, 'document_deleted', 'box', r.box_id, { documentId: id, name: r.name });
     });

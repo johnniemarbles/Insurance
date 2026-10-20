@@ -33,18 +33,24 @@ ALTER TABLE box_documents
   ADD COLUMN verified_by   uuid REFERENCES app_users(id),
   ADD COLUMN verified_name text,
   ADD COLUMN verified_note text CHECK (verified_note IS NULL OR length(verified_note) BETWEEN 10 AND 500),
-  ADD COLUMN verified_at   timestamptz;
+  ADD COLUMN verified_at   timestamptz,
+  ADD COLUMN client_signed_on date;   -- for paper advice: the day the client signed it, which is when a needs analysis starts to age
 
--- A verification, once made, is permanent: it can be neither changed nor taken back.
+-- A verification, once made, is permanent: it can be neither changed nor taken back, and a verified document cannot be removed.
 CREATE FUNCTION box_documents_verify_lock() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.verified_at IS NOT NULL THEN RAISE EXCEPTION 'A verified document cannot be removed' USING ERRCODE = '42501'; END IF;
+    RETURN OLD;
+  END IF;
   IF OLD.verified_at IS NOT NULL AND (NEW.verified_at IS DISTINCT FROM OLD.verified_at OR NEW.verified_by IS DISTINCT FROM OLD.verified_by
-     OR NEW.verified_note IS DISTINCT FROM OLD.verified_note OR NEW.doc_type IS DISTINCT FROM OLD.doc_type) THEN
+     OR NEW.verified_name IS DISTINCT FROM OLD.verified_name OR NEW.verified_note IS DISTINCT FROM OLD.verified_note
+     OR NEW.client_signed_on IS DISTINCT FROM OLD.client_signed_on OR NEW.doc_type IS DISTINCT FROM OLD.doc_type) THEN
     RAISE EXCEPTION 'A verified document cannot have its verification or type changed' USING ERRCODE = '42501';
   END IF;
   RETURN NEW;
 END $$;
-CREATE TRIGGER box_documents_verify_lock BEFORE UPDATE ON box_documents FOR EACH ROW EXECUTE FUNCTION box_documents_verify_lock();
+CREATE TRIGGER box_documents_verify_lock BEFORE UPDATE OR DELETE ON box_documents FOR EACH ROW EXECUTE FUNCTION box_documents_verify_lock();
 
 CREATE TABLE advice_reviews (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -62,7 +68,8 @@ CREATE TABLE advice_reviews (
   created_at    timestamptz NOT NULL DEFAULT now(),
   CHECK ((status = 'pending') = (reviewed_at IS NULL)),
   CHECK (status = 'pending' OR (reviewer_id IS NOT NULL AND findings IS NOT NULL)),
-  CHECK (reviewer_id IS NULL OR reviewer_id <> advisor_id)
+  CHECK (reviewer_id IS NULL OR reviewer_id <> advisor_id),
+  CHECK (status <> 'pending' OR (reviewer_id IS NULL AND reviewer_name IS NULL AND findings IS NULL))
 );
 CREATE UNIQUE INDEX advice_reviews_one_open ON advice_reviews (advice_id) WHERE status = 'pending';
 CREATE INDEX advice_reviews_queue ON advice_reviews (tenant_id, status, created_at);
@@ -79,12 +86,20 @@ BEGIN
   IF OLD.status <> 'pending' THEN
     RAISE EXCEPTION 'A decided compliance review cannot be changed' USING ERRCODE = '42501';
   END IF;
-  IF NEW.advice_id <> OLD.advice_id OR NEW.advisor_id <> OLD.advisor_id OR NEW.reason <> OLD.reason OR NEW.flags <> OLD.flags OR NEW.created_at <> OLD.created_at THEN
+  IF NEW.advice_id <> OLD.advice_id OR NEW.advisor_id <> OLD.advisor_id OR NEW.reason <> OLD.reason OR NEW.flags <> OLD.flags OR NEW.created_at <> OLD.created_at
+     OR NEW.tenant_id <> OLD.tenant_id OR NEW.requested_by IS DISTINCT FROM OLD.requested_by THEN
     RAISE EXCEPTION 'Only the outcome of a review can be recorded' USING ERRCODE = '42501';
   END IF;
   RETURN NEW;
 END $$;
 CREATE TRIGGER advice_reviews_lock BEFORE UPDATE ON advice_reviews FOR EACH ROW EXECUTE FUNCTION advice_reviews_lock();
+-- A review is always opened as pending; nobody can insert one already decided.
+CREATE FUNCTION advice_reviews_open() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.status <> 'pending' THEN RAISE EXCEPTION 'A review starts as pending' USING ERRCODE = '42501'; END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER advice_reviews_open BEFORE INSERT ON advice_reviews FOR EACH ROW EXECUTE FUNCTION advice_reviews_open();
 
 ALTER TABLE notifications DROP CONSTRAINT notifications_kind_check;
 ALTER TABLE notifications ADD CONSTRAINT notifications_kind_check CHECK (kind IN
@@ -99,9 +114,12 @@ UPDATE pipeline_templates t SET version = t.version + 1, stages = (
     FROM jsonb_array_elements(t.stages) WITH ORDINALITY AS x(e, ord))
  WHERE t.code IN ('ca_life_health', 'us_life');
 
+-- The stage is found by name, or, where a partner renamed it, as the third stage (its place in the template).
 INSERT INTO stage_doc_requirements (stage_id, doc_type, tenant_id)
 SELECT s.id, d, s.tenant_id
   FROM pipelines p JOIN stages s ON s.pipeline_id = p.id
   CROSS JOIN unnest(ARRAY['privacy_consent', 'needs_analysis', 'recommendation']) AS d
- WHERE p.template_code IN ('ca_life_health', 'us_life') AND s.name IN ('Application submitted', 'Proposition soumise')
+ WHERE p.template_code IN ('ca_life_health', 'us_life') AND NOT s.is_won AND NOT s.is_lost
+   AND (s.name IN ('Application submitted', 'Proposition soumise')
+        OR (s.position = 3 AND NOT EXISTS (SELECT 1 FROM stages x WHERE x.pipeline_id = p.id AND x.name IN ('Application submitted', 'Proposition soumise'))))
 ON CONFLICT DO NOTHING;

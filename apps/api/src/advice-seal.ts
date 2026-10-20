@@ -17,7 +17,8 @@ export interface SealInput {
 type Wrap = (text: string, f?: any, sz?: number, color?: ReturnType<typeof rgb>, gap?: number) => void;
 /** The structured answers, section by section, then the advisor's attestation line. */
 function drawAnswers(wrap: Wrap, bold: any, font: any, i: Pick<SealInput, 'kind' | 'answers' | 'flags' | 'advisorName'>): void {
-  const sections = answerSections(i.kind, i.answers ?? null, i.flags ?? []);
+  // Review flags are internal: they go to the compliance queue and the audit package, not onto the client's signed copy.
+  const sections = answerSections(i.kind, i.answers ?? null);
   for (const s of sections) {
     wrap(s.title, bold, 12.5, rgb(0.12, 0.23, 0.37), 6);
     for (const [k, v] of s.rows) { wrap(k, bold, 9, rgb(0.35, 0.35, 0.35), 1); wrap(v, font, 10.5, rgb(0.1, 0.1, 0.1), 6); }
