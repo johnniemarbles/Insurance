@@ -202,6 +202,23 @@ _, _, e = run('u1', """INSERT INTO identity_references(tenant_id,owner_node_id,c
 check("an ID note with a document number is refused", e is not None)
 _, n, e = run('u2', "UPDATE compliance_reviews SET resolved_at=now(), resolved_by_name='u2', resolution_note='closing yours'")
 check("sibling u2 cannot resolve u1's review (0 rows)", e is None and n == 0, (n, e))
+
+print('\n== 3e. Families Gate D: imports on the CRM wall; suggestion dismissals private to each person ==')
+fc.execute("""INSERT INTO family_imports(tenant_id,owner_node_id,context_node_id,user_id,file_sha256,rows_total,clients_created,clients_linked,families_created,families_joined)
+              VALUES (%s,%s,%s,%s,%s,2,2,0,1,0)""", (T, N['P1'], N['X'], UID['u1'], 'a' * 64))
+fc.execute("INSERT INTO family_suggestion_dismissals(tenant_id,user_id,contact_id,family_id) VALUES (%s,%s,%s,%s)", (T, UID['u1'], SPOUSE, FAM['F1']))
+fs.commit()
+for k, v in {'u1': 1, 'u2': 0, 'mgrX': 1, 'mgrY': 0, 'admin': 1, 'out': 0}.items():
+    n = len(run(k, "SELECT 1 FROM family_imports")[0])
+    check(f"family_imports visible to {k} = {v}", n == v, n)
+for k, v in {'u1': 1, 'mgrX': 0, 'admin': 0, 'u2': 0}.items():
+    n = len(run(k, "SELECT 1 FROM family_suggestion_dismissals")[0])
+    check(f"suggestion dismissals visible to {k} = {v} (own only)", n == v, n)
+_, _, e = run('u2', "INSERT INTO family_suggestion_dismissals(tenant_id,user_id,contact_id,family_id) VALUES (%s,%s,%s,%s)", (T, UID['u1'], SPOUSE, FAM['F1']))
+check("nobody can write a dismissal for someone else", e is not None)
+_, _, e = run('u2', """INSERT INTO family_imports(tenant_id,owner_node_id,user_id,file_sha256,rows_total,clients_created,clients_linked,families_created,families_joined)
+                       VALUES (%s,%s,%s,%s,1,1,0,0,0)""", (T, N['P1'], UID['u2'], 'b' * 64))
+check("sibling u2 cannot log an import for u1's branch", e is not None)
 fs.close()
 
 print('\n== 4. Private Gmail data ==')

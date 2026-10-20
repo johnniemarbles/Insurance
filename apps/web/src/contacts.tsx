@@ -53,13 +53,14 @@ export function ContactsView({ call, t, locale = 'en', compose, familiesPage = f
   const complianceOn = useFamilyComplianceOn(call);
   const [reviewsOpen, setReviewsOpen] = useState(false);
   const toolsOn = useFamilyToolsOn(call);
+  const [listNonce, setListNonce] = useState(0);
   const [tool, setTool] = useState<'' | 'email' | 'import' | 'merges'>('');
   useEffect(() => { const h = setTimeout(() => setDq(q), 250); return () => clearTimeout(h); }, [q]);
   useEffect(() => {
     let live = true;
     call('GET', `/v1/contacts?limit=200${dq ? `&q=${encodeURIComponent(dq)}` : ''}`).then((r) => live && setRows(r.contacts), (e) => live && setErr((e as Error).message));
     return () => { live = false; };
-  }, [call, dq]);
+  }, [call, dq, listNonce]);
   useEffect(() => {
     if (!rows || rows.length === 0 || famOn === false) return;
     let live = true;
@@ -180,7 +181,7 @@ export function ContactsView({ call, t, locale = 'en', compose, familiesPage = f
       {queue && <MissingPeopleQueue call={call} locale={locale} onClose={() => setQueue(false)} />}
       {reviewsOpen && <ReviewsQueue call={call} locale={locale} onClose={() => setReviewsOpen(false)} />}
       {tool === 'email' && <FamilyEmail call={call} locale={locale} onClose={() => setTool('')} onCreated={() => setTool('merges')} />}
-      {tool === 'import' && <FamilyImport call={call} locale={locale} onClose={() => setTool('')} onDone={changed} />}
+      {tool === 'import' && <FamilyImport call={call} locale={locale} onClose={() => setTool('')} onDone={() => { setListNonce((n) => n + 1); changed(); }} />}
       {tool === 'merges' && <MergePanel call={call} locale={locale} compose={compose} boxIds={[]} onClose={() => setTool('')} onOpenBox={() => undefined} />}
       {openFamily && (
         <FamilyPanel call={call} locale={locale} familyId={openFamily} onChanged={changed}

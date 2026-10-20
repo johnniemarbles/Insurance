@@ -17,7 +17,7 @@ const L = {
     importHelp: 'Upload a CSV with one row per person. Rows with the same family name become one family with exactly one Head. Existing clients are linked only by client_id or exact email, and their details are never changed.',
     template: 'Download a template', file: 'CSV file', check: 'Check the file', importNow: 'Import', checked: (r: number, e: number) => `${r} rows · ${e === 0 ? 'no problems' : `${e} ${e === 1 ? 'problem' : 'problems'}`}`,
     plan: (c: number, l: number, f: number, j: number) => `Will create ${c} clients, link ${l} existing, create ${f} families, add to ${j} existing`,
-    fixFirst: 'Nothing is written until every row passes. Fix the file and check it again.', done: 'Imported.', unknownCols: 'Columns not used', line: 'Line', problems: 'Problems', notes: 'Notes',
+    fixFirst: 'Nothing is written until every row passes. Fix the file and check it again.', done: 'Imported.', unknownCols: 'Columns not used', line: 'Line', person: 'Person', problems: 'Problems', notes: 'Notes',
     actions: { create_client: 'New client', link_client: 'Existing client' } as Record<string, string>,
     kinds: {
       family_created: 'Family created', family_archived: 'Family archived', member_joined: 'Joined', member_left: 'Left', policy_role_added: 'Added to a policy', policy_role_ended: 'Removed from a policy',
@@ -36,7 +36,7 @@ const L = {
     importHelp: 'Téléversez un CSV avec une ligne par personne. Les lignes portant le même nom de famille forment une famille avec un seul chef. Les clients existants ne sont liés que par client_id ou courriel exact, et leurs renseignements ne sont jamais modifiés.',
     template: 'Télécharger un modèle', file: 'Fichier CSV', check: 'Vérifier le fichier', importNow: 'Importer', checked: (r: number, e: number) => `${r} lignes · ${e === 0 ? 'aucun problème' : `${e} problème${e === 1 ? '' : 's'}`}`,
     plan: (c: number, l: number, f: number, j: number) => `Créera ${c} clients, liera ${l} clients existants, créera ${f} familles, ajoutera à ${j} familles existantes`,
-    fixFirst: 'Rien n’est écrit tant que toutes les lignes ne sont pas valides. Corrigez le fichier et vérifiez-le de nouveau.', done: 'Importé.', unknownCols: 'Colonnes non utilisées', line: 'Ligne', problems: 'Problèmes', notes: 'Remarques',
+    fixFirst: 'Rien n’est écrit tant que toutes les lignes ne sont pas valides. Corrigez le fichier et vérifiez-le de nouveau.', done: 'Importé.', unknownCols: 'Colonnes non utilisées', line: 'Ligne', person: 'Personne', problems: 'Problèmes', notes: 'Remarques',
     actions: { create_client: 'Nouveau client', link_client: 'Client existant' } as Record<string, string>,
     kinds: {
       family_created: 'Famille créée', family_archived: 'Famille archivée', member_joined: 'Arrivée', member_left: 'Départ', policy_role_added: 'Ajouté à une police', policy_role_ended: 'Retiré d’une police',
@@ -87,7 +87,7 @@ export function FamilyEmail({ call, locale, onClose, onCreated }: { call: Call; 
   const toggle = (id: string) => setSel(sel.includes(id) ? sel.filter((s) => s !== id) : [...sel, id]);
   const create = async () => {
     setErr('');
-    try { const r = await call('POST', '/v1/family-merges', { name: name.trim() || subject.slice(0, 60), subject: subject.trim(), body, familyIds: sel }); onCreated(r.id); } catch (e) { setErr(msg(e)); }
+    try { const r = await call('POST', '/v1/family-merges', { name: name.trim() || subject.replace(/\{\{[^}]*\}\}/g, '').replace(/[\s,.:;-]+$/, '').trim().slice(0, 60) || 'Family email', subject: subject.trim(), body, familyIds: sel }); onCreated(r.id); } catch (e) { setErr(msg(e)); }
   };
   return (
     <aside tabIndex={-1} class="drawer wide" role="dialog" aria-label={x.email} onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}>
@@ -97,7 +97,7 @@ export function FamilyEmail({ call, locale, onClose, onCreated }: { call: Call; 
         <legend style={{ fontWeight: 600 }}>{x.pick} <button type="button" class="linkbtn" onClick={() => setSel((fams ?? []).map((f) => f.id))}>{x.all}</button> · <button type="button" class="linkbtn" onClick={() => setSel([])}>{x.none}</button></legend>
         {!fams ? <p class="muted">{x.loading}</p> : (
           <div style={{ maxHeight: '160px', overflow: 'auto', border: '1px solid var(--line)', borderRadius: '8px', padding: '6px 10px' }}>
-            {fams.map((f) => <label key={f.id} style={{ display: 'block', fontWeight: 400 }}><input type="checkbox" checked={sel.includes(f.id)} onChange={() => toggle(f.id)} /> {f.displayName} <span class="muted">· {f.headName ?? '—'} · {f.memberCount}</span></label>)}
+            {fams.map((f) => <label key={f.id} style={{ display: 'flex', gap: '8px', alignItems: 'center', fontWeight: 400, margin: '2px 0', color: 'var(--ink)' }}><input type="checkbox" style={{ width: 'auto', margin: 0, minHeight: 0 }} checked={sel.includes(f.id)} onChange={() => toggle(f.id)} /><span>{f.displayName} <span class="muted">· {f.headName ?? '—'} · {f.memberCount}</span></span></label>)}
           </div>
         )}
       </fieldset>
@@ -164,7 +164,7 @@ export function FamilyImport({ call, locale, onClose, onDone }: { call: Call; lo
           {!ok && <div class="muted" style={{ fontSize: '12.5px' }}>{x.fixFirst}</div>}
           {rep.unknownColumns.length > 0 && <div class="muted" style={{ fontSize: '12.5px' }}>{x.unknownCols}: {rep.unknownColumns.join(', ')}</div>}
           <table style={{ width: '100%', fontSize: '12.5px', marginTop: '6px', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <thead><tr><th style={{ textAlign: 'left', width: '9%' }}>{x.line}</th><th style={{ textAlign: 'left', width: '36%' }}>{x.pick}</th><th style={{ textAlign: 'left' }}>{x.problems}</th></tr></thead>
+            <thead><tr><th style={{ textAlign: 'left', width: '9%' }}>{x.line}</th><th style={{ textAlign: 'left', width: '36%' }}>{x.person}</th><th style={{ textAlign: 'left' }}>{x.problems}</th></tr></thead>
             <tbody>{rep.rows.map((r) => (
               <tr key={r.line} style={{ borderTop: '1px solid var(--line)', verticalAlign: 'top' }}>
                 <td style={{ padding: '4px' }}>{r.line}</td>
