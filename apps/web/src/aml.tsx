@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
+import { EidCard } from './eid.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 const T = {
-  'en': { tab: 'ID & AML', id: 'Client identity', idHelp: 'Record how you verified who the client is. Name the document type and issuer only, never the number.', method: 'Method', in_person: 'In person (government photo ID)', credit_file: 'Credit file', dual_process: 'Dual process', docs: 'Documents seen (one per line)', result: 'Result', verified: 'Verified', failed: 'Failed', note: 'Note (optional)', save: 'Save',
+  'en': { tab: 'ID & AML', id: 'Client identity', idHelp: 'Record how you verified who the client is. Name the document type and issuer only, never the number.', method: 'Method', in_person: 'In person (government photo ID)', electronic: 'Electronic check (licence and selfie)', credit_file: 'Credit file', dual_process: 'Dual process', docs: 'Documents seen (one per line)', result: 'Result', verified: 'Verified', failed: 'Failed', note: 'Note (optional)', save: 'Save',
     scr: 'PEP and sanctions screening', list: 'List', pep: 'Politically exposed person', sanctions: 'Sanctions', clear: 'Clear', hit: 'Hit', cleared_after_review: 'Cleared after review', review: 'Review note (at least 10 characters)', hitOpen: 'Open hit: this file cannot move to a gated stage until the compliance role clears it.', clearIt: 'Clear after review',
     cash: 'Large cash transactions', cashHelp: 'Cash of $10,000 or more needs a report to FINTRAC, filed outside PII. Record the entry and the reference you were given.', amount: 'Amount', date: 'Date', add: 'Add entry', due: 'Report due', ref: 'Report reference', noteRef: 'Record reference', filed: 'Filed', none: 'Nothing recorded yet.', by: 'by' },
-  'fr-CA': { tab: 'Identité et LBA', id: 'Identité du client', idHelp: 'Consignez comment vous avez vérifié l’identité du client. Indiquez le type de document et l’émetteur seulement, jamais le numéro.', method: 'Méthode', in_person: 'En personne (pièce d’identité avec photo)', credit_file: 'Dossier de crédit', dual_process: 'Double processus', docs: 'Documents vus (un par ligne)', result: 'Résultat', verified: 'Vérifiée', failed: 'Échec', note: 'Note (facultatif)', save: 'Enregistrer',
+  'fr-CA': { tab: 'Identité et LBA', id: 'Identité du client', idHelp: 'Consignez comment vous avez vérifié l’identité du client. Indiquez le type de document et l’émetteur seulement, jamais le numéro.', method: 'Méthode', in_person: 'En personne (pièce d’identité avec photo)', electronic: 'Vérification électronique (permis et égoportrait)', credit_file: 'Dossier de crédit', dual_process: 'Double processus', docs: 'Documents vus (un par ligne)', result: 'Résultat', verified: 'Vérifiée', failed: 'Échec', note: 'Note (facultatif)', save: 'Enregistrer',
     scr: 'Vérification PPE et sanctions', list: 'Liste', pep: 'Personne politiquement vulnérable', sanctions: 'Sanctions', clear: 'Aucun résultat', hit: 'Correspondance', cleared_after_review: 'Levée après examen', review: 'Note d’examen (au moins 10 caractères)', hitOpen: 'Correspondance ouverte : ce dossier ne peut pas passer à une étape contrôlée avant que la conformité la lève.', clearIt: 'Lever après examen',
     cash: 'Opérations importantes en espèces', cashHelp: 'Une somme de 10 000 $ ou plus exige une déclaration à CANAFE, produite hors de PII. Consignez l’entrée et la référence reçue.', amount: 'Montant', date: 'Date', add: 'Ajouter', due: 'Déclaration à produire', ref: 'Référence de la déclaration', noteRef: 'Consigner la référence', filed: 'Produite', none: 'Rien de consigné.', by: 'par' },
 };
@@ -42,6 +43,7 @@ export function AmlTab({ boxId, call, locale, canEdit }: { boxId: string; call: 
   return (
     <div class="rec-form">
       {err && <div class="err" role="alert">{err}</div>}
+      <EidCard boxId={boxId} call={call} locale={locale} canEdit={canEdit} onChange={() => void load()} />
       <h3>{x.id} {d.status.idVerified ? '✓' : ''}</h3>
       <p class="muted">{x.idHelp}</p>
       {d.idRecords.map((r) => <div class="ev" key={r.id}><strong>{x[r.result]}</strong> <small>{x[r.method]} · {r.verifiedOn} · {x.by} {r.verifier}{r.documentsSeen.length ? ` · ${r.documentsSeen.join(', ')}` : ''}</small></div>)}

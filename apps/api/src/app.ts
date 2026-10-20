@@ -16,6 +16,7 @@ import { registerFamilyComplianceRoutes } from './routes-family-compliance.ts';
 import { registerFamilyToolsRoutes } from './routes-family-tools.ts';
 import { registerCopilotRoutes } from './routes-copilot.ts';
 import { registerCopilotToolsRoutes } from './routes-copilot-tools.ts';
+import { registerEidRoutes } from './routes-eid.ts';
 import type { KeyProvider } from '@pii/platform';
 import { registerPageRoutes } from './routes-pages.ts';
 import { registerThreadRoutes } from './routes-threads.ts';
@@ -97,6 +98,8 @@ export interface AppDeps {
   aiProviders?: Partial<Record<AiProvider, AiClient>>;
   /** Builds a client from a partner's own key. Tests replace it; absent, the real provider client is used. */
   aiFactory?: (provider: AiProvider, apiKey: string) => AiClient;
+  /** Stripe Identity for electronic ID checks. Absent: the Stripe route is unavailable. */
+  stripeIdentity?: import('./eid.ts').StripeIdentity;
   /** Sends reminder emails. Absent: reminders stay in the app. */
   mailer?: import('./mailer.ts').Mailer;
   /** Write-once archive (S3 with Object Lock). Absent: signed paperwork stays in the database only. */
@@ -211,6 +214,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerFamilyToolsRoutes(app, deps);
   registerCopilotRoutes(app, deps);
   registerCopilotToolsRoutes(app, deps);
+  registerEidRoutes(app, deps);
   registerNoteRoutes(app, deps);
   registerThreadRoutes(app, deps);
   registerLmsRoutes(app, deps);
