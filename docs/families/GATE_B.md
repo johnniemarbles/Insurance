@@ -36,7 +36,7 @@ and one function. It changes no existing row, so it is safe with the switch off.
    apart by currency (CAD or USD from the policy's jurisdiction). If a currency is unknown the total is marked partial.
    Lapsed, cancelled and ended policies are listed but not added. People who are only beneficiaries are shown apart.
 4. **Coverage grid.** One row per family member, one column per line (Life, Disability, Critical illness, Health and
-   dental, Long-term care by default). Every cell starts as **Unknown**, never as a gap.
+   dental, Travel by default, per decision 7; a tenant can add more). Every cell starts as **Unknown**, never as a gap.
    - **Covered** needs a policy that person is on, or a described outside policy.
    - **Potential gap** needs a signed needs analysis for that person.
    - Changes add a new row and keep the old one; nothing is edited in place.
