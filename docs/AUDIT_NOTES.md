@@ -3,7 +3,7 @@
 Web/API work only. **Chrome extension frozen** for store review (`apps/extension` untouched).
 
 ## Shipped
-- Data residency: `dataCountry` follows `REGION`; staging/prod refuse `DATA_COUNTRY` mismatch
+- Data residency: `dataCountry` follows `REGION`; staging/prod refuse `DATA_COUNTRY` mismatch *(superseded 19 Oct, #10: `dataCountry` now follows physical hosting `HOSTED_IN`, and staging/prod must set `HOSTED_IN` or `DATA_COUNTRY`; see `CANADA_US_HOSTING_SAFEGUARDS.md`)*
 - Intake currency: CAD on ca-qc, USD on us
 - Session `last_seen_at` throttled (≤ every 10 minutes)
 - Rate-limit maps age out stale keys (no full clear)
