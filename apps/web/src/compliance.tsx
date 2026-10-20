@@ -1,3 +1,4 @@
+import { AdviceReviewsPanel } from './advice-reviews.tsx';
 import { docLabel } from './doctypes.ts';
 import { VaultPanel } from './vault.tsx';
 import { FirstWeekPanel } from './firstweek.tsx';
@@ -91,19 +92,20 @@ function save(name: string, mime: string, base64: string) {
 function Bar({ pct }: { pct: number }) { return <span class="cbar" role="img" aria-label={`${pct}%`}><i style={{ width: `${pct}%` }} /></span>; }
 
 const SEC = {
-  'en': { files: 'Files', onb: 'Onboarding', carriers: 'Carrier contracting', label: 'Compliance sections' },
-  'fr-CA': { files: 'Dossiers', onb: 'Intégration', carriers: 'Contrats assureurs', label: 'Sections de conformité' },
+  'en': { advice: 'Advice reviews', files: 'Files', onb: 'Onboarding', carriers: 'Carrier contracting', label: 'Compliance sections' },
+  'fr-CA': { advice: 'Revues de conseils', files: 'Dossiers', onb: 'Intégration', carriers: 'Contrats assureurs', label: 'Sections de conformité' },
 };
 
 const isUuid = (id?: string | null): id is string =>
   typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-const normalizeSection = (id?: string | null): 'dashboard' | 'files' | 'onboarding' | 'carriers' | null => {
+const normalizeSection = (id?: string | null): 'dashboard' | 'files' | 'onboarding' | 'carriers' | 'advice' | null => {
   if (!id) return null;
   const s = id.toLowerCase().trim();
   if (s === 'dashboard' || s === 'overview') return 'dashboard';
   if (s === 'files' || s === 'partners') return 'files';
   if (s === 'onboarding') return 'onboarding';
+  if (s === 'advice' || s === 'reviews' || s === 'needs-analysis') return 'advice';
   if (s === 'carriers' || s === 'cases' || s === 'contracting' || s === 'quarantine') return 'carriers';
   return null;
 };
@@ -112,7 +114,7 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }:
   const [open, setOpen] = useState<string | null>(isUuid(openId) ? openId : null);
   // Null while the account's role is loading. Compliance officers get the onboarding dashboard as a second section; partners see their own onboarding at the top.
   const [officer, setOfficer] = useState<boolean | null>(null);
-  const [section, setSection] = useState<'dashboard' | 'files' | 'onboarding' | 'carriers'>(
+  const [section, setSection] = useState<'dashboard' | 'files' | 'onboarding' | 'carriers' | 'advice'>(
     normalizeSection(openId) ?? (isUuid(openId) ? 'files' : 'dashboard')
   );
   const [fileFilter, setFileFilter] = useState<string>('all');
@@ -140,7 +142,7 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }:
 
   const s = SEC[locale === 'fr-CA' ? 'fr-CA' : 'en'];
   // The panels live inside the scrolling page so they share its padding; head office gets the two company settings too.
-  const panels = <>{!isHeadOffice && <><Overview call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}<VaultPanel call={call} locale={locale} /></>;
+  const panels = <>{!isHeadOffice && <><Overview call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}<VaultPanel call={call} locale={locale} />{officer === false && <AdviceReviewsPanel call={call} locale={locale} />}</>;
   // The section switch sits in the page heading, so it lines up with the title on every screen.
   const tabs = officer ? (
     <div class="seg" role="tablist" aria-label={s.label}>
@@ -148,10 +150,12 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }:
       <button role="tab" aria-selected={section === 'files'} onClick={() => { setSection('files'); setOpen(null); }}>{s.files}</button>
       <button role="tab" aria-selected={section === 'onboarding'} onClick={() => { setSection('onboarding'); setOpen(null); }}>{s.onb}</button>
       <button role="tab" aria-selected={section === 'carriers'} onClick={() => { setSection('carriers'); setOpen(null); }}>{s.carriers}</button>
+      <button role="tab" aria-selected={section === 'advice'} onClick={() => { setSection('advice'); setOpen(null); }}>{s.advice}</button>
     </div>
   ) : undefined;
   if (officer && section === 'dashboard') return <div class="obwrap">{tabs}<ComplianceCommandCenter call={call} locale={locale} onNavigate={(target, filter) => { setSection(target); setOpen(null); if (filter) setFileFilter(filter); }} /></div>;
   if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
+  if (officer && section === 'advice') return <div class="obwrap">{tabs}<AdviceReviewsPanel call={call} locale={locale} /></div>;
   if (officer && section === 'carriers') return <div class="obwrap">{tabs}<CarrierReviewPanel call={call} locale={locale} /></div>;
   const own = officer === false ? <PartnerOnboarding call={call} locale={locale} embedded /> : null;
   const lead = officer === true ? <><AssistantPanel call={call} locale={locale} /><DeadlinesPanel call={call} locale={locale} /></> : undefined;

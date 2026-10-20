@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { validateCustomValues, type RequestContext } from '@pii/domain';
 import { withRequestTx, type Tx } from '@pii/db';
 import { seal } from '@pii/platform';
+import { startStageFor } from './gates.ts';
 import { audit } from './audit.ts';
 import { forbidden, HttpError, invalid, notFound } from './errors.ts';
 import { fieldDefsFor, managerNodeIds, requireCrm, resolveOwnerAndContext, uuid } from './crm-helpers.ts';
@@ -159,12 +160,14 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
         custom = v.value;
       }
       const currency = deps.config.region === 'us' ? 'USD' : 'CAD';
+      // A lead from a form has no paperwork, so it starts no later than the first stage that requires paperwork.
+      const startId = await startStageFor(tx, e.stage_id);
       await tx.query(
         `INSERT INTO boxes (id, tenant_id, pipeline_id, stage_id, owner_node_id, context_node_id, owner_user_id, name, value_amount, currency, custom, created_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-        [boxId, e.tenant_id, e.pipeline_id, e.stage_id, e.owner_node_id, e.context_node_id, e.owner_user_id, name, value, currency, JSON.stringify(custom), e.created_by],
+        [boxId, e.tenant_id, e.pipeline_id, startId, e.owner_node_id, e.context_node_id, e.owner_user_id, name, value, currency, JSON.stringify(custom), e.created_by],
       );
-      await tx.query(`INSERT INTO box_events (tenant_id, box_id, kind, to_stage_id, actor_id) VALUES ($1,$2,'created',$3,$4)`, [e.tenant_id, boxId, e.stage_id, e.created_by]);
+      await tx.query(`INSERT INTO box_events (tenant_id, box_id, kind, to_stage_id, actor_id) VALUES ($1,$2,'created',$3,$4)`, [e.tenant_id, boxId, startId, e.created_by]);
       if (email || phone) {
         const existing = email ? (await tx.query<{ id: string }>('SELECT id FROM contacts WHERE lower(email::text) = $1 AND owner_node_id = $2 LIMIT 1', [email, e.owner_node_id])).rows[0] : undefined;
         const cid = existing?.id ?? randomUUID();
@@ -172,13 +175,13 @@ export function registerIntegrationRoutes(app: FastifyInstance, deps: AppDeps): 
         await tx.query('INSERT INTO box_contacts (box_id, contact_id, tenant_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [boxId, cid, e.tenant_id]);
       }
       if (note) await tx.query('INSERT INTO notes (id, tenant_id, box_id, owner_node_id, context_node_id, author_id, body) VALUES ($1,$2,$3,$4,$5,$6,$7)', [randomUUID(), e.tenant_id, boxId, e.owner_node_id, e.context_node_id, e.created_by, `${source ?? (e.kind === 'form' ? 'Web form' : 'Webhook')} “${e.name}”: ${note}`]);
-      await fireAutomations(tx, ctx, boxId, e.stage_id, 'enter', effects);
+      await fireAutomations(tx, ctx, boxId, startId, 'enter', effects);
       await notify(tx, { tenantId: e.tenant_id, userId: e.owner_user_id ?? e.created_by, kind: 'capture', boxId, data: { boxName: name, source: source ?? (e.kind === 'form' ? 'Web form' : 'Webhook'), via: e.name } });
       await audit(tx, ctx, 'intake_received', 'box', boxId, { intakeId: e.id, kind: e.kind });
-      return (await tx.query<{ stage: string }>('SELECT name AS stage FROM stages WHERE id = $1', [e.stage_id])).rows[0]!;
+      return { ...(await tx.query<{ stage: string }>('SELECT name AS stage FROM stages WHERE id = $1', [startId])).rows[0]!, startId };
     });
     await deps.authPool.query('UPDATE intake_endpoints SET uses = uses + 1, last_used_at = now() WHERE id = $1', [e.id]).catch(() => undefined);
-    emitEvent(deps, e.tenant_id, e.pipeline_id, 'box.created', { box: { id: boxId, name, stageId: e.stage_id, stageName: info.stage, valueAmount: value }, source: e.kind });
+    emitEvent(deps, e.tenant_id, e.pipeline_id, 'box.created', { box: { id: boxId, name, stageId: info.startId, stageName: info.stage, valueAmount: value }, source: e.kind });
     void flushEffects(deps, e.tenant_id, effects);
     return { boxId };
   }

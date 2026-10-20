@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { bootstrapTenant, createPool, type Db } from '@pii/db';
 import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
+import { NEEDS_FULL } from './support/advice.ts';
 import { buildApp } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import { addBrokerFixture } from './support/broker.ts';
@@ -73,7 +74,7 @@ test('the client file package holds the ledger, the documents as stored, the aud
   assert.equal((await call(PA, 'POST', `/v1/boxes/${box}/documents`, { name: 'consent.pdf', mime: 'application/pdf', dataBase64: PDF, docType: 'privacy_consent' })).status, 201);
   assert.equal((await call(PA, 'POST', `/v1/boxes/${box}/id-records`, { method: 'credit_file', result: 'verified' })).status, 201);
   assert.equal((await call(PA, 'POST', `/v1/boxes/${box}/cash`, { amount: 12000, occurredOn: '2026-10-02' })).status, 201);
-  const a = (await call(PA, 'POST', `/v1/boxes/${box}/advice`, { kind: 'recommendation', title: 'Term cover', body: 'Twenty year term.', clientName: 'Rita', clientEmail: 'r@c.test' })).json.id;
+  const a = (await call(PA, 'POST', `/v1/boxes/${box}/advice`, { kind: 'needs_analysis', title: 'Term cover', body: 'Twenty year term.', clientName: 'Rita', clientEmail: 'r@c.test', answers: NEEDS_FULL })).json.id;
   assert.ok(a);
 
   assert.equal((await call(PA, 'GET', `/v1/boxes/${box}/audit-package`)).status, 403, 'a producer cannot export');

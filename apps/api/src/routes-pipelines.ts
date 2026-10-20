@@ -6,6 +6,7 @@ import { audit } from './audit.ts';
 import { forbidden, notFound, invalid, HttpError } from './errors.ts';
 import { fieldDefsFor, managerNodeIds, requireCrm, resolveOwnerAndContext, resolveOwnerNode, scopeSql, uuid } from './crm-helpers.ts';
 import { effectiveSetting } from './settings.ts';
+import { checkStageGates, startStageFor } from './gates.ts';
 import type { AppDeps } from './app.ts';
 
 const DEFAULT_STAGES = [
@@ -103,8 +104,13 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
       'INSERT INTO pipelines (id, tenant_id, owner_node_id, name, is_shared_down, color_theme, created_by, cloned_from, template_code, template_version) VALUES ($1, $2, $3, $4, $5, coalesce($6, \'rainbow\'), $7, $8, $9, $10)',
       [id, ctx.tenantId, b.owner, b.name.trim(), b.sharedDown, b.colorTheme ?? null, ctx.userId, b.clonedFrom ?? null, b.templateCode ?? null, b.templateVersion ?? null],
     );
+    // A partner's own pipeline (blank, or copied from one that did not come from a template) gets the company's paperwork rule on its won
+    // stages, unless the company turned that off: privacy consent, a signed needs analysis and a signed recommendation before a sale is won.
+    const partnerGate = mode === 'partner' && !b.templateCode && await effectiveSetting<boolean>(tx, ctx.userId, 'compliance.partnerPipelineGate');
+    const WON_DOCS = ['privacy_consent', 'needs_analysis', 'recommendation'];
     let pos = 1;
-    for (const st of b.stages) {
+    for (const st0 of b.stages) {
+      const st = partnerGate && st0.isWon ? { ...st0, requiredDocs: [...new Set([...(st0.requiredDocs ?? []), ...WON_DOCS])] } : st0;
       const sid = (await tx.query<{ id: string }>('INSERT INTO stages (tenant_id, pipeline_id, name, position, color, is_won, is_lost, required_fields) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text[]) RETURNING id', [ctx.tenantId, id, st.name.trim(), pos++, st.color ?? null, st.isWon ?? false, st.isLost ?? false, st.requiredFields ?? []])).rows[0]!.id;
       for (const dt of st.requiredDocs ?? []) await tx.query('INSERT INTO stage_doc_requirements (stage_id, doc_type, tenant_id) VALUES ($1,$2,$3)', [sid, dt, ctx.tenantId]);
     }
@@ -205,7 +211,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
   });
 
   // ---- the country library ----
-  interface TemplateRow { code: string; version: number; name: string; name_fr: string; description: string; description_fr: string; sort: number; stages: { en: string; fr: string; won: boolean; lost: boolean; req?: string[] }[]; fields: { key: string; en: string; fr: string; type: string; options?: string[]; required?: boolean }[] }
+  interface TemplateRow { code: string; version: number; name: string; name_fr: string; description: string; description_fr: string; sort: number; stages: { en: string; fr: string; won: boolean; lost: boolean; req?: string[]; docs?: string[] }[]; fields: { key: string; en: string; fr: string; type: string; options?: string[]; required?: boolean }[] }
   const country = deps.config.region === 'us' ? 'US' : 'CA';
 
   app.get('/v1/pipeline-templates', async (req) => {
@@ -237,7 +243,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
       const owner = b.ownerNodeId ?? (await defaultPlace(tx, ctx));
       const id = await makePipeline(tx, ctx, {
         name: b.name ?? (fr ? t.name_fr : t.name), owner, sharedDown: b.sharedDown ?? false, templateCode: t.code, templateVersion: t.version,
-        stages: t.stages.map((x) => ({ name: fr ? x.fr : x.en, isWon: x.won, isLost: x.lost, requiredFields: x.req ?? [] })),
+        stages: t.stages.map((x) => ({ name: fr ? x.fr : x.en, isWon: x.won, isLost: x.lost, requiredFields: x.req ?? [], requiredDocs: x.docs ?? [] })),
         fields: t.fields.map((f) => ({ key: f.key, labels: { en: f.en, 'fr-CA': f.fr }, type: f.type, ...(f.options ? { options: f.options } : {}), required: f.required ?? false })),
       });
       return { id };
@@ -306,9 +312,13 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
       // Paperwork rules are compliance rules: only an administrator or the compliance role sets them.
       if (b.requiredDocs && !(ctx.isTenantAdmin || ctx.roles.some((r) => r.role === 'compliance'))) throw forbidden('Only an administrator or the compliance role can set required documents');
       if (b.isWon && b.isLost) throw invalid('A stage cannot be both won and lost');
+      const compliance = ctx.isTenantAdmin || ctx.roles.some((r) => r.role === 'compliance');
       await run(ctx, async (tx) => {
         // Setting paperwork alone is the compliance role's job and needs no right to edit the pipeline itself.
         const docsOnly = Object.keys(b).every((k) => k === 'requiredDocs');
+        // Turning a stage that requires paperwork into a won or lost stage would change which moves its paperwork applies to.
+        if ((b.isWon !== undefined || b.isLost !== undefined) && !compliance
+            && (await tx.query('SELECT 1 FROM stage_doc_requirements WHERE stage_id = $1 LIMIT 1', [stageId])).rowCount) throw forbidden('This stage requires paperwork, so only an administrator or the compliance role can make it a won or lost stage');
         if (docsOnly) {
           const ok = await tx.query('SELECT 1 FROM stages WHERE id = $1 AND pipeline_id = $2', [stageId, id]);
           if (!ok.rowCount) throw notFound('Stage not found');
@@ -368,6 +378,9 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
         await loadForManage(tx, ctx, id);
         const st = await tx.query('SELECT 1 FROM stages WHERE id = $1 AND pipeline_id = $2', [stageId, id]);
         if (st.rowCount === 0) throw notFound('Stage not found');
+        // A stage that requires paperwork is a compliance rule: deleting it would remove the rule, so only compliance may.
+        const gated = (await tx.query('SELECT 1 FROM stage_doc_requirements WHERE stage_id = $1 LIMIT 1', [stageId])).rowCount;
+        if (gated && !(ctx.isTenantAdmin || ctx.roles.some((r) => r.role === 'compliance'))) throw forbidden('This stage requires paperwork, so only an administrator or the compliance role can remove it');
         const count = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM stages WHERE pipeline_id = $1', [id])).rows[0]!.n;
         if (count <= 1) throw invalid('A pipeline needs at least one stage');
         const used = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM boxes WHERE stage_id = $1', [stageId])).rows[0]!.n;
@@ -376,6 +389,8 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
           const dest = await tx.query('SELECT 1 FROM stages WHERE id = $1 AND pipeline_id = $2', [moveTo, id]);
           if (dest.rowCount === 0) throw invalid('moveTo must be another stage of this pipeline');
           const moved = await tx.query<{ id: string }>('UPDATE boxes SET stage_id = $2, stage_entered_at = now(), updated_at = now() WHERE stage_id = $1 RETURNING id', [stageId, moveTo]);
+          // Records moved this way enter their new stage like any other move: its paperwork applies.
+          for (const m of moved.rows) await checkStageGates(tx, moveTo, m.id);
           for (const m of moved.rows) await tx.query(`INSERT INTO box_events (tenant_id, box_id, kind, from_stage_id, to_stage_id, actor_id) VALUES ($1,$2,'stage_changed',$3,$4,$5)`, [ctx.tenantId, m.id, stageId, moveTo, ctx.userId]);
         }
         await tx.query('DELETE FROM stages WHERE id = $1', [stageId]);
@@ -532,6 +547,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
         const people = new Map((await tx.query<{ email: string; id: string }>(
           `SELECT lower(u.email) AS email, u.id FROM app_users u JOIN user_node_roles r ON r.user_id = u.id WHERE r.node_id = $1`, [ownerNodeId])).rows.map((r) => [r.email, r.id]));
         const skipped: { row: number; reason: string }[] = [];
+        const placedEarlier: { row: number; reason: string }[] = [];
         let created = 0;
         for (const [i, r] of b.rows.entries()) {
           const name = r.name.trim();
@@ -547,7 +563,10 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
           if (!v.ok) { skipped.push({ row: i + 1, reason: v.errors.join('; ') }); continue; }
           if (r.closeDate && !/^\d{4}-\d{2}-\d{2}$/.test(r.closeDate)) { skipped.push({ row: i + 1, reason: `Close date "${r.closeDate}" is not YYYY-MM-DD` }); continue; }
           if (r.valueAmount != null && (r.valueAmount < 0 || r.valueAmount > 999999999999)) { skipped.push({ row: i + 1, reason: 'Value out of range' }); continue; }
-          const stageId = (r.stage && stages.get(r.stage.trim().toLowerCase())) || firstStage;
+          const asked = (r.stage && stages.get(r.stage.trim().toLowerCase())) || firstStage;
+          // An imported record has no paperwork, so it starts no later than the first stage that requires paperwork.
+          const stageId = await startStageFor(tx, asked);
+          if (stageId !== asked) placedEarlier.push({ row: i + 1, reason: 'Placed in the first stage: the stage asked for requires paperwork this record does not have yet' });
           const days = Math.min(Math.max(Math.floor(r.daysInStage ?? 0), 0), 3650);
           const ownerUser = (r.assignedEmail && people.get(r.assignedEmail.trim().toLowerCase())) || ctx.userId;
           const boxId = randomUUID();
@@ -584,7 +603,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
           contactsLinked += l.rowCount ?? 0;
         }
         await audit(tx, ctx, 'pipeline_import', 'pipeline', id, { created, skipped: skipped.length, stagesCreated, fieldsCreated, contactsCreated });
-        return { created, skipped, stagesCreated, fieldsCreated, contactsCreated, contactsLinked };
+        return { created, skipped, placedEarlier, stagesCreated, fieldsCreated, contactsCreated, contactsLinked };
       });
       return reply.code(200).send(out);
     },

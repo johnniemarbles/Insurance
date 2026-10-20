@@ -22,3 +22,4 @@ export * from './audit-engagement.ts';
 
 export * from './carrier-contracting.ts';
 export * from './commercial.ts';
+export * from './needs-analysis.ts';

@@ -36,7 +36,7 @@ export function registerGateRoutes(app: FastifyInstance, deps: AppDeps): void {
       const gates = [];
       for (const s of stages) {
         const g = await gateStatus(tx, s.id, id);
-        if (g) gates.push({ stageId: s.id, stageName: s.name, position: s.position, current: s.id === b.stage_id, required: g.required, filed: g.filed, overridden: g.overridden, missing: g.missing });
+        if (g) gates.push({ stageId: s.id, stageName: s.name, position: s.position, current: s.id === b.stage_id, required: g.required, filed: g.filed, overridden: g.overridden, missing: g.missing, unverified: g.unverified, needsExpiredOn: g.needsExpiredOn });
       }
       const overrides = (await tx.query(
         `SELECT o.id, o.stage_id AS "stageId", o.doc_types AS "docTypes", o.reason, o.approver_name AS "approvedBy", o.created_at AS "createdAt"
@@ -61,7 +61,7 @@ export function registerGateRoutes(app: FastifyInstance, deps: AppDeps): void {
       const bx = await boxPipeline(tx, id);
       const st = (await tx.query('SELECT 1 FROM stages WHERE id = $1 AND pipeline_id = $2', [b.stageId, bx.pipeline_id])).rowCount;
       if (!st) throw invalid('That stage does not belong to the record’s pipeline');
-      const required = (await tx.query<{ doc_type: string }>('SELECT doc_type FROM stage_doc_requirements WHERE stage_id = $1', [b.stageId])).rows.map((r) => r.doc_type);
+      const required = (await gateStatus(tx, b.stageId, id))?.required ?? []; // includes a replacement disclosure the client's needs analysis calls for
       const notRequired = b.docTypes.filter((t) => !required.includes(t));
       if (notRequired.length) throw invalid('That stage does not require ' + notRequired.join(', '));
       const who = (await tx.query<{ n: string }>('SELECT coalesce(display_name, email::text) AS n FROM app_users WHERE id = $1', [ctx.userId])).rows[0]!.n;
@@ -89,7 +89,9 @@ export function registerGateRoutes(app: FastifyInstance, deps: AppDeps): void {
            JOIN stage_doc_requirements r ON r.stage_id = g.id
            LEFT JOIN app_users u ON u.id = b.owner_user_id
           WHERE NOT cs.is_lost
-            AND NOT EXISTS (SELECT 1 FROM box_documents d WHERE d.box_id = b.id AND d.doc_type = r.doc_type)
+            AND NOT EXISTS (SELECT 1 FROM box_documents d WHERE d.box_id = b.id AND d.doc_type = r.doc_type
+                              AND (d.doc_type NOT IN ('needs_analysis', 'recommendation', 'beneficiary_designation', 'replacement_disclosure') OR d.verified_at IS NOT NULL))
+            AND NOT EXISTS (SELECT 1 FROM advice_records a WHERE a.box_id = b.id AND a.kind = r.doc_type AND a.status = 'signed' AND (a.valid_until IS NULL OR a.valid_until >= current_date))
             AND NOT EXISTS (SELECT 1 FROM (VALUES ('privacy_consent','collection_use'),('pink_slip_optin','pink_slip_optin')) m(dt, ck)
                              WHERE m.dt = r.doc_type AND EXISTS (SELECT 1 FROM (SELECT withdrawn_at FROM client_consents c WHERE c.box_id = b.id AND c.kind = m.ck ORDER BY created_at DESC LIMIT 1) x WHERE x.withdrawn_at IS NULL))
             AND NOT (r.doc_type = 'id_record' AND EXISTS (SELECT 1 FROM client_id_records c WHERE c.box_id = b.id AND c.result = 'verified'))

@@ -78,6 +78,21 @@ export function reminderText(kind: string, d: D, loc: Locale): { subject: string
       return { subject: fr ? 'Voûte d’archives : documents en attente' : 'Archive vault: documents waiting',
         line: fr ? `${n} document(s) signé(s) attendent depuis plus d’un jour d’être copiés dans la voûte d’archives` : `${n} signed document${n === 1 ? ' has' : 's have'} waited more than a day to be copied to the archive vault` };
     }
+    case 'advice_reviews_waiting': {
+      const n = Number(d.pending) || 0, fl = Number(d.flagged) || 0;
+      return { subject: fr ? 'Conseils en attente de revue de conformité' : 'Advice waiting for compliance review',
+        line: fr ? `${n} dossier(s) de conseil signé(s) attendent une revue de conformité${fl ? `, dont ${fl} signalé(s)` : ''}` : `${n} signed advice file${n === 1 ? ' is' : 's are'} waiting for a compliance review${fl ? `, ${fl} of them flagged` : ''}` };
+    }
+    case 'needs_review_due': {
+      const past = String(d.validUntil ?? '') < new Date().toISOString().slice(0, 10);
+      return { subject: fr ? 'Analyse des besoins à revoir' : 'Needs analysis due for review',
+        line: fr ? `${d.name ?? 'Un client'} : l’analyse des besoins ${past ? 'a expiré le' : 'expire le'} ${d.validUntil}. Revoyez-la avec le client et faites signer une nouvelle analyse.` : `${d.name ?? 'A client'}: the needs analysis ${past ? 'expired on' : 'expires on'} ${d.validUntil}. Review it with the client and have a new one signed.` };
+    }
+    case 'advice_review_decided': {
+      const ok = d.outcome === 'passed';
+      return { subject: fr ? 'Revue de conformité de votre conseil' : 'Compliance review of your advice',
+        line: fr ? `« ${d.title ?? ''} » : ${ok ? 'revue réussie' : 'mesures à prendre'}. ${d.findings ?? ''}` : `“${d.title ?? ''}”: ${ok ? 'passed review' : 'needs action'}. ${d.findings ?? ''}` };
+    }
     case 'team_overdue': {
       const n = Number(d.overdue) || 0;
       const top = Array.isArray(d.courses) ? (d.courses as { title: string; overdue: number }[]).slice(0, 3).map((c) => `${c.title} (${c.overdue})`).join(', ') : '';

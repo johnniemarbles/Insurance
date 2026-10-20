@@ -70,7 +70,10 @@ test('a record cannot enter a gated stage until the typed paperwork is filed', a
   assert.equal((await call(PA, 'PATCH', `/v1/boxes/${id}`, { stageId: sBound })).status, 409);
   assert.equal((await upload(PA, id, 'privacy_consent')).status, 201);
   assert.equal((await call(PA, 'PATCH', `/v1/boxes/${id}`, { stageId: sBound })).status, 409);
-  assert.equal((await upload(PA, id, 'needs_analysis')).status, 201);
+  const na = await upload(PA, id, 'needs_analysis');
+  assert.equal(na.status, 201);
+  assert.equal((await call(PA, 'PATCH', `/v1/boxes/${id}`, { stageId: sBound })).status, 409, 'uploaded advice paperwork counts only once compliance verifies it');
+  assert.equal((await call(COMP, 'POST', `/v1/documents/${na.json.id}/verify`, { note: 'Paper needs analysis checked complete and signed', clientSignedOn: new Date().toISOString().slice(0, 10) })).status, 204);
   assert.equal((await call(PA, 'PATCH', `/v1/boxes/${id}`, { stageId: sBound })).status, 204);
   const g = (await call(PA, 'GET', `/v1/boxes/${id}/gates`)).json;
   assert.deepEqual(g.gates[0].missing, []);

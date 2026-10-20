@@ -5,7 +5,7 @@ import { audit } from './audit.ts';
 import { fieldDefsFor } from './crm-helpers.ts';
 import { HttpError, invalid } from './errors.ts';
 import type { Effect } from './effects.ts';
-import { checkStageGates } from './gates.ts';
+import { checkStageGates, startStageFor } from './gates.ts';
 
 export type Trigger = 'enter' | 'stale' | 'email';
 export type { Effect };
@@ -17,10 +17,10 @@ interface AutoRow {
 const MAX_DEPTH = 3;
 
 /** A record may enter a stage only when the fields that stage requires are filled in. */
-export async function checkStageRules(tx: Tx, stageId: string, boxId: string, gates = true): Promise<void> {
+export async function checkStageRules(tx: Tx, stageId: string, boxId: string, gates = true, creating = false): Promise<void> {
   const st = (await tx.query<{ name: string; required_fields: string[] }>('SELECT name, required_fields FROM stages WHERE id = $1', [stageId])).rows[0];
   if (!st) return;
-  if (st.required_fields.length === 0) { if (gates) await checkStageGates(tx, stageId, boxId); return; }
+  if (st.required_fields.length === 0) { if (gates) await checkStageGates(tx, stageId, boxId, { creating }); return; }
   const b = (await tx.query<{ value_amount: string | null; close_date: string | null; owner_user_id: string | null; custom: Record<string, unknown>; pipeline_id: string }>(
     'SELECT value_amount, close_date, owner_user_id, custom, pipeline_id FROM boxes WHERE id = $1', [boxId],
   )).rows[0];
@@ -34,7 +34,7 @@ export async function checkStageRules(tx: Tx, stageId: string, boxId: string, ga
     return v == null || v === '' || v === false;
   }).map((k) => (k === 'value' ? 'Value' : k === 'closeDate' ? 'Close date' : k === 'owner' ? 'Owner' : (labels.find((l) => l.key === k)?.labels.en ?? k)));
   if (missing.length) throw invalid(`To move to “${st.name}”, fill in: ${missing.join(', ')}`);
-  if (gates) await checkStageGates(tx, stageId, boxId);
+  if (gates) await checkStageGates(tx, stageId, boxId, { creating });
 }
 
 /** Identifies one stay in a stage, so each automation acts once per stay. */
@@ -106,6 +106,9 @@ async function apply(tx: Tx, ctx: RequestContext, a: AutoRow, boxId: string, eff
       ? (await tx.query<{ id: string; name: string }>('SELECT id, name FROM stages WHERE id = $1 AND pipeline_id = $2', [a.target_stage_id, target.id])).rows[0]
       : (await tx.query<{ id: string; name: string }>('SELECT id, name FROM stages WHERE pipeline_id = $1 ORDER BY position LIMIT 1', [target.id])).rows[0];
     if (!stage) throw invalid('The target pipeline has no such stage');
+    // A copy is a new record with no paperwork: it starts no later than the first stage that requires paperwork.
+    const startId = await startStageFor(tx, stage.id);
+    if (startId !== stage.id) Object.assign(stage, (await tx.query<{ id: string; name: string }>('SELECT id, name FROM stages WHERE id = $1', [startId])).rows[0]);
     const defs = await fieldDefsFor(tx, target.id);
     const keep: Record<string, unknown> = {};
     for (const d of defs) if (d.key in b.custom) keep[d.key] = b.custom[d.key];
