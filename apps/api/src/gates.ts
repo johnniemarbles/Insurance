@@ -6,6 +6,7 @@ import { personLevelFiled } from './family-compliance-gates.ts';
 import { familyComplianceEnabled } from './routes-family-compliance.ts';
 import { suitabilityEnabled } from './suitability.ts';
 import { suitabilityFiled } from './routes-suitability.ts';
+import { checkSupervision } from './routes-supervision.ts';
 
 /** What a record holds against what a stage requires. All lists are document type keys.
  *  `unverified`: advice paperwork uploaded but not yet verified by compliance. `needsExpiredOn`: the last signed needs analysis, if it has expired. */
@@ -18,11 +19,13 @@ export interface GateStatus { stageId: string; stageName: string; required: stri
  * analysis it answers is signed and current. When any current needs analysis says existing cover is being replaced, a stage that requires
  * the needs analysis or the recommendation also requires a signed replacement disclosure.
  */
-export async function gateStatus(tx: Tx, stageId: string, boxId: string): Promise<GateStatus | null> {
+export async function gateStatus(tx: Tx, stageId: string, boxId: string, extra: readonly string[] = []): Promise<GateStatus | null> {
   const st = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1', [stageId])).rows[0];
   if (!st) return null;
   // A suitability review counts only while the check is switched on; switched off, the requirement is set aside.
   const required = (await tx.query<{ doc_type: string }>('SELECT doc_type FROM stage_doc_requirements WHERE stage_id = $1 ORDER BY doc_type', [stageId])).rows.map((r) => r.doc_type)
+    .concat(extra)
+    .filter((t, i, all) => all.indexOf(t) === i)
     .filter((t) => t !== 'suitability_review' || suitabilityEnabled());
   if (required.length === 0) return { stageId, stageName: st.name, required, filed: [], overridden: [], missing: [], unverified: [], needsExpiredOn: null };
   const months = await tenantSettingInt(tx, 'compliance.naValidityMonths', 12);
@@ -98,6 +101,8 @@ export async function startStageFor(tx: Tx, stageId: string): Promise<string> {
  *  A record created in the pipeline's first stage is not blocked by that stage's own paperwork. */
 export async function checkStageGates(tx: Tx, stageId: string, boxId: string, opts: { creating?: boolean } = {}): Promise<void> {
   const g = await applicableGates(tx, stageId);
+  // Company supervision rules (switched off by default) can add paperwork or a compliance review for this stage.
+  if (!opts.creating) await checkSupervision(tx, stageId, boxId);
   if (!g || g.gated.length === 0 || (opts.creating && g.first)) return;
   const rows = (await tx.query<{ list: string; result: string; createdAt: string }>('SELECT list, result, created_at AS "createdAt" FROM screening_results WHERE box_id = $1 ORDER BY created_at', [boxId])).rows;
   const hits = openScreeningHits(rows);
