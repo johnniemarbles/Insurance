@@ -23,7 +23,7 @@ export async function sweepComplianceAlerts(deps: AppDeps): Promise<number> {
           WHERE r.tenant_id = $1 AND r.role::text IN ('admin', 'compliance') AND u.status::text <> 'disabled'`, [t.tenant_id])).rows.map((x) => x.user_id);
       if (people.length === 0) continue;
       const items = await withRequestTx(deps.appPool, ctx, async (tx) => {
-        const out: { key: string; kind: 'aml_alert' | 'vault_alert' | 'first_week_late'; data: Record<string, unknown> }[] = [];
+        const out: { key: string; kind: 'aml_alert' | 'vault_alert' | 'first_week_late' | 'advice_reviews_waiting' | 'needs_review_due'; data: Record<string, unknown>; to?: string[] }[] = [];
         const cash = (await tx.query<{ id: string; box_id: string; name: string; amount: string; currency: string; occurred_on: string }>(
           `SELECT c.id, c.box_id, b.name, c.amount::text AS amount, c.currency, c.occurred_on::text AS occurred_on
              FROM cash_transactions c JOIN boxes b ON b.id = c.box_id
@@ -43,6 +43,17 @@ export async function sweepComplianceAlerts(deps: AppDeps): Promise<number> {
                 AND NOT EXISTS (SELECT 1 FROM vault_objects o WHERE o.document_id = a.document_id)`)).rows[0]!;
           if (v.n > 0) out.push({ key: `vault:${v.week}`, kind: 'vault_alert', data: { pending: v.n } });
         }
+        // Signed advice waiting for a compliance review: once a week while any is waiting.
+        const waiting = (await tx.query<{ n: number; flagged: number; week: string }>(
+          `SELECT count(*)::int AS n, count(*) FILTER (WHERE reason = 'flagged')::int AS flagged, to_char(date_trunc('week', now()), 'YYYY-MM-DD') AS week FROM advice_reviews WHERE status = 'pending'`)).rows[0]!;
+        if (waiting.n > 0) out.push({ key: `advice-reviews:${waiting.week}`, kind: 'advice_reviews_waiting', data: { pending: waiting.n, flagged: waiting.flagged } });
+        // A client's needs analysis expiring within 30 days (or already expired in the last 30): tell the record's owner, once per analysis.
+        const due = (await tx.query<{ id: string; box_id: string; name: string; valid_until: string; to: string | null }>(
+          `SELECT x.id, x.box_id, b.name, x.valid_until::text AS valid_until, coalesce(b.owner_user_id, x.created_by) AS to
+             FROM (SELECT DISTINCT ON (box_id) id, box_id, valid_until, created_by FROM advice_records WHERE kind = 'needs_analysis' AND status = 'signed' ORDER BY box_id, signed_at DESC) x
+             JOIN boxes b ON b.id = x.box_id JOIN stages s ON s.id = b.stage_id
+            WHERE NOT s.is_lost AND x.valid_until BETWEEN current_date - 30 AND current_date + 30 LIMIT 300`)).rows;
+        for (const d of due) if (d.to) out.push({ key: `na-due:${d.id}`, kind: 'needs_review_due', data: { boxId: d.box_id, name: d.name, validUntil: d.valid_until }, to: [d.to] });
         // A partner company created more than a week ago (but not long ago) that still has first-week steps open.
         const young = (await tx.query<{ id: string }>(
           `SELECT id FROM org_nodes WHERE type = 'partner' AND is_active AND created_at::date <= current_date - 7 AND created_at::date > current_date - 60 ORDER BY created_at LIMIT 100`)).rows;
@@ -55,7 +66,7 @@ export async function sweepComplianceAlerts(deps: AppDeps): Promise<number> {
       for (const it of items) {
         const fresh: string[] = [];
         await withRequestTx(deps.appPool, ctx, async (tx) => {
-          for (const uid of people) {
+          for (const uid of it.to ?? people) {
             const r = await tx.query('INSERT INTO reminder_marks (tenant_id, user_id, key) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [t.tenant_id, uid, it.key]);
             if (r.rowCount) fresh.push(uid);
           }

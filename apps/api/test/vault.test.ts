@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { bootstrapTenant, createPool, type Db } from '@pii/db';
 import { createTestDb, type TestDb } from '@pii/db/testing';
 import { loadConfig, localKeyProvider } from '@pii/platform';
+import { withAnswers } from './support/advice.ts';
 import { buildApp } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import type { Vault } from '../src/vault.ts';
@@ -34,7 +35,7 @@ async function seedUser(tenantId: string, email: string, home: string, role: str
 const ADMIN = 'admin@ad.test', PA = 'pa@ad.test', PB = 'pb@ad.test', OTHER = 'other@ad.test';
 let box = '';
 const PDF = Buffer.from('%PDF-1.4 test').toString('base64');
-const mk = (who: string, kind: string, extra: object = {}) => call(who, 'POST', `/v1/boxes/${box}/advice`, { kind, title: 'Needs analysis 2026', body: 'Client needs 20-year term cover for a mortgage.', clientName: 'Rita Client', clientEmail: 'rita@client.test', ...extra });
+const mk = (who: string, kind: string, extra: Record<string, unknown> = {}) => call(who, 'POST', `/v1/boxes/${box}/advice`, { kind, title: 'Needs analysis 2026', body: 'Client needs 20-year term cover for a mortgage.', clientName: 'Rita Client', clientEmail: 'rita@client.test', ...withAnswers(kind, extra) });
 
 before(async () => {
   db = await createTestDb('ca-qc');

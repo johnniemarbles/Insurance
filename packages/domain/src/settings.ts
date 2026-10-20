@@ -67,6 +67,18 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Smallest E&O coverage limit allowed', 'fr-CA': 'Plus petite limite de garantie E&O permise' }, help: { en: 'Partners must hold errors and omissions cover of at least this amount (in your country’s currency). 0 means no minimum. The country’s own minimum, if there is one, still applies.', 'fr-CA': 'Les partenaires doivent détenir une assurance responsabilité professionnelle d’au moins ce montant (dans la devise de votre pays). 0 signifie aucun minimum. Le minimum du pays, s’il y en a un, s’applique toujours.' }, keywords: 'compliance E&O errors omissions insurance limit minimum coverage',
   },
   {
+    key: 'compliance.naValidityMonths', tab: 'companyRules', type: 'int', default: 12, min: 1, max: 60, scopes: ['tenant'], lockable: false,
+    label: { en: 'A needs analysis stays current for (months)', 'fr-CA': 'Une analyse des besoins reste valide pendant (mois)' }, help: { en: 'After this, a new signed needs analysis is needed before the next application, and the advisor is reminded 30 days ahead.', 'fr-CA': 'Ensuite, une nouvelle analyse signée est exigée avant la prochaine proposition, et le conseiller reçoit un rappel 30 jours avant.' }, keywords: 'needs analysis expiry validity review months fact find',
+  },
+  {
+    key: 'compliance.reviewSamplePct', tab: 'companyRules', type: 'int', default: 10, min: 0, max: 100, scopes: ['tenant'], lockable: false,
+    label: { en: 'Advice files sampled for compliance review (%)', 'fr-CA': 'Dossiers de conseil échantillonnés pour revue de conformité (%)' }, help: { en: 'The share of signed advice picked at random for a compliance review. Flagged files and files from new advisors are always reviewed.', 'fr-CA': 'La part des conseils signés choisie au hasard pour une revue de conformité. Les dossiers signalés et ceux des nouveaux conseillers sont toujours revus.' }, keywords: 'compliance review sample sampling audit advice percent',
+  },
+  {
+    key: 'compliance.reviewNewAdvisorDays', tab: 'companyRules', type: 'int', default: 90, min: 0, max: 730, scopes: ['tenant'], lockable: false,
+    label: { en: 'Review every file from a new advisor for (days)', 'fr-CA': 'Revoir chaque dossier d’un nouveau conseiller pendant (jours)' }, help: { en: 'Counted from the advisor’s first signed advice. 0 turns this off.', 'fr-CA': 'Compté à partir du premier conseil signé du conseiller. 0 désactive cette règle.' }, keywords: 'new advisor review supervision days compliance',
+  },
+  {
     key: 'pipelines.partnerCreate', tab: 'companyRules', type: 'bool', default: true, scopes: ['tenant'], lockable: false,
     label: { en: 'Partners can make their own pipelines', 'fr-CA': 'Les partenaires peuvent créer leurs propres pipelines' }, help: { en: 'Partners can start a pipeline from scratch, from a template, or by copying one they can see. Turn off to keep pipelines with managers only.', 'fr-CA': 'Les partenaires peuvent créer un pipeline à partir de zéro, d’un modèle ou en copiant un pipeline visible. Désactivez pour réserver les pipelines aux gestionnaires.' }, keywords: 'pipeline partner create copy clone template own',
   },
@@ -130,6 +142,18 @@ export const SETTINGS: readonly SettingDef[] = [
   {
     key: 'notify.vault_alert', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
     label: { en: 'Signed paperwork is waiting to be archived', 'fr-CA': 'Des documents signés attendent d’être archivés' }, help: { en: 'Signed documents have waited more than a day to reach the archive vault. At most once a week. Sent to administrators and compliance.', 'fr-CA': 'Des documents signés attendent depuis plus d’un jour d’être copiés dans la voûte d’archives. Au plus une fois par semaine. Envoyé aux administrateurs et à la conformité.' }, keywords: 'notification alert vault archive signed paperwork storage',
+  },
+  {
+    key: 'notify.advice_reviews_waiting', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'Advice is waiting for a compliance review', 'fr-CA': 'Des conseils attendent une revue de conformité' }, help: { en: 'Signed advice picked for review has not been reviewed yet. At most once a week. Sent to administrators and compliance.', 'fr-CA': 'Des conseils signés choisis pour une revue n’ont pas encore été revus. Au plus une fois par semaine. Envoyé aux administrateurs et à la conformité.' }, keywords: 'notification alert advice review compliance sample needs analysis',
+  },
+  {
+    key: 'notify.needs_review_due', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'A client’s needs analysis is due for review', 'fr-CA': 'L’analyse des besoins d’un client est à revoir' }, help: { en: 'Sent to the record’s owner 30 days before a needs analysis stops being current.', 'fr-CA': 'Envoyé au responsable du dossier 30 jours avant qu’une analyse des besoins cesse d’être valide.' }, keywords: 'notification alert needs analysis review expiry client fact find',
+  },
+  {
+    key: 'notify.advice_review_decided', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,
+    label: { en: 'Compliance reviewed my advice', 'fr-CA': 'La conformité a revu mon conseil' }, help: { en: 'The outcome of a compliance review of advice you gave, with the reviewer’s findings.', 'fr-CA': 'Le résultat d’une revue de conformité d’un conseil que vous avez donné, avec les constats.' }, keywords: 'notification alert advice review outcome compliance findings',
   },
   {
     key: 'notify.learning_due', tab: 'notifications', type: 'bool', default: true, scopes: ALL, lockable: false,

@@ -14,7 +14,11 @@ export function signingTierFor(kind: AdviceKind): SigningTier {
 }
 /** A kind that also satisfies a file-completeness gate once signed. */
 export function gateTypeFor(kind: AdviceKind): string | null {
-  return kind === 'needs_analysis' || kind === 'beneficiary_designation' ? kind : null;
+  return kind;
 }
+/** Paperwork that only counts toward a gate when it is the signed advice record itself, or an upload a compliance person has verified. */
+export const ADVICE_DOC_TYPES: readonly string[] = ADVICE_KINDS;
+/** Kinds filled in on the structured form rather than as free text. */
+export const STRUCTURED_KINDS: readonly AdviceKind[] = ['needs_analysis', 'recommendation'];
 export const OTP_MINUTES = 15;
 export const OTP_MAX_ATTEMPTS = 5;

@@ -17,10 +17,10 @@ interface AutoRow {
 const MAX_DEPTH = 3;
 
 /** A record may enter a stage only when the fields that stage requires are filled in. */
-export async function checkStageRules(tx: Tx, stageId: string, boxId: string, gates = true): Promise<void> {
+export async function checkStageRules(tx: Tx, stageId: string, boxId: string, gates = true, fromStageId?: string | null): Promise<void> {
   const st = (await tx.query<{ name: string; required_fields: string[] }>('SELECT name, required_fields FROM stages WHERE id = $1', [stageId])).rows[0];
   if (!st) return;
-  if (st.required_fields.length === 0) { if (gates) await checkStageGates(tx, stageId, boxId); return; }
+  if (st.required_fields.length === 0) { if (gates) await checkStageGates(tx, stageId, boxId, fromStageId); return; }
   const b = (await tx.query<{ value_amount: string | null; close_date: string | null; owner_user_id: string | null; custom: Record<string, unknown>; pipeline_id: string }>(
     'SELECT value_amount, close_date, owner_user_id, custom, pipeline_id FROM boxes WHERE id = $1', [boxId],
   )).rows[0];
@@ -34,7 +34,7 @@ export async function checkStageRules(tx: Tx, stageId: string, boxId: string, ga
     return v == null || v === '' || v === false;
   }).map((k) => (k === 'value' ? 'Value' : k === 'closeDate' ? 'Close date' : k === 'owner' ? 'Owner' : (labels.find((l) => l.key === k)?.labels.en ?? k)));
   if (missing.length) throw invalid(`To move to “${st.name}”, fill in: ${missing.join(', ')}`);
-  if (gates) await checkStageGates(tx, stageId, boxId);
+  if (gates) await checkStageGates(tx, stageId, boxId, fromStageId);
 }
 
 /** Identifies one stay in a stage, so each automation acts once per stay. */
@@ -91,7 +91,7 @@ async function apply(tx: Tx, ctx: RequestContext, a: AutoRow, boxId: string, eff
     if (a.target_stage_id === b.stage_id) return;
     const to = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1 AND pipeline_id = $2', [a.target_stage_id, b.pipeline_id])).rows[0];
     if (!to) throw invalid('The target stage no longer exists');
-    await checkStageRules(tx, a.target_stage_id, boxId);
+    await checkStageRules(tx, a.target_stage_id, boxId, true, b.stage_id);
     const from = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1', [b.stage_id])).rows[0];
     await tx.query('UPDATE boxes SET stage_id = $2, stage_entered_at = now(), updated_at = now() WHERE id = $1', [boxId, a.target_stage_id]);
     await tx.query(`INSERT INTO box_events (tenant_id, box_id, kind, from_stage_id, to_stage_id, actor_id) VALUES ($1,$2,'stage_changed',$3,$4,$5)`, [ctx.tenantId, boxId, b.stage_id, a.target_stage_id, ctx.userId]);

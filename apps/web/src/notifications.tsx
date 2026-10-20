@@ -30,6 +30,9 @@ export const X = {
         case 'aml_alert': return `${n.data.name ?? 'A client file'}: ${n.data.issue === 'cash_overdue' ? `cash receipt of ${n.data.detail} on ${n.data.since} has no report reference` : `screening hit (${n.data.detail}) from ${n.data.since} has not been reviewed`}`;
         case 'first_week_late': return `${n.data.name ?? 'A partner'}: first week is over and ${Number(n.data.total) - Number(n.data.done)} of ${n.data.total} steps are still open`;
         case 'vault_alert': return `Archive vault: ${n.data.pending} signed document${n.data.pending === 1 ? '' : 's'} waiting more than a day to be copied`;
+        case 'advice_reviews_waiting': return `${n.data.pending} signed advice file${n.data.pending === 1 ? ' is' : 's are'} waiting for a compliance review${n.data.flagged ? ` (${n.data.flagged} flagged)` : ''}`;
+        case 'needs_review_due': return `${n.data.name}: needs analysis ${String(n.data.validUntil) < new Date().toISOString().slice(0, 10) ? 'expired on' : 'expires on'} ${n.data.validUntil}. Review it with the client`;
+        case 'advice_review_decided': return `Compliance review of “${n.data.title}”: ${n.data.outcome === 'passed' ? 'passed' : 'needs action'}${n.data.findings ? ` — ${n.data.findings}` : ''}`;
         case 'team_overdue': return `Training: ${n.data.overdue} learner${n.data.overdue === 1 ? ' is' : 's are'} overdue across your team`;
         case 'learning_due': return `${n.data.title || 'A course'} ${n.data.daysLeft < 0 ? `was due ${n.data.dueOn}` : n.data.daysLeft === 0 ? 'is due today' : `is due in ${n.data.daysLeft} days`}`;
         case 'course_request': return `${n.data.name ?? 'Someone'} asked to join “${n.data.course ?? 'a course'}”${n.data.note ? `: “${n.data.note}”` : ''}`;
@@ -64,6 +67,9 @@ export const X = {
         case 'aml_alert': return `${n.data.name ?? 'Un dossier client'} : ${n.data.issue === 'cash_overdue' ? `l’encaissement en espèces de ${n.data.detail} du ${n.data.since} n’a pas de référence de déclaration` : `le résultat de vérification (${n.data.detail}) du ${n.data.since} n’a pas été examiné`}`;
         case 'first_week_late': return `${n.data.name ?? 'Un partenaire'} : la première semaine est terminée et il reste ${Number(n.data.total) - Number(n.data.done)} étape(s) sur ${n.data.total}`;
         case 'vault_alert': return `Voûte d’archives : ${n.data.pending} document(s) signé(s) en attente de copie depuis plus d’un jour`;
+        case 'advice_reviews_waiting': return `${n.data.pending} dossier(s) de conseil signé(s) en attente de revue de conformité${n.data.flagged ? ` (${n.data.flagged} signalé(s))` : ''}`;
+        case 'needs_review_due': return `${n.data.name} : l’analyse des besoins ${String(n.data.validUntil) < new Date().toISOString().slice(0, 10) ? 'a expiré le' : 'expire le'} ${n.data.validUntil}. Revoyez-la avec le client`;
+        case 'advice_review_decided': return `Revue de conformité de « ${n.data.title} » : ${n.data.outcome === 'passed' ? 'réussie' : 'mesures demandées'}${n.data.findings ? ` — ${n.data.findings}` : ''}`;
         case 'team_overdue': return `Formation : ${n.data.overdue} apprenant(s) en retard dans votre équipe`;
         case 'learning_due': return `${n.data.title || 'Une formation'} ${n.data.daysLeft < 0 ? `devait être terminée le ${n.data.dueOn}` : n.data.daysLeft === 0 ? 'est due aujourd’hui' : `est due dans ${n.data.daysLeft} jours`}`;
         case 'course_request': return `${n.data.name ?? 'Quelqu’un'} demande à suivre « ${n.data.course ?? 'une formation'} »${n.data.note ? ` : « ${n.data.note} »` : ''}`;

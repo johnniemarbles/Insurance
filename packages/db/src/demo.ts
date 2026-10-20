@@ -431,12 +431,23 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
       const who = (id: string) => ctxRow.find((u) => u.id === id)?.name ?? 'Demo advisor';
       const cname = (b: { name: string }) => b.name.split(':')[0]!.trim();
       const hash = (t: string) => createHash('sha256').update(t).digest('hex');
+      // Structured fact-find and recommendation, the way the needs analysis form records them (demo figures only).
+      const DEMO_NEEDS = { productLine: 'life_health', maritalStatus: 'married', dependants: 2, occupation: 'Teacher', annualIncome: 72000, monthlyExpenses: 3800, liquidAssets: 15000, mortgage: 320000, otherDebts: 8000,
+        existingIndividual: 0, existingGroup: 72000, replacing: false, objectives: ['income_replacement', 'debt_payoff'], method: 'capital_needs', incomeYears: 8, finalExpenses: 15000, educationFund: 40000,
+        monthlyBudget: 120, licenceDisclosed: true, insurersDisclosed: true, compensationDisclosed: true, conflictsDisclosed: true, advisorLicence: 'DEMO-LIC-001', advisorProvince: 'ON', attestation: true };
+      const DEMO_REC = { product: 'Term 20 life', insurer: 'Demo Life Co.', coverageAmount: 870000, monthlyPremium: 98, reasons: 'Covers the calculated gap within the monthly budget.', alternatives: 'Term 10 (renews at a higher cost) and permanent life (over budget).',
+        clientDecision: 'accepted', illustrationDelivered: true, summaryDelivered: true, applicationCopyDelivered: true };
+      let lastNeeds: string | null = null;
       const advice = async (b: { id: string; name: string; owner: string }, kind: string, title: string, body: string, status: 'draft' | 'awaiting_signature' | 'signed', tier: 'builtin' | 'vendor', daysAgo: number, vendor?: [string, string]) => {
-        await client.query(
-          `INSERT INTO advice_records (tenant_id, box_id, kind, title, body, tier, status, client_name, client_email, content_hash, signed_at, signed_method, vendor_name, vendor_ref, created_by, created_at, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16)`,
+        const answers = kind === 'needs_analysis' ? DEMO_NEEDS : kind === 'recommendation' ? DEMO_REC : null;
+        const r = await client.query<{ id: string }>(
+          `INSERT INTO advice_records (tenant_id, box_id, kind, title, body, tier, status, client_name, client_email, content_hash, signed_at, signed_method, vendor_name, vendor_ref, created_by, created_at, updated_at, answers, linked_advice_id, valid_until)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16,$17,$18,$19) RETURNING id`,
           [tenantId, b.id, kind, title, body, tier, status, cname(b), `${cname(b).toLowerCase().replace(/[^a-z]+/g, '.')}@demo.invalid`, status === 'signed' ? hash(body) : null,
-            status === 'signed' ? ago(daysAgo) : null, status === 'signed' ? (tier === 'vendor' ? 'vendor' : 'otp') : null, vendor?.[0] ?? null, vendor?.[1] ?? null, b.owner, ago(daysAgo + 1)]);
+            status === 'signed' ? ago(daysAgo) : null, status === 'signed' ? (tier === 'vendor' ? 'vendor' : 'otp') : null, vendor?.[0] ?? null, vendor?.[1] ?? null, b.owner, ago(daysAgo + 1),
+            answers ? JSON.stringify(answers) : null, kind === 'recommendation' ? lastNeeds : null,
+            kind === 'needs_analysis' && status === 'signed' ? new Date(ago(daysAgo).getTime() + 365 * DAY).toISOString().slice(0, 10) : null]);
+        if (kind === 'needs_analysis') lastNeeds = r.rows[0]!.id;
         bump('advice_records');
       };
       const consent = async (b: { id: string; owner: string }, kind: string, daysAgo: number, withdrawn = false) => {

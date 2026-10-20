@@ -329,7 +329,7 @@ export function registerBoxRoutes(app: FastifyInstance, deps: AppDeps): void {
             `INSERT INTO box_events (tenant_id, box_id, kind, from_stage_id, to_stage_id, actor_id) VALUES ($1,$2,'stage_changed',$3,$4,$5)`,
             [ctx.tenantId, id, box.stageId, b.stageId, ctx.userId],
           );
-          await checkStageRules(tx, b.stageId, id);
+          await checkStageRules(tx, b.stageId, id, true, box.stageId);
           await fireAutomations(tx, ctx, id, b.stageId, 'enter', effects);
         }
         {

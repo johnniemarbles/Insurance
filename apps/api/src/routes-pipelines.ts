@@ -205,7 +205,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
   });
 
   // ---- the country library ----
-  interface TemplateRow { code: string; version: number; name: string; name_fr: string; description: string; description_fr: string; sort: number; stages: { en: string; fr: string; won: boolean; lost: boolean; req?: string[] }[]; fields: { key: string; en: string; fr: string; type: string; options?: string[]; required?: boolean }[] }
+  interface TemplateRow { code: string; version: number; name: string; name_fr: string; description: string; description_fr: string; sort: number; stages: { en: string; fr: string; won: boolean; lost: boolean; req?: string[]; docs?: string[] }[]; fields: { key: string; en: string; fr: string; type: string; options?: string[]; required?: boolean }[] }
   const country = deps.config.region === 'us' ? 'US' : 'CA';
 
   app.get('/v1/pipeline-templates', async (req) => {
@@ -237,7 +237,7 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
       const owner = b.ownerNodeId ?? (await defaultPlace(tx, ctx));
       const id = await makePipeline(tx, ctx, {
         name: b.name ?? (fr ? t.name_fr : t.name), owner, sharedDown: b.sharedDown ?? false, templateCode: t.code, templateVersion: t.version,
-        stages: t.stages.map((x) => ({ name: fr ? x.fr : x.en, isWon: x.won, isLost: x.lost, requiredFields: x.req ?? [] })),
+        stages: t.stages.map((x) => ({ name: fr ? x.fr : x.en, isWon: x.won, isLost: x.lost, requiredFields: x.req ?? [], requiredDocs: x.docs ?? [] })),
         fields: t.fields.map((f) => ({ key: f.key, labels: { en: f.en, 'fr-CA': f.fr }, type: f.type, ...(f.options ? { options: f.options } : {}), required: f.required ?? false })),
       });
       return { id };
@@ -368,6 +368,9 @@ export function registerPipelineRoutes(app: FastifyInstance, deps: AppDeps): voi
         await loadForManage(tx, ctx, id);
         const st = await tx.query('SELECT 1 FROM stages WHERE id = $1 AND pipeline_id = $2', [stageId, id]);
         if (st.rowCount === 0) throw notFound('Stage not found');
+        // A stage that requires paperwork is a compliance rule: deleting it would remove the rule, so only compliance may.
+        const gated = (await tx.query('SELECT 1 FROM stage_doc_requirements WHERE stage_id = $1 LIMIT 1', [stageId])).rowCount;
+        if (gated && !(ctx.isTenantAdmin || ctx.roles.some((r) => r.role === 'compliance'))) throw forbidden('This stage requires paperwork, so only an administrator or the compliance role can remove it');
         const count = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM stages WHERE pipeline_id = $1', [id])).rows[0]!.n;
         if (count <= 1) throw invalid('A pipeline needs at least one stage');
         const used = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM boxes WHERE stage_id = $1', [stageId])).rows[0]!.n;

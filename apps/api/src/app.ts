@@ -21,6 +21,7 @@ import { registerAliasRoutes } from './routes-alias.ts';
 import { registerDocumentRoutes } from './routes-documents.ts';
 import { registerGateRoutes } from './routes-gates.ts';
 import { registerAdviceRoutes } from './routes-advice.ts';
+import { registerAdviceReviewRoutes } from './routes-advice-review.ts';
 import { registerAmlRoutes } from './routes-aml.ts';
 import { registerSignRoutes } from './routes-sign.ts';
 import { registerVaultRoutes } from './routes-vault.ts';
@@ -206,6 +207,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerDocumentRoutes(app, deps);
   registerGateRoutes(app, deps);
   registerAdviceRoutes(app, deps);
+  registerAdviceReviewRoutes(app, deps);
   registerAmlRoutes(app, deps);
   registerSignRoutes(app, deps);
   registerVaultRoutes(app, deps);

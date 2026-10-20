@@ -8,6 +8,7 @@ import { loadConfig, localKeyProvider } from '@pii/platform';
 import { buildApp } from '../src/app.ts';
 import { devAuthenticator } from '../src/auth.ts';
 import { addBrokerFixture } from './support/broker.ts';
+import { withAnswers } from './support/advice.ts';
 
 let db: TestDb; let app: FastifyInstance; let pools: Db[] = [];
 let co: { tenantId: string };
@@ -27,7 +28,9 @@ async function seedUser(tenantId: string, email: string, home: string, role: str
 const ADMIN = 'admin@ad.test', PA = 'pa@ad.test', PB = 'pb@ad.test', OTHER = 'other@ad.test';
 let box = '';
 const PDF = Buffer.from('%PDF-1.4 test').toString('base64');
-const mk = (who: string, kind: string, extra: object = {}) => call(who, 'POST', `/v1/boxes/${box}/advice`, { kind, title: 'Needs analysis 2026', body: 'Client needs 20-year term cover for a mortgage.', clientName: 'Rita Client', clientEmail: 'rita@client.test', ...extra });
+let signedNa = '';
+const mk = (who: string, kind: string, extra: Record<string, unknown> = {}) => call(who, 'POST', `/v1/boxes/${box}/advice`, { kind, title: 'Needs analysis 2026', body: 'Client needs 20-year term cover for a mortgage.', clientName: 'Rita Client', clientEmail: 'rita@client.test',
+  ...withAnswers(kind, kind === 'recommendation' ? { linkedAdviceId: signedNa, ...extra } : extra) });
 
 before(async () => {
   db = await createTestDb('ca-qc');
@@ -43,6 +46,10 @@ before(async () => {
   await seedUser(co.tenantId, PA, NA, 'partner'); await seedUser(co.tenantId, PB, NB, 'partner');
   const pipe = (await call(ADMIN, 'POST', '/v1/pipelines', { name: 'Life', sharedDown: true, stages: [{ name: 'New' }, { name: 'Bound' }] })).json.id;
   box = (await call(PA, 'POST', '/v1/boxes', { pipelineId: pipe, name: 'Advice client' })).json.id;
+  // A recommendation answers a signed needs analysis on the same record.
+  signedNa = (await mk(PA, 'needs_analysis', { title: 'Base needs analysis' })).json.id;
+  const c = (await call(PA, 'POST', `/v1/advice/${signedNa}/send-code`)).json.devCode;
+  assert.equal((await call(PA, 'POST', `/v1/advice/${signedNa}/confirm`, { code: c })).status, 200);
 });
 after(async () => { await app.close(); await Promise.all(pools.map((p) => p.end())); await db.drop(); });
 

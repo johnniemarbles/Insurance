@@ -4,6 +4,8 @@ import { withRequestTx, type Tx } from '@pii/db';
 import { ADVICE_LABELS, OTP_MAX_ATTEMPTS, OTP_MINUTES, consentStates, type AdviceKind, type RequestContext } from '@pii/domain';
 import { audit } from './audit.ts';
 import { sealAdvice } from './advice-seal.ts';
+import { contentHash } from './routes-advice.ts';
+import { answersText, prepareForSignature } from './needs-analysis.ts';
 import { actingAs } from './effects.ts';
 import { HttpError, invalid, notFound } from './errors.ts';
 import { requireCrm, requireEdit, uuid } from './crm-helpers.ts';
@@ -17,14 +19,13 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const mask = (e: string | null) => (e ? e.replace(/^(.).*(@.*)$/, '$1***$2') : '');
 
 interface Link { id: string; tenant_id: string; advice_id: string; created_by: string; node_id: string; expires_at: Date; otp_hash: string | null; otp_expires_at: Date | null; otp_attempts: number; sends: number; used_at: Date | null }
-interface Adv { id: string; box_id: string; kind: AdviceKind; title: string; body: string; client_name: string; client_email: string | null; status: string; content_hash: string | null; tier: string }
+interface Adv { id: string; box_id: string; kind: AdviceKind; title: string; body: string; client_name: string; client_email: string | null; status: string; content_hash: string | null; tier: string; answers: Record<string, unknown> | null; linked_advice_id: string | null }
 
 /** The client side of signing: a private link, a code sent to the email on file, and a sealed PDF. Plus the advisor's button that makes the link. */
 export function registerSignRoutes(app: FastifyInstance, deps: AppDeps): void {
   const idp = { type: 'object', properties: { id: uuid } } as const;
   const tokenP = { type: 'object', properties: { token: { type: 'string', pattern: '^[A-Za-z0-9_-]{20,80}$' } } } as const;
   const actor = (l: Link): RequestContext => ({ ...actingAs(l.tenant_id, l.created_by, l.node_id), isTenantAdmin: true });
-  const contentHash = (a: Adv) => sha(JSON.stringify({ box: a.box_id, kind: a.kind, title: a.title, body: a.body, client: a.client_name, email: a.client_email ?? '' }));
 
   async function linkFor(token: string): Promise<Link> {
     const l = (await deps.authPool.query<Link>('SELECT * FROM signing_links WHERE token_hash = $1', [tokenHash(token)])).rows[0];
@@ -32,7 +33,7 @@ export function registerSignRoutes(app: FastifyInstance, deps: AppDeps): void {
     return l;
   }
   const loadAdvice = async (tx: Tx, id: string) => {
-    const a = (await tx.query<Adv>('SELECT id, box_id, kind, title, body, client_name, client_email, status, content_hash, tier FROM advice_records WHERE id = $1', [id])).rows[0];
+    const a = (await tx.query<Adv>('SELECT id, box_id, kind, title, body, client_name, client_email, status, content_hash, tier, answers, linked_advice_id FROM advice_records WHERE id = $1', [id])).rows[0];
     if (!a) throw notFound('Not found');
     return a;
   };
@@ -43,12 +44,13 @@ export function registerSignRoutes(app: FastifyInstance, deps: AppDeps): void {
     requireCrm(ctx);
     const { id } = req.params as { id: string };
     const info = await withRequestTx(deps.appPool, ctx, async (tx) => {
-      const r = (await tx.query<Adv & { owner_node_id: string }>('SELECT a.id, a.box_id, a.kind, a.title, a.body, a.client_name, a.client_email, a.status, a.content_hash, a.tier, b.owner_node_id FROM advice_records a JOIN boxes b ON b.id = a.box_id WHERE a.id = $1', [id])).rows[0];
+      const r = (await tx.query<Adv & { owner_node_id: string }>('SELECT a.id, a.box_id, a.kind, a.title, a.body, a.client_name, a.client_email, a.status, a.content_hash, a.tier, a.answers, a.linked_advice_id, b.owner_node_id FROM advice_records a JOIN boxes b ON b.id = a.box_id WHERE a.id = $1', [id])).rows[0];
       if (!r) throw notFound('Advice record not found');
       requireEdit(ctx, r.owner_node_id);
       if (r.tier !== 'builtin') throw new HttpError(409, 'needs_vendor', 'This kind of paperwork must be signed through a certified e-signature vendor.');
       if (r.status === 'signed') throw new HttpError(409, 'advice_locked', 'Already signed');
       if (!r.client_email) throw invalid('Add the client’s email address first');
+      await prepareForSignature(tx, r);
       const cs = (await tx.query<{ kind: string; createdAt: string; withdrawnAt: string | null }>(`SELECT kind, created_at AS "createdAt", withdrawn_at AS "withdrawnAt" FROM client_consents WHERE box_id = $1 AND kind = 'electronic_comms' ORDER BY created_at`, [r.box_id])).rows;
       const canEmail = !consentStates(cs).withdrawn.includes('electronic_comms');
       await audit(tx, ctx, 'signing_link_created', 'box', r.box_id, { adviceId: id });
@@ -84,7 +86,7 @@ export function registerSignRoutes(app: FastifyInstance, deps: AppDeps): void {
     const firm = (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [l.tenant_id])).rows[0]?.name ?? '';
     return withRequestTx(deps.appPool, actor(l), async (tx) => {
       const a = await loadAdvice(tx, l.advice_id);
-      return { firm, title: a.title, kind: ADVICE_LABELS[a.kind], body: a.body, clientName: a.client_name, emailHint: mask(a.client_email), signed: a.status === 'signed', codeSent: !!l.otp_hash && !!l.otp_expires_at && l.otp_expires_at.getTime() > Date.now(), minutes: OTP_MINUTES };
+      return { firm, title: a.title, kind: ADVICE_LABELS[a.kind], body: a.answers ? `${a.body}\n\n${answersText(a.kind, a.answers)}` : a.body, clientName: a.client_name, emailHint: mask(a.client_email), signed: a.status === 'signed', codeSent: !!l.otp_hash && !!l.otp_expires_at && l.otp_expires_at.getTime() > Date.now(), minutes: OTP_MINUTES };
     });
   });
 
@@ -96,6 +98,7 @@ export function registerSignRoutes(app: FastifyInstance, deps: AppDeps): void {
     const info = await withRequestTx(deps.appPool, actor(l), async (tx) => {
       const a = await loadAdvice(tx, l.advice_id);
       if (a.status === 'signed') throw new HttpError(409, 'advice_locked', 'This has already been signed.');
+      try { await prepareForSignature(tx, a); } catch { throw new HttpError(409, 'not_ready', 'This document is not ready to sign yet. Please contact your advisor.'); }
       const cs = (await tx.query<{ kind: string; createdAt: string; withdrawnAt: string | null }>(`SELECT kind, created_at AS "createdAt", withdrawn_at AS "withdrawnAt" FROM client_consents WHERE box_id = $1 AND kind = 'electronic_comms' ORDER BY created_at`, [a.box_id])).rows;
       if (consentStates(cs).withdrawn.includes('electronic_comms')) throw new HttpError(409, 'comms_withdrawn', 'Electronic messages are turned off for this file. Please contact your advisor to sign another way.');
       await tx.query(`UPDATE advice_records SET status = 'awaiting_signature', content_hash = $2, updated_at = now() WHERE id = $1`, [a.id, contentHash(a)]);

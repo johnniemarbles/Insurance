@@ -124,7 +124,7 @@ export function registerEsignRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (enabled.some((v) => v.enabled) && !enabled.some((v) => v.vendor === VENDOR && v.enabled)) throw invalid('Adobe Acrobat Sign is not turned on for your company');
       const client = await clientFor(tx, ctx.tenantId);
       const firm = (await tx.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [ctx.tenantId])).rows[0]?.name ?? '';
-      const pdf = await unsignedAdvicePdf({ kind: r.kind, title: r.title, body: r.body, clientName: r.client_name, firm });
+      const pdf = await unsignedAdvicePdf({ kind: r.kind, title: r.title, body: r.body, clientName: r.client_name, firm, answers: r.answers });
       let ext: string;
       try { ext = await client.send({ name: r.title.replace(/[^\w .-]/g, '_').slice(0, 120) || 'Document', pdf, signerEmail: r.client_email, message: `${firm}: please review and sign.` }); } catch (e) { return vendorFail(e); }
       await tx.query(`INSERT INTO esign_envelopes (tenant_id, advice_id, vendor, external_id, signer_email, sent_by) VALUES ($1,$2,$3,$4,$5,$6)`, [ctx.tenantId, id, VENDOR, ext, r.client_email, ctx.userId]);

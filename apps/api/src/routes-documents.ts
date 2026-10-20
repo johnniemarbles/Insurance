@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { withRequestTx, type Tx } from '@pii/db';
-import { DOC_TYPES, type RequestContext } from '@pii/domain';
+import { ADVICE_DOC_TYPES, DOC_TYPES, type RequestContext } from '@pii/domain';
 import { open, seal } from '@pii/platform';
 import { audit } from './audit.ts';
-import { HttpError, invalid, notFound } from './errors.ts';
+import { HttpError, forbidden, invalid, notFound } from './errors.ts';
+import { canWaive } from './routes-gates.ts';
 import { requireCrm, requireEdit, uuid } from './crm-helpers.ts';
 import { notify } from './notify.ts';
 import type { AppDeps } from './app.ts';
@@ -39,10 +40,37 @@ export function registerDocumentRoutes(app: FastifyInstance, deps: AppDeps): voi
     return run(ctx, async (tx) => {
       await box(tx, id);
       const rows = (await tx.query(
-        `SELECT d.id, d.name, d.mime, d.doc_type AS "docType", d.size_bytes AS "sizeBytes", d.created_at AS "createdAt", coalesce(u.display_name, u.email::text) AS "uploadedBy"
-           FROM box_documents d LEFT JOIN app_users u ON u.id = d.uploaded_by WHERE d.box_id = $1 ORDER BY d.created_at DESC LIMIT 200`, [id])).rows;
-      return { documents: rows, maxBytes: MAX_BYTES, types: Object.values(TYPES).flat() };
+        `SELECT d.id, d.name, d.mime, d.doc_type AS "docType", d.size_bytes AS "sizeBytes", d.created_at AS "createdAt", coalesce(u.display_name, u.email::text) AS "uploadedBy",
+                d.verified_at AS "verifiedAt", d.verified_name AS "verifiedBy", d.verified_note AS "verifiedNote",
+                EXISTS (SELECT 1 FROM advice_records a WHERE a.document_id = d.id AND a.status = 'signed') AS "fromAdvice",
+                (d.doc_type = ANY($2::text[]) AND d.verified_at IS NULL AND NOT EXISTS (SELECT 1 FROM advice_records a WHERE a.document_id = d.id AND a.status = 'signed')) AS "needsVerify",
+                d.uploaded_by = $3 AS "mine"
+           FROM box_documents d LEFT JOIN app_users u ON u.id = d.uploaded_by WHERE d.box_id = $1 ORDER BY d.created_at DESC LIMIT 200`, [id, ADVICE_DOC_TYPES, ctx.userId])).rows;
+      return { documents: rows, maxBytes: MAX_BYTES, types: Object.values(TYPES).flat(), canVerify: canWaive(ctx) };
     });
+  });
+
+  // Advice paperwork done on paper (needs analysis, recommendation, ...) counts toward a gate only once compliance has checked it.
+  // The person who uploaded it cannot verify it; a verification is permanent.
+  app.post('/v1/documents/:id/verify', {
+    schema: { params: idp, body: { type: 'object', required: ['note'], additionalProperties: false, properties: { note: { type: 'string', minLength: 10, maxLength: 500 } } } },
+  }, async (req, reply) => {
+    const { ctx } = await deps.authenticate(req);
+    requireCrm(ctx);
+    if (!canWaive(ctx)) throw forbidden('Only an administrator or the compliance role can verify advice paperwork');
+    const { id } = req.params as { id: string };
+    const { note } = req.body as { note: string };
+    await run(ctx, async (tx) => {
+      const d = (await tx.query<{ box_id: string; doc_type: string | null; uploaded_by: string | null; verified_at: string | null }>('SELECT box_id, doc_type, uploaded_by, verified_at FROM box_documents WHERE id = $1', [id])).rows[0];
+      if (!d) throw notFound('Document not found');
+      if (!d.doc_type || !ADVICE_DOC_TYPES.includes(d.doc_type)) throw invalid('Only advice paperwork needs verifying');
+      if (d.verified_at) throw new HttpError(409, 'already_verified', 'This document is already verified');
+      if (d.uploaded_by === ctx.userId) throw forbidden('Someone other than the person who uploaded it must verify it');
+      const who = (await tx.query<{ n: string }>('SELECT coalesce(display_name, email::text) AS n FROM app_users WHERE id = $1', [ctx.userId])).rows[0]!.n;
+      await tx.query('UPDATE box_documents SET verified_by = $2, verified_name = $3, verified_note = $4, verified_at = now() WHERE id = $1', [id, ctx.userId, who, note.trim()]);
+      await audit(tx, ctx, 'document_verified', 'box', d.box_id, { documentId: id, docType: d.doc_type, note: note.trim() });
+    });
+    return reply.code(204).send();
   });
 
   app.post('/v1/boxes/:id/documents', {

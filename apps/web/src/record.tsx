@@ -63,10 +63,10 @@ function FieldInput({ f, value, onChange, locale, disabled }: { f: FieldDef; val
 }
 
 const DX = {
-  'en': { tab: 'Files', h: 'Documents', none: 'No documents yet.', add: 'Add a document', help: 'PDF, images, Word, Excel, PowerPoint, text or CSV, up to 8 MB. Stored in PII only, encrypted, and seen by whoever can see this record.', del: 'Remove', confirm: 'Remove this document for everyone?', big: 'That file is over 8 MB.', by: 'added by', open: 'Download', busy: 'Working…', saved: 'Saved', pkg: 'Export audit package', removed: 'Removed', wait: 'Uploading and encrypting…', req: 'Required paperwork', here: 'current stage', waive: 'Waive…', waiveHelp: 'A waiver is permanent and names you. Say why this record may go ahead without it.', reason: 'Reason (at least 10 characters)', waiveGo: 'Waive for this record', cancel: 'Cancel', waived: 'Waiver recorded', kind: 'Document type', untyped: 'Document type (optional)' },
-  'fr-CA': { tab: 'Fichiers', h: 'Documents', none: 'Aucun document pour l’instant.', add: 'Ajouter un document', help: 'PDF, images, Word, Excel, PowerPoint, texte ou CSV, jusqu’à 8 Mo. Conservé dans PII seulement, chiffré, et visible par toute personne qui voit ce dossier.', del: 'Retirer', confirm: 'Retirer ce document pour tout le monde?', big: 'Ce fichier dépasse 8 Mo.', by: 'ajouté par', open: 'Télécharger', busy: 'En cours…', saved: 'Enregistré', pkg: 'Exporter le dossier d’audit', removed: 'Retiré', wait: 'Téléversement et chiffrement…', req: 'Documents requis', here: 'étape actuelle', waive: 'Déroger…', waiveHelp: 'Une dérogation est permanente et porte votre nom. Expliquez pourquoi ce dossier peut avancer sans ce document.', reason: 'Motif (au moins 10 caractères)', waiveGo: 'Déroger pour ce dossier', cancel: 'Annuler', waived: 'Dérogation enregistrée', kind: 'Type de document', untyped: 'Type de document (facultatif)' },
+  'en': { tab: 'Files', vfy: 'Verify', vfyNote: 'What you checked (at least 10 characters)', vfyGo: 'Mark verified', vfyNeed: 'Needs compliance verification before it counts', vfyDone: 'Verified by', vfyOk: 'Verified', expired: 'The last needs analysis expired on', unverified: 'Uploaded but not yet verified:', h: 'Documents', none: 'No documents yet.', add: 'Add a document', help: 'PDF, images, Word, Excel, PowerPoint, text or CSV, up to 8 MB. Stored in PII only, encrypted, and seen by whoever can see this record.', del: 'Remove', confirm: 'Remove this document for everyone?', big: 'That file is over 8 MB.', by: 'added by', open: 'Download', busy: 'Working…', saved: 'Saved', pkg: 'Export audit package', removed: 'Removed', wait: 'Uploading and encrypting…', req: 'Required paperwork', here: 'current stage', waive: 'Waive…', waiveHelp: 'A waiver is permanent and names you. Say why this record may go ahead without it.', reason: 'Reason (at least 10 characters)', waiveGo: 'Waive for this record', cancel: 'Cancel', waived: 'Waiver recorded', kind: 'Document type', untyped: 'Document type (optional)' },
+  'fr-CA': { tab: 'Fichiers', vfy: 'Vérifier', vfyNote: 'Ce que vous avez vérifié (au moins 10 caractères)', vfyGo: 'Marquer comme vérifié', vfyNeed: 'Doit être vérifié par la conformité avant de compter', vfyDone: 'Vérifié par', vfyOk: 'Vérifié', expired: 'La dernière analyse des besoins a expiré le', unverified: 'Téléversé mais pas encore vérifié :', h: 'Documents', none: 'Aucun document pour l’instant.', add: 'Ajouter un document', help: 'PDF, images, Word, Excel, PowerPoint, texte ou CSV, jusqu’à 8 Mo. Conservé dans PII seulement, chiffré, et visible par toute personne qui voit ce dossier.', del: 'Retirer', confirm: 'Retirer ce document pour tout le monde?', big: 'Ce fichier dépasse 8 Mo.', by: 'ajouté par', open: 'Télécharger', busy: 'En cours…', saved: 'Enregistré', pkg: 'Exporter le dossier d’audit', removed: 'Retiré', wait: 'Téléversement et chiffrement…', req: 'Documents requis', here: 'étape actuelle', waive: 'Déroger…', waiveHelp: 'Une dérogation est permanente et porte votre nom. Expliquez pourquoi ce dossier peut avancer sans ce document.', reason: 'Motif (au moins 10 caractères)', waiveGo: 'Déroger pour ce dossier', cancel: 'Annuler', waived: 'Dérogation enregistrée', kind: 'Type de document', untyped: 'Type de document (facultatif)' },
 };
-interface Doc { id: string; name: string; mime: string; sizeBytes: number; createdAt: string; uploadedBy: string | null; docType?: string | null }
+interface Doc { id: string; name: string; mime: string; sizeBytes: number; createdAt: string; uploadedBy: string | null; docType?: string | null; needsVerify?: boolean; verifiedAt?: string | null; verifiedBy?: string | null; mine?: boolean }
 const MIME_BY_EXT: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', txt: 'text/plain', csv: 'text/csv', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' };
 const size = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call; locale: Locale; canEdit: boolean }) {
@@ -76,10 +76,13 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
   const [busy, setBusy] = useState(false);
   const [ok, setOk] = useState('');
   const [dtype, setDtype] = useState('');
-  const [gates, setGates] = useState<{ gates: { stageId: string; stageName: string; current: boolean; required: string[]; missing: string[]; overridden: string[] }[]; overrides: { id: string; stageId: string; docTypes: string[]; reason: string; approvedBy: string; createdAt: string }[]; canWaive: boolean } | null>(null);
+  const [canVerify, setCanVerify] = useState(false);
+  const [vfy, setVfy] = useState<{ id: string; note: string } | null>(null);
+  const [gates, setGates] = useState<{ gates: { stageId: string; stageName: string; current: boolean; required: string[]; missing: string[]; overridden: string[]; unverified?: string[]; needsExpiredOn?: string | null }[]; overrides: { id: string; stageId: string; docTypes: string[]; reason: string; approvedBy: string; createdAt: string }[]; canWaive: boolean } | null>(null);
   const [waive, setWaive] = useState<{ stageId: string; types: string[]; reason: string } | null>(null);
   const loadGates = () => call('GET', `/v1/boxes/${boxId}/gates`).then(setGates, () => undefined);
-  const load = () => { void loadGates(); return call('GET', `/v1/boxes/${boxId}/documents`).then((r) => setDocs(r.documents), (e) => setErr((e as Error).message)); };
+  const load = () => { void loadGates(); return call('GET', `/v1/boxes/${boxId}/documents`).then((r) => { setDocs(r.documents); setCanVerify(!!r.canVerify); }, (e) => setErr((e as Error).message)); };
+  const verify = async () => { if (!vfy) return; setErr(''); try { await call('POST', `/v1/documents/${vfy.id}/verify`, { note: vfy.note.trim() }); setVfy(null); await load(); setOk(`✓ ${x.vfyOk}`); } catch (e2) { setErr((e2 as Error).message); } };
   useEffect(() => { void load(); }, [boxId]);
   const sendWaiver = async () => {
     if (!waive) return; setErr('');
@@ -126,6 +129,8 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
             <div key={g.stageId} style={{ marginBottom: '6px' }}>
               <strong>{g.stageName}</strong>{g.current ? ` (${x.here})` : ''}
               <div>{g.required.map((k) => <span key={k} style={{ marginRight: '10px', color: g.missing.includes(k) ? '#b3261e' : '#137333' }}>{g.missing.includes(k) ? '✕' : g.overridden.includes(k) ? '⚖' : '✓'} {docLabel(k, locale)}</span>)}</div>
+              {g.needsExpiredOn && <small style={{ display: 'block', color: '#b3261e' }}>{x.expired} {g.needsExpiredOn}</small>}
+              {(g.unverified ?? []).length > 0 && <small style={{ display: 'block', color: '#8a5a00' }}>{x.unverified} {(g.unverified ?? []).map((k) => docLabel(k, locale)).join(', ')}</small>}
               {gates.canWaive && g.missing.length > 0 && <button class="btn quiet" onClick={() => setWaive({ stageId: g.stageId, types: [...g.missing], reason: '' })}>{x.waive}</button>}
             </div>
           ))}
@@ -162,6 +167,16 @@ function Documents({ boxId, call, locale, canEdit }: { boxId: string; call: Call
         <div class="ev" key={d.id}>
           <button class="link" onClick={() => void download(d)} aria-label={`${x.open} ${d.name}`}>{d.name}</button>
           <small>{d.docType ? `${docLabel(d.docType, locale)} · ` : ''}{size(d.sizeBytes)} · {x.by} {d.uploadedBy ?? '—'} · {when(d.createdAt, locale)}</small>
+          {d.verifiedAt && <small style={{ display: 'block', color: '#137333' }}>✓ {x.vfyDone} {d.verifiedBy} · {when(d.verifiedAt, locale)}</small>}
+          {d.needsVerify && <small style={{ display: 'block', color: '#8a5a00' }}>⚠ {x.vfyNeed}</small>}
+          {d.needsVerify && canVerify && !d.mine && vfy?.id !== d.id && <button class="btn quiet" onClick={() => setVfy({ id: d.id, note: '' })}>{x.vfy}</button>}
+          {vfy?.id === d.id && (
+            <div class="confirm" style={{ display: 'block' }}>
+              <textarea aria-label={x.vfyNote} placeholder={x.vfyNote} value={vfy.note} onInput={(e) => setVfy({ ...vfy, note: (e.target as HTMLTextAreaElement).value })} style={{ width: '100%' }} />
+              <button class="btn" disabled={vfy.note.trim().length < 10} onClick={() => void verify()}>{x.vfyGo}</button>{' '}
+              <button class="btn quiet" onClick={() => setVfy(null)}>{x.cancel}</button>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
             <button class="btn quiet" onClick={() => void download(d)} aria-label={`${x.open} ${d.name}`}>⬇ {x.open}</button>
             {canEdit && <button class="ib danger" aria-label={`${x.del} ${d.name}`} onClick={() => void remove(d)}>✕</button>}
