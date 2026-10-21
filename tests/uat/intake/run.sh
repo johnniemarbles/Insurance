@@ -8,6 +8,7 @@ DB=postgres://postgres:pw@127.0.0.1:5432/pii_uat_in
 psql -q -h 127.0.0.1 -U postgres -c "DROP DATABASE IF EXISTS pii_uat_in" -c "CREATE DATABASE pii_uat_in"
 (cd "$ROOT" && DATABASE_URL=$DB node packages/db/src/cli.ts migrate >/dev/null && DATABASE_URL=$DB node packages/db/src/cli.ts bootstrap-deployment --region ca-qc --environment dev >/dev/null \
   && DATABASE_URL=$DB node packages/db/src/cli.ts create-tenant --name "Punjab Insurance Agency Inc" --country CA --admin-email sanjeev@uat.test --admin-name Sanjeev >/dev/null)
+psql -q -h 127.0.0.1 -U postgres -c "ALTER ROLE app_runtime WITH LOGIN PASSWORD 'pw'; ALTER ROLE app_auth WITH LOGIN PASSWORD 'pw';" 2>/dev/null || true
 (cd "$ROOT" && npm run build --workspace @pii/web >/dev/null)
 mkdir -p "$OUT"; FILES="$(mktemp -d)"; printf '%%PDF-1.4\n%% sample policy statement for the walkthrough\n' > "$FILES/policy-statement.pdf"
 (cd "$ROOT" && APP_ENV=dev REGION=ca-qc PORT=3103 LOG_LEVEL=warn DEV_AUTH=true INTAKE_ENABLED=1 DATABASE_URL=$DB \

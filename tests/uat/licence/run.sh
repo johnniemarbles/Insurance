@@ -8,6 +8,7 @@ DB=postgres://postgres:pw@127.0.0.1:5432/pii_uat_lc
 psql -q -h 127.0.0.1 -U postgres -c "DROP DATABASE IF EXISTS pii_uat_lc" -c "CREATE DATABASE pii_uat_lc"
 (cd "$ROOT" && DATABASE_URL=$DB node packages/db/src/cli.ts migrate >/dev/null && DATABASE_URL=$DB node packages/db/src/cli.ts bootstrap-deployment --region ca-qc --environment dev >/dev/null \
   && DATABASE_URL=$DB node packages/db/src/cli.ts create-tenant --name "Punjab Insurance Agency Inc" --country CA --admin-email sanjeev@uat.test --admin-name Sanjeev >/dev/null)
+psql -q -h 127.0.0.1 -U postgres -c "ALTER ROLE app_runtime WITH LOGIN PASSWORD 'pw'; ALTER ROLE app_auth WITH LOGIN PASSWORD 'pw';" 2>/dev/null || true
 (cd "$ROOT" && npm run build --workspace @pii/web >/dev/null)
 mkdir -p "$OUT"; FILES="$(mktemp -d)"
 python3 -c "

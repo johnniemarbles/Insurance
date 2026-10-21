@@ -11,12 +11,37 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
-SUITES=("${@:-licence intake}")
+export PGPASSWORD="${PGPASSWORD:-pw}"
+DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_USER="${DB_USER:-postgres}"
+
+if [ "$#" -gt 0 ]; then
+  SUITES=("$@")
+else
+  SUITES=("licence" "intake")
+fi
 
 echo "=========================================================="
 echo "🚀 Starting Playwright E2E Smoke Gate"
 echo "Suites: ${SUITES[*]}"
 echo "=========================================================="
+
+# Ensure database roles for runtime and auth can log in
+psql -q -h "$DB_HOST" -U "$DB_USER" -c "
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_runtime') THEN
+    CREATE ROLE app_runtime WITH LOGIN PASSWORD 'pw' NOBYPASSRLS;
+  ELSE
+    ALTER ROLE app_runtime WITH LOGIN PASSWORD 'pw';
+  END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_auth') THEN
+    CREATE ROLE app_auth WITH LOGIN PASSWORD 'pw' NOBYPASSRLS;
+  ELSE
+    ALTER ROLE app_auth WITH LOGIN PASSWORD 'pw';
+  END IF;
+END
+\$\$;" 2>/dev/null || true
 
 # 1. Prebuild web application assets
 echo "🔨 Building web bundle..."

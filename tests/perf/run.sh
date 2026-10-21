@@ -29,6 +29,8 @@ psql -q -h "$DB_HOST" -U "$DB_USER" -c "DROP DATABASE IF EXISTS ${DB_NAME}" -c "
 (cd "$ROOT" && DATABASE_URL="$DB_URL" node packages/db/src/cli.ts bootstrap-deployment --region ca-qc --environment dev >/dev/null)
 (cd "$ROOT" && DATABASE_URL="$DB_URL" node packages/db/src/cli.ts create-tenant --name "Punjab Insurance Agency Inc" --country CA --admin-email sanjeev@uat.test --admin-name Sanjeev >/dev/null)
 
+psql -q -h "$DB_HOST" -U "$DB_USER" -c "ALTER ROLE app_runtime WITH LOGIN PASSWORD '${PGPASSWORD}';" -c "ALTER ROLE app_auth WITH LOGIN PASSWORD '${PGPASSWORD}';" 2>/dev/null || true
+
 echo "📦 Seeding baseline data for load test..."
 (cd "$ROOT" && npm run build --workspace @pii/web >/dev/null)
 
