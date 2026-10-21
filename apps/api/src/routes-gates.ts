@@ -9,6 +9,7 @@ import { requireCrm, uuid } from './crm-helpers.ts';
 import { gateStatus } from './gates.ts';
 import { clientFilePackage, producerPackage } from './audit-package.ts';
 import type { AppDeps } from './app.ts';
+import { registerProblemNodes } from './routes-licence-checks.ts';
 
 /** The people who may waive a paperwork requirement for one record, and who may set the requirements. */
 export const canWaive = (ctx: RequestContext) => ctx.isTenantAdmin || ctx.roles.some((r) => r.role === 'compliance');
@@ -138,7 +139,8 @@ export function registerGateRoutes(app: FastifyInstance, deps: AppDeps): void {
           WHERE n.type = 'partner' AND n.is_active AND org_node_at_or_below(n.tenant_id, n.id)
           ORDER BY n.name LIMIT 1000`)).rows;
       const ceShort = await cePriorShortNodes(tx);
-      const all = rows.map((r) => ({ nodeId: r.id, name: r.name, reasons: clearanceReasons({ status: r.status, licences: r.licences, validLicences: r.validLicences, eoPolicies: r.eoPolicies, validEo: r.validEo, eoMaxLimit: r.eoMax, eoMin, cePriorShort: ceShort.has(r.id) }) }));
+      const regProblem = await registerProblemNodes(tx);
+      const all = rows.map((r) => ({ nodeId: r.id, name: r.name, reasons: clearanceReasons({ status: r.status, licences: r.licences, validLicences: r.validLicences, eoPolicies: r.eoPolicies, validEo: r.validEo, eoMaxLimit: r.eoMax, eoMin, cePriorShort: ceShort.has(r.id), registerProblem: regProblem.has(r.id) }) }));
       const notCleared = all.filter((a) => a.reasons.length > 0);
       return { total: all.length, cleared: all.length - notCleared.length, notCleared };
     });

@@ -161,7 +161,8 @@ export function aiProvidersFromEnv(env: Record<string, string | undefined> = pro
         const m = /\[([CRA]1)\] ([^\n]+)/.exec(user); return m ? `From your records: ${m[2]!.slice(0, 160)} [${m[1]}]` : 'Nothing found.'; } };
       if (p !== 'anthropic') out[p]!.transcribe = async () => 'Speaker 1: Thanks for meeting, Raj. Speaker 2: I renewed my mortgage and want to check my life cover.';
       // The licence check: always reads Raj Singh, born 1980-04-12; an image under 1 KB reads as unclear.
-      if (p === 'gemini') out[p]!.see = async ({ images }) => {
+      if (p === 'gemini') out[p]!.see = async ({ system, images }) => {
+        if (system.includes('public register')) return JSON.stringify({ holderName: 'SANDHU, HARPREET KAUR', licenceNumber: '12345-M', licenceClass: 'Life and accident and sickness', status: 'active', expiryDate: '2027-03-31', conditions: [], disciplinaryActions: [] });
         const clear = images.every((i) => i.data.length >= 1024);
         return JSON.stringify({ isDriversLicence: true, issuingRegion: 'CA-ON', fullName: clear ? 'RAJ KUMAR SINGH' : null, dateOfBirth: clear ? '1980-04-12' : null, expiryDate: '2030-06-30', looksGenuine: clear, selfieMatches: clear ? 'yes' : 'unclear', concerns: clear ? [] : ['The photo is too small to read'] });
       };

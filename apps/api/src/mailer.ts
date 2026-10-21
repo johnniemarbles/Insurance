@@ -78,6 +78,12 @@ export function reminderText(kind: string, d: D, loc: Locale): { subject: string
       return { subject: fr ? 'Voûte d’archives : documents en attente' : 'Archive vault: documents waiting',
         line: fr ? `${n} document(s) signé(s) attendent depuis plus d’un jour d’être copiés dans la voûte d’archives` : `${n} signed document${n === 1 ? ' has' : 's have'} waited more than a day to be copied to the archive vault` };
     }
+    case 'licence_check': {
+      const st = String(d.status ?? '').replace(/_/g, ' ');
+      return d.issue === 'adverse'
+        ? { subject: fr ? 'Vérification de permis : problème au registre' : 'Licence check: register problem', line: fr ? `${d.name ?? 'Un partenaire'} : le registre de l’organisme de réglementation indique « ${st} » pour ${d.label ?? 'un permis'}. Le partenaire n’est plus autorisé à transiger.` : `${d.name ?? 'A partner'}: the regulator's register shows "${st}" for ${d.label ?? 'a licence'}. The partner is no longer cleared to transact.` }
+        : { subject: fr ? 'Vérification de permis à faire' : 'Licence check due', line: fr ? `${d.name ?? 'Un partenaire'} : vérifiez ${d.label ?? 'le permis'} au registre de l’organisme de réglementation (échéance ${d.due}).` : `${d.name ?? 'A partner'}: check ${d.label ?? 'the licence'} on the regulator's register (due ${d.due}).` };
+    }
     case 'advice_reviews_waiting': {
       const n = Number(d.pending) || 0, fl = Number(d.flagged) || 0;
       return { subject: fr ? 'Conseils en attente de revue de conformité' : 'Advice waiting for compliance review',

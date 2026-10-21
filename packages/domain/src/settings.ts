@@ -71,6 +71,10 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'A needs analysis stays current for (months)', 'fr-CA': 'Une analyse des besoins reste valide pendant (mois)' }, help: { en: 'After this, a new signed needs analysis is needed before the next application, and the advisor is reminded 30 days ahead.', 'fr-CA': 'Ensuite, une nouvelle analyse signée est exigée avant la prochaine proposition, et le conseiller reçoit un rappel 30 jours avant.' }, keywords: 'needs analysis expiry validity review months fact find',
   },
   {
+    key: 'compliance.licenceCheckDays', tab: 'companyRules', type: 'int', default: 90, min: 7, max: 365, scopes: ['tenant'], lockable: false,
+    label: { en: 'Check each licence on the regulator\u2019s register every (days)', 'fr-CA': 'Vérifier chaque permis au registre de l\u2019organisme de réglementation tous les (jours)' }, help: { en: 'For licences in Ontario (FSRA) and British Columbia (Insurance Council of BC). Compliance is reminded when a check is due.', 'fr-CA': 'Pour les permis de l\u2019Ontario (ARSF) et de la Colombie-Britannique (Insurance Council of BC). La conformité reçoit un rappel à l\u2019échéance.' }, keywords: 'licence license register regulator FSRA insurance council check verify',
+  },
+  {
     key: 'compliance.reviewSamplePct', tab: 'companyRules', type: 'int', default: 10, min: 0, max: 100, scopes: ['tenant'], lockable: false,
     label: { en: 'Advice files sampled for compliance review (%)', 'fr-CA': 'Dossiers de conseil échantillonnés pour revue de conformité (%)' }, help: { en: 'The share of signed advice picked at random for a compliance review. Flagged files and files from new advisors are always reviewed.', 'fr-CA': 'La part des conseils signés choisie au hasard pour une revue de conformité. Les dossiers signalés et ceux des nouveaux conseillers sont toujours revus.' }, keywords: 'compliance review sample sampling audit advice percent',
   },
