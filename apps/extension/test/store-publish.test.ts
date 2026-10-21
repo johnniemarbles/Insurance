@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
 // @ts-ignore: plain ES module next to the build scripts
-import { compareVersions, storeVersion, serviceAccountAssertion, SCOPE, main, DEFAULT_ITEM_ID } from '../store-publish.mjs';
+import { compareVersions, storeVersion, inReview, serviceAccountAssertion, SCOPE, main, DEFAULT_ITEM_ID } from '../store-publish.mjs';
 import { readFileSync } from 'node:fs';
 
 const LOCAL_VERSION: string = JSON.parse(readFileSync(new URL('../public/manifest.json', import.meta.url), 'utf8')).version;
@@ -114,4 +114,29 @@ test('uses a ready-made access token (Workload Identity Federation) without sign
     assert.equal((r as any).skipped, true);
     assert.ok(!s.calls.some((c) => c.path === 'POST token'));
   } finally { s.restore(); }
+});
+
+test('while an older version is still in review, nothing is uploaded and the run says to try again after approval', async () => {
+  const older = '1.0.0';
+  const s = fakeStore({
+    'POST token': () => ({ access_token: 'at' }),
+    'GET /v2/ITEM:fetchStatus': () => ({ publishedItemRevisionStatus: { distributionChannels: [{ crxVersion: '0.9.0' }] }, submittedItemRevisionStatus: { distributionChannels: [{ crxVersion: older }] } }),
+  });
+  const said: string[] = [];
+  const l = console.log; console.log = (m: string) => { said.push(m); };
+  try {
+    const r = await main(['node', 'x'], ENV, async () => undefined);
+    assert.deepEqual(r, { waiting: older, version: LOCAL_VERSION });
+    assert.deepEqual(s.calls.map((c) => c.path), ['POST token', 'GET /v2/ITEM:fetchStatus']); // no upload, no publish
+    assert.match(said.join('\n'), new RegExp(`::warning title=Chrome Web Store::The store is still reviewing ${older.replace(/\./g, '\\.')}, so ${LOCAL_VERSION.replace(/\./g, '\\.')} was not sent`));
+  } finally { console.log = l; s.restore(); }
+});
+
+test('in review means submitted and newer than what is published', () => {
+  assert.equal(inReview({}), null);
+  assert.equal(inReview({ submittedItemRevisionStatus: { distributionChannels: [{ crxVersion: '1.7.0' }] } }), '1.7.0');
+  assert.equal(inReview({ publishedItemRevisionStatus: { distributionChannels: [{ crxVersion: '1.7.0' }] }, submittedItemRevisionStatus: { distributionChannels: [{ crxVersion: '1.7.0' }] } }), null);
+  assert.equal(inReview({ publishedItemRevisionStatus: { distributionChannels: [{ crxVersion: '1.6.0' }] }, submittedItemRevisionStatus: { distributionChannels: [{ crxVersion: '1.7.0' }] } }), '1.7.0');
+  assert.equal(inReview({ submittedItemRevisionStatus: { state: 'PENDING_REVIEW', distributionChannels: [{ crxVersion: '1.7.0' }] } }), '1.7.0');
+  assert.equal(inReview({ submittedItemRevisionStatus: { state: 'REJECTED', distributionChannels: [{ crxVersion: '1.7.0' }] } }), null);
 });

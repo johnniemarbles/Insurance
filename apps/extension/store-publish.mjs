@@ -43,6 +43,15 @@ export function storeVersion(status) {
   return versions.reduce((hi, v) => (hi === null || compareVersions(v, hi) > 0 ? v : hi), null);
 }
 
+/** A version already submitted and still waiting for Google's review (not yet published), from a fetchStatus reply. */
+export function inReview(status) {
+  const pick = (r) => (r?.distributionChannels ?? []).map((c) => c?.crxVersion).find((v) => typeof v === 'string' && v.length > 0) ?? null;
+  const sub = pick(status?.submittedItemRevisionStatus), pub = pick(status?.publishedItemRevisionStatus);
+  const state = String(status?.submittedItemRevisionStatus?.state ?? '');
+  if (state && !/PENDING|REVIEW/i.test(state)) return null; // rejected or cancelled: a new version may be sent
+  return sub && (!pub || compareVersions(sub, pub) > 0) ? sub : null;
+}
+
 /** A signed service-account assertion (RS256 JWT) for Google's token endpoint. */
 export function serviceAccountAssertion(key, nowSeconds = Math.floor(Date.now() / 1000)) {
   if (!key?.client_email || !key?.private_key) throw new Error('CWS_SERVICE_ACCOUNT_KEY is not a service account JSON key (needs client_email and private_key)');
@@ -120,6 +129,15 @@ export async function main(argv = process.argv, env = process.env, wait = (ms) =
     return { skipped: true, have, version: pkg.version };
   }
 
+  // The store takes no new package while another version is in review: wait for that review, then run this again.
+  const waiting = inReview(before);
+  if (waiting) {
+    const msg = `The store is still reviewing ${waiting}, so ${pkg.version} was not sent. Once Google approves ${waiting}, run this workflow again (Actions, extension-store, Run workflow).`;
+    console.log(`::warning title=Chrome Web Store::${msg}`);
+    if (env.GITHUB_STEP_SUMMARY) writeFileSync(env.GITHUB_STEP_SUMMARY, `### PII extension ${pkg.version} not sent yet\n\n${msg}\n`, { flag: 'a' });
+    return { waiting, version: pkg.version };
+  }
+
   console.log(`Uploading ${pkg.version} (store has ${have ?? 'nothing yet'})…`);
   const up = await call(token, 'POST', `${API}/upload/v2/${name}:upload`, pkg.zip, 'application/zip');
   let state = up?.uploadState;
@@ -140,5 +158,6 @@ export async function main(argv = process.argv, env = process.env, wait = (ms) =
 }
 
 if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
-  main().catch((e) => { console.error(e.message); process.exit(1); });
+  // ::error makes the reason show on the run's page, not only in the full log.
+  main().catch((e) => { console.error(`::error title=Chrome Web Store::${String(e.message).replace(/\r?\n/g, ' ')}`); process.exit(1); });
 }
