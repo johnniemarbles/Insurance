@@ -36,6 +36,9 @@ test('demo tenant is seeded once, with data in every scenario, and can be reset'
   assert.ok(await count(`SELECT count(*) n FROM box_threads WHERE tenant_id = $1`, [a.tenantId]) > 0, 'linked threads');
   assert.ok(await count(`SELECT count(*) n FROM contacts WHERE tenant_id = $1 AND email_opt_out_at IS NOT NULL`, [a.tenantId]) > 0, 'opted-out contacts');
   assert.ok(await count(`SELECT count(*) n FROM boxes WHERE tenant_id = $1 AND now() - stage_entered_at > interval '14 days'`, [a.tenantId]) > 0, 'stale deals');
+  // Phase 3 sample: a complaints log (one resolved, two open) and this month's file reviews (passed, findings, open).
+  assert.deepEqual((await (async () => { const c = new pg.Client({ connectionString: db.ownerUrl }); await c.connect(); try { return (await c.query(`SELECT status, count(*)::int n FROM client_complaints WHERE tenant_id = $1 GROUP BY status ORDER BY status`, [a.tenantId])).rows; } finally { await c.end(); } })()), [{ status: 'open', n: 2 }, { status: 'resolved', n: 1 }]);
+  assert.deepEqual((await (async () => { const c = new pg.Client({ connectionString: db.ownerUrl }); await c.connect(); try { return (await c.query(`SELECT status FROM file_reviews WHERE tenant_id = $1 ORDER BY status`, [a.tenantId])).rows.map((r) => r.status); } finally { await c.end(); } })()), ['findings', 'open', 'passed']);
   // The people other than the admin can never sign in: their addresses cannot receive mail.
   assert.equal(await count(`SELECT count(*) n FROM app_users WHERE tenant_id = $1 AND email NOT LIKE '%@demo.invalid'`, [a.tenantId]), 1);
 
@@ -48,4 +51,6 @@ test('demo tenant is seeded once, with data in every scenario, and can be reset'
   assert.equal(reset.tenantId, a.tenantId);
   assert.equal(await count(`SELECT count(*) n FROM boxes WHERE tenant_id = $1`, [a.tenantId]), boxesBefore, 'reset rebuilds the same amount');
   assert.equal(await count(`SELECT count(*) n FROM tenants WHERE is_demo`), 1);
+  assert.equal(await count(`SELECT count(*) n FROM client_complaints WHERE tenant_id = $1`, [a.tenantId]), 3, 'reset rebuilds the complaints log');
+  assert.equal(await count(`SELECT count(*) n FROM file_reviews WHERE tenant_id = $1`, [a.tenantId]), 3, 'and the file reviews');
 });
