@@ -9,6 +9,7 @@ import { audit } from './audit.ts';
 import { escapeHtml } from './merge-render.ts';
 import type { AppDeps } from './app.ts';
 import type { Mail } from './mailer.ts';
+import { COUNTRY_NAME, countryOf, storeUrl } from './countries.ts';
 
 export const PARTNER_INVITE_DAYS = 7;
 export const REMINDER_HOURS = 24;
@@ -25,9 +26,13 @@ const COPY = {
     step1: 'Step 1: create your PII login',
     step1Body: (email: string) => `Open the link and sign in with Google, using ${email}. The link works once and expires in ${PARTNER_INVITE_DAYS} days.`,
     cta1: 'Create my PII login',
-    step2: 'Step 2: install the Gmail extension',
-    step2Body: 'Once you are signed in, open the install page. Download the extension, follow the steps, then open Gmail.',
-    cta2: 'Open the install page',
+    step2: 'Step 2: add PII to Gmail',
+    step2Body: 'Add the PII extension to Chrome, then open Gmail and sign in with the same Google account.',
+    cta2: 'Add PII to Gmail',
+    step3: 'Or use PII in your browser',
+    step3Body: 'No extension needed: sign in and use PII in a browser tab.',
+    cta3: 'Open PII',
+    country: (c: string) => `Your PII site: ${c}.`,
     foot: (firm: string) => `Questions? Ask ${firm}. This message was sent because someone invited you to PII.`,
   },
   'fr-CA': {
@@ -38,22 +43,30 @@ const COPY = {
     step1: 'Étape 1 : créez votre connexion PII',
     step1Body: (email: string) => `Ouvrez le lien et connectez-vous avec Google, avec ${email}. Le lien ne fonctionne qu’une fois et expire dans ${PARTNER_INVITE_DAYS} jours.`,
     cta1: 'Créer ma connexion PII',
-    step2: 'Étape 2 : installez l’extension Gmail',
-    step2Body: 'Une fois connecté, ouvrez la page d’installation. Téléchargez l’extension, suivez les étapes, puis ouvrez Gmail.',
-    cta2: 'Ouvrir la page d’installation',
+    step2: 'Étape 2 : ajoutez PII à Gmail',
+    step2Body: 'Ajoutez l’extension PII à Chrome, puis ouvrez Gmail et connectez-vous avec le même compte Google.',
+    cta2: 'Ajouter PII à Gmail',
+    step3: 'Ou utilisez PII dans votre navigateur',
+    step3Body: 'Aucune extension requise : connectez-vous et utilisez PII dans un onglet.',
+    cta3: 'Ouvrir PII',
+    country: (c: string) => `Votre site PII : ${c}.`,
     foot: (firm: string) => `Des questions ? Écrivez à ${firm}. Ce message vous est envoyé parce que quelqu’un vous a invité à PII.`,
   },
 } as const;
 
-export function partnerInviteMail(p: { firm: string; email: string; acceptUrl: string; installUrl: string; locale: Locale; reminder?: number }): Mail {
+export function partnerInviteMail(p: { firm: string; email: string; acceptUrl: string; installUrl: string; appUrl?: string; country?: string; locale: Locale; reminder?: number }): Mail {
   const c = COPY[p.locale === 'fr-CA' ? 'fr-CA' : 'en'];
   const subject = p.reminder ? c.reminderSubject(p.firm) : c.subject(p.firm);
   const reminder = p.reminder ? `${c.reminder(p.reminder)}\n\n` : '';
-  const text = `${c.intro(p.firm)}\n\n${reminder}${c.step1}\n${c.step1Body(p.email)}\n${p.acceptUrl}\n\n${c.step2}\n${c.step2Body}\n${p.installUrl}\n\n${c.foot(p.firm)}`;
-  const html = `<p>${escapeHtml(c.intro(p.firm))}</p>${p.reminder ? `<p>${escapeHtml(c.reminder(p.reminder))}</p>` : ''}`
-    + `<h3>${escapeHtml(c.step1)}</h3><p>${escapeHtml(c.step1Body(p.email))}</p><p><a href="${escapeHtml(p.acceptUrl)}">${escapeHtml(c.cta1)}</a></p>`
-    + `<h3>${escapeHtml(c.step2)}</h3><p>${escapeHtml(c.step2Body)}</p><p><a href="${escapeHtml(p.installUrl)}">${escapeHtml(c.cta2)}</a></p>`
-    + `<p style="color:#666">${escapeHtml(c.foot(p.firm))}</p>`;
+  const where = p.country ? `${c.country(p.country)}\n\n` : '';
+  const web = p.appUrl ? `\n\n${c.step3}\n${c.step3Body}\n${p.appUrl}` : '';
+  const text = `${c.intro(p.firm)}\n\n${where}${reminder}${c.step1}\n${c.step1Body(p.email)}\n${p.acceptUrl}\n\n${c.step2}\n${c.step2Body}\n${p.installUrl}${web}\n\n${c.foot(p.firm)}`;
+  const btn = (href: string, label: string, main: boolean) => `<a href="${escapeHtml(href)}" style="display:inline-block;${main ? 'background:#1d4ed8;color:#ffffff' : 'background:#ffffff;color:#1d4ed8;border:1px solid #c7d2fe'};text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:bold">${escapeHtml(label)}</a>`;
+  const html = `<div style="font-family:Arial,sans-serif;font-size:15px;color:#0f172a;max-width:560px"><p>${escapeHtml(c.intro(p.firm))}</p>${p.country ? `<p><b>${escapeHtml(c.country(p.country))}</b></p>` : ''}${p.reminder ? `<p>${escapeHtml(c.reminder(p.reminder))}</p>` : ''}`
+    + `<h3>${escapeHtml(c.step1)}</h3><p>${escapeHtml(c.step1Body(p.email))}</p><p>${btn(p.acceptUrl, c.cta1, true)}</p>`
+    + `<h3>${escapeHtml(c.step2)}</h3><p>${escapeHtml(c.step2Body)}</p><p>${btn(p.installUrl, c.cta2, false)}</p>`
+    + (p.appUrl ? `<h3>${escapeHtml(c.step3)}</h3><p>${escapeHtml(c.step3Body)}</p><p>${btn(p.appUrl, c.cta3, false)}</p>` : '')
+    + `<p style="color:#666">${escapeHtml(c.foot(p.firm))}</p></div>`;
   return { to: p.email, subject, text, html };
 }
 
@@ -77,7 +90,9 @@ export async function createPartnerInvitation(
   return { id, token };
 }
 
-export const installUrl = (appOrigin: string) => `${appOrigin}/install`;
+/** Where to get the extension: the Chrome Web Store listing when it is set, else this server's install page. */
+export const installUrl = (appOrigin: string) => storeUrl() ?? `${appOrigin}/install`;
+export const appUrlFor = (appOrigin: string) => `${appOrigin}/app`;
 export const acceptUrlFor = (appOrigin: string, token: string) => `${appOrigin}/accept?token=${token}`;
 
 async function firmName(deps: AppDeps, tenantId: string): Promise<string> {
@@ -104,7 +119,7 @@ export async function sendPartnerInvitation(
   }
   const firm = await firmName(deps, inv.tenantId);
   try {
-    await deps.mailer.send(partnerInviteMail({ firm, email: inv.email, acceptUrl: acceptUrlFor(deps.config.appOrigin, inv.token), installUrl: installUrl(deps.config.appOrigin), locale: inv.locale }));
+    await deps.mailer.send(partnerInviteMail({ firm, email: inv.email, acceptUrl: acceptUrlFor(deps.config.appOrigin, inv.token), installUrl: installUrl(deps.config.appOrigin), appUrl: appUrlFor(deps.config.appOrigin), country: COUNTRY_NAME[countryOf(deps.config.region)][inv.locale === 'fr-CA' ? 'fr-CA' : 'en'], locale: inv.locale }));
     await recordDelivery(deps, ctx, inv.id, true);
     return { status: 'sent' };
   } catch (e) {
@@ -138,7 +153,7 @@ export async function sweepPartnerInviteReminders(deps: AppDeps): Promise<number
     try {
       const firm = await firmName(deps, d.tenant_id);
       const locale: Locale = d.locale === 'fr-CA' ? 'fr-CA' : 'en';
-      await deps.mailer.send(partnerInviteMail({ firm, email: d.email, acceptUrl: acceptUrlFor(deps.config.appOrigin, token), installUrl: installUrl(deps.config.appOrigin), locale, reminder: d.n }));
+      await deps.mailer.send(partnerInviteMail({ firm, email: d.email, acceptUrl: acceptUrlFor(deps.config.appOrigin, token), installUrl: installUrl(deps.config.appOrigin), appUrl: appUrlFor(deps.config.appOrigin), country: COUNTRY_NAME[countryOf(deps.config.region)][locale === 'fr-CA' ? 'fr-CA' : 'en'], locale, reminder: d.n }));
       sent += 1;
     } catch {
       // Put the count back so the next sweep tries again; the reminder is not counted as sent.

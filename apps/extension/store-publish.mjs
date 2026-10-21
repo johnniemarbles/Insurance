@@ -20,7 +20,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listFiles, makeZip } from './zip.mjs';
 
-export const DEFAULT_ITEM_ID = 'dkclimhnmcpflpjaiimfibfnefkdchei';
+export const DEFAULT_ITEM_ID = 'bbfccaiemeckdhajpejacckieamdbajm';
 export const SCOPE = 'https://www.googleapis.com/auth/chromewebstore';
 const API = 'https://chromewebstore.googleapis.com';
 

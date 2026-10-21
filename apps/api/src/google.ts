@@ -92,3 +92,22 @@ export function realGoogleClient(config: Config): GoogleClient {
     },
   };
 }
+
+/**
+ * Development only (GOOGLE_FAKE=1 with APP_ENV=dev): a stand-in Google that asks for an email address on a PII page and
+ * signs that address in, so the two-country sign-in can be walked through in a browser without real Google accounts.
+ */
+export function fakeGoogleClient(appOrigin: string): GoogleClient & { fake: true } {
+  return {
+    fake: true,
+    authUrl({ state, redirectUri, loginHint }) {
+      const q = new URLSearchParams({ state, redirect_uri: redirectUri, ...(loginHint ? { login_hint: loginHint } : {}) });
+      return `${appOrigin}/dev/google?${q}`;
+    },
+    async exchange({ code }) {
+      const email = Buffer.from(code, 'base64url').toString('utf8');
+      if (!/^[^@\s]+@[^@\s]+$/.test(email)) throw new Error('fake google: bad code');
+      return { sub: `fake-${email}`, email, emailVerified: true, name: email.split('@')[0] };
+    },
+  };
+}

@@ -7,22 +7,37 @@ import type { ComposeApi, Transport } from '../../web/src/types';
 const REGION_LABELS: Record<string, string> = { ca: 'Canada', us: 'United States' };
 const REGION_CHOICES = Object.keys(__REGIONS__).map((id) => ({ id, label: REGION_LABELS[id] ?? id }));
 let chosenRegion: string | undefined;
+// The country is remembered per Gmail account on this computer (chrome.storage.local, regionByAccount): two people, or a head
+// office and a partner account, in one Chrome no longer share it. The background worker saves it once a sign-in has worked.
+let gmailAccount = '';
 // The country changed (here or in another Gmail tab): every PII screen on this page starts over in place, no Gmail reload.
 const announceRegion = () => { try { window.dispatchEvent(new CustomEvent('pii-region-changed')); window.dispatchEvent(new CustomEvent('pii-settings-changed')); } catch { /* ignore */ } };
+const DEFAULT_REGION = Object.keys(__REGIONS__)[0];
+const regionFor = async (account: string): Promise<string | undefined> => {
+  const [local, sync] = await Promise.all([chrome.storage.local.get('regionByAccount'), chrome.storage.sync.get('region')]);
+  const map = (local.regionByAccount ?? {}) as Record<string, string>;
+  const mine = map[account];
+  if (mine && __REGIONS__[mine]) return mine;
+  // Before 1.7.0 one country was kept for the whole browser; it still counts until this account has its own.
+  return typeof sync.region === 'string' && __REGIONS__[sync.region] ? sync.region : DEFAULT_REGION;
+};
 chrome.storage.onChanged.addListener((ch: Record<string, { newValue?: unknown; oldValue?: unknown }>, area: string) => {
-  if (area !== 'sync' || !ch.region) return;
-  const next = typeof ch.region.newValue === 'string' ? ch.region.newValue : Object.keys(__REGIONS__)[0];
-  if (next !== chosenRegion) { chosenRegion = next; announceRegion(); }
+  if (area !== 'local') return;
+  if (ch.regionByAccount && gmailAccount) {
+    const next = (ch.regionByAccount.newValue as Record<string, string> | undefined)?.[gmailAccount];
+    if (next && __REGIONS__[next] && next !== chosenRegion) { chosenRegion = next; whoCache.clear(); announceRegion(); return; }
+  }
+  // A sign-in just worked (in the tab the background worker opened): show it now rather than at the next minute's check.
+  if (ch.signedInAt) { whoCache.clear(); announceRegion(); }
 });
 // PII's full-page screens come from the server, in a frame, so they update with every server release (no store update).
 // The copy built into this extension is the fallback: used when the frame cannot load, or when the person turns it on in Options.
 let bundledUi = false;
 chrome.storage.sync.get('bundledUi').then((v: { bundledUi?: unknown }) => { bundledUi = v.bundledUi === true; }, () => undefined);
-chrome.storage.sync.get('region').then((v: { region?: unknown }) => { chosenRegion = typeof v.region === 'string' ? v.region : Object.keys(__REGIONS__)[0]; }, () => undefined);
 
 const rawTransport: Transport = async (method, path, body, region) => {
   try {
-    const r = (await chrome.runtime.sendMessage({ type: 'pii:api', method, path, body, region })) as { status: number; json: any } | undefined;
+    const r = (await chrome.runtime.sendMessage({ type: 'pii:api', method, path, body, region: region ?? chosenRegion })) as { status: number; json: any } | undefined;
     return r ?? { status: -1, json: null };
   } catch {
     // The extension was reloaded or updated while this Gmail tab stayed open.
@@ -32,7 +47,6 @@ const rawTransport: Transport = async (method, path, body, region) => {
 
 // The PII sign-in belongs to the browser, not to one Gmail tab. With several Google accounts open, the Gmail on screen
 // can be a different person from the one signed in to PII. Until the two match, nothing is shown or sent.
-let gmailAccount = '';
 const wrong = (pii: string) => ({ status: 409, json: { error: { code: 'wrong_account', message: `This Gmail is ${gmailAccount}, but PII is signed in as ${pii}.` }, piiEmail: pii, gmailEmail: gmailAccount } });
 // Tell PII this copy is installed and signed in (at most every 12 hours per country). The server records the first install on the partner's case.
 const checkedIn = new Map<string, number>();
@@ -63,8 +77,11 @@ const transport: Transport = async (method, path, body, region) => {
   if (who && who !== gmailAccount) return wrong(who);
   return rawTransport(method, path, body, region);
 };
-const signIn = (region?: string, keep?: boolean, opts?: { fresh?: boolean }) => { whoCache.clear(); void chrome.runtime.sendMessage({ type: 'pii:signin', region, keep, hint: gmailAccount || undefined, fresh: opts?.fresh }); };
-const switchRegion = (id: string) => { chosenRegion = id; void chrome.storage.sync.set({ region: id }); announceRegion(); };
+const signIn = (region?: string, keep?: boolean, opts?: { fresh?: boolean }) => { whoCache.clear(); void chrome.runtime.sendMessage({ type: 'pii:signin', region: region ?? chosenRegion, keep, hint: gmailAccount || undefined, fresh: opts?.fresh }); };
+const switchRegion = (id: string) => {
+  chosenRegion = id; whoCache.clear(); announceRegion();
+  if (gmailAccount) void chrome.storage.local.get('regionByAccount').then((v: { regionByAccount?: Record<string, string> }) => chrome.storage.local.set({ regionByAccount: { ...(v.regionByAccount ?? {}), [gmailAccount]: id } }));
+};
 // The server the frame loads from: the same rule the background worker uses for API calls, so the frame and its token always match.
 const frameBase = async (region?: string): Promise<string> => {
   try {
@@ -114,6 +131,8 @@ console.info('[PII] content script running');
 InboxSDK.load(2, __INBOXSDK_APP_ID__).then((sdk) => {
   console.info('[PII] InboxSDK loaded');
   try { gmailAccount = (sdk.User.getEmailAddress() || '').trim().toLowerCase(); } catch { gmailAccount = ''; }
+  return regionFor(gmailAccount).then((r) => { chosenRegion = r; return sdk; }, () => { chosenRegion = DEFAULT_REGION; return sdk; });
+}).then((sdk) => {
   // Full-page views: every item in the PII section of Gmail's left panel opens a page in place of the mailbox.
   const goto = (page: string, id?: string) => {
     if (id) sdk.Router.goto('pii/:page/:id', { page, id });

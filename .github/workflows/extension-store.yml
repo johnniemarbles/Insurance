@@ -8,7 +8,7 @@ name: extension-store
 #     CWS_PUBLISHER_ID      from the Chrome Web Store developer dashboard
 #     CWS_WIF_PROVIDER      projects/<number>/locations/global/workloadIdentityPools/github/providers/pii-repo
 #     CWS_SERVICE_ACCOUNT   the service account email added in the developer dashboard's Account page
-#     CWS_ITEM_ID           optional, defaults to the PII listing (dkclimhnmcpflpjaiimfibfnefkdchei)
+#     CWS_ITEM_ID           optional, defaults to the PII listing (bbfccaiemeckdhajpejacckieamdbajm)
 #   Optional: Settings → Environments → chrome-web-store → Required reviewers, to approve each upload by hand.
 #   Google Cloud commands: docs/CHROME_WEB_STORE_PUBLISHING.md
 on:

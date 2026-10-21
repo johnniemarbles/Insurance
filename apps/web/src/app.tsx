@@ -104,11 +104,37 @@ export function App({ host }: { host: HostOptions }) {
     return <LoginPage locale={l} onLocale={(v) => { try { localStorage.setItem('pii.lang', v); } catch { /* private window */ } setLocale(v); }} onSignIn={() => host.onSignIn(host.region)} />;
   }
   if (me === 'out') return <div class="pii"><div class="msg"><p>{t.signedOut}</p><SignIn host={host} t={t} locale={locale} /></div></div>;
-  if (me.needsConsent) return <div class="pii"><div class="msg"><p>{t.needConsent}</p></div></div>;
+  if (me.needsConsent) return <ConsentGate call={call} locale={locale} onDone={boot} />;
   const canAuthor = (me as unknown as { isTenantAdmin?: boolean; roles?: { role: string }[] }).isTenantAdmin || ((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => ['admin', 'manager', 'trainer'].includes(r.role));
   setHeadOffice(Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice));
   setCountrySwitch((me as unknown as { countrySwitch?: { toCountry: 'CA' | 'US'; url: string } | null }).countrySwitch ?? null);
   return <Shell isHeadOffice={Boolean((me as unknown as { isHeadOffice?: boolean }).isHeadOffice)} isAdmin={!(me as unknown as { isHeadOffice?: boolean }).isHeadOffice && (((me as unknown as { roles?: { role: string }[] }).roles ?? []).some((r) => r.role === 'admin') || Boolean((me as unknown as { isTenantAdmin?: boolean }).isTenantAdmin))} call={call} t={t} locale={locale} onLocale={(l: Locale) => { setLocale(l); void call('PUT', '/v1/me/locale', { locale: l }).catch(() => undefined); }} canAuthor={Boolean(canAuthor)} meEmail={me.user.email} meName={me.user.displayName ?? ''} demoUserId={(me as unknown as { demo?: boolean }).demo ? me.user.id : undefined} compose={host.compose} host={host} minExt={me.minExtension} supportEmail={me.supportEmail} />;
+}
+
+/** The first-login privacy notice, read and accepted right here (the web app has no Gmail panel to do it in). */
+function ConsentGate({ call, locale, onDone }: { call: Call; locale: Locale; onDone: () => unknown }) {
+  const [text, setText] = useState<string | null>(null);
+  const [err, setErr] = useState('');
+  const fr = locale === 'fr-CA';
+  useEffect(() => { void call('GET', '/v1/consent/first-login').then((r: { text?: string }) => setText(String(r?.text ?? '')), (e: Error) => setErr(e.message)); }, [call]);
+  return (
+    <div class="pii"><div style={{ maxWidth: '640px', width: 'calc(100% - 32px)', boxSizing: 'border-box', margin: '40px auto', padding: '24px 28px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '14px', color: '#0f172a', textAlign: 'left' }}>
+      <h2 style={{ marginTop: 0, color: '#0f172a' }}>{fr ? 'Avis de confidentialité' : 'Privacy notice'}</h2>
+      {err && <div class="err" role="alert">{err}</div>}
+      {text === null ? <p>{fr ? 'Chargement…' : 'Loading…'}</p> : <div style={{ whiteSpace: 'pre-wrap', maxHeight: '50vh', overflow: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', fontSize: '14px', color: '#334155', lineHeight: 1.55 }}>{text}</div>}
+      <p><button class="btn" disabled={text === null} onClick={() => void call('POST', '/v1/consent/first-login').then(() => onDone(), (e: Error) => setErr(e.message))}>{fr ? 'J’accepte' : 'I accept'}</button></p>
+    </div></div>
+  );
+}
+
+/** Someone still runs the extension copy from the old zip file: ask them to add the Chrome Web Store copy and remove it. */
+function ZipCopyBanner({ call, locale }: { call: Call; locale: Locale }) {
+  const [st, setSt] = useState<{ storeUrl?: string | null; zipCopySeen?: boolean } | null>(null);
+  useEffect(() => { void call('GET', '/v1/extension/status').then(setSt, () => setSt(null)); }, [call]);
+  if (!st?.zipCopySeen || !st.storeUrl) return null;
+  const fr = locale === 'fr-CA';
+  return <div class="banner warn" role="status">{fr ? 'Vous utilisez encore l’ancienne copie de PII installée à partir d’un fichier zip. ' : 'You still have the old copy of PII installed from a zip file. '}
+    <a href={st.storeUrl} target="_blank" rel="noopener">{fr ? 'Ajoutez la version du Chrome Web Store' : 'Add the Chrome Web Store version'}</a>{fr ? ', puis retirez l’ancienne dans chrome://extensions.' : ', then remove the old one in chrome://extensions.'}</div>;
 }
 
 class Boundary extends Component<{ msg: string; retry: string; children?: ComponentChildren }, { bad: boolean }> {
@@ -163,6 +189,7 @@ function Shell({ isHeadOffice, isAdmin, call, t, locale, onLocale, canAuthor, me
     <div class={`pii shell${settings?.get<boolean>('ui.compact') ? ' compact' : ''}${railOpen ? '' : ' rail-closed'}`} data-theme={(() => { const v = settings?.get<string>('ui.theme') ?? 'light'; return v === 'auto' ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v; })()} onKeyDown={(e) => { tabArrows(e); e.stopPropagation(); }} onKeyUp={(e) => e.stopPropagation()} onKeyPress={(e) => e.stopPropagation()}>
       {demoUserId && <DemoBar call={call} locale={locale} meId={demoUserId} />}
       {older(host.extVersion, minExt) && <div class="banner warn" role="alert">{t.updateNeeded}</div>}
+      {host.extVersion && <ZipCopyBanner call={call} locale={locale} />}
       <>
         <nav class="topnav" role="tablist" aria-label={locale === 'fr-CA' ? 'Menu principal' : 'Main menu'}>
           {TOP_PAGES.map((x) => <button key={x.p} role="tab" aria-selected={page === x.p} onClick={() => go(x.p)} title={x.text(locale)}><svg class="nv" viewBox="0 0 24 24" aria-hidden="true"><path d={NAV_ICON[x.p] ?? 'M4 12h16'} /></svg><span>{x.text(locale)}</span></button>)}
@@ -709,15 +736,27 @@ const cell = (v: unknown) => (v == null ? '' : typeof v === 'boolean' ? (v ? '�
 /** Sign in, with a country choice when the extension serves more than one: Canada and USA data live in separate places. */
 function SignIn({ host, t, locale }: { host: HostOptions; t: Strings; locale: Locale }) {
   const regions = host.regions ?? [];
-  const [r, setR] = useState(host.region && regions.some((x) => x.id === host.region) ? host.region : regions[0]?.id);
+  const fr = locale === 'fr-CA';
+  // Already signed in to the other country (for example after accepting an invitation there)? Go there, no sign-in needed.
+  useEffect(() => {
+    if (regions.length < 2 || !host.switchRegion) return;
+    let gone = false;
+    void (async () => {
+      for (const r of regions) {
+        if (r.id === host.region) continue;
+        const res = await host.transport('GET', '/v1/me', undefined, r.id).catch(() => null);
+        if (!gone && res?.status === 200) { host.switchRegion?.(r.id); return; }
+      }
+    })();
+    return () => { gone = true; };
+  }, []);
+  if (regions.length < 2) return <button class="btn" onClick={() => host.onSignIn(host.region)}>{t.signIn}</button>;
   return (
     <div>
-      {regions.length > 1 && (
-        <label class="fl" style={{ display: 'grid', gap: '4px', maxWidth: '260px', margin: '0 auto 12px' }}>{locale === 'fr-CA' ? 'Votre pays' : 'Your country'}
-          <select value={r} onChange={(e) => setR((e.target as HTMLSelectElement).value)}>{regions.map((x) => <option value={x.id}>{x.label}</option>)}</select>
-        </label>
-      )}
-      <button class="btn" onClick={() => host.onSignIn(r)}>{t.signIn}</button>
+      <p>{fr ? 'Choisissez votre pays :' : 'Choose your country:'}</p>
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+        {regions.map((x) => <button key={x.id} class={x.id === host.region ? 'btn' : 'btn quiet'} onClick={() => host.onSignIn(x.id)}>{fr ? `Se connecter : ${x.id === 'us' ? 'États-Unis' : x.label}` : `Sign in: ${x.label}`}</button>)}
+      </div>
     </div>
   );
 }
