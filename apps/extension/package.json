@@ -10,7 +10,7 @@
     "pack": "node pack.mjs"
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.300",
+    "@types/chrome": "^0.3.5",
     "esbuild": "^0.25.0",
     "typescript": "^5.9.0",
     "@inboxsdk/core": "^2.2.28"
