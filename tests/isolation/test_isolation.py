@@ -376,6 +376,23 @@ _, _, e = run('mgrX', "UPDATE file_reviews SET status = 'fixed', fixed_note = 'f
 check("the reviewer cannot mark their own findings fixed", e is not None)
 _, _, e = run('u1', "UPDATE file_reviews SET status = 'closed' WHERE id = %s", (FR,))
 check("findings cannot jump straight to closed", e is not None)
+
+print("\n== 3n. Complaints follow the deal's wall and only compliance resolves; flag decisions are compliance-only ==")
+CC = U()
+_, _, e = run('u1', "INSERT INTO client_complaints(id,tenant_id,box_id,received_on,channel,category,summary,recorded_by,recorded_by_name) VALUES (%s,%s,%s,current_date,'email','advice','Client unhappy with advice given.',%s,'u1')", (CC, T, BOX['b1'], UID['u1']))
+check("u1 records a complaint on their own deal", e is None, e)
+for k, v in {'u1': 1, 'u2': 0, 'mgrX': 1, 'mgrY': 0, 'admin': 1, 'out': 0}.items():
+    n = len(run(k, "SELECT 1 FROM client_complaints")[0])
+    check(f"client_complaints visible to {k} = {v}", n == v, n)
+_, _, e = run('u1', "UPDATE client_complaints SET status = 'resolved', outcome = 'Resolved it myself today.', resolved_on = current_date WHERE id = %s", (CC,))
+check("an advisor cannot resolve a complaint", e is not None)
+fc.execute("INSERT INTO conduct_flag_reviews(tenant_id,subject_type,subject_id,code,fingerprint,decision,note,decided_by,decided_by_name) VALUES (%s,'advisor',%s,'complaints','complaints:complaints=2','no_concern','Reviewed both complaints.',%s,'admin')", (T, N['P1'], UID['admin']))
+fs.commit()
+for k, v in {'u1': 0, 'mgrX': 0, 'admin': 1, 'out': 0}.items():
+    n = len(run(k, "SELECT 1 FROM conduct_flag_reviews")[0])
+    check(f"conduct_flag_reviews visible to {k} = {v}", n == v, n)
+_, _, e = run('u1', "INSERT INTO conduct_flag_reviews(tenant_id,subject_type,subject_id,code,fingerprint,decision,note,decided_by,decided_by_name) VALUES (%s,'advisor',%s,'complaints','x','no_concern','Nothing to see here.',%s,'u1')", (T, N['P1'], UID['u1']))
+check("a partner cannot clear a flag about themselves", e is not None)
 fs.close()
 
 print('\n== 4. Private Gmail data ==')

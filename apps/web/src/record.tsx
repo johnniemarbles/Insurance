@@ -13,6 +13,7 @@ import { SuitabilityCard } from './suitability.tsx';
 import { IntakeCard } from './intake.tsx';
 import { SupervisionCard } from './supervision.tsx';
 import { DealFileReviews } from './file-reviews.tsx';
+import { ComplaintsCard } from './conduct.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Person { id: string; displayName: string | null; email: string }
@@ -405,7 +406,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
           </div>
         )}
 
-        {tab === 'files' && <><Documents boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><SupervisionCard boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><DealFileReviews boxId={box.id} call={call} locale={locale} canEdit={canEdit} /></>}
+        {tab === 'files' && <><Documents boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><SupervisionCard boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><DealFileReviews boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><ComplaintsCard boxId={box.id} call={call} locale={locale} canEdit={canEdit} /></>}
         {tab === 'advice' && <><AdviceTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><SuitabilityCard boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><LetterDrafts boxId={box.id} call={call} locale={locale} canEdit={canEdit} /></>}
         {tab === 'aml' && <AmlTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} />}
         {tab === 'consent' && <><ConsentTab boxId={box.id} call={call} locale={locale} canEdit={canEdit} /><DealPeopleCompliance call={call} locale={locale} boxId={box.id} /></>}
