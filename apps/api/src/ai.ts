@@ -4,6 +4,8 @@ export interface AiClient {
   complete(input: { system: string; user: string; maxTokens: number }): Promise<string>;
   /** Speech to text, for providers that take audio (OpenAI, Gemini). The audio is sent once and never stored by PII. */
   transcribe?(input: { audio: Buffer; mime: string; language?: string }): Promise<string>;
+  /** Reads images with a text prompt (Gemini only, used for the driver's licence check). Images are sent once, never stored. */
+  see?(input: { system: string; user: string; images: { mime: string; data: Buffer }[]; maxTokens: number }): Promise<string>;
 }
 
 /** Audio types a meeting recording may be, and their usual file extension. */
@@ -31,6 +33,21 @@ function geminiTranscriber(apiKey: string, model: string) {
       signal: AbortSignal.timeout(300_000),
     });
     if (!res.ok) throw new Error(`Transcription service answered ${res.status}`);
+    const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    return (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('').trim();
+  };
+}
+
+function geminiSeer(apiKey: string, model: string) {
+  return async ({ system, user, images, maxTokens }: { system: string; user: string; images: { mime: string; data: Buffer }[]; maxTokens: number }) => {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: user }, ...images.map((i) => ({ inlineData: { mimeType: i.mime, data: i.data.toString('base64') } }))] }],
+        generationConfig: { maxOutputTokens: maxTokens, responseMimeType: 'application/json' } }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) throw new Error(`AI service answered ${res.status}`);
     const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
     return (j.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('').trim();
   };
@@ -115,7 +132,7 @@ export function geminiClient(apiKey: string, model: string): AiClient {
 export function makeAiClient(provider: AiProvider, apiKey: string, model: string): AiClient {
   if (provider === 'anthropic') return anthropicClient(apiKey, model); // Anthropic takes no audio: no transcribe
   if (provider === 'openai') return { ...openaiClient(apiKey, model), transcribe: openaiTranscriber(apiKey) };
-  return { ...geminiClient(apiKey, model), transcribe: geminiTranscriber(apiKey, model) };
+  return { ...geminiClient(apiKey, model), transcribe: geminiTranscriber(apiKey, model), see: geminiSeer(apiKey, model) };
 }
 
 /** The model for a provider: AI_MODEL_<PROVIDER>, then that provider's default. Invalid ids are refused. */
@@ -142,6 +159,11 @@ export function aiProvidersFromEnv(env: Record<string, string | undefined> = pro
         if (user.includes('<transcript>')) return JSON.stringify({ summary: 'Raj wants to review his life cover after the mortgage renewal.', followUps: [{ title: 'Send Raj the term 20 quote', dueInDays: 3 }], needsChanges: ['Mortgage balance is now 480,000'], complianceNotes: ['Recording consent confirmed at the start of the call'] });
         const m = /\[([CRA]1)\] ([^\n]+)/.exec(user); return m ? `From your records: ${m[2]!.slice(0, 160)} [${m[1]}]` : 'Nothing found.'; } };
       if (p !== 'anthropic') out[p]!.transcribe = async () => 'Speaker 1: Thanks for meeting, Raj. Speaker 2: I renewed my mortgage and want to check my life cover.';
+      // The licence check: always reads Raj Singh, born 1980-04-12; an image under 1 KB reads as unclear.
+      if (p === 'gemini') out[p]!.see = async ({ images }) => {
+        const clear = images.every((i) => i.data.length >= 1024);
+        return JSON.stringify({ isDriversLicence: true, issuingRegion: 'CA-ON', fullName: clear ? 'RAJ KUMAR SINGH' : null, dateOfBirth: clear ? '1980-04-12' : null, expiryDate: '2030-06-30', looksGenuine: clear, selfieMatches: clear ? 'yes' : 'unclear', concerns: clear ? [] : ['The photo is too small to read'] });
+      };
     }
     return out;
   }
