@@ -34,3 +34,16 @@ so nothing is re-encrypted on the day. SOC 2 readiness gap 12; code review findi
 
   A re-encryption job (not built yet) is needed before an old key can be retired.
 - **Record each switch and rotation in the SOC 2 evidence:** date, who did it, and the key ARN.
+
+## Record
+
+| Date | Country | What | KMS key (ARN) | By |
+| --- | --- | --- | --- | --- |
+| 2026-10-21 | Canada | Key created, data key wrapped, unwrap verified (32 bytes); Railway `pii-ca` variables set (`KMS_REGION` ca-central-1). Active from the next deploy. | `arn:aws:kms:ca-central-1:773505972953:key/579651f2-d9c6-424e-a315-5f42d8478d98` | Sanjeev Sood |
+| 2026-10-21 | United States | Same; Railway `pii-us` (`KMS_REGION` us-east-1). Active from the next deploy. | `arn:aws:kms:us-east-1:773505972953:key/6c4f509a-2b61-4179-abe9-63cf25396ca8` | Sanjeev Sood |
+
+After the first deploy with KMS, record here:
+- that both servers started
+- the date new data began sealing under `kms-1`
+
+Both keys and `LOCAL_KEY_SECRET` must be kept: data from before 21 October 2026 opens only with `LOCAL_KEY_SECRET`.
