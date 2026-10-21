@@ -21,6 +21,7 @@ import { registerSuitabilityRoutes } from './routes-suitability.ts';
 import { registerIntakeRoutes } from './routes-intake.ts';
 import { registerSupervisionRoutes } from './routes-supervision.ts';
 import { registerLicenceCheckRoutes } from './routes-licence-checks.ts';
+import { registerFileReviewRoutes } from './routes-file-reviews.ts';
 import type { KeyProvider } from '@pii/platform';
 import { registerPageRoutes } from './routes-pages.ts';
 import { registerThreadRoutes } from './routes-threads.ts';
@@ -223,6 +224,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerIntakeRoutes(app, deps);
   registerSupervisionRoutes(app, deps);
   registerLicenceCheckRoutes(app, deps);
+  registerFileReviewRoutes(app, deps);
   registerNoteRoutes(app, deps);
   registerThreadRoutes(app, deps);
   registerLmsRoutes(app, deps);

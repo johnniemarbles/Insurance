@@ -1,0 +1,48 @@
+"""File reviews: draw the sample, record findings, the advisor fixes, compliance closes."""
+import sys
+from playwright.sync_api import sync_playwright, expect
+OUT = sys.argv[1]; BASE = 'http://127.0.0.1:3106'; errors = []
+def ctx_for(b, who, page_name, h=1600):
+    ctx = b.new_context(viewport={'width': 1360, 'height': h}, extra_http_headers={'x-dev-user-email': who})
+    ctx.add_init_script(f"try {{ localStorage.setItem('pii.page', '{page_name}') }} catch (e) {{}}")
+    page = ctx.new_page(); page.on('pageerror', lambda e: errors.append(str(e)))
+    page.goto(f'{BASE}/app')
+    return ctx, page
+with sync_playwright() as p:
+    b = p.chromium.launch()
+    ctx, page = ctx_for(b, 'priya@uat.test', 'compliance', 1900)
+    fr = page.get_by_role('region', name='File reviews')
+    fr.get_by_role('button', name="Draw this month's sample").click(timeout=20000)
+    expect(fr).to_contain_text('Singh life review', timeout=10000)
+    expect(fr).to_contain_text('Picked for risk (open screening hit, large amount')
+    fr.scroll_into_view_if_needed()
+    page.screenshot(path=f'{OUT}/1-sample.png')
+    fr.get_by_role('button', name='Review').first.click()
+    expect(fr.get_by_text('PII suggests').first).to_be_visible(timeout=10000)
+    for item in ['Advice and its reasons are explained', 'Documents complete and legible', 'Client communications appropriate', 'Meeting notes on file', 'Signed needs analysis is current', 'Signed recommendation answers it', 'Suitability check decided']:
+        fr.get_by_role('radiogroup', name=item).get_by_text('N/A' if item == 'Suitability check decided' else ('Yes' if item in ['Advice and its reasons are explained', 'Documents complete and legible', 'Client communications appropriate'] else 'No')).click()
+    fr.get_by_label('Findings (at least 10 characters)').fill('No ID record, no privacy consent, and the PEP hit has not been reviewed. Needs analysis and recommendation are missing.')
+    fr.scroll_into_view_if_needed()
+    page.screenshot(path=f'{OUT}/2-checklist.png')
+    fr.get_by_role('button', name='Record findings').click()
+    expect(fr).to_contain_text('Findings to fix', timeout=10000)
+    ctx.close()
+    ctx, page = ctx_for(b, 'sanjeev@uat.test', 'pipelines', 1300)
+    page.get_by_text('Singh life review').first.click(timeout=20000)
+    page.get_by_role('tab', name='Files').click()
+    card = page.get_by_role('region', name='Compliance file reviews')
+    expect(card).to_contain_text('Findings to fix', timeout=10000)
+    card.get_by_label('What you fixed (at least 10 characters)').fill('ID recorded, privacy consent signed, PEP hit sent to compliance; needs analysis booked with the client.')
+    card.scroll_into_view_if_needed()
+    page.screenshot(path=f'{OUT}/3-advisor-fix.png')
+    card.get_by_role('button', name='Mark fixed').click()
+    expect(card).to_contain_text('Fixed: check it', timeout=10000)
+    ctx.close()
+    ctx, page = ctx_for(b, 'priya@uat.test', 'compliance', 1900)
+    fr = page.get_by_role('region', name='File reviews')
+    expect(fr).to_contain_text('Fixed: check it', timeout=20000)
+    fr.get_by_role('button', name='Review').first.click()
+    fr.get_by_role('button', name='Close').click()
+    expect(fr).not_to_contain_text('Fixed: check it', timeout=10000)
+    b.close()
+print('file review page errors:', errors); sys.exit(1 if errors else 0)

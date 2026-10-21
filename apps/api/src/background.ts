@@ -16,6 +16,7 @@ import { sweepCarrierOutbox } from './carrier-outbox-worker.ts';
 import { emitEventNow } from './webhooks.ts';
 import { sweepSupervision } from './routes-supervision.ts';
 import { sweepLicenceChecks } from './routes-licence-checks.ts';
+import { sweepFileReviews } from './routes-file-reviews.ts';
 import type { AppDeps } from './app.ts';
 
 /** Postgres advisory lock key so only one API instance runs the ten-minute sweep at a time. */
@@ -109,6 +110,7 @@ async function runSweeps(deps: AppDeps): Promise<void> {
   await sweepCarrierOutbox(deps);
   await sweepSupervision(deps).catch(() => 0);
   await sweepLicenceChecks(deps).catch(() => 0);
+  await sweepFileReviews(deps).catch(() => undefined);
 }
 
 /**

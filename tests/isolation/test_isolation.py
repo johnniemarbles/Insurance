@@ -360,6 +360,22 @@ _, _, e = run('u1', "INSERT INTO licence_checks(tenant_id,node_id,item_id,regula
 check("a partner cannot record a check of their own licence", e is not None)
 _, _, e = run('admin', "INSERT INTO licence_checks(tenant_id,node_id,item_id,regulator,method,status,checked_by,checked_by_name,next_due_on) VALUES (%s,%s,%s,'fsra_on','manual','active',%s,'admin',current_date + 90)", (T, N['P2'], LI, UID['admin']))
 check("a check belongs to a licence of that partner", e is not None)
+
+print("\n== 3m. File reviews: follow the deal's wall; only the reviewer decides; the reviewer never marks their own findings fixed ==")
+FR = U()
+fc.execute("INSERT INTO file_reviews(id,tenant_id,box_id,period,reviewer_id,reviewer_name,advisor_id,reason) VALUES (%s,%s,%s,'2026-10',%s,'mgrX',%s,'random')", (FR, T, BOX['b1'], UID['mgrX'], UID['u1']))
+fs.commit()
+for k, v in {'u1': 1, 'u2': 0, 'mgrX': 1, 'mgrY': 0, 'admin': 1, 'out': 0}.items():
+    n = len(run(k, "SELECT 1 FROM file_reviews")[0])
+    check(f"file_reviews visible to {k} = {v}", n == v, n)
+_, _, e = run('u1', "UPDATE file_reviews SET status = 'passed', findings = 'my own file is fine' WHERE id = %s", (FR,))
+check("the advisor cannot pass their own file", e is not None)
+_, n, e = run('mgrX', "UPDATE file_reviews SET status = 'findings', findings = 'No ID on file at all.', fix_by = current_date + 7 WHERE id = %s", (FR,))
+check("the reviewer records findings", e is None and n == 1, (n, e))
+_, _, e = run('mgrX', "UPDATE file_reviews SET status = 'fixed', fixed_note = 'fixed it for them' WHERE id = %s", (FR,))
+check("the reviewer cannot mark their own findings fixed", e is not None)
+_, _, e = run('u1', "UPDATE file_reviews SET status = 'closed' WHERE id = %s", (FR,))
+check("findings cannot jump straight to closed", e is not None)
 fs.close()
 
 print('\n== 4. Private Gmail data ==')

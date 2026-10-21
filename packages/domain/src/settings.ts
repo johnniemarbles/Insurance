@@ -75,6 +75,10 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Check each licence on the regulator\u2019s register every (days)', 'fr-CA': 'Vérifier chaque permis au registre de l\u2019organisme de réglementation tous les (jours)' }, help: { en: 'For licences in Ontario (FSRA) and British Columbia (Insurance Council of BC). Compliance is reminded when a check is due.', 'fr-CA': 'Pour les permis de l\u2019Ontario (ARSF) et de la Colombie-Britannique (Insurance Council of BC). La conformité reçoit un rappel à l\u2019échéance.' }, keywords: 'licence license register regulator FSRA insurance council check verify',
   },
   {
+    key: 'compliance.fileSampleSize', tab: 'companyRules', type: 'int', default: 5, min: 0, max: 50, scopes: ['tenant'], lockable: false,
+    label: { en: 'Deals sampled for file review each month, per compliance officer', 'fr-CA': 'Affaires échantillonnées pour revue de dossier chaque mois, par responsable de la conformité' }, help: { en: 'Drawn on the 1st from the deals each officer supervises: up to half for risk, the rest at random. 0 turns the monthly draw off.', 'fr-CA': 'Tirées le 1er parmi les affaires que supervise chaque responsable : jusqu\u2019à la moitié selon le risque, le reste au hasard. 0 désactive le tirage mensuel.' }, keywords: 'file review sample sampling monthly audit compliance officer checklist',
+  },
+  {
     key: 'compliance.reviewSamplePct', tab: 'companyRules', type: 'int', default: 10, min: 0, max: 100, scopes: ['tenant'], lockable: false,
     label: { en: 'Advice files sampled for compliance review (%)', 'fr-CA': 'Dossiers de conseil échantillonnés pour revue de conformité (%)' }, help: { en: 'The share of signed advice picked at random for a compliance review. Flagged files and files from new advisors are always reviewed.', 'fr-CA': 'La part des conseils signés choisie au hasard pour une revue de conformité. Les dossiers signalés et ceux des nouveaux conseillers sont toujours revus.' }, keywords: 'compliance review sample sampling audit advice percent',
   },

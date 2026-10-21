@@ -62,7 +62,7 @@ async function addIdRecord(tx: Tx, ctx: RequestContext, v: { id: string; box_id:
 }
 
 /** The context of the person who asked for a check, so a webhook writes under their access. */
-async function contextOf(deps: AppDeps, tenantId: string, userId: string): Promise<RequestContext | null> {
+export async function contextOf(deps: AppDeps, tenantId: string, userId: string): Promise<RequestContext | null> {
   const r = (await deps.authPool.query<{ email: string }>('SELECT email::text AS email FROM app_users WHERE id = $1 AND tenant_id = $2', [userId, tenantId])).rows[0];
   if (!r) return null;
   const c = (await findLoginCandidates(deps.authPool, r.email)).find((x) => x.tenantId === tenantId && x.userId === userId);
