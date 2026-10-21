@@ -33,12 +33,12 @@ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_runtime') THEN
     CREATE ROLE app_runtime WITH LOGIN PASSWORD 'pw' NOBYPASSRLS;
   ELSE
-    ALTER ROLE app_runtime WITH LOGIN PASSWORD 'pw';
+    ALTER ROLE app_runtime WITH LOGIN PASSWORD 'pw' NOBYPASSRLS;
   END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_auth') THEN
-    CREATE ROLE app_auth WITH LOGIN PASSWORD 'pw' NOBYPASSRLS;
+    CREATE ROLE app_auth WITH LOGIN PASSWORD 'pw' BYPASSRLS;
   ELSE
-    ALTER ROLE app_auth WITH LOGIN PASSWORD 'pw';
+    ALTER ROLE app_auth WITH LOGIN PASSWORD 'pw' BYPASSRLS;
   END IF;
 END
 \$\$;" 2>/dev/null || true
