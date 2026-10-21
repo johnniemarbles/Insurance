@@ -10,7 +10,11 @@ RUN npm ci --workspaces --include-workspace-root && npm run build --workspace @p
 
 FROM node:22-slim AS runtime
 WORKDIR /app
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    LICENCE_CHECKS_ENABLED=1 \
+    FILE_REVIEWS_ENABLED=1 \
+    CONDUCT_FLAGS_ENABLED=1 \
+    EVIDENCE_PACKS_ENABLED=1
 COPY package.json package-lock.json ./
 COPY packages ./packages
 COPY apps/api ./apps/api
