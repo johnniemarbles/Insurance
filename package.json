@@ -10,6 +10,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspace @pii/web",
     "test": "node --test --test-concurrency=1 \"packages/*/test/*.test.ts\" \"apps/*/test/*.test.ts\"",
     "test:isolation": "bash tests/isolation/run.sh",
+    "test:smoke": "bash tests/uat/run_smoke.sh",
+    "test:perf": "bash tests/perf/run.sh",
+    "test:security": "python3 tests/security/scan_pii_leaks.py",
     "migrate": "node packages/db/src/cli.ts migrate",
     "dev": "node --watch apps/api/src/main.ts",
     "start": "node apps/api/src/main.ts"

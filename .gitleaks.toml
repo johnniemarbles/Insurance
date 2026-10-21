@@ -1,0 +1,17 @@
+title = "PII Platform Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore test fixtures, mocks, and demo secrets"
+paths = [
+  '''packages/.*/test/.*''',
+  '''apps/.*/test/.*''',
+  '''tests/.*''',
+  '''package-lock\.json''',
+]
+regexes = [
+  '''0123456789abcdef0123456789abcdef''',
+  '''postgres://postgres:pw@127\.0\.0\.1:5432''',
+]

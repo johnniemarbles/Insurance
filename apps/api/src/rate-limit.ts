@@ -50,6 +50,7 @@ export function createLimiter(rules: Rule[] = RULES) {
 }
 
 export function registerRateLimit(app: FastifyInstance, rules?: Rule[]): void {
+  if (process.env.RATE_LIMIT_DISABLED === '1') return;
   const check = createLimiter(rules);
   app.addHook('onRequest', async (req, reply) => {
     const r = check(req.ip, req.method, req.url.split('?')[0]!);
