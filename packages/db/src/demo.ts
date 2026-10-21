@@ -108,7 +108,7 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
       for (const [k, v] of SETTINGS(tenantId, randomUUID(), root)) await client.query('SELECT set_config($1, $2, true)', [k, v]);
       // Client compliance records first. A signed advice record is locked, so the lock is lifted only for this demo-company delete.
       await client.query('ALTER TABLE advice_records DISABLE TRIGGER advice_records_lock');
-      for (const t of ['advice_records', 'client_consents', 'legal_holds', 'cash_transactions', 'screening_results', 'client_id_records']) await client.query(`DELETE FROM ${t} WHERE tenant_id = $1`, [tenantId]);
+      for (const t of ['advice_records', 'client_consents', 'legal_holds', 'cash_transactions', 'screening_results', 'client_id_records', 'client_complaints', 'file_reviews', 'conduct_flag_reviews']) await client.query(`DELETE FROM ${t} WHERE tenant_id = $1`, [tenantId]);
       await client.query('ALTER TABLE advice_records ENABLE TRIGGER advice_records_lock');
       // CE records are kept by law and locked for their retention period; the demo company's fictional ones are cleared the same way.
       await client.query('ALTER TABLE ce_entries DISABLE TRIGGER ce_entries_guard');
@@ -508,6 +508,42 @@ export async function seedDemoTenant(databaseUrl: string, init: DemoInit = {}): 
       if (f) { await consent(f, 'collection_use', 90); await consent(f, 'electronic_comms', 90, true); } // email consent withdrawn
       if (g && comp) { await consent(g, 'collection_use', 70); await client.query(`INSERT INTO legal_holds (tenant_id, box_id, reason, placed_by_name, placed_at) VALUES ($1,$2,$3,$4,$5)`, [tenantId, g.id, 'Client complaint under review; keep everything until closed.', comp.name, ago(14)]); bump('legal_holds'); }
       if (h) { await consent(h, 'collection_use', 25); await cash(h, 4200, 18); }
+      // Phase 3 sample: a complaints log and this month's file reviews, so the conduct flags and review queue have something to show.
+      // Two complaints on one advisor (one still open after 45 days) raise the "Complaints" and "Complaint not resolved" flags.
+      {
+        const me = adminRow; // the seed acts as the demo admin, so the database guards see a tenant admin
+        const byOwner = new Map<string, typeof open>();
+        for (const x of open) byOwner.set(x.owner, [...(byOwner.get(x.owner) ?? []), x]);
+        const busy = [...byOwner.values()].sort((p, q) => q.length - p.length)[0] ?? [];
+        const complaint = async (bx: { id: string; owner: string }, daysAgo: number, channel: string, category: string, summary: string, outcome?: string) => {
+          const id = (await client.query<{ id: string }>(
+            `INSERT INTO client_complaints (tenant_id, box_id, advisor_id, received_on, channel, category, summary, recorded_by, recorded_by_name, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+            [tenantId, bx.id, bx.owner, dateOnly(ago(daysAgo)), channel, category, summary, me.id, me.name, ago(daysAgo)])).rows[0]!.id;
+          if (outcome) await client.query(`UPDATE client_complaints SET status = 'resolved', outcome = $2, resolved_on = $3, resolved_by_name = $4 WHERE id = $1`, [id, outcome, dateOnly(ago(Math.max(1, daysAgo - 12))), me.name]);
+          bump('client_complaints');
+        };
+        if (busy[0]) await complaint(busy[0], 45, 'email', 'service', 'Client waited three weeks for an answer about a premium change.');
+        if (busy[1]) await complaint(busy[1], 120, 'phone', 'disclosure', 'Client says the exclusions were not explained before signing.', 'Exclusions reviewed with the client by phone and confirmed in writing. Client satisfied.');
+        if (d) await complaint(d, 6, 'regulator', 'advice', 'Regulator forwarded a complaint that the coverage amount was too high for the client\'s budget.');
+        // This month's file reviews by the demo admin: one passed, one with findings to fix, one still open.
+        const period = new Date().toISOString().slice(0, 7);
+        const review = async (bx: { id: string; owner: string }, reason: 'risk' | 'random', score: number, reasons: string[]) => {
+          if (bx.owner === me.id) return null;
+          const id = (await client.query<{ id: string }>(
+            `INSERT INTO file_reviews (tenant_id, box_id, period, reviewer_id, reviewer_name, advisor_id, reason, risk_score, risk_reasons) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+            [tenantId, bx.id, period, me.id, me.name, bx.owner, reason, score, reasons])).rows[0]!.id;
+          bump('file_reviews');
+          return id;
+        };
+        const yes = { id_on_file: 'yes', privacy_consent: 'yes', needs_analysis_current: 'yes', recommendation_linked: 'yes', replacement_disclosure: 'na', suitability_decided: 'yes', screening_clear: 'yes', meeting_notes: 'yes', advice_explained: 'yes', documents_legible: 'yes', client_communications: 'yes' };
+        const r1 = a ? await review(a, 'random', 0, []) : null;
+        if (r1) await client.query(`UPDATE file_reviews SET status = 'passed', checklist = $2, findings = 'Complete file; nothing to fix.', reviewed_at = now() WHERE id = $1`, [r1, JSON.stringify(yes)]);
+        const r2 = d ? await review(d, 'risk', 60, ['id_failed', 'screening_hit', 'large_cash']) : null;
+        if (r2) await client.query(`UPDATE file_reviews SET status = 'findings', checklist = $2, findings = 'ID check failed and the sanctions hit is not reviewed. Re-verify ID in person and clear the screening before submitting.', fix_by = $3, reviewed_at = now() WHERE id = $1`,
+          [r2, JSON.stringify({ ...yes, id_on_file: 'no', screening_clear: 'no' }), dateOnly(ahead(14))]);
+        if (b2) await review(b2, 'random', 10, ['awaiting_signature']);
+      }
       // Closed files: one closed 6.5 years ago (identity records past 5 years), one closed 4 years ago (consents past 3 years).
       const [w1, w2] = won;
       if (w1 && comp) {
