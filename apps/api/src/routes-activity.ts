@@ -47,7 +47,7 @@ export function registerActivityRoutes(app: FastifyInstance, deps: AppDeps): voi
                 a.entity_type AS "entityType", a.entity_id AS "entityId", a.detail, a.owner_node_id AS "placeId", n.name AS "placeName",
                 (SELECT name FROM org_nodes WHERE id = nullif(a.detail->>'nodeId', '')::uuid) AS "detailPlaceName"
            FROM audit_log a LEFT JOIN app_users u ON u.id = a.actor_user_id LEFT JOIN org_nodes n ON n.id = a.owner_node_id
-          ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY a.created_at DESC, a.id DESC LIMIT ${limit + 1}`, args)).rows as Array<Record<string, any>>;
+          ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY a.created_at DESC, a.id DESC LIMIT ${arg(Math.trunc(limit) + 1)}`, args)).rows as Array<Record<string, any>>;
       if (csv) await audit(tx, ctx, 'activity_export', 'audit_log', null, { rows: Math.min(r.length, limit), filters: { ...q, format: undefined } });
       return r;
     });

@@ -38,3 +38,22 @@ export function open(provider: KeyProvider, sealed: Sealed, aad: string): Buffer
   dec.setAuthTag(d.subarray(12, 28));
   return Buffer.concat([dec.update(d.subarray(28)), dec.final()]);
 }
+
+/**
+ * Keys held by a managed key service (AWS KMS): a 32-byte data key stored only encrypted ("wrapped") by a KMS key, and unwrapped
+ * once at startup. New data is sealed under `keyId`; data sealed before the move (any other key id) still opens with the
+ * previous provider, so nothing has to be re-encrypted on the day of the switch.
+ */
+export async function wrappedKeyProvider(o: { keyId: string; wrappedKeyB64: string; unwrap: (wrapped: Buffer) => Promise<Buffer>; previous?: KeyProvider }): Promise<KeyProvider> {
+  if (!/^[a-z0-9-]{1,40}$/.test(o.keyId)) throw new Error('Bad key id');
+  const key = await o.unwrap(Buffer.from(o.wrappedKeyB64, 'base64'));
+  if (key.length !== 32) throw new Error('The unwrapped data key must be 32 bytes');
+  return {
+    currentKeyId: () => o.keyId,
+    getKey: (id: string) => {
+      if (id === o.keyId) return key;
+      if (o.previous) return o.previous.getKey(id);
+      throw new Error(`No key for ${id}`);
+    },
+  };
+}

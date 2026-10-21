@@ -68,7 +68,7 @@ export async function gatherContext(tx: Tx, question: string, max = 30): Promise
          OR EXISTS (SELECT 1 FROM policy_parties pp JOIN contacts c ON c.id = pp.contact_id WHERE pp.policy_id = p.id AND pp.ended_at IS NULL AND c.full_name ILIKE $1))`, [p], 5)) add(r);
   }
   if (want.renewals) {
-    for (const r of await policies(tx, `p.expiry_date BETWEEN current_date AND current_date + 90 AND p.status IN ('active', 'reinstated', 'pending')`, [], 10, 'p.expiry_date')) add(r);
+    for (const r of await policies(tx, `p.expiry_date BETWEEN current_date AND current_date + 90 AND p.status IN ('active', 'reinstated', 'pending')`, [], 10, 'expiry')) add(r);
     for (const b of (await tx.query<{ id: string; name: string; rd: string }>(
       `SELECT b.id, b.name, b.custom->>'renewal_date' AS rd FROM boxes b
         WHERE b.custom->>'renewal_date' ~ '^\\d{4}-\\d{2}-\\d{2}$' AND (b.custom->>'renewal_date')::date BETWEEN current_date AND current_date + 90
@@ -86,14 +86,20 @@ export async function gatherContext(tx: Tx, question: string, max = 30): Promise
   return out.map((s, i) => ({ ...s, ref: `C${i + 1}` }));
 }
 
-async function policies(tx: Tx, where: string, args: unknown[], limit: number, order = 'p.plan_name'): Promise<Omit<Snippet, 'ref'>[]> {
+// Sort orders a caller may ask for; anything else is refused (defence in depth: callers pass literals today).
+const POLICY_ORDER = { plan: 'p.plan_name', expiry: 'p.expiry_date' } as const;
+
+async function policies(tx: Tx, where: string, args: unknown[], limit: number, order: keyof typeof POLICY_ORDER = 'plan'): Promise<Omit<Snippet, 'ref'>[]> {
+  const sort = POLICY_ORDER[order];
+  if (!sort) throw new Error('Unknown sort order');
+  const n = Math.max(1, Math.min(50, Math.trunc(Number(limit)) || 10));
   const rows = (await tx.query<{ id: string; carrier: string; plan: string; num: string; status: string; premium: number | null; expiry: string | null; people: string | null }>(
     `SELECT p.id, coalesce(cd.display_name, p.carrier_id) AS carrier, p.plan_name AS plan, p.policy_number AS num, p.status, p.annual_premium_cents AS premium,
             p.expiry_date::text AS expiry,
             (SELECT string_agg(DISTINCT c.full_name || ' (' || replace(pp.role, '_', ' ') || ')', ', ') FROM policy_parties pp JOIN contacts c ON c.id = pp.contact_id
               WHERE pp.policy_id = p.id AND pp.ended_at IS NULL) AS people
        FROM policy_records p LEFT JOIN carrier_directory cd ON cd.id = p.carrier_id
-      WHERE policy_visible(p.id) AND ${where} ORDER BY ${order} LIMIT ${limit}`, args)).rows;
+      WHERE policy_visible(p.id) AND ${where} ORDER BY ${sort} LIMIT $${args.length + 1}`, [...args, n])).rows;
   return rows.map((r) => ({ type: 'policy' as const, id: r.id, label: `${r.carrier} · ${r.plan}`, text: [`Policy ${r.num}, ${r.carrier} ${r.plan}`, `status ${r.status}`, r.premium != null && `annual premium ${(r.premium / 100).toFixed(2)}`, r.expiry && `expires ${r.expiry}`, r.people && `people: ${r.people}`].filter(Boolean).join('; ') }));
 }
 
