@@ -32,11 +32,27 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Gitleaks run directly (the GitHub action needs a paid licence on organisation accounts and failed on every
+      # pull request). Pinned version, checked against the release checksum; scans only the commits being added.
       - name: Secret Scanning (Gitleaks)
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.8
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: false
+          GITLEAKS_VERSION: 8.24.3
+          GITLEAKS_SHA256: 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          if [ "$EVENT" = "pull_request" ]; then RANGE="${PR_BASE}..${PR_HEAD}";
+          elif [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then RANGE="${PUSH_BEFORE}..${PUSH_AFTER}";
+          else RANGE="-1 ${PUSH_AFTER}"; fi
+          echo "Scanning commits: $RANGE"
+          /tmp/gitleaks git --config .gitleaks.toml --log-opts="$RANGE" --redact --verbose --exit-code 1
+        shell: bash
 
       - name: Dependency Vulnerability Audit (SCA)
         run: npm audit --audit-level=high

@@ -22,8 +22,26 @@ Speaking also needs a provider that takes audio: the company's own provider if i
 - **A deal, Activity tab:** "Dictate a note" (speak, review the tidied note and suggested tasks, save), and Speak in the task box.
 - **A deal, Advice tab, letter drafts:** Speak for the instructions; Listen under the draft.
 
-Inside Gmail the microphone needs extension version 1.8.0 (the PII frame must be allowed to use the microphone). Until
-then it works in the web app (`/app`), on computers and phones. Read aloud works in both.
+### Inside Gmail
+
+PII's screens in Gmail are the server's own page in a frame that the extension places in Gmail. A frame may use the
+microphone only when it is created with permission to, and only if Gmail allows it.
+
+- **Extension 1.8.0** creates the PII frame with `allow="microphone"`, so the Speak button records right in the panel.
+  Only the PII site in that frame can ask; Chrome still asks the person once. The extension needs no new permission.
+- **Before 1.8.0, or if Gmail blocks the frame's microphone,** the Speak button opens a small **PII voice window**
+  (`/voice-recorder`, on the same PII site). It only records: the audio goes back to the PII page that opened it,
+  addressed to that same site, and that page sends it signed in as usual. The window makes no API calls and cannot be
+  framed. If Chrome blocks pop-ups, the button says how to allow them.
+- **The extension's built-in copy** (shown only when the server cannot be reached) runs in Gmail's own page, so it
+  shows no microphone there.
+
+To check on a real Gmail account after 1.8.0 is live:
+1. Open the PII panel and press Speak; Chrome should ask for the microphone for the PII site.
+2. If a small window opens instead, Gmail blocks the frame's microphone and the window path is the one in use. That is
+   fine, but tell me so the docs say which.
+
+Read aloud works everywhere.
 
 ## How it works
 
@@ -48,7 +66,7 @@ two kinds and the `audio_seconds` column; it changes no existing row.
 
 ## Tests
 
-- `apps/api/test/voice.test.ts` (11):
+- `apps/api/test/voice.test.ts` (12):
   - off unless switched on
   - the company and partner switches
   - wrong type, too long or too large refused before any AI call
@@ -58,11 +76,13 @@ two kinds and the `audio_seconds` column; it changes no existing row.
   - Anthropic companies use PII's Gemini or OpenAI
   - the note draft uses the dictated words only and saves nothing
   - the hourly limit
-- `apps/web/test/voice-text.test.ts` (2): read aloud picks only local voices in the right language; references and
-  markdown are not spoken.
+  - the PII voice window: off with the switch, cannot be framed, makes no API calls, safe ids only
+- `apps/web/test/voice-text.test.ts` (3): read aloud picks only local voices in the right language; references and
+  markdown are not spoken; where the microphone is used (page, PII window, or not at all in Gmail's own page).
 - Browser walkthrough `tests/uat/voice/run.sh`: Chrome's fake microphone, the stand-in AI and stand-in voices. It covers
-  speaking a question, hearing the answer, dictating a note with a task and saving both, and speaking a task. Screens
-  are in `screens/`.
+  speaking a question, hearing the answer, dictating a note with a task and saving both, speaking a task, and the PII
+  voice window handing its recording back to the page that opened it. Screens are in `screens/`.
+- `apps/extension/test/embed.test.ts`: the PII frame is created with `allow="microphone"`.
 
 ## Turning it on
 

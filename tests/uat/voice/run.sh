@@ -19,5 +19,5 @@ SRV=$!
 for i in $(seq 1 40); do curl -s http://127.0.0.1:3111/healthz | grep -q ok && break; sleep 1; done
 set +e; python3 "$HERE/walkthrough.py" "$OUT"; RC=$?; kill $SRV
 CHECK=$(psql -h 127.0.0.1 -U postgres -d pii_uat_voice -Atc "SELECT (SELECT count(*) FROM notes WHERE body LIKE 'Called Raj Singh%') || '|' || (SELECT count(*) FROM tasks WHERE title = 'Send Raj the term 20 quote') || '|' || (SELECT count(*) FROM copilot_log WHERE kind = 'voice') || '|' || (SELECT count(*) FROM copilot_log WHERE kind = 'voice_note')")
-echo "dictated note saved | task saved | voice log lines | note drafts: $CHECK"; [ "$CHECK" = "1|1|3|1" ] || RC=1
+echo "dictated note saved | task saved | voice log lines | note drafts: $CHECK"; [ "$CHECK" = "1|1|4|1" ] || RC=1
 exit $RC
