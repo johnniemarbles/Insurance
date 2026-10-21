@@ -7,6 +7,7 @@ import { familyComplianceEnabled } from './routes-family-compliance.ts';
 import { suitabilityEnabled } from './suitability.ts';
 import { suitabilityFiled } from './routes-suitability.ts';
 import { checkSupervision } from './routes-supervision.ts';
+import { checkAnnuityTraining } from './annuity-training.ts';
 
 /** What a record holds against what a stage requires. All lists are document type keys.
  *  `unverified`: advice paperwork uploaded but not yet verified by compliance. `needsExpiredOn`: the last signed needs analysis, if it has expired. */
@@ -107,6 +108,8 @@ export async function checkStageGates(tx: Tx, stageId: string, boxId: string, op
   const rows = (await tx.query<{ list: string; result: string; createdAt: string }>('SELECT list, result, created_at AS "createdAt" FROM screening_results WHERE box_id = $1 ORDER BY created_at', [boxId])).rows;
   const hits = openScreeningHits(rows);
   if (hits.length) throw new HttpError(409, 'screening_hit', `To move to “${g.name}”, a compliance review of the ${hits.map((h) => (h === 'pep' ? 'PEP' : 'sanctions')).join(' and ')} screening hit is needed first`);
+  // US annuity rules (switched off by default): the advisor must have finished their initial annuity training.
+  await checkAnnuityTraining(tx, boxId, g.name);
   for (const id of g.gated) {
     const s = await gateStatus(tx, id, boxId);
     if (!s || s.missing.length === 0) continue;

@@ -7,6 +7,7 @@ import { audit } from './audit.ts';
 import { HttpError, forbidden, invalid, notFound, conflict } from './errors.ts';
 import { uuid } from './crm-helpers.ts';
 import type { AppDeps } from './app.ts';
+import { annuityTrainingOf } from './annuity-training.ts';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { certificatePdf, type CertRow } from './certificate-pdf.ts';
@@ -130,6 +131,8 @@ export function registerCeRoutes(app: FastifyInstance, deps: AppDeps): void {
           return { id: l.id, packCode: l.pack_code, licenceClass: l.licence_class, licenceNumber: l.licence_number, licensedSince: l.licensed_since, termAnchor: l.term_anchor, hours: hoursIn(entries, p, day), evaluation: evaluateFor(p, l.licence_class, hoursIn(entries, p, day), l.licensed_since, day) };
         }),
         entries: entries.map(entryOut),
+        // US annuity training (California, Texas): initial hours before selling annuities, then renewal hours each term.
+        annuity: await annuityTrainingOf(tx, ctx.userId),
       };
     });
   });
