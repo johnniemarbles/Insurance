@@ -10,7 +10,8 @@ const K = {
     setup: 'Which licence are you held to?', regulator: 'Regulator', licClass: 'Licence class', licNo: 'Licence number (optional)', since: 'First licensed on (optional)', termStart: 'Your current CE term started on (the day after your licence last expired)', saveLic: 'Save licence', changeLic: 'Change',
     term: 'Term', hours: 'hours', of: 'of', daysLeft: (n: number) => (n < 0 ? `${-n} days past the end` : `${n} days left`), needs: 'Still needed', counted: 'Counted',
     state: { met: 'Complete', on_track: 'On track', at_risk: 'At risk', overdue: 'Overdue', exempt: 'Exempt (new licensee)' } as Record<string, string>,
-    cat: { technical: 'Technical', management: 'Management', ethics: 'Ethics', professional_development: 'Professional development', general: 'General' } as Record<string, string>,
+    cat: { technical: 'Technical', management: 'Management', ethics: 'Ethics', professional_development: 'Professional development', general: 'General', annuity: 'Annuity training' } as Record<string, string>,
+    annTitle: 'Annuity training', annInitial: (h: string, n: number) => `Before selling annuities: ${h} of ${n} hours`, annDone: 'Done', annRenew: (h: string, n: number, end: string) => `This term: ${h} of ${n} hours, due by ${end}`, annBlocked: 'Annuity deals stay blocked until this is done.',
     add: 'Add a course taken elsewhere', addTitle: 'Course title', provider: 'Provider', category: 'Category', hrs: 'Hours', date: 'Completed on', proof: 'Proof (PDF, PNG or JPEG, up to 5 MB)', addBtn: 'Add to my record', added: 'Added. Your compliance officer can now review it.',
     ledger: 'My CE record', none: 'Nothing recorded this term yet.', source: { course: 'PII course', external: 'Added by me' } as Record<string, string>,
     status: { recorded: 'Recorded', verified: 'Verified', rejected: 'Not counted' } as Record<string, string>,
@@ -29,7 +30,8 @@ const K = {
     setup: 'À quel permis êtes-vous assujetti?', regulator: 'Organisme', licClass: 'Catégorie de permis', licNo: 'Numéro de permis (facultatif)', since: 'Premier permis le (facultatif)', termStart: 'Début de votre période de FC actuelle (lendemain de la dernière expiration du permis)', saveLic: 'Enregistrer le permis', changeLic: 'Modifier',
     term: 'Période', hours: 'heures', of: 'sur', daysLeft: (n: number) => (n < 0 ? `${-n} jours après la fin` : `${n} jours restants`), needs: 'Encore requis', counted: 'Comptées',
     state: { met: 'Complété', on_track: 'En bonne voie', at_risk: 'À risque', overdue: 'En retard', exempt: 'Exempté (nouveau titulaire)' } as Record<string, string>,
-    cat: { technical: 'Technique', management: 'Gestion', ethics: 'Déontologie', professional_development: 'Perfectionnement professionnel', general: 'Général' } as Record<string, string>,
+    cat: { technical: 'Technique', management: 'Gestion', ethics: 'Déontologie', professional_development: 'Perfectionnement professionnel', general: 'Général', annuity: 'Formation sur les rentes' } as Record<string, string>,
+    annTitle: 'Formation sur les rentes', annInitial: (h: string, n: number) => `Avant de vendre des rentes : ${h} sur ${n} heures`, annDone: 'Fait', annRenew: (h: string, n: number, end: string) => `Cette période : ${h} sur ${n} heures, d’ici le ${end}`, annBlocked: 'Les affaires de rentes restent bloquées tant que ce n’est pas fait.',
     add: 'Ajouter un cours suivi ailleurs', addTitle: 'Titre du cours', provider: 'Fournisseur', category: 'Catégorie', hrs: 'Heures', date: 'Terminé le', proof: 'Preuve (PDF, PNG ou JPEG, max 5 Mo)', addBtn: 'Ajouter à mon dossier', added: 'Ajouté. Votre responsable de la conformité peut maintenant le vérifier.',
     ledger: 'Mon dossier de FC', none: 'Rien d’enregistré pour cette période.', source: { course: 'Cours PII', external: 'Ajouté par moi' } as Record<string, string>,
     status: { recorded: 'Enregistré', verified: 'Vérifié', rejected: 'Non compté' } as Record<string, string>,
@@ -109,6 +111,13 @@ export function MyCe({ call, locale }: { call: Call; locale: Locale }) {
           <div class="ccard" style={{ display: 'block', margin: '12px 0', padding: '12px 14px' }} key={l.id}>
             <div class="erow" style={{ margin: 0 }}><b>{packName(p, locale)}</b><span class="tag">{clsName(c, locale)}</span>{l.licenceNumber && <span class="muted">#{l.licenceNumber}</span>}<span class="spacer" style={{ flex: 1 }} /><button class="btn quiet" onClick={() => { setLic({ pack: l.packCode, cls: l.licenceClass, no: l.licenceNumber ?? '', since: l.licensedSince ?? '', term: l.termAnchor ?? '' }); setEditLic(true); }}>{k.changeLic}</button></div>
             {l.evaluation && <Status e={l.evaluation} k={k} />}
+            {(d.annuity ?? []).filter((a: any) => a.packCode === l.packCode).map((a: any) => (
+              <div key={a.packCode} style={{ margin: '8px 0' }} aria-label={k.annTitle}>
+                <b>{k.annTitle}</b>
+                <div>{k.annInitial(hs(a.initialHours), a.initialRequired)} {a.initialDone ? <span class="tag ce-met">{k.annDone}</span> : <span class="tag ce-at_risk">{k.annBlocked}</span>}</div>
+                {a.renewalDue && <div>{k.annRenew(hs(a.renewalHours), a.renewalRequired, a.termEnd)} {a.renewalDone && <span class="tag ce-met">{k.annDone}</span>}</div>}
+              </div>
+            ))}
             <small class="muted">{k.asOf(p?.asOf ?? '')} · <a href={p?.sourceUrl} target="_blank" rel="noopener noreferrer">{k.source1}</a><br />{locale === 'fr-CA' ? p?.notesFr : p?.notes} {k.confirm}</small>
           </div>
         );

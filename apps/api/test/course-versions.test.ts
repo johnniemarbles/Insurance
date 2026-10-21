@@ -197,7 +197,7 @@ test('courses that need approval: ask, get told, approve or decline', async () =
 
 test('starter courses: listed, copied as drafts in both languages, authors only, quiz works', async () => {
   const list = (await call(A, 'GET', '/v1/courses/starter')).json.courses;
-  assert.equal(list.length, 14); assert.ok(list.every((c: any) => c.lessons >= 3 && c.questions >= 5));
+  assert.equal(list.length, 15); assert.ok(list.every((c: any) => c.lessons >= 3 && c.questions >= 5));
   assert.equal((await call(A, 'POST', '/v1/courses/starter', { key: 'eo-basics' })).status, 403, 'learners cannot add courses');
   assert.equal((await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'nope' })).status, 404);
   const made = await call(ADMIN, 'POST', '/v1/courses/starter', { key: 'privacy-basics' });

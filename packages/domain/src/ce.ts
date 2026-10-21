@@ -3,7 +3,7 @@
  * which categories need a minimum, and which are capped. `evaluateCe` turns a person's logged hours into a status.
  * Dates are plain 'YYYY-MM-DD' strings (calendar days, no time zones).
  */
-export const CE_CATEGORIES = ['technical', 'management', 'ethics', 'professional_development', 'general'] as const;
+export const CE_CATEGORIES = ['technical', 'management', 'ethics', 'professional_development', 'general', 'annuity'] as const;
 export type CeCategory = (typeof CE_CATEGORIES)[number];
 
 export interface CeClass { key: string; label: string; label_fr: string; total: number; min: Partial<Record<CeCategory, number>>; max: Partial<Record<CeCategory, number>> }
@@ -89,4 +89,35 @@ export function evaluateCe(pack: CePack, cls: CeClass, hours: Hours, licensedSin
 /** Turn the stored JSON pack row into the typed pack. */
 export function toPack(row: { code: string; term_start_month: number; term_start_day: number; term_months: number; requirements: { classes: CeClass[] }; new_licensee_exempt: boolean; retention_years: number; term_anchor?: string | null }): CePack {
   return { termAnchor: row.term_anchor ?? null, code: row.code, termStartMonth: row.term_start_month, termStartDay: row.term_start_day, termMonths: row.term_months, classes: row.requirements.classes, newLicenseeExempt: row.new_licensee_exempt, retentionYears: row.retention_years };
+}
+
+/** A state's annuity training rule (rule pack `requirements.annuity`): hours before first selling annuities, then per term. */
+export interface AnnuityRule { initial: number; renewal: number; note?: string; note_fr?: string; source?: string }
+export interface AnnuityStatus {
+  initialRequired: number; initialHours: number; initialDone: boolean; initialDoneOn: string | null;
+  /** Renewal hours apply once the initial training was finished before the current term began. */
+  renewalRequired: number; renewalHours: number; renewalDue: boolean; renewalDone: boolean; termEnd: string;
+}
+
+/**
+ * Annuity training against one state's rule. Hours fill the initial requirement first, in date order; what is left over, and
+ * every later hour, counts toward the current term's renewal hours (the initial hours never count toward renewal).
+ * Selling is allowed once the initial training is done; renewal hours are due by the end of the term, like other CE.
+ */
+export function annuityStatus(rule: AnnuityRule, entries: { completedOn: string; hours: number }[], term: { start: string; end: string }): AnnuityStatus {
+  let acc = 0, renewal = 0;
+  let doneOn: string | null = null;
+  for (const e of [...entries].sort((a, b) => a.completedOn.localeCompare(b.completedOn))) {
+    let h = Number(e.hours);
+    if (acc < rule.initial) {
+      const take = Math.min(h, rule.initial - acc);
+      acc += take; h -= take;
+      if (acc >= rule.initial && !doneOn) doneOn = e.completedOn;
+    }
+    if (h > 0 && e.completedOn >= term.start && e.completedOn <= term.end) renewal += h;
+  }
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const initialDone = acc >= rule.initial;
+  const renewalDue = initialDone && !!doneOn && doneOn < term.start;
+  return { initialRequired: rule.initial, initialHours: r1(acc), initialDone, initialDoneOn: doneOn, renewalRequired: rule.renewal, renewalHours: r1(renewal), renewalDue, renewalDone: !renewalDue || renewal >= rule.renewal, termEnd: term.end };
 }
