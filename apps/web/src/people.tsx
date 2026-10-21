@@ -33,6 +33,7 @@ export const X = {
     review: (n: number, p: string, r: string, g: boolean) => `Invite ${n} ${n === 1 ? 'person' : 'people'} to ${p} as ${r}, ${g ? 'sent from your Gmail' : 'with a link you send yourself'}.`,
     send: (n: number) => `Invite ${n}`, creating: 'Working…', done: 'Done', doneT: 'Invitations', retry: 'Try again', fixLater: 'You can resend from the People list at any time.',
     subj: (c: string) => `You are invited to ${c} on PII`, mailHi: 'Hello,', mailBody: (who: string, c: string, p: string, r: string) => `${who} invited you to join <b>${c}</b> (${p}) as <b>${r}</b> on PII by Punjab Insurance.`, mailBtn: 'Accept your invitation', mailFoot: 'This link works once and expires in 7 days.',
+    mailSite: (c: string) => `Your PII site: ${c}.`, mailThen: 'After accepting, use PII your way:', mailExt: 'Add PII to Gmail', mailExtBody: 'the Chrome extension, beside your email', mailWeb: 'Open PII in your browser', mailWebBody: 'no extension needed',
     roleHead: 'Roles', addRoleT: 'Give a role', person: 'Person', place: 'Place', role: 'Role', save: 'Save', off: 'Off',
     oldExt: 'This page is not running inside Gmail, so it cannot send from your address.',
   },
@@ -56,6 +57,7 @@ export const X = {
     review: (n: number, p: string, r: string, g: boolean) => `Inviter ${n} ${n === 1 ? 'personne' : 'personnes'} à ${p} comme ${r}, ${g ? 'envoyé depuis votre Gmail' : 'avec un lien que vous transmettez'}.`,
     send: (n: number) => `Inviter ${n}`, creating: 'En cours…', done: 'Terminé', doneT: 'Invitations', retry: 'Réessayer', fixLater: 'Vous pouvez renvoyer depuis la liste des personnes à tout moment.',
     subj: (c: string) => `Vous êtes invité à ${c} sur PII`, mailHi: 'Bonjour,', mailBody: (who: string, c: string, p: string, r: string) => `${who} vous invite à joindre <b>${c}</b> (${p}) comme <b>${r}</b> sur PII par Punjab Insurance.`, mailBtn: 'Accepter l’invitation', mailFoot: 'Ce lien sert une seule fois et expire dans 7 jours.',
+    mailSite: (c: string) => `Votre site PII : ${c}.`, mailThen: 'Après avoir accepté, utilisez PII à votre façon :', mailExt: 'Ajouter PII à Gmail', mailExtBody: 'l’extension Chrome, à côté de vos courriels', mailWeb: 'Ouvrir PII dans votre navigateur', mailWebBody: 'aucune extension requise',
     roleHead: 'Rôles', addRoleT: 'Donner un rôle', person: 'Personne', place: 'Endroit', role: 'Rôle', save: 'Enregistrer', off: 'Inactif',
     oldExt: 'Cette page n’est pas dans Gmail, elle ne peut donc pas envoyer depuis votre adresse.',
   },
@@ -161,13 +163,16 @@ function PeopleList({ call, locale, isTenantAdmin, compose }: { call: Call; loca
   const needle = q.trim().toLowerCase();
   const matches = (s: string) => !needle || s.toLowerCase().includes(needle);
 
+  // The Chrome Web Store and web-app links for the email, from this country's server.
+  const [ways, setWays] = useState<{ installUrl: string; appUrl: string; country: Record<Locale, string> } | null>(null);
+  useEffect(() => { void call('GET', '/v1/access-links').then(setWays, () => setWays(null)); }, [call]);
   /** Send the invitation email from the person's own Gmail and tell the server what happened. */
   const email = (i: { email: string; role: string; nodeId: string; acceptUrl: string; note?: string; locale?: string }) => {
     const loc = (i.locale === 'fr-CA' ? 'fr-CA' : locale) as Locale, t = X[loc];
     const place = placeName(i.nodeId) || rootName, role = roleLabel(i.role, i.nodeId) ?? i.role;
     return {
       to: i.email, subject: t.subj(rootName), review,
-      html: `<div style="font-family:Arial,sans-serif;font-size:15px;color:#0f172a;max-width:520px"><p>${t.mailHi}</p><p>${t.mailBody(esc(me?.name ?? ''), esc(rootName), esc(place), esc(role))}</p>${i.note ? `<p style="border-left:3px solid #c7d2fe;padding-left:10px;color:#475569">${esc(i.note)}</p>` : ''}<p><a href="${i.acceptUrl}" style="display:inline-block;background:#6355F6;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">${t.mailBtn}</a></p><p style="color:#64748b;font-size:13px">${t.mailFoot}</p></div>`,
+      html: `<div style="font-family:Arial,sans-serif;font-size:15px;color:#0f172a;max-width:520px"><p>${t.mailHi}</p><p>${t.mailBody(esc(me?.name ?? ''), esc(rootName), esc(place), esc(role))}</p>${i.note ? `<p style="border-left:3px solid #c7d2fe;padding-left:10px;color:#475569">${esc(i.note)}</p>` : ''}<p><a href="${i.acceptUrl}" style="display:inline-block;background:#6355F6;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">${t.mailBtn}</a></p>${ways ? `<p>${t.mailSite(esc(ways.country[loc]))}</p><p>${t.mailThen}</p><ul style="padding-left:20px"><li><a href="${esc(ways.installUrl)}">${t.mailExt}</a>: ${t.mailExtBody}</li><li><a href="${esc(ways.appUrl)}">${t.mailWeb}</a>: ${t.mailWebBody}</li></ul>` : ''}<p style="color:#64748b;font-size:13px">${t.mailFoot}</p></div>`,
     };
   };
   const report = (id: string, method: 'gmail' | 'link', ok: boolean, error?: string, threadId?: string) => call('POST', `/v1/invitations/${id}/delivery`, { method, ok, ...(error ? { error: error.slice(0, 300) } : {}), ...(threadId && /^[A-Za-z0-9_:-]{4,80}$/.test(threadId) ? { threadId } : {}) }).catch(() => undefined);

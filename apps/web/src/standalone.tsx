@@ -17,7 +17,7 @@ const embedded = new URLSearchParams(location.search).get('embed') === '1' && wi
 
 if (!embedded) {
   const transport: Transport = (method, path, body) => call(method, path, body, {}, 'same-origin');
-  mountPii(el, { transport, onSignIn: () => { location.href = '/auth/google/start'; } });
+  mountPii(el, { transport, onSignIn: () => { location.href = '/auth/google/start?next=/app'; } });
 } else {
   // Shown inside Gmail by the extension. The extension hands over a short-lived token; no cookie is used in the frame.
   // Never post anything secret to the parent: Gmail's own page scripts can hear it.

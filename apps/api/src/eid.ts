@@ -33,6 +33,9 @@ const ymd = (d?: { day?: number | null; month?: number | null; year?: number | n
   d?.year && d.month && d.day ? `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}` : null;
 
 /** Stripe Identity over its REST API with a restricted key. Asks for a driving licence and a live selfie, nothing else. */
+const EXPAND = ['verified_outputs', 'verified_outputs.dob', 'last_verification_report', 'last_verification_report.document.dob', 'last_verification_report.document.expiration_date']
+  .map((f) => `expand[]=${encodeURIComponent(f)}`).join('&');
+
 export function stripeIdentityClient(secretKey: string, fetchImpl: typeof fetch = fetch): StripeIdentity {
   const call = async (method: 'GET' | 'POST', path: string, form?: URLSearchParams) => {
     const res = await fetchImpl(`https://api.stripe.com/v1/${path}`, {
@@ -58,8 +61,10 @@ export function stripeIdentityClient(secretKey: string, fetchImpl: typeof fetch 
       const j = await call('POST', 'identity/verification_sessions', f);
       return { id: String(j.id), url: String(j.url) };
     },
+    // The birth date and expiry are sensitive fields: Stripe returns them only when named in expand, and only to a restricted
+    // key with Recent Detailed Verification Results (Identity docs, "Access verification results").
     async getOutcome(sessionId) {
-      const j = await call('GET', `identity/verification_sessions/${encodeURIComponent(sessionId)}?expand[]=verified_outputs&expand[]=last_verification_report`);
+      const j = await call('GET', `identity/verification_sessions/${encodeURIComponent(sessionId)}?${EXPAND}`);
       const rep = (j.last_verification_report ?? {}) as Record<string, any>;
       const doc = (rep.document ?? {}) as Record<string, any>;
       const out = (j.verified_outputs ?? {}) as Record<string, any>;

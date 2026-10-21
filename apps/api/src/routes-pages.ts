@@ -4,6 +4,8 @@ import { hashToken } from '@pii/platform';
 import type { AppDeps } from './app.ts';
 import { privacy, support, terms, type Lang, type LegalInfo } from './legal.ts';
 import { guideFor, renderGuide, type GuideLang } from './partner-guide.ts';
+import { withRequestTx } from '@pii/db';
+import { COUNTRY_NAME, countryOf, countryOrigin, otherOrigin, safeNext, storeUrl } from './countries.ts';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
@@ -19,31 +21,54 @@ main{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:32px;ma
 <body><main><img src="/brand/logo.png" alt=""><h1>${esc(product)}</h1>${body}</main></body></html>`;
 }
 
+/** The page after Google sign-in (and after accepting an invitation): the country, then Gmail or the browser. */
+export function signedInPage(o: { lang: 'en' | 'fr-CA'; product: string; country: string; first: string; company: string | null; welcome: boolean; moved: boolean; installed: boolean; store: string | null }): string {
+  const fr = o.lang === 'fr-CA';
+  const T = fr ? {
+    hi: o.first ? `Bienvenue, ${esc(o.first)}` : 'Vous êtes connecté', where: `Vous êtes connecté à PII ${esc(o.country)}.`, joined: (c: string) => `Vous faites maintenant partie de <b>${esc(c)}</b>.`,
+    moved: `Votre compte est dans PII ${esc(o.country)}; nous vous y avons amené.`, pick: 'Deux façons d’utiliser PII :',
+    g: 'Dans Gmail', gBody: 'Ajoutez l’extension PII à Chrome, puis ouvrez Gmail : PII apparaît dans le panneau de gauche.', gBtn: 'Ajouter PII à Gmail', gDone: 'Ajoutée à Gmail ✓', gOpen: 'Ouvrir Gmail',
+    w: 'Dans votre navigateur', wBody: 'Tout PII dans un onglet, sans extension.', wBtn: 'Ouvrir PII', close: 'Vous pouvez aussi fermer cet onglet et revenir à Gmail.', guide: 'Guide du partenaire',
+  } : {
+    hi: o.first ? `Welcome, ${esc(o.first)}` : 'You are signed in', where: `You are signed in to PII ${esc(o.country)}.`, joined: (c: string) => `You are now part of <b>${esc(c)}</b>.`,
+    moved: `Your account is in PII ${esc(o.country)}, so we brought you here.`, pick: 'Two ways to use PII:',
+    g: 'In Gmail', gBody: 'Add the PII extension to Chrome, then open Gmail: PII shows in the left panel.', gBtn: 'Add PII to Gmail', gDone: 'Added to Gmail ✓', gOpen: 'Open Gmail',
+    w: 'In your browser', wBody: 'All of PII in a tab, no extension needed.', wBtn: 'Open PII', close: 'Or close this tab and go back to Gmail.', guide: 'Partner guide',
+  };
+  const gmail = o.installed
+    ? `<p class="done">${T.gDone}</p><a class="btn" href="https://mail.google.com">${T.gOpen}</a>`
+    : `<a class="btn" href="${esc(o.store ?? '/install')}"${o.store ? ' target="_blank" rel="noopener"' : ''}>${T.gBtn}</a><a class="sub" href="https://mail.google.com">${T.gOpen}</a>`;
+  return `<!doctype html><html lang="${fr ? 'fr' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(T.hi)} · ${esc(o.product)}</title>
+<style>:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;color:#0f172a;background:radial-gradient(900px 500px at 50% -10%,#dbe4ff,transparent 60%),#f8fafc}
+main{width:100%;max-width:560px;background:#fff;border:1px solid #e2e8f0;border-radius:20px;padding:32px 28px;box-shadow:0 20px 50px -20px rgba(15,23,42,.25);text-align:center}img{width:56px;height:56px;border-radius:14px}h1{font-size:24px;margin:12px 0 6px}p{margin:4px 0;color:#475569}
+.badge{display:inline-block;margin:8px 0 4px;padding:4px 12px;border-radius:999px;background:#eef2ff;color:#3730a3;font-weight:600;font-size:14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0 8px;text-align:left}
+.opt{border:1px solid #e2e8f0;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:6px}.opt b{font-size:16px}.opt p{font-size:14px;flex:1}.btn{display:block;text-align:center;background:#1d4ed8;color:#fff;text-decoration:none;font-weight:600;border-radius:10px;padding:10px 12px;margin-top:6px}
+.sub{display:block;text-align:center;font-size:14px;color:#1d4ed8;margin-top:6px}.done{color:#047857!important;font-weight:600}.small{font-size:13px;color:#64748b;margin-top:14px}a{color:#1d4ed8}
+@media(max-width:520px){.grid{grid-template-columns:1fr}}@media(prefers-color-scheme:dark){body{color:#e5e7eb;background:#0b1020}main,.opt{background:#121a33;border-color:#243055}p{color:#a9b4d6}.badge{background:#1e2a5a;color:#c7d2fe}}</style></head>
+<body><main><img src="/brand/logo.png" alt=""><h1>${T.hi}</h1><span class="badge">PII ${esc(o.country)}</span><p>${T.where}</p>${o.welcome && o.company ? `<p>${T.joined(o.company)}</p>` : ''}${o.moved ? `<p>${T.moved}</p>` : ''}
+<div class="grid" aria-label="${esc(T.pick)}"><section class="opt" aria-label="${T.g}"><b>${T.g}</b><p>${T.gBody}</p>${gmail}</section><section class="opt" aria-label="${T.w}"><b>${T.w}</b><p>${T.wBody}</p><a class="btn" href="/app">${T.wBtn}</a></section></div>
+${o.welcome ? '' : `<p class="small">${T.close}</p>`}<p class="small"><a href="/guide?lang=${fr ? 'fr-CA' : 'en'}">${T.guide}</a></p></main></body></html>`;
+}
+
 /** Small landing pages for the places the server sends people: after sign-in, sign-in errors, privacy. */
 export function registerPageRoutes(app: FastifyInstance, deps: AppDeps): void {
   const product = deps.config.productDisplayName;
 
   app.get('/', async (req, reply) => {
-    const q = req.query as { signed_in?: string; welcome?: string };
-    let body = '<p>Open Gmail with the PII extension installed to get started.</p>';
-    let lang: 'en' | 'fr-CA' = 'en';
+    const q = req.query as { signed_in?: string; welcome?: string; moved?: string };
     if (q.signed_in) {
-      body = '<p><b>You are signed in.</b></p><p>You can close this tab and return to Gmail. Open an email and use the PII panel.</p>';
+      // After Google sign-in: which country this is, and the two ways in (Gmail with the extension, or the browser).
+      const here = countryOf(deps.config.region);
+      let who: { lang: 'en' | 'fr-CA'; first: string; company: string; installed: boolean } | null = null;
       try {
         const id = await deps.authenticate(req);
-        lang = id.user.locale === 'fr-CA' ? 'fr-CA' : 'en';
         const company = (await deps.authPool.query<{ name: string }>('SELECT name FROM tenants WHERE id = $1', [id.ctx.tenantId])).rows[0]?.name ?? product;
-        const first = (id.user.displayName ?? '').split(' ')[0] ?? '';
-        const ext = process.env.PII_EXTENSION_URL;
-        const T = lang === 'fr-CA'
-          ? { hi: first ? `Bienvenue, ${esc(first)}` : 'Bienvenue', in: `Vous faites maintenant partie de <b>${esc(company)}</b>.`, s1: 'Installez l’extension Chrome PII', s1x: ext ? 'Installer' : 'Si vous ne l’avez pas encore, demandez-la à la personne qui vous a invité.', s2: 'Ouvrez Gmail', s3: 'Cherchez <b>PII</b> dans le panneau de gauche', go: 'Ouvrir Gmail', back: 'Vous êtes connecté. Vous pouvez fermer cet onglet.' }
-          : { hi: first ? `Welcome, ${esc(first)}` : 'Welcome', in: `You are now part of <b>${esc(company)}</b>.`, s1: 'Install the PII Chrome extension', s1x: ext ? 'Install it' : 'If you do not have it yet, ask the person who invited you.', s2: 'Open Gmail', s3: 'Look for <b>PII</b> in the left panel', go: 'Open Gmail', back: 'You are signed in. You can close this tab.' };
-        body = q.welcome
-          ? `<p>${T.in}</p><ol style="text-align:left;line-height:1.7;padding-left:22px"><li><b>${T.s1}</b><br><span style="color:#6b7280;font-size:14px">${ext ? `<a href="${esc(ext)}">${T.s1x}</a>` : T.s1x}</span></li><li><b>${T.s2}</b></li><li>${T.s3}</li></ol><p><a href="https://mail.google.com" style="display:inline-block;background:#1d4ed8;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600">${T.go}</a></p>`
-          : `<p>${T.back}</p><p><a href="https://mail.google.com">${T.go}</a></p><p><a href="/guide?lang=${lang}">${lang === 'fr-CA' ? 'Guide du partenaire' : 'Partner guide'}</a></p>`;
-        return reply.type('text/html; charset=utf-8').send(page(product, body, T.hi).replace('<html lang="en">', `<html lang="${lang}">`));
-      } catch { /* not signed in after all: show the plain signed-in page */ }
-      return reply.type('text/html; charset=utf-8').send(page(product, body, product));
+        const installed = await withRequestTx(deps.appPool, id.ctx, async (tx) => (await tx.query('SELECT 1 FROM extension_installs WHERE user_id = $1 LIMIT 1', [id.ctx.userId])).rowCount! > 0).catch(() => false);
+        who = { lang: id.user.locale === 'fr-CA' ? 'fr-CA' : 'en', first: (id.user.displayName ?? '').split(' ')[0] ?? '', company, installed };
+      } catch { /* not signed in after all: the page still offers both ways in */ }
+      const lang = who?.lang ?? 'en';
+      return reply.type('text/html; charset=utf-8').header('cache-control', 'no-store')
+        .send(signedInPage({ lang, product, country: COUNTRY_NAME[here][lang], first: who?.first ?? '', company: who?.company ?? null, welcome: Boolean(q.welcome), moved: Boolean(q.moved), installed: who?.installed ?? false, store: storeUrl() }));
     }
     return reply.type('text/html; charset=utf-8').header('cache-control', 'public, max-age=300').send(homePage(req));
   });
@@ -57,7 +82,7 @@ export function registerPageRoutes(app: FastifyInstance, deps: AppDeps): void {
     const neutral = (process.env.HOME_HOSTS ?? 'punjabinsurance.co,www.punjabinsurance.co').split(',').map((h) => h.trim().toLowerCase()).includes(host);
     const entity = neutral ? 'Punjab Insurance Agency Inc (Canada) and Punjab Insurance Broker Inc (US)' : deps.config.region === 'us' ? 'Punjab Insurance Broker Inc' : 'Punjab Insurance Agency Inc';
     const entityFr = neutral ? 'Punjab Insurance Agency Inc (Canada) et Punjab Insurance Broker Inc (É.-U.)' : entity;
-    const ext = process.env.PII_EXTENSION_URL;
+    const ext = storeUrl();
     const storedHere = deps.config.dataCountry === 'CA'
       ? (fr ? 'Les données sont hébergées au Canada.' : 'Data is stored in Canada.')
       : (fr ? 'Les données sont hébergées sur des serveurs sécurisés aux États-Unis.' : 'Data is stored on secure servers in the United States.');
@@ -82,14 +107,18 @@ export function registerPageRoutes(app: FastifyInstance, deps: AppDeps): void {
       pt: `Google sign-in asks only for your name and email address. ${product} does not access your Gmail through Google’s API and reads only the conversation you choose to link. We do not sell data or show ads. ${storedHere}`,
       nav: [['/privacy', 'Privacy'], ['/terms', 'Terms'], ['/support', 'Support']], other: ['Français', 'fr'], by: `Operated by ${entity}.`,
     };
-    const cta = ext ? `<a class="btn" href="${esc(ext)}">${T.cta}</a>` : `<span class="btn off">${T.cta}</span>`;
+    // Sign in: the neutral home names both countries; a country's own home signs in here. The store link sits beside it.
+    const signIn = neutral
+      ? `<a class="btn" href="${esc(countryOrigin('ca'))}/app">${fr ? 'Se connecter : Canada' : 'Sign in: Canada'}</a> <a class="btn" href="${esc(countryOrigin('us'))}/app">${fr ? 'Se connecter : États-Unis' : 'Sign in: United States'}</a>`
+      : `<a class="btn" href="/app">${fr ? 'Se connecter à PII' : 'Sign in to PII'}</a>`;
+    const cta = `<div class="ctas">${signIn}${ext ? ` <a class="btn ghost" href="${esc(ext)}" target="_blank" rel="noopener">${fr ? 'Ajouter PII à Gmail' : 'Add PII to Gmail'}</a>` : ''}</div>`;
     const title = `${product} · ${T.tag}`;
     return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><meta name="description" content="${esc(T.lead)}">
 <style>:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;color:#0f172a;background:radial-gradient(1200px 480px at 50% -10%,#dbe7ff 0%,#f8fafc 60%)}
 @media(prefers-color-scheme:dark){body{color:#e5e7eb;background:#0b1020}.card{background:#111936!important;border-color:#26305a!important}a{color:#8ab4ff}.nav a,.muted{color:#9aa6d1!important}}
 main{max-width:860px;margin:0 auto;padding:24px 20px 56px}header{display:flex;align-items:center;gap:12px}header img{width:40px;height:40px;border-radius:10px}.nav{margin-left:auto;display:flex;gap:16px;font-size:14px;flex-wrap:wrap}.nav a{color:#475569;text-decoration:none}
 .hero{text-align:center;padding:56px 0 32px}h1{font-size:clamp(30px,5vw,44px);line-height:1.15;margin:0 0 12px;letter-spacing:-.02em}.lead{font-size:18px;max-width:620px;margin:0 auto 24px}
-.btn{display:inline-block;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:13px 24px;border-radius:12px;font-weight:600;box-shadow:0 6px 16px rgba(37,99,235,.3)}.btn.off{background:#64748b;box-shadow:none}
+.btn{display:inline-block;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:13px 24px;border-radius:12px;font-weight:600;box-shadow:0 6px 16px rgba(37,99,235,.3)}.btn.off{background:#64748b;box-shadow:none}.ctas{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}.btn.ghost{background:#fff;color:#1d4ed8;border:1px solid #c7d2fe;box-shadow:none}
 .muted{color:#64748b;font-size:14px;max-width:520px;margin:12px auto 0}h2{font-size:22px;margin:40px 0 14px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px}.card b{display:block;margin-bottom:4px}.card span{color:#64748b;font-size:15px}footer{margin-top:48px;font-size:14px;display:flex;flex-wrap:wrap;gap:8px 18px}a{color:#1d4ed8}</style></head>
 <body><main><header><img src="/brand/logo.png" alt=""><b>${esc(product)}</b><nav class="nav" aria-label="Pages">${T.nav.map(([h, t]) => `<a href="${h}?lang=${l}">${t}</a>`).join('')}<a href="/?lang=${T.other[1]}" lang="${T.other[1]}">${T.other[0]}</a></nav></header>
@@ -101,8 +130,8 @@ main{max-width:860px;margin:0 auto;padding:24px 20px 56px}header{display:flex;al
 
   // The page behind the link in an invitation email: who invited you, to what, and one button.
   const T = {
-    'en': { invited: 'You are invited', by: (w: string, c: string) => `${w} invited you to join <b>${c}</b>.`, as: 'Your role', place: 'Where', go: 'Continue with Google', hint: (e: string) => `Use the Google account for <b>${e}</b>.`, privacy: 'Privacy', expiredT: 'This invitation has expired', expired: (w: string) => `Ask ${w} to send you a new one. It only takes a moment.`, usedT: 'You have already joined', used: 'Open Gmail and use the PII panel.', badT: 'This link does not work', bad: 'It may have been copied incompletely, or withdrawn. Ask the person who invited you for a new one.', off: 'Sign-in is not set up on this server yet.' },
-    'fr-CA': { invited: 'Vous êtes invité', by: (w: string, c: string) => `${w} vous invite à joindre <b>${c}</b>.`, as: 'Votre rôle', place: 'Où', go: 'Continuer avec Google', hint: (e: string) => `Utilisez le compte Google associé à <b>${e}</b>.`, privacy: 'Confidentialité', expiredT: 'Cette invitation a expiré', expired: (w: string) => `Demandez à ${w} de vous en envoyer une nouvelle. Cela ne prend qu’un instant.`, usedT: 'Vous avez déjà joint l’équipe', used: 'Ouvrez Gmail et utilisez le panneau PII.', badT: 'Ce lien ne fonctionne pas', bad: 'Il a peut-être été copié en partie, ou retiré. Demandez-en un nouveau à la personne qui vous a invité.', off: 'La connexion n’est pas encore configurée sur ce serveur.' },
+    'en': { site: 'PII site', invited: 'You are invited', by: (w: string, c: string) => `${w} invited you to join <b>${c}</b>.`, as: 'Your role', place: 'Where', go: 'Continue with Google', hint: (e: string) => `Use the Google account for <b>${e}</b>.`, privacy: 'Privacy', expiredT: 'This invitation has expired', expired: (w: string) => `Ask ${w} to send you a new one. It only takes a moment.`, usedT: 'You have already joined', used: 'Open Gmail and use the PII panel.', badT: 'This link does not work', bad: 'It may have been copied incompletely, or withdrawn. Ask the person who invited you for a new one.', off: 'Sign-in is not set up on this server yet.' },
+    'fr-CA': { site: 'Site PII', invited: 'Vous êtes invité', by: (w: string, c: string) => `${w} vous invite à joindre <b>${c}</b>.`, as: 'Votre rôle', place: 'Où', go: 'Continuer avec Google', hint: (e: string) => `Utilisez le compte Google associé à <b>${e}</b>.`, privacy: 'Confidentialité', expiredT: 'Cette invitation a expiré', expired: (w: string) => `Demandez à ${w} de vous en envoyer une nouvelle. Cela ne prend qu’un instant.`, usedT: 'Vous avez déjà joint l’équipe', used: 'Ouvrez Gmail et utilisez le panneau PII.', badT: 'Ce lien ne fonctionne pas', bad: 'Il a peut-être été copié en partie, ou retiré. Demandez-en un nouveau à la personne qui vous a invité.', off: 'La connexion n’est pas encore configurée sur ce serveur.' },
   } as const;
   const ROLE = { en: { admin: 'Admin', manager: 'Manager', trainer: 'Trainer', partner: 'Partner', learner: 'Learner' }, 'fr-CA': { admin: 'Administrateur', manager: 'Gestionnaire', trainer: 'Formateur', partner: 'Partenaire', learner: 'Apprenant' } } as const;
   const inviteShell = (lang: string, title: string, inner: string, tone: 'ok' | 'warn' = 'ok') => `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
@@ -133,29 +162,49 @@ main{width:min(460px,92vw);background:#fff;border-radius:20px;box-shadow:0 20px 
     const href = `/auth/google/start?invite=${encodeURIComponent(token)}&hint=${encodeURIComponent(row.email)}`;
     const roleName = (ROLE[lang] as Record<string, string>)[row.role] ?? row.role;
     const inner = `<h1>${t.invited}</h1><p>${t.by(esc(row.inviter ?? '—'), esc(row.company))}</p>
-<div class="card"><div class="row"><span>${t.place}</span><b>${esc(row.place)}</b></div><div class="row"><span>${t.as}</span><b>${esc(roleName)}</b></div></div>
+<div class="card"><div class="row"><span>${t.site}</span><b>${esc(COUNTRY_NAME[countryOf(deps.config.region)][lang])}</b></div><div class="row"><span>${t.place}</span><b>${esc(row.place)}</b></div><div class="row"><span>${t.as}</span><b>${esc(roleName)}</b></div></div>
 ${deps.google ? `<a class="btn" href="${esc(href)}">${t.go}</a>` : `<a class="btn off">${t.go}</a><p class="small">${t.off}</p>`}
 <p class="small">${t.hint(esc(row.email))}</p><p class="small"><a class="l" href="/privacy">${t.privacy}</a></p>`;
     return send(lang, t.invited, inner);
   });
 
+  // The stand-in Google page (development servers with GOOGLE_FAKE=1 only): type an email, continue to this server's callback.
+  if ((deps.google as { fake?: boolean } | undefined)?.fake && deps.config.appEnv === 'dev') {
+    app.get('/dev/google', async (req, reply) => {
+      const q = req.query as { state?: string; redirect_uri?: string; login_hint?: string; email?: string };
+      const cb = `${deps.config.appOrigin}/auth/google/callback`;
+      if (q.redirect_uri !== cb || !q.state) return reply.code(400).send('bad request');
+      if (q.email) return reply.redirect(`${cb}?code=${Buffer.from(q.email.trim().toLowerCase()).toString('base64url')}&state=${encodeURIComponent(q.state)}`, 302);
+      return reply.type('text/html; charset=utf-8').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Google (development stand-in)</title></head><body style="font:16px system-ui;max-width:420px;margin:60px auto">
+<h1 style="font-size:20px">Google (development stand-in)</h1><p>Signing in to ${esc(deps.config.appOrigin)}</p><form method="get" action="/dev/google"><input type="hidden" name="state" value="${esc(q.state)}"><input type="hidden" name="redirect_uri" value="${esc(cb)}">
+<label>Email <input name="email" aria-label="Email" value="${esc(q.login_hint ?? '')}" style="width:100%;padding:8px"></label><p><button type="submit">Continue</button></p></form></body></html>`);
+    });
+  }
+
   app.get('/login', async (req, reply) => {
-    const q = req.query as { error?: string; lang?: string };
+    const q = req.query as { error?: string; lang?: string; next?: string };
     const fr = q.lang ? q.lang.startsWith('fr') : String(req.headers['accept-language'] ?? '').toLowerCase().startsWith('fr');
     const us = deps.config.region === 'us';
     const here = us ? 'United States' : 'Canada', there = us ? 'Canada' : 'United States';
     const hereFr = us ? 'aux États-Unis' : 'au Canada', thereFr = us ? 'Canada' : 'États-Unis';
-    const host = String(req.hostname ?? '').toLowerCase();
-    const otherHost = host.startsWith('us.') ? host.replace(/^us\./, 'ca.') : host.startsWith('ca.') ? host.replace(/^ca\./, 'us.') : '';
-    const kind = q.error === 'unknown_user' || q.error === 'not_invited' ? 'invite' : q.error === 'cancelled' ? 'cancelled' : q.error === 'unverified_email' || q.error === 'email_not_verified' ? 'verify' : 'other';
+    const other = otherOrigin(deps.config.appOrigin, deps.config.region);
+    const next = safeNext(q.next);
+    const nextQ = next ? `?next=${encodeURIComponent(next)}` : '';
+    const kind = q.error === 'unknown_user_both' ? 'neither' : q.error === 'unknown_user' || q.error === 'not_invited' ? 'invite' : q.error === 'cancelled' ? 'cancelled' : q.error === 'unverified_email' || q.error === 'email_not_verified' ? 'verify' : q.error === 'identity_conflict' ? 'conflict' : q.error === 'disabled' ? 'disabled' : 'other';
     const T = fr ? {
       invite: ['Ce compte Google n’a pas accès', `Ce compte n’est pas invité sur le site PII (${hereFr}). PII est sur invitation seulement.`, ['Essayez un autre compte Google (celui de l’invitation).', `Si votre agence est en ${thereFr}, utilisez plutôt le site ${thereFr}.`, 'Sinon, demandez une invitation à votre administrateur.']],
+      neither: ['Ce compte Google n’a pas accès', 'Ce compte n’est invité ni au Canada ni aux États-Unis. PII est sur invitation seulement.', ['Essayez un autre compte Google (celui de l’invitation).', 'Sinon, demandez une invitation à votre administrateur.']],
+      conflict: ['Un autre compte Google est déjà lié', 'Votre accès PII est lié à un autre compte Google avec la même adresse. Connectez-vous avec ce compte, ou demandez à votre administrateur de le réinitialiser.', []],
+      disabled: ['Accès désactivé', 'Votre accès PII a été désactivé. Communiquez avec votre administrateur.', []],
       cancelled: ['Connexion annulée', 'Vous avez quitté Google avant la fin. Rien n’a été modifié.', []],
       verify: ['Courriel non vérifié', 'Google n’a pas pu vérifier l’adresse courriel de ce compte. Essayez un autre compte.', []],
       other: ['La connexion n’a pas abouti', 'Un problème est survenu. Réessayez dans un instant.', []],
       again: 'Réessayer', switchTo: `Passer au site ${thereFr}`, help: 'Besoin d’aide?', lang: 'English', langQ: 'en',
     } : {
       invite: ['This Google account doesn’t have access', `This account hasn’t been invited to the PII ${here} site. PII is invite-only.`, ['Try a different Google account (the one that received the invitation).', `If your agency is in ${there}, use the ${there} site instead.`, 'Otherwise, ask your administrator to invite you.']],
+      neither: ['This Google account doesn’t have access', 'This account isn’t invited in Canada or the United States. PII is invite-only.', ['Try a different Google account (the one that received the invitation).', 'Otherwise, ask your administrator to invite you.']],
+      conflict: ['A different Google account is linked', 'Your PII access is linked to another Google account with the same address. Sign in with that account, or ask your administrator to reset it.', []],
+      disabled: ['Access turned off', 'Your PII access has been turned off. Contact your administrator.', []],
       cancelled: ['Sign-in cancelled', 'You left Google before finishing. Nothing was changed.', []],
       verify: ['Email not verified', 'Google couldn’t verify this account’s email address. Try a different account.', []],
       other: ['Sign-in didn’t complete', 'Something went wrong. Please try again in a moment.', []],
@@ -170,7 +219,7 @@ main{width:100%;max-width:440px;background:#fff;border:1px solid #e2e8f0;border-
 @media(prefers-color-scheme:dark){body{color:#e5e7eb;background:#0b1020}main{background:#121a33;border-color:#243055;box-shadow:none}p,ul{color:#a9b4d6}.ic{background:#3a2f12}.s{border-color:#33406b;color:#e5e7eb}.f,.f a{color:#94a3b8}}</style></head>
 <body><main><div class="b"><img src="/brand/logo.png" alt="">${esc(product)}</div><div class="ic" aria-hidden="true">${kind === 'cancelled' ? '↩' : '🔒'}</div><h1>${esc(title)}</h1><p>${esc(lead)}</p>
 ${tips.length ? `<ul>${tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-<a class="btn p" href="/auth/google/start">${T.again}</a>${otherHost && kind === 'invite' ? `<a class="btn s" href="https://${esc(otherHost)}/app">${esc(T.switchTo)}</a>` : ''}
+<a class="btn p" href="/auth/google/start${esc(nextQ)}">${T.again}</a>${other && kind === 'invite' ? `<a class="btn s" href="${esc(other)}/auth/google/start${esc(nextQ)}">${esc(T.switchTo)}</a>` : ''}
 <div class="f"><span>${T.help} <a href="mailto:${esc(deps.config.supportEmail)}">${esc(deps.config.supportEmail)}</a></span><a href="/login?${q.error ? `error=${encodeURIComponent(q.error)}&` : ''}lang=${T.langQ}">${T.lang}</a></div></main></body></html>`;
     return reply.code(q.error ? 403 : 200).type('text/html; charset=utf-8').header('cache-control', 'no-store').send(html);
   });

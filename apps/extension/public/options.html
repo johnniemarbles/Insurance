@@ -4,9 +4,10 @@
 input{width:100%;padding:8px;margin:6px 0 12px;box-sizing:border-box}button{padding:8px 14px}#msg{color:#047857;margin-left:8px}</style></head>
 <body>
 <h1>PII by Punjab Insurance</h1>
-<label for="base">Server address</label>
+<div id="base-block"><label for="base">Server address (development builds)</label>
 <input id="base" type="url" placeholder="https://app.punjabinsurance.co">
-<p style="color:#6b7280">Leave as provided by your administrator. Development builds point at a test server with synthetic data only.</p>
+<p style="color:#6b7280">Development builds point at a test server with synthetic data only.</p></div>
+<p style="color:#6b7280">Your country (Canada or United States) is chosen when you sign in from the PII mark in Gmail.</p>
 <label><input id="embed" type="checkbox" style="width:auto;margin:0 6px 0 0">Troubleshooting: use the screens built into this extension instead of the latest from the server</label>
 <p></p><button id="save">Save</button><span id="msg"></span>
 <script src="options.js"></script>

@@ -4,7 +4,7 @@ import { buildApp } from './app.ts';
 import { resendMailer } from './mailer.ts';
 import { s3Vault } from './vault.ts';
 import { devAuthenticator, firstOf, sessionAuthenticator } from './auth.ts';
-import { realGoogleClient } from './google.ts';
+import { fakeGoogleClient, realGoogleClient } from './google.ts';
 import { aiFromEnv, aiProvidersFromEnv } from './ai.ts';
 import { fakeStripeIdentity, stripeIdentityClient } from './eid.ts';
 import { startBackgroundJobs } from './background.ts';
@@ -16,7 +16,8 @@ const authPool = createPool(config.authDatabaseUrl, 5);
 // Refuse to start against a database that belongs to a different region.
 await assertDeployment(appPool, config.region);
 
-const google = config.googleClientId ? realGoogleClient(config) : undefined;
+// The stand-in Google never runs on a real (https) address, whatever the variables say.
+const google = process.env.GOOGLE_FAKE === '1' && config.appEnv === 'dev' && !config.appOrigin.startsWith('https://') ? fakeGoogleClient(config.appOrigin) : config.googleClientId ? realGoogleClient(config) : undefined;
 if (!google && !config.devAuth) {
   // Safe state: the API runs, but nobody can sign in until Google sign-in is configured.
   console.warn('Google sign-in is not configured: every authenticated route will answer 401.');

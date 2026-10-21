@@ -71,7 +71,7 @@ policy administrator must allow `https://token.actions.githubusercontent.com`.
 | `CWS_PUBLISHER_ID` | publisher ID from the dashboard |
 | `CWS_WIF_PROVIDER` | `projects/<number>/locations/global/workloadIdentityPools/github/providers/pii-repo` |
 | `CWS_SERVICE_ACCOUNT` | `pii-store-publisher@<project>.iam.gserviceaccount.com` |
-| `CWS_ITEM_ID` | optional; defaults to `dkclimhnmcpflpjaiimfibfnefkdchei` |
+| `CWS_ITEM_ID` | optional; defaults to `bbfccaiemeckdhajpejacckieamdbajm` |
 
 Optional: **Settings → Environments → `chrome-web-store` → Required reviewers** to approve every upload by hand.
 

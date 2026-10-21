@@ -38,8 +38,8 @@ export const HEADER_CSS = `
 
 interface NavItem { id: string; name: string; count: number }
 const T = {
-  en: { bell: 'Notifications', all: 'See all in settings', markAll: 'Mark all read', clear: 'Nothing new', clearSub: 'We will tell you when something needs you.', open: 'Open PII', country: 'Country', signIn: 'Sign in', noticeT: 'Privacy notice', noticeRead: 'Read the privacy notice', noticeOk: 'I accept', retry: 'Could not load. Try again', ago: (m: number) => (m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`) },
-  'fr-CA': { bell: 'Notifications', all: 'Tout voir dans les paramètres', markAll: 'Tout marquer comme lu', clear: 'Rien de nouveau', clearSub: 'Nous vous aviserons quand quelque chose vous attend.', open: 'Ouvrir PII', country: 'Pays', signIn: 'Connexion', noticeT: 'Avis de confidentialité', noticeRead: 'Lire l’avis de confidentialité', noticeOk: 'J’accepte', retry: 'Chargement impossible. Réessayer', ago: (m: number) => (m < 1 ? 'à l’instant' : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`) },
+  en: { bell: 'Notifications', all: 'See all in settings', markAll: 'Mark all read', clear: 'Nothing new', clearSub: 'We will tell you when something needs you.', open: 'Open PII', country: 'Country', signIn: 'Sign in', pick: 'Sign in to PII', signInTo: (c: string) => `Sign in: ${c}`, noticeT: 'Privacy notice', noticeRead: 'Read the privacy notice', noticeOk: 'I accept', retry: 'Could not load. Try again', ago: (m: number) => (m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`) },
+  'fr-CA': { bell: 'Notifications', all: 'Tout voir dans les paramètres', markAll: 'Tout marquer comme lu', clear: 'Rien de nouveau', clearSub: 'Nous vous aviserons quand quelque chose vous attend.', open: 'Ouvrir PII', country: 'Pays', signIn: 'Connexion', pick: 'Se connecter à PII', signInTo: (c: string) => `Se connecter : ${c}`, noticeT: 'Avis de confidentialité', noticeRead: 'Lire l’avis de confidentialité', noticeOk: 'J’accepte', retry: 'Chargement impossible. Réessayer', ago: (m: number) => (m < 1 ? 'à l’instant' : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`) },
 };
 const changed = () => { try { window.dispatchEvent(new CustomEvent('pii-settings-changed')); } catch { /* ignore */ } };
 
@@ -94,7 +94,21 @@ function Header({ host, markUrl }: { host: HostOptions; markUrl: string }) {
   const markAll = async () => { await host.transport('POST', '/v1/notifications/read', { all: true }).catch(() => undefined); setUnread(0); setList((l) => (l ?? []).map((x) => ({ ...x, readAt: x.readAt ?? new Date().toISOString() }))); changed(); };
   const x = X[locale];
   const showCountries = regions.length > 1 && (isHo || Object.values(seen).filter(Boolean).length > 1);
-  if (!signedIn) return <div class="h" ref={root}><button class="ib" title={t.open} onClick={() => host.onSignIn()}><img class="mark" src={markUrl} alt="PII" /></button></div>;
+  // Signed out: with two countries the mark opens a choice, so nobody is sent to a country they do not belong to.
+  if (!signedIn) {
+    if (regions.length < 2) return <div class="h" ref={root}><button class="ib" title={t.open} onClick={() => host.onSignIn()}><img class="mark" src={markUrl} alt="PII" /></button></div>;
+    return (
+      <div class="h" ref={root}>
+        <button class="ib" aria-label={t.open} aria-haspopup="menu" aria-expanded={open === 'menu'} title={t.open} onClick={(e) => toggle('menu', e as unknown as MouseEvent)}><img class="mark" src={markUrl} alt="" /></button>
+        {open === 'menu' && (
+          <div class="pop menu" role="menu" aria-label={t.pick} style={{ right: `${pos.current.right}px`, top: `${pos.current.top}px` }}>
+            <div class="mh">{t.pick}</div>
+            {regions.map((r) => <button class="mi" role="menuitem" key={r.id} onClick={() => { setOpen(''); host.onSignIn(r.id); }}><span style={{ fontWeight: r.id === cur ? 700 : 400 }}>{t.signInTo(r.id === 'us' && locale === 'fr-CA' ? 'États-Unis' : r.label)}</span></button>)}
+          </div>
+        )}
+      </div>
+    );
+  }
   return (
     <div class="h" ref={root}>
       <button class="ib" aria-label="PII" aria-haspopup="menu" aria-expanded={open === 'menu'} title="PII" onClick={(e) => toggle('menu', e as unknown as MouseEvent)}><img class="mark" src={markUrl} alt="" />{showCountries && cur && <span class="cc">{cur.toUpperCase()}</span>}</button>

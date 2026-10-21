@@ -8,6 +8,7 @@ import { withRequestTx, type Tx } from '@pii/db';
 import type { RequestContext } from '@pii/domain';
 import type { AppDeps } from './app.ts';
 import { escapeHtml } from './merge-render.ts';
+import { COUNTRY_NAME, countryOf, storeExtensionId, storeUrl } from './countries.ts';
 
 const EXTENSION_ID = /^[a-p]{32}$/;
 type Lang = 'en' | 'fr-CA';
@@ -59,6 +60,23 @@ const COPY = {
   },
 } as const;
 
+const STORE_COPY = {
+  en: {
+    add: 'Add PII to Chrome', s1: 'Add it from the Chrome Web Store', s1Body: 'Click the button above, then Add to Chrome. Chrome keeps it up to date from then on.',
+    s2: 'Open Gmail', s2Body: 'Reload Gmail once. PII appears in the left panel, with its mark in the top bar.',
+    s3: 'Sign in', s3Body: 'Click the PII mark, choose your country, and sign in with the same Google account you use for Gmail.',
+    zip: 'Installed an earlier copy from a zip file? Remove it in chrome://extensions after adding this one.',
+    web: 'No extension? You can also use PII in your browser:', webLink: 'Open PII',
+  },
+  'fr-CA': {
+    add: 'Ajouter PII à Chrome', s1: 'Ajoutez-la depuis le Chrome Web Store', s1Body: 'Cliquez sur le bouton ci-dessus, puis sur Ajouter à Chrome. Chrome la tient ensuite à jour.',
+    s2: 'Ouvrez Gmail', s2Body: 'Rechargez Gmail une fois. PII apparaît dans le panneau de gauche, avec sa marque en haut.',
+    s3: 'Connectez-vous', s3Body: 'Cliquez sur la marque PII, choisissez votre pays et connectez-vous avec le même compte Google que pour Gmail.',
+    zip: 'Vous aviez installé une copie à partir d’un fichier zip? Retirez-la dans chrome://extensions après avoir ajouté celle-ci.',
+    web: 'Pas d’extension? Vous pouvez aussi utiliser PII dans votre navigateur :', webLink: 'Ouvrir PII',
+  },
+} as const;
+
 export function registerExtensionRoutes(app: FastifyInstance, deps: AppDeps): void {
   const run = <T>(ctx: RequestContext, fn: (tx: Tx) => Promise<T>) => withRequestTx(deps.appPool, ctx, fn);
 
@@ -93,12 +111,23 @@ export function registerExtensionRoutes(app: FastifyInstance, deps: AppDeps): vo
     return reply.code(204).send();
   });
 
+  // The two ways in, for invitation emails written in the app: the Chrome Web Store (else the install page) and the web app.
+  app.get('/v1/access-links', async (req) => {
+    await deps.authenticate(req);
+    const c = countryOf(deps.config.region);
+    return { installUrl: storeUrl() ?? `${deps.config.appOrigin}/install`, appUrl: `${deps.config.appOrigin}/app`, country: COUNTRY_NAME[c] };
+  });
+
   // What this person's install looks like, for the install page and the partner's checklist.
   app.get('/v1/extension/status', async (req) => {
     const { ctx } = await deps.authenticate(req);
     const row = (await run(ctx, (tx) => tx.query<{ version: string; last_seen_at: string }>(
       `SELECT version, last_seen_at FROM extension_installs WHERE user_id = $1 ORDER BY last_seen_at DESC LIMIT 1`, [ctx.userId]))).rows[0];
-    return { installed: Boolean(row), version: row?.version ?? null, lastSeenAt: row?.last_seen_at ?? null };
+    // A copy loaded from the old zip (any extension ID but the store's) seen in the last two weeks: the app asks them to switch.
+    const storeId = storeExtensionId();
+    const zipSeen = storeId ? (await run(ctx, (tx) => tx.query(
+      `SELECT 1 FROM extension_installs WHERE user_id = $1 AND extension_id <> $2 AND last_seen_at > now() - interval '14 days' LIMIT 1`, [ctx.userId, storeId]))).rowCount! > 0 : false;
+    return { installed: Boolean(row), version: row?.version ?? null, lastSeenAt: row?.last_seen_at ?? null, storeUrl: storeUrl(), zipCopySeen: zipSeen };
   });
 
   app.get('/v1/extension/info', async (req) => {
@@ -112,6 +141,7 @@ export function registerExtensionRoutes(app: FastifyInstance, deps: AppDeps): vo
   // The zip copy. Signed-in people only: the person got here through their invitation.
   app.get('/v1/extension/download', async (req, reply) => {
     await deps.authenticate(req);
+    if (storeUrl()) return reply.code(410).send({ error: { code: 'gone', message: 'Install PII from the Chrome Web Store instead', storeUrl: storeUrl() } });
     const info = packInfo();
     if (!info) return reply.code(404).send({ error: { code: 'not_found', message: 'The extension is not available on this server yet' } });
     return reply.type('application/zip').header('cache-control', 'no-store').header('content-disposition', `attachment; filename="${info.file}"`)
@@ -125,6 +155,23 @@ export function registerExtensionRoutes(app: FastifyInstance, deps: AppDeps): vo
     const other: Lang = lang === 'fr-CA' ? 'en' : 'fr-CA';
     const send = (code: number, body: string) => reply.code(code).type('text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex, nofollow')
       .send(shell(lang, t.title, deps.config.productDisplayName, body, other, t.otherLang));
+    // The Chrome Web Store copy, when its listing is set: anyone may see this page, and no zip is offered.
+    const store = storeUrl();
+    if (store) {
+      const s = STORE_COPY[lang];
+      return send(200, `
+      <h1>${t.title}</h1>
+      <p>${t.intro}</p>
+      <p><a class="btn" href="${escapeHtml(store)}" target="_blank" rel="noopener">${s.add}</a></p>
+      <ol class="steps">
+        <li><b>${s.s1}</b><p>${s.s1Body}</p></li>
+        <li><b>${s.s2}</b><p>${s.s2Body}</p></li>
+        <li><b>${s.s3}</b><p>${s.s3Body}</p></li>
+      </ol>
+      <p class="muted">${s.zip}</p>
+      <p class="muted">${s.web} <a href="/app">${s.webLink}</a></p>
+      <p class="muted">${escapeHtml(t.help(deps.config.supportEmail))}</p>`);
+    }
     let id;
     try { id = await deps.authenticate(req); } catch {
       return send(401, `<p>${t.signIn}</p><p><a class="btn" href="/login?lang=${lang === 'fr-CA' ? 'fr-CA' : 'en'}">${t.signInLink}</a></p>`);
