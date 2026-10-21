@@ -18,7 +18,7 @@
     "start": "node apps/api/src/main.ts"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.5",
     "@types/pg": "^8.11.0",
     "typescript": "^5.9.0"
   }
