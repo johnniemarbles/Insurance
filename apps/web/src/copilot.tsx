@@ -3,6 +3,7 @@
 // the first call hides it. A key is never shown back, only its last four characters.
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
+import { MicButton, SpeakButton } from './voice.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 type Provider = 'anthropic' | 'openai' | 'gemini';
@@ -127,13 +128,14 @@ export function AskPii({ call, locale }: { call: Call; locale: Locale }) {
           </div>
           <form onSubmit={ask}>
             <textarea aria-label={x.title} rows={3} maxLength={500} placeholder={x.ph} value={q} onInput={(e) => setQ((e.target as HTMLTextAreaElement).value)} />
-            <div class="actions"><button type="submit" class="btn" disabled={busy || q.trim().length < 2}>{x.send}</button></div>
+            <div class="actions"><MicButton call={call} locale={locale} purpose="question" onText={(s) => setQ((cur) => (cur.trim() ? `${cur.trim()} ${s}` : s).slice(0, 500))} disabled={busy} /><button type="submit" class="btn" disabled={busy || q.trim().length < 2}>{x.send}</button></div>
           </form>
           {busy && <p class="muted" role="status">{x.thinking}</p>}
           {err && <p class="err" role="alert">{err}</p>}
           {res && (
             <section aria-label={mode === 'rulebook' ? x.quoted : x.used} class="hcard" style={{ marginTop: '8px' }}>
               <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{res.answer}</p>
+              <SpeakButton call={call} locale={locale} text={res.answer} />
               {res.citations.length > 0 && (
                 <>
                   <h3 style={{ fontSize: '13px', margin: '10px 0 4px' }}>{mode === 'rulebook' ? x.quoted : x.used}</h3>

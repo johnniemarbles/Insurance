@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
+import { MicButton, SpeakButton } from './voice.tsx';
 const msg = (e: unknown) => (e as Error).message;
 const MIMES: Record<string, string> = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', txt: 'text/plain', md: 'text/markdown' };
 const toB64 = async (f: File) => { const b = new Uint8Array(await f.arrayBuffer()); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
@@ -91,12 +92,14 @@ export function LetterDrafts({ call, locale, boxId, canEdit }: { call: Call; loc
       <label>{x.kind}</label>
       <select aria-label={x.kind} value={kind} onChange={(e) => setKind((e.target as HTMLSelectElement).value)}>{Object.entries(x.kinds).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
       <label>{x.extra}</label><input aria-label={x.extra} maxLength={500} value={extra} onInput={(e) => setExtra((e.target as HTMLInputElement).value)} />
+      <MicButton call={call} locale={locale} purpose="letter" boxId={boxId} onText={(s) => setExtra((cur) => (cur.trim() ? `${cur.trim()} ${s}` : s).slice(0, 500))} disabled={busy} />
       <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontWeight: 400 }}><input type="checkbox" style={{ width: 'auto', margin: 0, minHeight: 0 }} checked={fr} onChange={() => setFr(!fr)} />{x.fr}</label>
       <div class="actions"><button type="button" class="btn" disabled={busy} onClick={() => void draft()}>{busy ? x.drafting : x.draft}</button></div>
       {err && <p class="err" role="alert">{err}</p>}
       {res && (
         <div>
           <textarea aria-label={x.title} rows={14} value={text} onInput={(e) => setText((e.target as HTMLTextAreaElement).value)} />
+          <SpeakButton call={call} locale={locale} text={text} />
           {res.toConfirm.length > 0 && <p class="err" style={{ fontSize: '12.5px' }}>{x.confirm}: {res.toConfirm.join(' · ')}</p>}
           <p class="muted" style={{ fontSize: '12.5px' }}>{x.sources}: {res.sources.map((s) => `[${s.ref}] ${s.label}`).join(' · ') || '—'}</p>
           {done ? <p role="status" class="hcard" style={{ borderColor: 'var(--ok)' }}>{x.saved}</p> : <div class="actions"><button type="button" class="btn" disabled={/\[TO CONFIRM:/i.test(text)} onClick={() => void save()}>{x.save}</button></div>}

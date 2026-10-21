@@ -2,6 +2,7 @@
 // Free-form questions stay off until a company administrator turns the AI setting on (see ai.tsx).
 import { useEffect, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
+import { MicButton, SpeakButton } from './voice.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 
@@ -96,6 +97,7 @@ export function AssistantPanel({ call, locale, first }: { call: Call; locale: Lo
       {answer?.kind === 'error' && <p class="asst-note" role="alert">{answer.text}</p>}
       {answer?.kind === 'list' && <ul class="asst-list">{answer.rows.map((r, i) => <li key={i}>{r}</li>)}</ul>}
       {answer?.kind === 'text' && <p class="asst-answer" style={{ whiteSpace: 'pre-wrap' }}>{answer.text}</p>}
+      {answer?.kind === 'text' && <SpeakButton call={call} locale={locale} text={answer.text} />}
       {answer?.kind === 'text' && answer.cites && answer.cites.length > 0 && (
         <ul class="asst-list" aria-label={t.sources}>{answer.cites.map((c) => <li key={c.ref}>[{c.ref}] {c.label} <span class="muted">· {t.types[c.type] ?? c.type}</span></li>)}</ul>
       )}
@@ -106,6 +108,7 @@ export function AssistantPanel({ call, locale, first }: { call: Call; locale: Lo
             <input id="asst-q" type="text" maxLength={500} value={question} onInput={(e) => setQuestion((e.currentTarget as HTMLInputElement).value)} placeholder={t.ask} />
             <button class="asst-send" type="submit" disabled={busy || !question.trim()}>{busy ? t.thinking : t.send}</button>
           </div>
+          <MicButton call={call} locale={locale} purpose="question" onText={(s) => setQuestion((cur) => (cur.trim() ? `${cur.trim()} ${s}` : s).slice(0, 500))} disabled={busy} />
         </form>
       ) : (
         <p class="asst-off">{t.freeOff}</p>

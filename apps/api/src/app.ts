@@ -16,6 +16,7 @@ import { registerFamilyComplianceRoutes } from './routes-family-compliance.ts';
 import { registerFamilyToolsRoutes } from './routes-family-tools.ts';
 import { registerCopilotRoutes } from './routes-copilot.ts';
 import { registerCopilotToolsRoutes } from './routes-copilot-tools.ts';
+import { registerVoiceRoutes } from './routes-voice.ts';
 import { registerEidRoutes } from './routes-eid.ts';
 import { registerSuitabilityRoutes } from './routes-suitability.ts';
 import { registerIntakeRoutes } from './routes-intake.ts';
@@ -221,6 +222,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerFamilyToolsRoutes(app, deps);
   registerCopilotRoutes(app, deps);
   registerCopilotToolsRoutes(app, deps);
+  registerVoiceRoutes(app, deps);
   registerEidRoutes(app, deps);
   registerSuitabilityRoutes(app, deps);
   registerIntakeRoutes(app, deps);
