@@ -25,7 +25,16 @@ runbook once a year and after every real incident.
 
 ## Backups
 
-1. **Database:** check Railway's automatic backups monthly. For each Postgres service, open the **Backups** tab, confirm backups are on, and write down the schedule and retention. The daily-or-better schedule is what makes the 24-hour RPO possible.
+1. **Database (Railway volume backups):** turned on 21 October 2026 for both Postgres services, with a manual backup taken the same day. Check monthly in each Postgres service's **Backups** tab that they are still on.
+
+   | | Canada (`pii-ca`) | United States (`pii-us`) | Kept |
+   | --- | --- | --- | --- |
+   | Daily | 08:29 UTC | 06:28 UTC | 6 days |
+   | Weekly | Saturday 03:09 UTC | Saturday 09:03 UTC | 27 days |
+   | Monthly | 1st, 22:46 UTC | 1st, 17:17 UTC | 89 days |
+
+   The daily backup meets the 24-hour RPO. These are snapshots of the 50 GB database volume, kept inside the same Railway account,
+   so they cover mistakes and corruption but not the loss of the Railway account or region (step 2).
 2. **A copy outside Railway** (to build): a nightly encrypted `pg_dump` of each country's database to that country's S3 bucket, kept 35 days. Until it exists, a Railway account or region failure could lose more than the RPO.
 3. **Before risky changes:** take a manual Railway backup before a large migration, a demo reset in production, or any manual data fix.
 4. **Secrets:** keep every Railway variable in a password manager the owner controls, with `COOKIE_SECRET` and `LOCAL_KEY_SECRET` (or the KMS key once moved). Without `LOCAL_KEY_SECRET`, encrypted fields such as documents and email bodies cannot be read, even from a good backup.
