@@ -325,6 +325,28 @@ _, _, e = run('u1', "UPDATE client_intakes SET answers = '{\"about\": {\"legalNa
 check("nobody can change a client's submitted answers", e is not None)
 rows, _, e = run('u1', "SELECT 1 FROM intake_links")
 check("intake links (token hashes) are out of the app role's reach", e is not None or rows == [], (rows, e))
+
+print("\n== 3k. Supervision: rules readable by all, written by compliance; reviews follow the deal's wall; nobody decides their own ==")
+fc.execute("INSERT INTO supervision_rules(id,tenant_id,name,review_required,updated_by_name) VALUES (%s,%s,'Large cases',true,'admin')", (U(), T))
+fs.commit()
+for k, v in {'u1': 1, 'u2': 1, 'mgrX': 1, 'admin': 1, 'out': 0}.items():
+    n = len(run(k, "SELECT 1 FROM supervision_rules")[0])
+    check(f"supervision_rules visible to {k} = {v}", n == v, n)
+_, _, e = run('u1', "INSERT INTO supervision_rules(tenant_id,name,review_required,updated_by_name) VALUES (%s,'My own rule',true,'u1')", (T,))
+check("a partner cannot write a supervision rule", e is not None)
+_, n, e = run('u1', "UPDATE supervision_rules SET active = false")
+check("a partner cannot switch a rule off (0 rows)", e is None and n == 0, (n, e))
+RID = run('admin', "SELECT id FROM supervision_rules LIMIT 1")[0][0][0]
+SV = U()
+_, _, e = run('u1', "INSERT INTO supervision_reviews(id,tenant_id,box_id,rule_id,status,requested_by,requested_by_name,due_at) VALUES (%s,%s,%s,%s,'pending',%s,'u1',now())", (SV, T, BOX['b1'], RID, UID['u1']))
+check("u1 asks for a review on their own deal", e is None, e)
+for k, v in {'u1': 1, 'u2': 0, 'mgrX': 1, 'mgrY': 0, 'admin': 1, 'out': 0}.items():
+    n = len(run(k, "SELECT 1 FROM supervision_reviews")[0])
+    check(f"supervision_reviews visible to {k} = {v}", n == v, n)
+_, _, e = run('u1', "INSERT INTO supervision_reviews(tenant_id,box_id,rule_id,status,requested_by,requested_by_name,due_at) VALUES (%s,%s,%s,'approved',%s,'u1',now())", (T, BOX['b1'], RID, UID['u1']))
+check("a review cannot start approved", e is not None)
+_, _, e = run('u1', "UPDATE supervision_reviews SET status = 'approved', decided_by = %s, decided_by_name = 'u1', decision_note = 'approving my own deal' WHERE id = %s", (UID['u1'], SV))
+check("the requester cannot approve their own review", e is not None)
 fs.close()
 
 print('\n== 4. Private Gmail data ==')
