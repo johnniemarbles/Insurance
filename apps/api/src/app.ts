@@ -18,6 +18,7 @@ import { registerCopilotRoutes } from './routes-copilot.ts';
 import { registerCopilotToolsRoutes } from './routes-copilot-tools.ts';
 import { registerEidRoutes } from './routes-eid.ts';
 import { registerSuitabilityRoutes } from './routes-suitability.ts';
+import { registerIntakeRoutes } from './routes-intake.ts';
 import type { KeyProvider } from '@pii/platform';
 import { registerPageRoutes } from './routes-pages.ts';
 import { registerThreadRoutes } from './routes-threads.ts';
@@ -217,6 +218,7 @@ export function buildApp(input: AppDeps): FastifyInstance {
   registerCopilotToolsRoutes(app, deps);
   registerEidRoutes(app, deps);
   registerSuitabilityRoutes(app, deps);
+  registerIntakeRoutes(app, deps);
   registerNoteRoutes(app, deps);
   registerThreadRoutes(app, deps);
   registerLmsRoutes(app, deps);
