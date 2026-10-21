@@ -2,8 +2,9 @@
 export interface AiClient {
   readonly model: string;
   complete(input: { system: string; user: string; maxTokens: number }): Promise<string>;
-  /** Speech to text, for providers that take audio (OpenAI, Gemini). The audio is sent once and never stored by PII. */
-  transcribe?(input: { audio: Buffer; mime: string; language?: string }): Promise<string>;
+  /** Speech to text, for providers that take audio (OpenAI, Gemini). The audio is sent once and never stored by PII.
+   *  `speakers: false` = one person dictating (no speaker labels); the default labels speakers, for meetings. */
+  transcribe?(input: { audio: Buffer; mime: string; language?: string; speakers?: boolean }): Promise<string>;
   /** Reads images with a text prompt (Gemini only, used for the driver's licence check). Images are sent once, never stored. */
   see?(input: { system: string; user: string; images: { mime: string; data: Buffer }[]; maxTokens: number }): Promise<string>;
 }
@@ -25,11 +26,14 @@ function openaiTranscriber(apiKey: string, env: Record<string, string | undefine
   };
 }
 function geminiTranscriber(apiKey: string, model: string) {
-  return async ({ audio, mime }: { audio: Buffer; mime: string }) => {
+  return async ({ audio, mime, speakers }: { audio: Buffer; mime: string; speakers?: boolean }) => {
+    const ask = speakers === false
+      ? 'Transcribe this dictation word for word, in the language spoken, with punctuation. Output only the words spoken, with no labels.'
+      : 'Transcribe this recording word for word. Label speakers as Speaker 1, Speaker 2. Output only the transcript.';
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Transcribe this recording word for word. Label speakers as Speaker 1, Speaker 2. Output only the transcript.' }, { inlineData: { mimeType: mime, data: audio.toString('base64') } }] }], generationConfig: { maxOutputTokens: 8192 } }),
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: ask }, { inlineData: { mimeType: mime, data: audio.toString('base64') } }] }], generationConfig: { maxOutputTokens: 8192 } }),
       signal: AbortSignal.timeout(300_000),
     });
     if (!res.ok) throw new Error(`Transcription service answered ${res.status}`);
@@ -157,9 +161,12 @@ export function aiProvidersFromEnv(env: Record<string, string | undefined> = pro
     for (const p of AI_PROVIDERS) {
       out[p] = { model: `fake-${p}`, complete: async ({ user }) => {
         if (user.includes('[N1] Needs analysis')) return JSON.stringify({ findings: [{ severity: 'question', text: 'Education is one of the client\'s objectives, but the recommendation does not say how it is covered.', cites: ['N1', 'R1'] }] });
+        if (user.includes('<dictation>')) return JSON.stringify({ note: 'Called Raj Singh. He wants a quote for term life cover.', tasks: [{ title: 'Send Raj the term 20 quote', dueInDays: 3 }] });
         if (user.includes('<transcript>')) return JSON.stringify({ summary: 'Raj wants to review his life cover after the mortgage renewal.', followUps: [{ title: 'Send Raj the term 20 quote', dueInDays: 3 }], needsChanges: ['Mortgage balance is now 480,000'], complianceNotes: ['Recording consent confirmed at the start of the call'] });
         const m = /\[([CRA]1)\] ([^\n]+)/.exec(user); return m ? `From your records: ${m[2]!.slice(0, 160)} [${m[1]}]` : 'Nothing found.'; } };
-      if (p !== 'anthropic') out[p]!.transcribe = async () => 'Speaker 1: Thanks for meeting, Raj. Speaker 2: I renewed my mortgage and want to check my life cover.';
+      if (p !== 'anthropic') out[p]!.transcribe = async ({ speakers }) => (speakers === false
+        ? 'Called Raj Singh, he wants a quote for term life cover, follow up Friday.'
+        : 'Speaker 1: Thanks for meeting, Raj. Speaker 2: I renewed my mortgage and want to check my life cover.');
       // The licence check: always reads Raj Singh, born 1980-04-12; an image under 1 KB reads as unclear.
       if (p === 'gemini') out[p]!.see = async ({ system, images }) => {
         if (system.includes('public register')) return JSON.stringify({ holderName: 'SANDHU, HARPREET KAUR', licenceNumber: '12345-M', licenceClass: 'Life and accident and sickness', status: 'active', expiryDate: '2027-03-31', conditions: [], disciplinaryActions: [] });

@@ -9,6 +9,7 @@ import type { Strings } from './i18n.ts';
 import type { Box, FieldDef, Locale, Pipeline, Stage } from './types.ts';
 import { DealPeopleCompliance } from './family-compliance.tsx';
 import { LetterDrafts, MeetingNotes } from './copilot-tools.tsx';
+import { DictateNote, MicButton } from './voice.tsx';
 import { SuitabilityCard } from './suitability.tsx';
 import { IntakeCard } from './intake.tsx';
 import { SupervisionCard } from './supervision.tsx';
@@ -414,6 +415,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
         {tab === 'activity' && (
           <div>
             <MeetingNotes boxId={box.id} call={call} locale={locale} canEdit={canEdit} onSaved={() => void loadFeed()} />
+            {canEdit && <DictateNote boxId={box.id} call={call} locale={locale} onSaved={() => { onChanged(); void loadFeed(); }} />}
             {canEdit && (
               <div class="composer">
                 <div class="seg" role="tablist">
@@ -435,6 +437,7 @@ export function RecordPanel({ box, pipeline, call, t, locale, people, onClose, o
                 ) : (
                   <>
                     <input placeholder={x.taskPh} aria-label={x.task} value={taskText} onInput={(e) => setTaskText((e.target as HTMLInputElement).value)} onKeyDown={(e) => { if (e.key === 'Enter') void addTask(); }} />
+                    <MicButton call={call} locale={locale} purpose="task" boxId={box.id} onText={(s) => setTaskText((cur) => (cur.trim() ? `${cur.trim()} ${s}` : s).slice(0, 300))} disabled={busy} />
                     <div class="two">
                       <label class="fld" for="t-due">{x.due}<input id="t-due" type="date" value={taskDue} onInput={(e) => setTaskDue((e.target as HTMLInputElement).value)} /></label>
                       <label class="fld" for="t-who">{x.assignee}

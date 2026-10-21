@@ -908,4 +908,11 @@ select{background-color:#fff;border:1px solid var(--line2);border-radius:10px;pa
 .pd-ops-case h4{margin:10px 0 4px;font-size:13px;color:var(--mute)}
 @media(max-width:600px){.pd-profile-hero .btn{margin-left:0;width:100%}.pd-profile-facts{grid-template-columns:1fr}}
 
+.mic-wrap{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}
+.mic{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:999px;background:var(--bg);color:var(--ink);padding:6px 14px;font:inherit;font-size:13px;font-weight:500;cursor:pointer}
+.mic:hover{background:var(--tint)}.mic:disabled{opacity:.5;cursor:default}
+.mic.on{background:var(--err-soft);border-color:var(--err);color:var(--err)}
+.mic.speak{margin:8px 0 0}.mic.speak.on{background:var(--pri-soft);border-color:var(--pri-line);color:var(--pri)}
+.mic-note{font-size:12.5px}
+.dictate{margin-bottom:14px}.dictate-h{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.dictate-h h3{margin:0}
 `;
