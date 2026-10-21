@@ -156,6 +156,7 @@ export function aiProvidersFromEnv(env: Record<string, string | undefined> = pro
   if (env.AI_FAKE_PROVIDERS === '1' && env.APP_ENV === 'dev') {
     for (const p of AI_PROVIDERS) {
       out[p] = { model: `fake-${p}`, complete: async ({ user }) => {
+        if (user.includes('[N1] Needs analysis')) return JSON.stringify({ findings: [{ severity: 'question', text: 'Education is one of the client\'s objectives, but the recommendation does not say how it is covered.', cites: ['N1', 'R1'] }] });
         if (user.includes('<transcript>')) return JSON.stringify({ summary: 'Raj wants to review his life cover after the mortgage renewal.', followUps: [{ title: 'Send Raj the term 20 quote', dueInDays: 3 }], needsChanges: ['Mortgage balance is now 480,000'], complianceNotes: ['Recording consent confirmed at the start of the call'] });
         const m = /\[([CRA]1)\] ([^\n]+)/.exec(user); return m ? `From your records: ${m[2]!.slice(0, 160)} [${m[1]}]` : 'Nothing found.'; } };
       if (p !== 'anthropic') out[p]!.transcribe = async () => 'Speaker 1: Thanks for meeting, Raj. Speaker 2: I renewed my mortgage and want to check my life cover.';

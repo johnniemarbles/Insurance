@@ -11,6 +11,9 @@ const slug = (s: string) => { const k = s.toLowerCase().normalize('NFD').replace
 const move = <T,>(a: T[], i: number, d: number): T[] => { const b = [...a]; const j = i + d; if (j < 0 || j >= b.length) return b; [b[i], b[j]] = [b[j]!, b[i]!]; return b; };
 
 export function PipelineEditor({ pipeline, call, t, locale, onClose, onChanged }: { pipeline: Pipeline; call: Call; t: Strings; locale: Locale; onClose: () => void; onChanged: () => void }) {
+  // The suitability review can be required only while the check is switched on (the server answers 404 otherwise).
+  const [suitOn, setSuitOn] = useState(false);
+  useEffect(() => { call('GET', '/v1/suitability/status').then(() => setSuitOn(true), () => setSuitOn(false)); }, [call]);
   const dlg = useDialogFocus<HTMLElement>();
   const [err, setErr] = useState('');
   const [note, setNote] = useState('');
@@ -64,7 +67,7 @@ export function PipelineEditor({ pipeline, call, t, locale, onClose, onChanged }
                 onChange={(e) => { const on = (e.target as HTMLInputElement).checked; const cur = s.requiredFields ?? []; void act(() => call('PATCH', `${P}/stages/${s.id}`, { requiredFields: on ? [...cur, o.k] : cur.filter((x) => x !== o.k) })); }} /> {o.l}</label>
             ))}
             <div class="muted" style={{ marginTop: '8px', fontWeight: 600 }}>{locale === 'fr-CA' ? 'Documents requis (conformité)' : 'Required paperwork (compliance)'}</div>
-            {DOC_TYPES.map((o) => (
+            {DOC_TYPES.filter((o) => o.k !== 'suitability_review' || suitOn || s.requiredDocs?.includes(o.k)).map((o) => (
               <label class="check" key={o.k}><input type="checkbox" checked={s.requiredDocs?.includes(o.k) ?? false}
                 onChange={(e) => { const on = (e.target as HTMLInputElement).checked; const cur = s.requiredDocs ?? []; void act(() => call('PATCH', `${P}/stages/${s.id}`, { requiredDocs: on ? [...cur, o.k] : cur.filter((x) => x !== o.k) })); }} /> {o.l[locale]}</label>
             ))}

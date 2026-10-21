@@ -4,6 +4,8 @@ import { HttpError } from './errors.ts';
 import { tenantSettingInt } from './needs-analysis.ts';
 import { personLevelFiled } from './family-compliance-gates.ts';
 import { familyComplianceEnabled } from './routes-family-compliance.ts';
+import { suitabilityEnabled } from './suitability.ts';
+import { suitabilityFiled } from './routes-suitability.ts';
 
 /** What a record holds against what a stage requires. All lists are document type keys.
  *  `unverified`: advice paperwork uploaded but not yet verified by compliance. `needsExpiredOn`: the last signed needs analysis, if it has expired. */
@@ -19,7 +21,9 @@ export interface GateStatus { stageId: string; stageName: string; required: stri
 export async function gateStatus(tx: Tx, stageId: string, boxId: string): Promise<GateStatus | null> {
   const st = (await tx.query<{ name: string }>('SELECT name FROM stages WHERE id = $1', [stageId])).rows[0];
   if (!st) return null;
-  const required = (await tx.query<{ doc_type: string }>('SELECT doc_type FROM stage_doc_requirements WHERE stage_id = $1 ORDER BY doc_type', [stageId])).rows.map((r) => r.doc_type);
+  // A suitability review counts only while the check is switched on; switched off, the requirement is set aside.
+  const required = (await tx.query<{ doc_type: string }>('SELECT doc_type FROM stage_doc_requirements WHERE stage_id = $1 ORDER BY doc_type', [stageId])).rows.map((r) => r.doc_type)
+    .filter((t) => t !== 'suitability_review' || suitabilityEnabled());
   if (required.length === 0) return { stageId, stageName: st.name, required, filed: [], overridden: [], missing: [], unverified: [], needsExpiredOn: null };
   const months = await tenantSettingInt(tx, 'compliance.naValidityMonths', 12);
   const docs = (await tx.query<{ doc_type: string; verified: boolean; current: boolean }>(
@@ -52,6 +56,7 @@ export async function gateStatus(tx: Tx, stageId: string, boxId: string): Promis
   const req = [...required];
   if (replacing && (req.includes('needs_analysis') || req.includes('recommendation')) && !req.includes('replacement_disclosure')) req.push('replacement_disclosure');
   if (!filed.includes('id_record') && (await tx.query("SELECT 1 FROM client_id_records WHERE box_id = $1 AND result = 'verified' LIMIT 1", [boxId])).rowCount) filed.push('id_record');
+  if (req.includes('suitability_review') && await suitabilityFiled(tx, boxId)) filed.push('suitability_review');
   const consents = (await tx.query<{ kind: string; createdAt: string; withdrawnAt: string | null }>('SELECT kind, created_at AS "createdAt", withdrawn_at AS "withdrawnAt" FROM client_consents WHERE box_id = $1 ORDER BY created_at', [boxId])).rows;
   for (const k of consentStates(consents).active) { const t = CONSENT_GATE_TYPE[k as ConsentKind]; if (t && !filed.includes(t)) filed.push(t); }
   // Families, Gate C (switched off by default): person-level consents and ID checks this deal uses also count.

@@ -79,6 +79,10 @@ export const SETTINGS: readonly SettingDef[] = [
     label: { en: 'Review every file from a new advisor for (days)', 'fr-CA': 'Revoir chaque dossier d’un nouveau conseiller pendant (jours)' }, help: { en: 'Counted from the advisor’s first signed advice. 0 turns this off.', 'fr-CA': 'Compté à partir du premier conseil signé du conseiller. 0 désactive cette règle.' }, keywords: 'new advisor review supervision days compliance',
   },
   {
+    key: 'compliance.suitabilityGapsNeedCompliance', tab: 'companyRules', type: 'bool', default: false, scopes: ['tenant'], lockable: false,
+    label: { en: 'A gap found by the suitability check needs compliance to clear it', 'fr-CA': 'Un écart trouvé par l’examen de convenance doit être levé par la conformité' }, help: { en: 'Off: the advisor may proceed past a gap with a written reason, and compliance sees it in their queue. On: any gap goes to compliance. Questions never need compliance.', 'fr-CA': 'Désactivé : le conseiller peut passer outre un écart en donnant une raison écrite, et la conformité le voit dans sa file. Activé : tout écart va à la conformité. Les questions n’exigent jamais la conformité.' }, keywords: 'suitability check gap compliance clear recommendation needs analysis',
+  },
+  {
     key: 'compliance.partnerPipelineGate', tab: 'companyRules', type: 'bool', default: true, scopes: ['tenant'], lockable: false,
     label: { en: 'Partners’ own pipelines need a needs analysis before a sale is won', 'fr-CA': 'Les pipelines des partenaires exigent une analyse des besoins avant une vente conclue' }, help: { en: 'When a partner makes a pipeline from scratch, its won stages require privacy consent, a signed needs analysis and a signed recommendation. Compliance can change a pipeline’s paperwork afterwards; partners cannot remove it.', 'fr-CA': 'Quand un partenaire crée un pipeline de toutes pièces, ses étapes conclues exigent le consentement à la vie privée, une analyse des besoins signée et une recommandation signée. La conformité peut ensuite modifier ces exigences; les partenaires ne peuvent pas les retirer.' }, keywords: 'needs analysis partner pipeline gate won paperwork compliance',
   },
