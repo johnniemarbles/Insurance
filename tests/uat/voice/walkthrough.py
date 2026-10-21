@@ -79,6 +79,21 @@ with sync_playwright() as p:
     composer = rec.locator('.composer')
     speak(page, composer)
     expect(composer.get_by_role('textbox', name='Task')).to_have_value('Called Raj Singh, he wants a quote for term life cover, follow up Friday.', timeout=15000)
+    # 4. Inside Gmail before extension 1.8.0 (or if Gmail blocks the frame's microphone): the small PII voice window
+    #    records and hands the audio back to the PII page that opened it, which sends it signed in as usual.
+    page.evaluate("""() => { window.__got = null; window.addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.pii === 'voice-audio') window.__got = e.data; });
+      window.__w = window.open('/voice-recorder?id=uatwindow01&lang=en&max=60', 'pii-voice', 'popup,width=440,height=320'); }""")
+    pop = next(pg for pg in ctx.pages if 'voice-recorder' in pg.url) if any('voice-recorder' in pg.url for pg in ctx.pages) else ctx.wait_for_event('page')
+    pop.wait_for_load_state()
+    pop.get_by_role('button', name='Speak').click(); pop.wait_for_timeout(2000)
+    pop.screenshot(path=f'{OUT}/5-voice-window.png')
+    pop.get_by_role('button', name='Stop').click()
+    page.wait_for_function('window.__got !== null', timeout=15000)
+    got = page.evaluate("({ id: window.__got.id, mime: window.__got.mime, bytes: window.__got.data.length, seconds: window.__got.seconds })")
+    assert got['id'] == 'uatwindow01' and got['mime'].startswith('audio/') and got['bytes'] > 200 and got['seconds'] >= 1, got
+    text = page.evaluate("""async () => { const g = window.__got; const r = await fetch('/v1/voice/transcribe', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mime: g.mime, dataBase64: g.data, seconds: g.seconds, purpose: 'question', language: 'en' }) }); return (await r.json()).text; }""")
+    assert text.startswith('Called Raj Singh'), text
     ctx.close()
     b.close()
 print('voice page errors:', errors); sys.exit(1 if errors else 0)

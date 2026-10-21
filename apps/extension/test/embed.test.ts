@@ -44,6 +44,7 @@ test('frames the server page and hands over a token, regions and the compose fla
   const p = fakePage(); const { o } = opts();
   const stop = mountEmbedded(p.host, o);
   assert.equal(p.iframe.src, `${BASE}/app?embed=1`);
+  assert.equal(p.iframe.allow, 'microphone'); // voice in Gmail: only the PII frame may ask for the microphone
   await p.send({ pii: 'ready' });
   const init = p.toFrame.find((m) => m.msg.pii === 'init')!;
   assert.equal(init.origin, BASE);

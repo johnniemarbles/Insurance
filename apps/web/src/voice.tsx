@@ -4,7 +4,7 @@
 // VOICE_ENABLED off (the settings call answers 404). The microphone also needs the company's AI switch.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Locale } from './types.ts';
-import { localVoice, speakable } from './voice-text.ts';
+import { localVoice, micRoute, speakable } from './voice-text.ts';
 
 type Call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 export interface VoiceSettings { readAloud: boolean; speak: boolean; maxSeconds: number }
@@ -15,6 +15,7 @@ const V = {
     speak: 'Speak', stop: (s: string) => `Stop ${s}`, working: 'Turning speech into text…', speakHelp: 'Speak, then check the words before sending. Recordings are not kept.',
     denied: 'PII cannot use the microphone. Allow it for this site in the browser, then try again.', noMic: 'No microphone was found.',
     short: 'That was too short. Press Speak, talk, then press Stop.', unsupported: 'This browser cannot record audio.',
+    inWindow: 'Speak in the small PII window. Your words come back here.', popupBlocked: 'Chrome blocked the PII voice window. Allow pop-ups for this site, then press Speak again.',
     listen: 'Listen', stopListen: 'Stop', dictate: 'Dictate a note', dictateHelp: 'Speak your note. PII writes it out and suggests tasks; nothing is saved until you press Save. Use your own voice only: to record a client, use Meeting notes.',
     draft: 'Writing the note…', note: 'Note', tasks: 'Suggested tasks', due: 'due', save: 'Save note and tasks', discard: 'Discard', saved: (n: number) => `Note saved${n ? ` with ${n} task${n === 1 ? '' : 's'}` : ''}.`,
     noDraft: 'The note could not be tidied, so here are your words as spoken. You can still edit and save them.',
@@ -23,6 +24,7 @@ const V = {
     speak: 'Parler', stop: (s: string) => `Arrêter ${s}`, working: 'Transcription en cours…', speakHelp: 'Parlez, puis vérifiez les mots avant d’envoyer. Les enregistrements ne sont pas conservés.',
     denied: 'PII ne peut pas utiliser le microphone. Autorisez-le pour ce site dans le navigateur, puis réessayez.', noMic: 'Aucun microphone trouvé.',
     short: 'C’était trop court. Appuyez sur Parler, parlez, puis sur Arrêter.', unsupported: 'Ce navigateur ne peut pas enregistrer de son.',
+    inWindow: 'Parlez dans la petite fenêtre PII. Vos mots reviendront ici.', popupBlocked: 'Chrome a bloqué la fenêtre vocale PII. Autorisez les fenêtres surgissantes pour ce site, puis appuyez de nouveau sur Parler.',
     listen: 'Écouter', stopListen: 'Arrêter', dictate: 'Dicter une note', dictateHelp: 'Dictez votre note. PII la rédige et suggère des tâches; rien n’est enregistré avant que vous appuyiez sur Enregistrer. Votre voix seulement : pour enregistrer un client, utilisez Notes de rencontre.',
     draft: 'Rédaction de la note…', note: 'Note', tasks: 'Tâches suggérées', due: 'échéance', save: 'Enregistrer la note et les tâches', discard: 'Annuler', saved: (n: number) => `Note enregistrée${n ? ` avec ${n} tâche${n === 1 ? '' : 's'}` : ''}.`,
     noDraft: 'La note n’a pas pu être mise au propre; voici vos mots tels que dits. Vous pouvez les modifier et les enregistrer.',
@@ -52,13 +54,44 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2,
 export function MicButton({ call, locale, purpose, boxId, onText, disabled }: { call: Call; locale: Locale; purpose: Purpose; boxId?: string; onText: (text: string) => void; disabled?: boolean }) {
   const t = tx(locale);
   const v = useVoice(call);
-  const [state, setState] = useState<'idle' | 'rec' | 'busy'>('idle');
+  const [state, setState] = useState<'idle' | 'rec' | 'busy' | 'window'>('idle');
   const [secs, setSecs] = useState(0);
   const [err, setErr] = useState('');
   const rec = useRef<{ r: MediaRecorder; stream: MediaStream; started: number; timer: number } | null>(null);
-  useEffect(() => () => { const c = rec.current; if (c) { clearInterval(c.timer); c.stream.getTracks().forEach((k) => k.stop()); } }, []);
-  if (!v?.speak) return null;
+  const win = useRef<(() => void) | null>(null);
+  useEffect(() => () => { const c = rec.current; if (c) { clearInterval(c.timer); c.stream.getTracks().forEach((k) => k.stop()); } win.current?.(); }, []);
+  // Where to record: here; or, inside Gmail when the frame may not use the microphone, in a small PII window.
+  const route = micRoute({ host: location.hostname, framed: window.parent !== window, policyAllows: (document as unknown as { featurePolicy?: { allowsFeature(f: string): boolean } }).featurePolicy?.allowsFeature('microphone') });
+  if (!v?.speak || route === 'none') return null;
   const max = v.maxSeconds || 60;
+
+  const send = async (dataBase64: string, mime: string, seconds: number) => {
+    setState('busy');
+    try {
+      const res = await call('POST', '/v1/voice/transcribe', { mime: mime || 'audio/webm', dataBase64, seconds, purpose, language: locale === 'fr-CA' ? 'fr-CA' : 'en', ...(boxId ? { boxId } : {}) });
+      onText(String(res.text ?? ''));
+    } catch (e) { setErr((e as Error).message); } finally { setState('idle'); }
+  };
+
+  // The PII voice window records and hands the audio back to this page (same site only); this page sends it, signed in as usual.
+  const startWindow = () => {
+    setErr('');
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => x.toString(16).padStart(2, '0')).join('');
+    const w = window.open(`/voice-recorder?id=${id}&lang=${locale === 'fr-CA' ? 'fr-CA' : 'en'}&max=${max}`, `pii-voice-${id}`, 'popup,width=440,height=320');
+    if (!w) { setErr(t.popupBlocked); return; }
+    const done = () => { window.removeEventListener('message', onMsg); clearInterval(poll); win.current = null; };
+    const onMsg = (e: MessageEvent) => {
+      const d = e.data as { pii?: string; id?: string; mime?: string; data?: string; seconds?: number } | null;
+      if (e.origin !== location.origin || e.source !== w || d?.pii !== 'voice-audio' || d.id !== id || typeof d.data !== 'string') return;
+      done();
+      if ((d.seconds ?? 0) < 1) { setState('idle'); setErr(t.short); return; }
+      void send(d.data, String(d.mime ?? ''), Math.min(max, Math.round(Number(d.seconds) || 0)));
+    };
+    const poll = window.setInterval(() => { if (w.closed) { done(); setState((st) => (st === 'window' ? 'idle' : st)); } }, 500);
+    window.addEventListener('message', onMsg);
+    win.current = () => { done(); if (!w.closed) w.close(); };
+    setState('window');
+  };
 
   const stop = () => { const c = rec.current; if (c && c.r.state === 'recording') c.r.stop(); };
   const start = async () => {
@@ -77,11 +110,7 @@ export function MicButton({ call, locale, purpose, boxId, onText, disabled }: { 
       const seconds = Math.min(max, Math.round((Date.now() - (c?.started ?? Date.now())) / 1000));
       const blob = new Blob(chunks, { type: r.mimeType || type || 'audio/webm' });
       if (seconds < 1 || blob.size < 200) { setState('idle'); setErr(t.short); return; }
-      setState('busy');
-      try {
-        const res = await call('POST', '/v1/voice/transcribe', { mime: blob.type || 'audio/webm', dataBase64: await b64(blob), seconds, purpose, language: locale === 'fr-CA' ? 'fr-CA' : 'en', ...(boxId ? { boxId } : {}) });
-        onText(String(res.text ?? ''));
-      } catch (e) { setErr((e as Error).message); } finally { setState('idle'); }
+      await send(await b64(blob), blob.type, seconds);
     };
     const started = Date.now();
     const timer = window.setInterval(() => { const s = Math.round((Date.now() - started) / 1000); setSecs(s); if (s >= max) stop(); }, 250);
@@ -92,11 +121,12 @@ export function MicButton({ call, locale, purpose, boxId, onText, disabled }: { 
 
   return (
     <span class="mic-wrap">
-      <button type="button" class={`mic${state === 'rec' ? ' on' : ''}`} aria-pressed={state === 'rec'} disabled={disabled || state === 'busy'} title={t.speakHelp}
-        onClick={() => (state === 'rec' ? stop() : void start())}>
-        <span aria-hidden="true">{state === 'rec' ? '■' : '🎤'}</span> {state === 'rec' ? t.stop(`${clock(secs)} / ${clock(max)}`) : t.speak}
+      <button type="button" class={`mic${state === 'rec' || state === 'window' ? ' on' : ''}`} aria-pressed={state === 'rec' || state === 'window'} disabled={disabled || state === 'busy'} title={t.speakHelp}
+        onClick={() => (state === 'rec' ? stop() : state === 'window' ? win.current?.() : route === 'window' ? startWindow() : void start())}>
+        <span aria-hidden="true">{state === 'rec' || state === 'window' ? '■' : '🎤'}</span> {state === 'rec' ? t.stop(`${clock(secs)} / ${clock(max)}`) : state === 'window' ? t.stop('').trim() : t.speak}
       </button>
       {state === 'busy' && <span class="muted mic-note" role="status">{t.working}</span>}
+      {state === 'window' && <span class="muted mic-note" role="status">{t.inWindow}</span>}
       {err && <span class="err mic-note" role="alert">{err}</span>}
     </span>
   );

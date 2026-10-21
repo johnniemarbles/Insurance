@@ -29,6 +29,9 @@ export function mountEmbedded(host: HTMLElement, o: EmbedOptions): () => void {
   const f = document.createElement('iframe');
   f.style.cssText = 'border:0;width:100%;height:100%;display:block;background:#fff';
   f.title = 'PII';
+  // Lets PII's own page use the microphone for voice (version 1.8.0). Only the PII site in this frame can ask; Chrome
+  // still asks the person once. Gmail's own pages get nothing new.
+  f.allow = 'microphone';
   f.src = `${o.base}/app?embed=1`;
   host.append(f);
   const post = (m: Record<string, unknown>) => f.contentWindow?.postMessage(m, o.base);

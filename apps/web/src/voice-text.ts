@@ -14,3 +14,12 @@ export function localVoice<T extends VoiceLike>(voices: readonly T[], locale: Lo
   return null;
 }
 
+
+/** Where the microphone can be used: on this page; in a small PII window (inside Gmail, when the frame may not use the
+ *  microphone: extension before 1.8.0, or Gmail forbids it); or not at all (the extension's built-in copy runs in
+ *  Gmail's own page, where only Gmail may ask for the microphone). */
+export function micRoute(o: { host: string; framed: boolean; policyAllows: boolean | undefined }): 'here' | 'window' | 'none' {
+  if (o.host === 'mail.google.com') return 'none';
+  if (o.framed && o.policyAllows === false) return 'window';
+  return 'here';
+}

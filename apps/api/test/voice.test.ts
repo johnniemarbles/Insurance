@@ -90,6 +90,7 @@ test('the note draft is checked: empty tasks dropped, days kept in range, prose 
 });
 
 test('off unless VOICE_ENABLED: every voice route answers 404', async () => {
+  assert.equal((await app.inject({ method: 'GET', url: '/voice-recorder?id=abcdefgh1234' })).statusCode, 404);
   assert.equal((await call(P1U, 'GET', '/v1/voice/settings')).status, 404);
   assert.equal((await say(P1U)).status, 404);
   assert.equal((await call(P1U, 'POST', '/v1/voice/note-draft', { boxId: box, text: 'Called Raj' })).status, 404);
@@ -189,4 +190,21 @@ test('at most 60 recordings a person an hour', async () => {
   assert.equal(r.status, 429, r.raw);
   assert.equal(heard.length, 0);
   assert.equal((await say(LOC)).status, 200); // others are not affected
+});
+
+test('the PII voice window (for Gmail): records only, hands audio back to a PII page of the same site, cannot be framed', async () => {
+  const r = await app.inject({ method: 'GET', url: '/voice-recorder?id=abcdefgh1234&lang=fr-CA&max=30' });
+  assert.equal(r.statusCode, 200);
+  const csp = String(r.headers['content-security-policy']);
+  assert.match(csp, /frame-ancestors 'none'/);
+  assert.match(csp, /connect-src 'none'/); // it makes no API calls
+  assert.match(csp, /script-src 'nonce-[^']+'/);
+  assert.equal(r.headers['permissions-policy'], 'microphone=(self)');
+  assert.match(r.body, /<html lang="fr-CA">/);
+  assert.match(r.body, /Parler/);
+  assert.match(r.body, /window\.opener\.postMessage\(\{ pii: 'voice-audio', id: ID, mime: blob\.type, data: btoa\(s\), seconds \}, location\.origin\)/);
+  assert.match(r.body, /const ID = "abcdefgh1234", MAX = 30;/);
+  // Only a safe id is accepted: nothing can be written into the page's script.
+  assert.equal((await app.inject({ method: 'GET', url: '/voice-recorder?id=%22%3C%2Fscript%3E' })).statusCode, 400);
+  assert.equal((await app.inject({ method: 'GET', url: '/voice-recorder' })).statusCode, 422);
 });
