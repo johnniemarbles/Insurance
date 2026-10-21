@@ -393,6 +393,15 @@ for k, v in {'u1': 0, 'mgrX': 0, 'admin': 1, 'out': 0}.items():
     check(f"conduct_flag_reviews visible to {k} = {v}", n == v, n)
 _, _, e = run('u1', "INSERT INTO conduct_flag_reviews(tenant_id,subject_type,subject_id,code,fingerprint,decision,note,decided_by,decided_by_name) VALUES (%s,'advisor',%s,'complaints','x','no_concern','Nothing to see here.',%s,'u1')", (T, N['P1'], UID['u1']))
 check("a partner cannot clear a flag about themselves", e is not None)
+
+print("\n== 3o. Evidence packs: the register of issued packs is compliance-only ==")
+fc.execute("INSERT INTO evidence_packs(tenant_id,scope,scope_ref,scope_label,period_from,period_to,deal_count,file_count,bytes,manifest_sha256,exported_by,exported_by_name) VALUES (%s,'partner',%s,'P1','2026-01-01','2026-10-01',1,3,100,%s,%s,'admin')", (T, N['P1'], 'a' * 64, UID['admin']))
+fs.commit()
+for k, v in {'u1': 0, 'mgrX': 0, 'admin': 1, 'out': 0}.items():
+    n = len(run(k, "SELECT 1 FROM evidence_packs")[0])
+    check(f"evidence_packs visible to {k} = {v}", n == v, n)
+_, _, e = run('u1', "INSERT INTO evidence_packs(tenant_id,scope,scope_ref,scope_label,period_from,period_to,deal_count,file_count,bytes,manifest_sha256,exported_by,exported_by_name) VALUES (%s,'partner','x','x','2026-01-01','2026-10-01',0,0,0,%s,%s,'u1')", (T, 'b' * 64, UID['u1']))
+check("a partner cannot record a pack", e is not None)
 fs.close()
 
 print('\n== 4. Private Gmail data ==')
