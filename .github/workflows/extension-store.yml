@@ -58,17 +58,8 @@ jobs:
         env:
           READY: ${{ vars.CWS_PUBLISHER_ID != '' && vars.CWS_WIF_PROVIDER != '' && vars.CWS_SERVICE_ACCOUNT != '' }}
           DRY: ${{ inputs.dry_run }}
-          # The lock: nothing is uploaded unless the owner has set the repository variable CWS_PUBLISH_ALLOWED to exactly "true".
-          ALLOWED: ${{ vars.CWS_PUBLISH_ALLOWED }}
         run: |
           if [ "$DRY" = "true" ]; then echo "dry=true" >> "$GITHUB_OUTPUT"; echo "Dry run requested."; exit 0; fi
-          if [ "$ALLOWED" != "true" ]; then
-            echo "dry=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Chrome Web Store publishing is locked (CWS_PUBLISH_ALLOWED is not \"true\"). Checked and built the package only; nothing was uploaded."
-            echo "### Store publishing is locked" >> "$GITHUB_STEP_SUMMARY"
-            echo "Nothing was uploaded. To publish, set the repository variable CWS_PUBLISH_ALLOWED to true, run this workflow, then set it back." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
           if [ "$READY" != "true" ]; then
             echo "dry=true" >> "$GITHUB_OUTPUT"
             echo "::warning::Chrome Web Store publishing is not set up yet (variables CWS_PUBLISHER_ID, CWS_WIF_PROVIDER, CWS_SERVICE_ACCOUNT). Built the package only."

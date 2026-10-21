@@ -3,13 +3,14 @@
 // The key is added to the packed manifest only. The repository manifest is unchanged (see freeze.json).
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { extensionIdFor, listFiles, makeZip } from './zip.mjs';
 
 export { extensionIdFor, makeZip };
 
-const ROOT = new URL('.', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PACK = join(ROOT, 'pack');
 const key = readFileSync(join(ROOT, 'zip-key.txt'), 'utf8').trim();
 

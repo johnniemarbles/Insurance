@@ -15,8 +15,9 @@
 // The store package has no "key" in its manifest: the store assigns the listing's own ID. (The install-page zip from pack.mjs adds one.)
 import { execFileSync } from 'node:child_process';
 import { createHash, createSign } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { listFiles, makeZip } from './zip.mjs';
 
 export const DEFAULT_ITEM_ID = 'dkclimhnmcpflpjaiimfibfnefkdchei';
@@ -74,7 +75,7 @@ async function call(token, method, url, body, contentType = 'application/json') 
 const inProgress = (s) => s === 'IN_PROGRESS' || s === 'UPLOAD_IN_PROGRESS';
 
 /** Builds dist/ and zips it for the store. Returns the version, zip path and hash. */
-export function buildStorePackage(root = new URL('.', import.meta.url).pathname) {
+export function buildStorePackage(root = fileURLToPath(new URL('.', import.meta.url))) {
   execFileSync(process.execPath, ['build.mjs'], { cwd: root, stdio: 'inherit' });
   const dist = join(root, 'dist');
   const manifest = JSON.parse(readFileSync(join(dist, 'manifest.json'), 'utf8'));
