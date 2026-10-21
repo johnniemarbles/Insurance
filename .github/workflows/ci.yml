@@ -78,6 +78,8 @@ jobs:
           set -o pipefail
           npm ci 2>&1 | tee npm-install.log
         shell: bash
+      - name: Dependency audit (production packages, high and critical)
+        run: npm audit --omit=dev --audit-level=high
       - name: Typecheck
         run: |
           set -o pipefail
