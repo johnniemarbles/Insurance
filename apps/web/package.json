@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "preact": "^10.24.0",
-    "read-excel-file": "^9.3.10"
+    "read-excel-file": "^9.3.12"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
