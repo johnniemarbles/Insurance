@@ -72,10 +72,15 @@ policy administrator must allow `https://token.actions.githubusercontent.com`.
 | `CWS_WIF_PROVIDER` | `projects/<number>/locations/global/workloadIdentityPools/github/providers/pii-repo` |
 | `CWS_SERVICE_ACCOUNT` | `pii-store-publisher@<project>.iam.gserviceaccount.com` |
 | `CWS_ITEM_ID` | optional; defaults to `dkclimhnmcpflpjaiimfibfnefkdchei` |
+| `CWS_PUBLISH_ALLOWED` | the lock: leave unset (or anything but `true`) to block every upload; set to `true` only for the release you approved |
 
 Optional: **Settings → Environments → `chrome-web-store` → Required reviewers** to approve every upload by hand.
 
 Until the variables are set, the Action still runs its checks and builds the package (attached to the run), but uploads nothing.
+
+**Publishing is locked by default.** Unless `CWS_PUBLISH_ALLOWED` is exactly `true`, every run (a manifest change on `main`
+or a manual run) only checks and builds the package and says in its summary that publishing is locked. To release: set
+`CWS_PUBLISH_ALLOWED` to `true`, run **Actions → extension-store → Run workflow**, then delete it or set it back to `false`.
 
 ## Try it
 
