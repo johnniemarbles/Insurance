@@ -12,7 +12,7 @@
     "@pii/db": "*",
     "@pii/domain": "*",
     "@pii/platform": "*",
-    "fastify": "^5.0.0",
+    "fastify": "^5.12.7",
     "pdf-lib": "^1.17.1",
     "qrcode-generator": "^2.0.4",
     "regenerator-runtime": "^0.14.1",
