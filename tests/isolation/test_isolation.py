@@ -347,6 +347,19 @@ _, _, e = run('u1', "INSERT INTO supervision_reviews(tenant_id,box_id,rule_id,st
 check("a review cannot start approved", e is not None)
 _, _, e = run('u1', "UPDATE supervision_reviews SET status = 'approved', decided_by = %s, decided_by_name = 'u1', decision_note = 'approving my own deal' WHERE id = %s", (UID['u1'], SV))
 check("the requester cannot approve their own review", e is not None)
+
+print("\n== 3l. Licence checks: seen like the licence (the partner and above); recorded only by compliance or a tenant admin ==")
+LI = U()
+fc.execute("INSERT INTO compliance_items(id,tenant_id,node_id,kind,label,number,jurisdiction) VALUES (%s,%s,%s,'licence','Life','12345','ON')", (LI, T, N['P1']))
+fc.execute("INSERT INTO licence_checks(tenant_id,node_id,item_id,regulator,method,status,checked_by,checked_by_name,next_due_on) VALUES (%s,%s,%s,'fsra_on','manual','active',%s,'admin',current_date + 90)", (T, N['P1'], LI, UID['admin']))
+fs.commit()
+for k, v in {'u1': 1, 'u2': 0, 's1': 0, 'mgrX': 1, 'mgrY': 0, 'admin': 1, 'out': 0}.items():
+    n = len(run(k, "SELECT 1 FROM licence_checks")[0])
+    check(f"licence_checks visible to {k} = {v}", n == v, n)
+_, _, e = run('u1', "INSERT INTO licence_checks(tenant_id,node_id,item_id,regulator,method,status,checked_by,checked_by_name,next_due_on) VALUES (%s,%s,%s,'fsra_on','manual','active',%s,'u1',current_date + 90)", (T, N['P1'], LI, UID['u1']))
+check("a partner cannot record a check of their own licence", e is not None)
+_, _, e = run('admin', "INSERT INTO licence_checks(tenant_id,node_id,item_id,regulator,method,status,checked_by,checked_by_name,next_due_on) VALUES (%s,%s,%s,'fsra_on','manual','active',%s,'admin',current_date + 90)", (T, N['P2'], LI, UID['admin']))
+check("a check belongs to a licence of that partner", e is not None)
 fs.close()
 
 print('\n== 4. Private Gmail data ==')

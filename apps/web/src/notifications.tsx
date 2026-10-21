@@ -28,6 +28,7 @@ export const X = {
         case 'appointment_request': return `${n.data.name ?? 'A partner'} asked to be appointed with ${n.data.carrier ?? 'a carrier'}${n.data.company ? ` (${n.data.company})` : ''}`;
         case 'thread_shared': return `${who} shared a conversation with you on ${box}${n.data.message ? `: “${n.data.message}”` : ''}`;
         case 'document_added': return `${who} added a document to ${box}: ${n.data.name ?? ''}`;
+        case 'licence_check': return n.data.issue === 'adverse' ? `${n.data.name ?? 'A partner'}: the regulator's register shows “${String(n.data.status ?? '').replace(/_/g, ' ')}” for ${n.data.label ?? 'a licence'}` : `${n.data.name ?? 'A partner'}: check ${n.data.label ?? 'the licence'} on the regulator's register (due ${n.data.due})`;
         case 'aml_alert': return `${n.data.name ?? 'A client file'}: ${n.data.issue === 'cash_overdue' ? `cash receipt of ${n.data.detail} on ${n.data.since} has no report reference` : `screening hit (${n.data.detail}) from ${n.data.since} has not been reviewed`}`;
         case 'first_week_late': return `${n.data.name ?? 'A partner'}: first week is over and ${Number(n.data.total) - Number(n.data.done)} of ${n.data.total} steps are still open`;
         case 'vault_alert': return `Archive vault: ${n.data.pending} signed document${n.data.pending === 1 ? '' : 's'} waiting more than a day to be copied`;
@@ -66,6 +67,7 @@ export const X = {
         case 'appointment_request': return `${n.data.name ?? 'Un partenaire'} demande une nomination auprès de ${n.data.carrier ?? 'un assureur'}${n.data.company ? ` (${n.data.company})` : ''}`;
         case 'thread_shared': return `${who} a partagé une conversation avec vous sur ${box}${n.data.message ? ` : « ${n.data.message} »` : ''}`;
         case 'document_added': return `${who} a ajouté un document à ${box} : ${n.data.name ?? ''}`;
+        case 'licence_check': return n.data.issue === 'adverse' ? `${n.data.name ?? 'Un partenaire'} : le registre indique « ${String(n.data.status ?? '').replace(/_/g, ' ')} » pour ${n.data.label ?? 'un permis'}` : `${n.data.name ?? 'Un partenaire'} : vérifiez ${n.data.label ?? 'le permis'} au registre (échéance ${n.data.due})`;
         case 'aml_alert': return `${n.data.name ?? 'Un dossier client'} : ${n.data.issue === 'cash_overdue' ? `l’encaissement en espèces de ${n.data.detail} du ${n.data.since} n’a pas de référence de déclaration` : `le résultat de vérification (${n.data.detail}) du ${n.data.since} n’a pas été examiné`}`;
         case 'first_week_late': return `${n.data.name ?? 'Un partenaire'} : la première semaine est terminée et il reste ${Number(n.data.total) - Number(n.data.done)} étape(s) sur ${n.data.total}`;
         case 'vault_alert': return `Voûte d’archives : ${n.data.pending} document(s) signé(s) en attente de copie depuis plus d’un jour`;

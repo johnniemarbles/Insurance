@@ -17,6 +17,7 @@ import { AssistantPanel } from './assistant-panel.tsx';
 import { AuditReadyPanel } from './copilot-tools.tsx';
 import { SuitabilityQueue } from './suitability.tsx';
 import { SupervisionQueue, SupervisionRulesPanel } from './supervision.tsx';
+import { LicenceChecksPanel } from './licence-checks.tsx';
 
 type Call = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown) => Promise<any>;
 interface Step { id: string; done: boolean; hint?: string }
@@ -145,7 +146,7 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }:
 
   const s = SEC[locale === 'fr-CA' ? 'fr-CA' : 'en'];
   // The panels live inside the scrolling page so they share its padding; head office gets the two company settings too.
-  const panels = <>{!isHeadOffice && <><Overview call={call} locale={locale} /><AuditReadyPanel call={call} locale={locale} /><SuitabilityQueue call={call} locale={locale} /><SupervisionQueue call={call} locale={locale} /><SupervisionRulesPanel call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}<VaultPanel call={call} locale={locale} />{officer === false && <AdviceReviewsPanel call={call} locale={locale} />}</>;
+  const panels = <>{!isHeadOffice && <><Overview call={call} locale={locale} /><AuditReadyPanel call={call} locale={locale} /><SuitabilityQueue call={call} locale={locale} /><SupervisionQueue call={call} locale={locale} /><SupervisionRulesPanel call={call} locale={locale} /><LicenceChecksPanel call={call} locale={locale} /><NotCleared call={call} locale={locale} /><FilesAtRisk call={call} locale={locale} go={go} /><RetentionPanel call={call} locale={locale} /></>}<VaultPanel call={call} locale={locale} />{officer === false && <AdviceReviewsPanel call={call} locale={locale} />}</>;
   // The section switch sits in the page heading, so it lines up with the title on every screen.
   const tabs = officer ? (
     <div class="seg" role="tablist" aria-label={s.label}>
@@ -156,7 +157,7 @@ export function CompliancePage({ call, locale, isHeadOffice, go, host, openId }:
       <button role="tab" aria-selected={section === 'advice'} onClick={() => { setSection('advice'); setOpen(null); }}>{s.advice}</button>
     </div>
   ) : undefined;
-  if (officer && section === 'dashboard') return <div class="obwrap">{tabs}<ComplianceCommandCenter call={call} locale={locale} onNavigate={(target, filter) => { setSection(target); setOpen(null); if (filter) setFileFilter(filter); }} /><SuitabilityQueue call={call} locale={locale} /><SupervisionQueue call={call} locale={locale} /><SupervisionRulesPanel call={call} locale={locale} /><AuditReadyPanel call={call} locale={locale} /></div>;
+  if (officer && section === 'dashboard') return <div class="obwrap">{tabs}<ComplianceCommandCenter call={call} locale={locale} onNavigate={(target, filter) => { setSection(target); setOpen(null); if (filter) setFileFilter(filter); }} /><SuitabilityQueue call={call} locale={locale} /><SupervisionQueue call={call} locale={locale} /><SupervisionRulesPanel call={call} locale={locale} /><LicenceChecksPanel call={call} locale={locale} /><AuditReadyPanel call={call} locale={locale} /></div>;
   if (officer && section === 'onboarding') return <OnboardingDashboard call={call} locale={locale} tabs={tabs} />;
   if (officer && section === 'advice') return <div class="obwrap">{tabs}<AdviceReviewsPanel call={call} locale={locale} /></div>;
   if (officer && section === 'carriers') return <div class="obwrap">{tabs}<CarrierReviewPanel call={call} locale={locale} /></div>;
@@ -216,6 +217,7 @@ const CL: Record<string, { en: string; 'fr-CA': string }> = {
   licence_expired: { en: 'Licence expired', 'fr-CA': 'Permis expiré' }, no_eo: { en: 'No E&O policy on file', 'fr-CA': 'Aucune police E&O au dossier' },
   eo_expired: { en: 'E&O policy expired', 'fr-CA': 'Police E&O expirée' }, eo_limit_low: { en: 'E&O limit below the minimum', 'fr-CA': 'Limite E&O sous le minimum' },
   ce_prior_term_short: { en: 'Continuing education short for the last term (check the rules)', 'fr-CA': 'Formation continue insuffisante pour la dernière période (vérifier les règles)' },
+  licence_register_problem: { en: 'Regulator register shows a licence problem', 'fr-CA': 'Le registre de l’organisme de réglementation signale un problème de permis' },
 };
 const NC = {
   'en': { h: 'Not cleared to transact', all: 'All partners are cleared to transact.', of: 'cleared' },
